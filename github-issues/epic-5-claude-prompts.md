@@ -78,6 +78,20 @@ Once #28 merges to `epic-5-database-engine-shell`:
 - #28 updates `database.rs` with struct enhancements
 - Different concerns, minimal merge conflicts
 
+### ⚠️  CRITICAL: Core Crate Coordination
+
+Stories #29 and #30 both modify `core` crate:
+- **#29 adds**: `RunMetadataEntry`, `Value::RunMetadata`, `TypeTag::RunMetadata`, `Key::new_run_metadata()`
+- **#30 adds**: `Namespace::new()`, `Key::new_kv()`
+- **Files affected**: Both modify `core/src/types.rs` and `core/src/value.rs`
+
+**If running in parallel**:
+1. Coordinate who modifies core first
+2. Second story must pull latest before starting core changes
+3. Resolve merge conflicts carefully during PR to `epic-5-database-engine-shell`
+
+**Alternative**: Run #29 → #30 sequentially to avoid conflicts (adds ~4 hours to wall time)
+
 ### Phase 3: Primitive Layer (Sequential) - ~3-4 hours
 After #29 and #30 merge:
 
