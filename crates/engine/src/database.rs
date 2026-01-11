@@ -5,6 +5,7 @@
 //! - WAL opening
 //! - Automatic recovery on startup
 //! - Run tracking (begin_run, end_run)
+//! - Basic key-value operations (put, get, delete, list)
 
 use crate::run::RunTracker;
 use in_mem_core::error::{Error, Result};
@@ -17,6 +18,7 @@ use in_mem_storage::UnifiedStore;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tracing::info;
 
 /// Main database struct
@@ -467,6 +469,215 @@ impl Database {
     /// Get the count of active runs
     pub fn active_run_count(&self) -> usize {
         self.run_tracker.active_count()
+    }
+
+    // ========================================
+    // Key-Value Operations
+    // ========================================
+
+    /// Put a key-value pair (simple, non-transactional)
+    ///
+    /// Creates an implicit transaction: BeginTxn → Write → CommitTxn.
+    /// The key is stored under a namespace derived from the run_id.
+    ///
+    /// # Arguments
+    ///
+    /// * `run_id` - The run this operation belongs to
+    /// * `key` - The user key (bytes)
+    /// * `value` - The value to store
+    ///
+    /// # Returns
+    ///
+    /// The version number assigned to this write
+    pub fn put(
+        &self,
+        run_id: RunId,
+        key: impl AsRef<[u8]>,
+        value: impl Into<Value>,
+    ) -> Result<u64> {
+        self.put_with_ttl(run_id, key, value, None)
+    }
+
+    /// Put a key-value pair with optional TTL
+    ///
+    /// Creates an implicit transaction: BeginTxn → Write → CommitTxn.
+    /// If TTL is specified, the value will expire after the duration.
+    ///
+    /// # Arguments
+    ///
+    /// * `run_id` - The run this operation belongs to
+    /// * `key` - The user key (bytes)
+    /// * `value` - The value to store
+    /// * `ttl` - Optional time-to-live duration
+    ///
+    /// # Returns
+    ///
+    /// The version number assigned to this write
+    pub fn put_with_ttl(
+        &self,
+        run_id: RunId,
+        key: impl AsRef<[u8]>,
+        value: impl Into<Value>,
+        ttl: Option<Duration>,
+    ) -> Result<u64> {
+        let txn_id = self.next_txn_id.fetch_add(1, Ordering::SeqCst);
+        let value = value.into();
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        // Create key with namespace derived from run_id
+        let ns = Namespace::new(
+            "default".to_string(),
+            "default".to_string(),
+            "default".to_string(),
+            run_id,
+        );
+        let storage_key = Key::new_kv(ns, key.as_ref());
+
+        // Acquire WAL lock first (for atomicity)
+        let mut wal = self.wal.lock().unwrap();
+
+        // Log BeginTxn to WAL
+        wal.append(&WALEntry::BeginTxn {
+            txn_id,
+            run_id,
+            timestamp,
+        })?;
+
+        // Write to storage
+        let version = self.storage.put(storage_key.clone(), value.clone(), ttl)?;
+
+        // Log Write to WAL
+        wal.append(&WALEntry::Write {
+            run_id,
+            key: storage_key,
+            value,
+            version,
+        })?;
+
+        // Log CommitTxn to WAL
+        wal.append(&WALEntry::CommitTxn { txn_id, run_id })?;
+
+        drop(wal); // Release lock
+
+        Ok(version)
+    }
+
+    /// Get a value by key
+    ///
+    /// Reads the current value for the given key. Does not require a transaction.
+    ///
+    /// # Arguments
+    ///
+    /// * `run_id` - The run this operation belongs to
+    /// * `key` - The user key (bytes)
+    ///
+    /// # Returns
+    ///
+    /// Some(value) if found, None if key doesn't exist or is expired
+    pub fn get(&self, run_id: RunId, key: impl AsRef<[u8]>) -> Result<Option<Value>> {
+        let ns = Namespace::new(
+            "default".to_string(),
+            "default".to_string(),
+            "default".to_string(),
+            run_id,
+        );
+        let storage_key = Key::new_kv(ns, key.as_ref());
+
+        if let Some(versioned) = self.storage.get(&storage_key)? {
+            Ok(Some(versioned.value))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Delete a key
+    ///
+    /// Creates an implicit transaction: BeginTxn → Delete → CommitTxn.
+    ///
+    /// # Arguments
+    ///
+    /// * `run_id` - The run this operation belongs to
+    /// * `key` - The user key (bytes)
+    ///
+    /// # Returns
+    ///
+    /// The deleted value if the key existed, None otherwise
+    pub fn delete(&self, run_id: RunId, key: impl AsRef<[u8]>) -> Result<Option<Value>> {
+        let txn_id = self.next_txn_id.fetch_add(1, Ordering::SeqCst);
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+
+        let ns = Namespace::new(
+            "default".to_string(),
+            "default".to_string(),
+            "default".to_string(),
+            run_id,
+        );
+        let storage_key = Key::new_kv(ns, key.as_ref());
+
+        // Acquire WAL lock first (for atomicity)
+        let mut wal = self.wal.lock().unwrap();
+
+        // Log BeginTxn to WAL
+        wal.append(&WALEntry::BeginTxn {
+            txn_id,
+            run_id,
+            timestamp,
+        })?;
+
+        // Delete from storage
+        let deleted = self.storage.delete(&storage_key)?;
+
+        if let Some(ref versioned) = deleted {
+            // Log Delete to WAL only if something was deleted
+            wal.append(&WALEntry::Delete {
+                run_id,
+                key: storage_key,
+                version: versioned.version,
+            })?;
+        }
+
+        // Log CommitTxn to WAL
+        wal.append(&WALEntry::CommitTxn { txn_id, run_id })?;
+
+        drop(wal); // Release lock
+
+        Ok(deleted.map(|v| v.value))
+    }
+
+    /// List all keys with a given prefix
+    ///
+    /// Scans storage for keys that start with the given prefix.
+    /// Returns user keys (without namespace) and their values.
+    ///
+    /// # Arguments
+    ///
+    /// * `run_id` - The run this operation belongs to
+    /// * `prefix` - The key prefix to match (bytes)
+    ///
+    /// # Returns
+    ///
+    /// Vector of (user_key, value) pairs matching the prefix
+    pub fn list(&self, run_id: RunId, prefix: impl AsRef<[u8]>) -> Result<Vec<(Vec<u8>, Value)>> {
+        let ns = Namespace::new(
+            "default".to_string(),
+            "default".to_string(),
+            "default".to_string(),
+            run_id,
+        );
+        let prefix_key = Key::new_kv(ns, prefix.as_ref());
+
+        let entries = self.storage.scan_prefix(&prefix_key, u64::MAX)?;
+
+        Ok(entries
+            .into_iter()
+            .map(|(k, v)| (k.user_key, v.value))
+            .collect())
     }
 }
 
@@ -1103,5 +1314,341 @@ mod tests {
 
         // All runs should be ended
         assert_eq!(db.active_run_count(), 0);
+    }
+
+    // ========================================
+    // Key-Value Operations Tests
+    // ========================================
+
+    #[test]
+    fn test_put_and_get() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path()).unwrap();
+
+        let run_id = RunId::new();
+        db.begin_run(run_id, vec![]).unwrap();
+
+        // Put
+        let version = db
+            .put(run_id, "key1", Value::Bytes(b"value1".to_vec()))
+            .unwrap();
+        assert!(version > 0);
+
+        // Get
+        let value = db.get(run_id, "key1").unwrap().unwrap();
+        if let Value::Bytes(bytes) = value {
+            assert_eq!(bytes, b"value1");
+        } else {
+            panic!("Wrong value type");
+        }
+    }
+
+    #[test]
+    fn test_get_nonexistent() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path()).unwrap();
+
+        let run_id = RunId::new();
+        db.begin_run(run_id, vec![]).unwrap();
+
+        let value = db.get(run_id, "nonexistent").unwrap();
+        assert!(value.is_none());
+    }
+
+    #[test]
+    fn test_delete() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path()).unwrap();
+
+        let run_id = RunId::new();
+        db.begin_run(run_id, vec![]).unwrap();
+
+        // Put then delete
+        db.put(run_id, "key1", Value::Bytes(b"value1".to_vec()))
+            .unwrap();
+
+        let deleted = db.delete(run_id, "key1").unwrap();
+        assert!(deleted.is_some());
+
+        // Should be gone
+        let value = db.get(run_id, "key1").unwrap();
+        assert!(value.is_none());
+    }
+
+    #[test]
+    fn test_delete_nonexistent() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path()).unwrap();
+
+        let run_id = RunId::new();
+        db.begin_run(run_id, vec![]).unwrap();
+
+        // Delete nonexistent key
+        let deleted = db.delete(run_id, "nonexistent").unwrap();
+        assert!(deleted.is_none());
+    }
+
+    #[test]
+    fn test_put_with_ttl() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path()).unwrap();
+
+        let run_id = RunId::new();
+        db.begin_run(run_id, vec![]).unwrap();
+
+        // Put with 1 second TTL (minimum supported by second-level precision)
+        db.put_with_ttl(
+            run_id,
+            "temp",
+            Value::Bytes(b"temporary".to_vec()),
+            Some(std::time::Duration::from_secs(1)),
+        )
+        .unwrap();
+
+        // Should exist initially
+        assert!(db.get(run_id, "temp").unwrap().is_some());
+
+        // Wait for expiration (sleep slightly longer than TTL)
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+
+        // Should be expired
+        assert!(db.get(run_id, "temp").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_list_with_prefix() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path()).unwrap();
+
+        let run_id = RunId::new();
+        db.begin_run(run_id, vec![]).unwrap();
+
+        // Put multiple keys
+        db.put(run_id, "user:alice", Value::Bytes(b"alice_data".to_vec()))
+            .unwrap();
+        db.put(run_id, "user:bob", Value::Bytes(b"bob_data".to_vec()))
+            .unwrap();
+        db.put(run_id, "config:foo", Value::Bytes(b"config_data".to_vec()))
+            .unwrap();
+
+        // List user: prefix
+        let entries = db.list(run_id, "user:").unwrap();
+        assert_eq!(entries.len(), 2);
+
+        // List config: prefix
+        let entries = db.list(run_id, "config:").unwrap();
+        assert_eq!(entries.len(), 1);
+
+        // List empty prefix (all keys)
+        let entries = db.list(run_id, "").unwrap();
+        assert_eq!(entries.len(), 3);
+    }
+
+    #[test]
+    fn test_kv_persistence() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("db");
+
+        let run_id = RunId::new();
+
+        // Write data
+        {
+            let db = Database::open(&db_path).unwrap();
+            db.begin_run(run_id, vec![]).unwrap();
+            db.put(run_id, "persistent", Value::Bytes(b"data".to_vec()))
+                .unwrap();
+            db.end_run(run_id).unwrap();
+            db.flush().unwrap();
+        }
+
+        // Reopen and verify
+        {
+            let db = Database::open(&db_path).unwrap();
+            let value = db.get(run_id, "persistent").unwrap().unwrap();
+            if let Value::Bytes(bytes) = value {
+                assert_eq!(bytes, b"data");
+            } else {
+                panic!("Wrong value type");
+            }
+        }
+    }
+
+    #[test]
+    fn test_multiple_puts_same_key() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path()).unwrap();
+
+        let run_id = RunId::new();
+        db.begin_run(run_id, vec![]).unwrap();
+
+        // Multiple updates
+        db.put(run_id, "counter", Value::Bytes(b"1".to_vec()))
+            .unwrap();
+        db.put(run_id, "counter", Value::Bytes(b"2".to_vec()))
+            .unwrap();
+        db.put(run_id, "counter", Value::Bytes(b"3".to_vec()))
+            .unwrap();
+
+        // Should see latest
+        let value = db.get(run_id, "counter").unwrap().unwrap();
+        if let Value::Bytes(bytes) = value {
+            assert_eq!(bytes, b"3");
+        } else {
+            panic!("Wrong value type");
+        }
+    }
+
+    #[test]
+    fn test_put_different_value_types() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path()).unwrap();
+
+        let run_id = RunId::new();
+        db.begin_run(run_id, vec![]).unwrap();
+
+        // Test various value types
+        db.put(run_id, "bytes", Value::Bytes(b"hello".to_vec()))
+            .unwrap();
+        db.put(run_id, "int", Value::I64(42)).unwrap();
+        db.put(run_id, "float", Value::F64(3.14)).unwrap();
+        db.put(run_id, "string", Value::String("world".to_string()))
+            .unwrap();
+        db.put(run_id, "bool", Value::Bool(true)).unwrap();
+        db.put(run_id, "null", Value::Null).unwrap();
+
+        // Verify each
+        assert!(matches!(
+            db.get(run_id, "bytes").unwrap().unwrap(),
+            Value::Bytes(_)
+        ));
+        assert!(matches!(
+            db.get(run_id, "int").unwrap().unwrap(),
+            Value::I64(42)
+        ));
+        assert!(matches!(
+            db.get(run_id, "float").unwrap().unwrap(),
+            Value::F64(_)
+        ));
+        assert!(matches!(
+            db.get(run_id, "string").unwrap().unwrap(),
+            Value::String(_)
+        ));
+        assert!(matches!(
+            db.get(run_id, "bool").unwrap().unwrap(),
+            Value::Bool(true)
+        ));
+        assert!(matches!(
+            db.get(run_id, "null").unwrap().unwrap(),
+            Value::Null
+        ));
+    }
+
+    #[test]
+    fn test_concurrent_kv_operations() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let temp_dir = TempDir::new().unwrap();
+        let db = Arc::new(Database::open(temp_dir.path()).unwrap());
+
+        let run_id = RunId::new();
+        db.begin_run(run_id, vec![]).unwrap();
+
+        let mut handles = vec![];
+
+        // 10 threads, each writing 100 keys
+        for i in 0..10 {
+            let db = Arc::clone(&db);
+
+            let handle = thread::spawn(move || {
+                for j in 0..100 {
+                    let key = format!("key_{}_{}", i, j);
+                    let value = Value::Bytes(vec![i as u8, j as u8]);
+                    db.put(run_id, key, value).unwrap();
+                }
+            });
+
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        // Verify all 1000 keys exist
+        let all_entries = db.list(run_id, "key_").unwrap();
+        assert_eq!(all_entries.len(), 1000);
+    }
+
+    #[test]
+    fn test_put_returns_increasing_versions() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path()).unwrap();
+
+        let run_id = RunId::new();
+        db.begin_run(run_id, vec![]).unwrap();
+
+        let v1 = db.put(run_id, "a", Value::I64(1)).unwrap();
+        let v2 = db.put(run_id, "b", Value::I64(2)).unwrap();
+        let v3 = db.put(run_id, "c", Value::I64(3)).unwrap();
+
+        assert!(v2 > v1);
+        assert!(v3 > v2);
+    }
+
+    #[test]
+    fn test_isolation_between_runs() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path()).unwrap();
+
+        let run1 = RunId::new();
+        let run2 = RunId::new();
+
+        db.begin_run(run1, vec![]).unwrap();
+        db.begin_run(run2, vec![]).unwrap();
+
+        // Put same key in both runs
+        db.put(run1, "shared", Value::Bytes(b"run1_value".to_vec()))
+            .unwrap();
+        db.put(run2, "shared", Value::Bytes(b"run2_value".to_vec()))
+            .unwrap();
+
+        // Each run should see its own value
+        if let Value::Bytes(bytes) = db.get(run1, "shared").unwrap().unwrap() {
+            assert_eq!(bytes, b"run1_value");
+        } else {
+            panic!("Wrong value type for run1");
+        }
+
+        if let Value::Bytes(bytes) = db.get(run2, "shared").unwrap().unwrap() {
+            assert_eq!(bytes, b"run2_value");
+        } else {
+            panic!("Wrong value type for run2");
+        }
+    }
+
+    #[test]
+    fn test_delete_persistence() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("db");
+
+        let run_id = RunId::new();
+
+        // Write, delete, then close
+        {
+            let db = Database::open(&db_path).unwrap();
+            db.begin_run(run_id, vec![]).unwrap();
+            db.put(run_id, "to_delete", Value::Bytes(b"data".to_vec()))
+                .unwrap();
+            db.delete(run_id, "to_delete").unwrap();
+            db.flush().unwrap();
+        }
+
+        // Reopen and verify deletion persisted
+        {
+            let db = Database::open(&db_path).unwrap();
+            let value = db.get(run_id, "to_delete").unwrap();
+            assert!(value.is_none());
+        }
     }
 }
