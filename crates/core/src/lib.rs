@@ -14,13 +14,14 @@
 
 // Module declarations (will be implemented in future stories)
 pub mod types; // Story #7, #8
-// pub mod value;      // Story #9
+pub mod value; // Story #9
 // pub mod error;      // Story #10
 pub mod traits; // Story #11
 
 // Re-export commonly used types and traits
 pub use traits::{SnapshotView, Storage};
 pub use types::{Key, Namespace, RunId, TypeTag};
+pub use value::{Timestamp, Value, VersionedValue};
 
 /// Placeholder for core functionality
 /// This will be populated by stories #7-11
