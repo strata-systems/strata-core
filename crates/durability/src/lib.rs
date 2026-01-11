@@ -13,12 +13,15 @@
 
 // Module declarations
 pub mod encoding; // Story #18: Entry encoding/decoding with CRC
+pub mod recovery; // Story #23: WAL replay logic
 pub mod wal; // Story #17-20: WALEntry types, File operations, Durability modes
 
 // Stubs for future stories
 // pub mod snapshot;   // M4
-// pub mod recovery;   // Story #23-25
 
 // Re-export commonly used types
 pub use encoding::{decode_entry, encode_entry};
+pub use recovery::{
+    replay_wal, validate_transactions, ReplayStats, ValidationResult, ValidationWarning,
+};
 pub use wal::{DurabilityMode, WALEntry, WAL};
