@@ -21,3 +21,7 @@ Cargo.lock
 AGENT_MENTAL_MODEL.md
 ARCHITECTURE.md
 architecture-plan.md
+
+# Claude Code and local development
+.claude/
+github-issues/
