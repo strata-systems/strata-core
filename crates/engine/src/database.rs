@@ -17,6 +17,21 @@ use tracing::info;
 ///
 /// Orchestrates storage, WAL, and recovery.
 /// Create a database by calling `Database::open()`.
+///
+/// # Thread Safety
+///
+/// The Database struct is designed to be thread-safe:
+/// - `storage` is wrapped in `Arc<UnifiedStore>` - UnifiedStore handles its own
+///   internal synchronization
+/// - `wal` is wrapped in `Arc<Mutex<WAL>>` - exclusive access via mutex
+///
+/// The Database can be shared across threads by wrapping it in `Arc<Database>`.
+///
+/// # Drop Behavior
+///
+/// When the Database is dropped, the WAL is automatically flushed to ensure
+/// all pending writes are persisted to disk. This provides clean shutdown
+/// semantics.
 pub struct Database {
     /// Data directory path
     data_dir: PathBuf,
@@ -26,6 +41,9 @@ pub struct Database {
 
     /// Write-ahead log (protected by mutex for exclusive access)
     wal: Arc<Mutex<WAL>>,
+
+    /// Durability mode for WAL operations
+    durability_mode: DurabilityMode,
 }
 
 impl Database {
@@ -112,6 +130,7 @@ impl Database {
             data_dir,
             storage,
             wal: Arc::new(Mutex::new(wal)),
+            durability_mode,
         })
     }
 
@@ -125,6 +144,13 @@ impl Database {
     /// Get the data directory path
     pub fn data_dir(&self) -> &Path {
         &self.data_dir
+    }
+
+    /// Get the durability mode
+    ///
+    /// Returns the durability mode that was configured when the database was opened.
+    pub fn durability_mode(&self) -> DurabilityMode {
+        self.durability_mode
     }
 
     /// Get access to the WAL for appending entries
@@ -143,6 +169,18 @@ impl Database {
     pub fn flush(&self) -> Result<()> {
         let wal = self.wal.lock().unwrap();
         wal.fsync()
+    }
+}
+
+impl Drop for Database {
+    /// Ensures WAL is flushed on clean shutdown
+    ///
+    /// This provides durability guarantees by flushing any pending
+    /// WAL entries to disk when the database is dropped.
+    fn drop(&mut self) {
+        if let Err(e) = self.flush() {
+            eprintln!("Warning: Failed to flush WAL during shutdown: {:?}", e);
+        }
     }
 }
 
@@ -413,5 +451,141 @@ mod tests {
 
         // Flush should succeed
         assert!(db.flush().is_ok());
+    }
+
+    #[test]
+    fn test_database_thread_safe() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let temp_dir = TempDir::new().unwrap();
+        let db = Arc::new(Database::open(temp_dir.path()).unwrap());
+
+        let mut handles = vec![];
+
+        // Spawn 10 threads accessing storage and flushing
+        for i in 0..10 {
+            let db = Arc::clone(&db);
+
+            let handle = thread::spawn(move || {
+                // Access storage from multiple threads
+                let storage = db.storage();
+                let _version = storage.current_version();
+
+                // Access data_dir
+                let _data_dir = db.data_dir();
+
+                // Flush from multiple threads (some will contend on mutex)
+                if i % 2 == 0 {
+                    let _ = db.flush();
+                }
+            });
+
+            handles.push(handle);
+        }
+
+        // All threads should complete without deadlock or panic
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn test_database_drop_flushes() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("db");
+
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        // Open database, write to WAL, drop (should flush)
+        {
+            let db = Database::open(&db_path).unwrap();
+
+            // Write to WAL
+            let wal = db.wal();
+            let mut wal_guard = wal.lock().unwrap();
+
+            wal_guard
+                .append(&WALEntry::BeginTxn {
+                    txn_id: 1,
+                    run_id,
+                    timestamp: now(),
+                })
+                .unwrap();
+
+            wal_guard
+                .append(&WALEntry::Write {
+                    run_id,
+                    key: Key::new_kv(ns.clone(), "drop_test"),
+                    value: Value::Bytes(b"value".to_vec()),
+                    version: 1,
+                })
+                .unwrap();
+
+            wal_guard
+                .append(&WALEntry::CommitTxn { txn_id: 1, run_id })
+                .unwrap();
+
+            drop(wal_guard); // Release lock before drop
+                             // Database is dropped here - should flush WAL automatically
+        }
+
+        // Reopen database - data should be recovered
+        let db = Database::open(&db_path).unwrap();
+        let key = Key::new_kv(ns, "drop_test");
+        let val = db.storage().get(&key).unwrap().unwrap();
+
+        if let Value::Bytes(bytes) = val.value {
+            assert_eq!(bytes, b"value");
+        } else {
+            panic!("Wrong value type");
+        }
+    }
+
+    #[test]
+    fn test_durability_mode_accessor() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Default mode (should be Batched)
+        let db = Database::open(temp_dir.path().join("default")).unwrap();
+        assert!(matches!(
+            db.durability_mode(),
+            DurabilityMode::Batched { .. }
+        ));
+
+        // Strict mode
+        let db = Database::open_with_mode(temp_dir.path().join("strict"), DurabilityMode::Strict)
+            .unwrap();
+        assert!(matches!(db.durability_mode(), DurabilityMode::Strict));
+
+        // Async mode
+        let db = Database::open_with_mode(
+            temp_dir.path().join("async"),
+            DurabilityMode::Async { interval_ms: 100 },
+        )
+        .unwrap();
+        assert!(matches!(
+            db.durability_mode(),
+            DurabilityMode::Async { interval_ms: 100 }
+        ));
+    }
+
+    #[test]
+    fn test_database_reopen_same_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("db");
+
+        // Open and close multiple times
+        for _ in 0..3 {
+            let db = Database::open(&db_path).unwrap();
+            assert_eq!(db.data_dir(), db_path);
+            // Database dropped here
+        }
     }
 }
