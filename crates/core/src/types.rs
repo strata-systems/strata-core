@@ -219,11 +219,7 @@ impl Key {
     /// Helper that automatically sets type_tag to TypeTag::RunMetadata and
     /// uses the run_id as the key
     pub fn new_run_metadata(namespace: Namespace, run_id: RunId) -> Self {
-        Self::new(
-            namespace,
-            TypeTag::RunMetadata,
-            run_id.as_bytes().to_vec(),
-        )
+        Self::new(namespace, TypeTag::RunMetadata, run_id.as_bytes().to_vec())
     }
 
     /// Check if this key starts with the given prefix
@@ -821,10 +817,7 @@ mod tests {
         );
 
         // Test user_key ordering (third component, same namespace and type)
-        assert!(
-            key1 < key3,
-            "Same namespace and type: ordering by user_key"
-        );
+        assert!(key1 < key3, "Same namespace and type: ordering by user_key");
     }
 
     #[test]
@@ -881,8 +874,14 @@ mod tests {
         let key1 = Key::new_kv(ns.clone(), b"anything");
         let key2 = Key::new_kv(ns.clone(), b"");
 
-        assert!(key1.starts_with(&prefix), "Any key should match empty prefix");
-        assert!(key2.starts_with(&prefix), "Empty key should match empty prefix");
+        assert!(
+            key1.starts_with(&prefix),
+            "Any key should match empty prefix"
+        );
+        assert!(
+            key2.starts_with(&prefix),
+            "Empty key should match empty prefix"
+        );
     }
 
     #[test]
@@ -974,6 +973,9 @@ mod tests {
         let binary_data = vec![0u8, 1, 2, 255, 254, 253];
         let key = Key::new(ns.clone(), TypeTag::KV, binary_data.clone());
 
-        assert_eq!(key.user_key, binary_data, "Binary user_key should be preserved");
+        assert_eq!(
+            key.user_key, binary_data,
+            "Binary user_key should be preserved"
+        );
     }
 }

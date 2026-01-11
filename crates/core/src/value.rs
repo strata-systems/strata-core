@@ -254,10 +254,7 @@ mod tests {
 
     #[test]
     fn test_versioned_value_serialization() {
-        let value = Value::Array(vec![
-            Value::I64(1),
-            Value::String("test".to_string()),
-        ]);
+        let value = Value::Array(vec![Value::I64(1), Value::String("test".to_string())]);
         let ttl = Duration::from_secs(300);
         let versioned = VersionedValue::new(value, 5, Some(ttl));
 
