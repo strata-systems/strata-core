@@ -58,7 +58,7 @@ Implement UnifiedStore with BTreeMap backend and version management in the `in-m
 
 3. **Read context**:
    ```bash
-   gh issue view 12
+   /opt/homebrew/bin/gh issue view 12
    ```
 
    Also read:
@@ -218,7 +218,7 @@ Add run_index and type_index secondary indices to UnifiedStore for efficient run
 
 3. **Read context**:
    ```bash
-   gh issue view 13
+   /opt/homebrew/bin/gh issue view 13
    ```
 
    Also read:
@@ -330,7 +330,7 @@ Add TTL index to UnifiedStore for efficient TTL expiration cleanup.
 
 3. **Read context**:
    ```bash
-   gh issue view 14
+   /opt/homebrew/bin/gh issue view 14
    ```
 
 ### Implementation Steps
@@ -439,7 +439,7 @@ Implement ClonedSnapshotView that creates version-bounded views of storage for t
 
 3. **Read context**:
    ```bash
-   gh issue view 15
+   /opt/homebrew/bin/gh issue view 15
    ```
 
    Also read:
@@ -552,7 +552,7 @@ Add comprehensive storage integration tests covering all edge cases, concurrent 
 
 3. **Read context**:
    ```bash
-   gh issue view 16
+   /opt/homebrew/bin/gh issue view 16
    ```
 
    Also review all prior implementations (#12-15)
@@ -683,7 +683,7 @@ After all 5 stories merge to `epic-2-storage-layer`:
 
 5. Close epic issue:
    ```bash
-   gh issue close 2
+   /opt/homebrew/bin/gh issue close 2
    ```
 
 ---
