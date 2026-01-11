@@ -13,7 +13,7 @@
 
 // Module declarations
 pub mod encoding; // Story #18: Entry encoding/decoding with CRC
-pub mod wal; // Story #17: WALEntry types
+pub mod wal; // Story #17: WALEntry types, Story #19: File operations
 
 // Stubs for future stories
 // pub mod snapshot;   // M4
@@ -21,4 +21,4 @@ pub mod wal; // Story #17: WALEntry types
 
 // Re-export commonly used types
 pub use encoding::{decode_entry, encode_entry};
-pub use wal::WALEntry;
+pub use wal::{WALEntry, WAL};
