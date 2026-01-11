@@ -20,7 +20,7 @@ pub mod traits; // Story #11
 
 // Re-export commonly used types and traits
 pub use traits::{SnapshotView, Storage};
-pub use types::{Namespace, RunId};
+pub use types::{Key, Namespace, RunId, TypeTag};
 
 /// Placeholder for core functionality
 /// This will be populated by stories #7-11

@@ -3,6 +3,8 @@
 //! This module defines the foundational types:
 //! - RunId: Unique identifier for agent runs
 //! - Namespace: Hierarchical namespace (tenant/app/agent/run)
+//! - TypeTag: Type discriminator for unified storage
+//! - Key: Composite key (namespace + type_tag + user_key)
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -98,6 +100,169 @@ impl Ord for Namespace {
 }
 
 impl PartialOrd for Namespace {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Type tag for discriminating primitive types in unified storage
+///
+/// The unified storage design uses a single BTreeMap with type-tagged keys
+/// instead of separate stores per primitive. This TypeTag enum enables
+/// type discrimination and defines the sort order in BTreeMap.
+///
+/// Ordering: KV < Event < StateMachine < Trace < RunMetadata < Vector
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum TypeTag {
+    /// Key-Value primitive data
+    KV = 0,
+    /// Event log entries
+    Event = 1,
+    /// State machine records
+    StateMachine = 2,
+    /// Trace entries for reasoning logs
+    Trace = 3,
+    /// Run metadata entries
+    RunMetadata = 4,
+    /// Vector store entries
+    Vector = 5,
+}
+
+/// Unified key for all storage types
+///
+/// A Key combines namespace, type tag, and user-defined key bytes to create
+/// a composite key that enables efficient prefix scans and type discrimination
+/// in the unified BTreeMap storage.
+///
+/// # Ordering
+///
+/// Keys are ordered by: namespace → type_tag → user_key
+///
+/// This ordering is critical for BTreeMap efficiency:
+/// - All keys for a namespace are grouped together
+/// - Within a namespace, keys are grouped by type
+/// - Within a type, keys are ordered by user_key (enabling prefix scans)
+///
+/// # Examples
+///
+/// ```
+/// use in_mem_core::{Key, Namespace, TypeTag, RunId};
+///
+/// let run_id = RunId::new();
+/// let ns = Namespace::new("tenant".to_string(), "app".to_string(),
+///                         "agent".to_string(), run_id);
+///
+/// // Create a KV key
+/// let key = Key::new_kv(ns.clone(), "session_state");
+///
+/// // Create an event key with sequence number
+/// let event_key = Key::new_event(ns.clone(), 42);
+///
+/// // Create a prefix for scanning
+/// let prefix = Key::new_kv(ns.clone(), "user:");
+/// let user_key = Key::new_kv(ns.clone(), "user:alice");
+/// assert!(user_key.starts_with(&prefix));
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Key {
+    /// Namespace (tenant/app/agent/run hierarchy)
+    pub namespace: Namespace,
+    /// Type discriminator (KV, Event, StateMachine, etc.)
+    pub type_tag: TypeTag,
+    /// User-defined key bytes (supports arbitrary binary keys)
+    pub user_key: Vec<u8>,
+}
+
+impl Key {
+    /// Create a new key with the given namespace, type tag, and user key
+    pub fn new(namespace: Namespace, type_tag: TypeTag, user_key: Vec<u8>) -> Self {
+        Self {
+            namespace,
+            type_tag,
+            user_key,
+        }
+    }
+
+    /// Create a KV key
+    ///
+    /// Helper that automatically sets type_tag to TypeTag::KV
+    pub fn new_kv(namespace: Namespace, key: impl AsRef<[u8]>) -> Self {
+        Self::new(namespace, TypeTag::KV, key.as_ref().to_vec())
+    }
+
+    /// Create an event key with sequence number
+    ///
+    /// Helper that automatically sets type_tag to TypeTag::Event and
+    /// encodes the sequence number as big-endian bytes
+    pub fn new_event(namespace: Namespace, seq: u64) -> Self {
+        Self::new(namespace, TypeTag::Event, seq.to_be_bytes().to_vec())
+    }
+
+    /// Create a state machine key
+    ///
+    /// Helper that automatically sets type_tag to TypeTag::StateMachine
+    pub fn new_state(namespace: Namespace, key: impl AsRef<[u8]>) -> Self {
+        Self::new(namespace, TypeTag::StateMachine, key.as_ref().to_vec())
+    }
+
+    /// Create a trace key with sequence number
+    ///
+    /// Helper that automatically sets type_tag to TypeTag::Trace and
+    /// encodes the sequence number as big-endian bytes
+    pub fn new_trace(namespace: Namespace, seq: u64) -> Self {
+        Self::new(namespace, TypeTag::Trace, seq.to_be_bytes().to_vec())
+    }
+
+    /// Create a run metadata key
+    ///
+    /// Helper that automatically sets type_tag to TypeTag::RunMetadata and
+    /// uses the run_id as the key
+    pub fn new_run_metadata(namespace: Namespace, run_id: RunId) -> Self {
+        Self::new(
+            namespace,
+            TypeTag::RunMetadata,
+            run_id.as_bytes().to_vec(),
+        )
+    }
+
+    /// Check if this key starts with the given prefix
+    ///
+    /// For a key to match a prefix:
+    /// - namespace must be equal
+    /// - type_tag must be equal
+    /// - user_key must start with prefix.user_key
+    ///
+    /// This enables efficient prefix scans in BTreeMap:
+    /// ```
+    /// # use in_mem_core::{Key, Namespace, RunId};
+    /// # let run_id = RunId::new();
+    /// # let ns = Namespace::new("t".to_string(), "a".to_string(), "ag".to_string(), run_id);
+    /// let prefix = Key::new_kv(ns.clone(), "user:");
+    /// let key = Key::new_kv(ns.clone(), "user:alice");
+    /// assert!(key.starts_with(&prefix));
+    /// ```
+    pub fn starts_with(&self, prefix: &Key) -> bool {
+        self.namespace == prefix.namespace
+            && self.type_tag == prefix.type_tag
+            && self.user_key.starts_with(&prefix.user_key)
+    }
+}
+
+/// Ordering implementation for BTreeMap
+///
+/// Keys are ordered by: namespace → type_tag → user_key
+/// This ordering is critical for efficient prefix scans
+impl Ord for Key {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.namespace
+            .cmp(&other.namespace)
+            .then(self.type_tag.cmp(&other.type_tag))
+            .then(self.user_key.cmp(&other.user_key))
+    }
+}
+
+impl PartialOrd for Key {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
@@ -420,5 +585,395 @@ mod tests {
         assert_eq!(keys[0], ns1);
         assert_eq!(keys[1], ns2);
         assert_eq!(keys[2], ns3);
+    }
+
+    // ========================================
+    // TypeTag Tests
+    // ========================================
+
+    #[test]
+    fn test_typetag_variants() {
+        // Test that all TypeTag variants can be constructed
+        let _kv = TypeTag::KV;
+        let _event = TypeTag::Event;
+        let _state_machine = TypeTag::StateMachine;
+        let _trace = TypeTag::Trace;
+        let _run_metadata = TypeTag::RunMetadata;
+        let _vector = TypeTag::Vector;
+    }
+
+    #[test]
+    fn test_typetag_ordering() {
+        // TypeTag ordering must be stable for BTreeMap
+        assert!(TypeTag::KV < TypeTag::Event);
+        assert!(TypeTag::Event < TypeTag::StateMachine);
+        assert!(TypeTag::StateMachine < TypeTag::Trace);
+        assert!(TypeTag::Trace < TypeTag::RunMetadata);
+        assert!(TypeTag::RunMetadata < TypeTag::Vector);
+
+        // Verify numeric values match expected ordering
+        assert_eq!(TypeTag::KV as u8, 0);
+        assert_eq!(TypeTag::Event as u8, 1);
+        assert_eq!(TypeTag::StateMachine as u8, 2);
+        assert_eq!(TypeTag::Trace as u8, 3);
+        assert_eq!(TypeTag::RunMetadata as u8, 4);
+        assert_eq!(TypeTag::Vector as u8, 5);
+    }
+
+    #[test]
+    fn test_typetag_serialization() {
+        // Test JSON serialization roundtrip for all variants
+        let tags = vec![
+            TypeTag::KV,
+            TypeTag::Event,
+            TypeTag::StateMachine,
+            TypeTag::Trace,
+            TypeTag::RunMetadata,
+            TypeTag::Vector,
+        ];
+
+        for tag in tags {
+            let json = serde_json::to_string(&tag).unwrap();
+            let restored: TypeTag = serde_json::from_str(&json).unwrap();
+            assert_eq!(
+                tag, restored,
+                "TypeTag {:?} should roundtrip through JSON",
+                tag
+            );
+        }
+    }
+
+    #[test]
+    fn test_typetag_equality() {
+        assert_eq!(TypeTag::KV, TypeTag::KV);
+        assert_ne!(TypeTag::KV, TypeTag::Event);
+        assert_ne!(TypeTag::Event, TypeTag::Trace);
+    }
+
+    #[test]
+    fn test_typetag_clone_copy() {
+        let tag1 = TypeTag::KV;
+        let tag2 = tag1; // Should be Copy
+        assert_eq!(tag1, tag2);
+
+        let tag3 = tag1.clone();
+        assert_eq!(tag1, tag3);
+    }
+
+    #[test]
+    fn test_typetag_hash() {
+        use std::collections::HashSet;
+
+        let mut set = HashSet::new();
+        set.insert(TypeTag::KV);
+        set.insert(TypeTag::Event);
+        set.insert(TypeTag::KV); // Duplicate
+
+        assert_eq!(set.len(), 2, "Set should contain 2 unique TypeTags");
+        assert!(set.contains(&TypeTag::KV));
+        assert!(set.contains(&TypeTag::Event));
+    }
+
+    // ========================================
+    // Key Tests
+    // ========================================
+
+    #[test]
+    fn test_key_construction() {
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        // Test generic constructor
+        let key = Key::new(ns.clone(), TypeTag::KV, b"mykey".to_vec());
+        assert_eq!(key.namespace, ns);
+        assert_eq!(key.type_tag, TypeTag::KV);
+        assert_eq!(key.user_key, b"mykey");
+    }
+
+    #[test]
+    fn test_key_helpers() {
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        // Test KV helper
+        let kv_key = Key::new_kv(ns.clone(), "mykey");
+        assert_eq!(kv_key.type_tag, TypeTag::KV);
+        assert_eq!(kv_key.user_key, b"mykey");
+
+        // Test event helper
+        let event_key = Key::new_event(ns.clone(), 42);
+        assert_eq!(event_key.type_tag, TypeTag::Event);
+        assert_eq!(
+            u64::from_be_bytes(event_key.user_key.as_slice().try_into().unwrap()),
+            42
+        );
+
+        // Test state machine helper
+        let state_key = Key::new_state(ns.clone(), "state1");
+        assert_eq!(state_key.type_tag, TypeTag::StateMachine);
+        assert_eq!(state_key.user_key, b"state1");
+
+        // Test trace helper
+        let trace_key = Key::new_trace(ns.clone(), 100);
+        assert_eq!(trace_key.type_tag, TypeTag::Trace);
+        assert_eq!(
+            u64::from_be_bytes(trace_key.user_key.as_slice().try_into().unwrap()),
+            100
+        );
+
+        // Test run metadata helper
+        let meta_key = Key::new_run_metadata(ns.clone(), run_id);
+        assert_eq!(meta_key.type_tag, TypeTag::RunMetadata);
+        assert_eq!(meta_key.user_key, run_id.as_bytes().to_vec());
+    }
+
+    #[test]
+    fn test_key_btree_ordering() {
+        use std::collections::BTreeMap;
+
+        let run1 = RunId::new();
+
+        let ns1 = Namespace::new(
+            "tenant1".to_string(),
+            "app1".to_string(),
+            "agent1".to_string(),
+            run1,
+        );
+        let ns2 = Namespace::new(
+            "tenant2".to_string(),
+            "app1".to_string(),
+            "agent1".to_string(),
+            run1,
+        );
+
+        // Test ordering: namespace → type_tag → user_key
+        let key1 = Key::new_kv(ns1.clone(), b"aaa");
+        let key2 = Key::new_kv(ns1.clone(), b"zzz");
+        let key3 = Key::new_event(ns1.clone(), 1);
+        let key4 = Key::new_kv(ns2.clone(), b"aaa");
+
+        // Same namespace, same type, different user_key
+        assert!(key1 < key2, "user_key 'aaa' should be < 'zzz'");
+
+        // Same namespace, different type (KV < Event)
+        assert!(key1 < key3, "TypeTag::KV should be < TypeTag::Event");
+
+        // Different namespace (tenant1 < tenant2)
+        assert!(key1 < key4, "ns1 should be < ns2");
+
+        // Test BTreeMap ordering
+        let mut map = BTreeMap::new();
+        map.insert(key4.clone(), "value4");
+        map.insert(key2.clone(), "value2");
+        map.insert(key1.clone(), "value1");
+        map.insert(key3.clone(), "value3");
+
+        let keys: Vec<_> = map.keys().cloned().collect();
+
+        // Expected order: key1 (ns1/KV/aaa) < key2 (ns1/KV/zzz) < key3 (ns1/Event/1) < key4 (ns2/KV/aaa)
+        assert_eq!(keys[0], key1);
+        assert_eq!(keys[1], key2);
+        assert_eq!(keys[2], key3);
+        assert_eq!(keys[3], key4);
+    }
+
+    #[test]
+    fn test_key_ordering_components() {
+        let run_id = RunId::new();
+        let ns1 = Namespace::new(
+            "a".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+        let ns2 = Namespace::new(
+            "b".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        let key1 = Key::new(ns1.clone(), TypeTag::KV, b"key1".to_vec());
+        let key2 = Key::new(ns1.clone(), TypeTag::Event, b"key1".to_vec());
+        let key3 = Key::new(ns1.clone(), TypeTag::KV, b"key2".to_vec());
+        let key4 = Key::new(ns2.clone(), TypeTag::KV, b"key1".to_vec());
+
+        // Test namespace ordering (first component)
+        assert!(
+            key1 < key4,
+            "Different namespace: ordering by namespace first"
+        );
+
+        // Test type_tag ordering (second component, same namespace)
+        assert!(
+            key1 < key2,
+            "Same namespace, different type: ordering by type_tag"
+        );
+
+        // Test user_key ordering (third component, same namespace and type)
+        assert!(
+            key1 < key3,
+            "Same namespace and type: ordering by user_key"
+        );
+    }
+
+    #[test]
+    fn test_key_prefix_matching() {
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        let prefix = Key::new_kv(ns.clone(), b"user:");
+        let key1 = Key::new_kv(ns.clone(), b"user:alice");
+        let key2 = Key::new_kv(ns.clone(), b"user:bob");
+        let key3 = Key::new_kv(ns.clone(), b"config:foo");
+        let key4 = Key::new_event(ns.clone(), 1);
+
+        // Should match keys with same namespace, type, and user_key prefix
+        assert!(
+            key1.starts_with(&prefix),
+            "user:alice should match prefix user:"
+        );
+        assert!(
+            key2.starts_with(&prefix),
+            "user:bob should match prefix user:"
+        );
+
+        // Should not match different user_key prefix
+        assert!(
+            !key3.starts_with(&prefix),
+            "config:foo should not match prefix user:"
+        );
+
+        // Should not match different type_tag
+        assert!(
+            !key4.starts_with(&prefix),
+            "Event type should not match KV prefix"
+        );
+    }
+
+    #[test]
+    fn test_key_prefix_matching_empty() {
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        // Empty prefix should match all keys of same namespace and type
+        let prefix = Key::new_kv(ns.clone(), b"");
+        let key1 = Key::new_kv(ns.clone(), b"anything");
+        let key2 = Key::new_kv(ns.clone(), b"");
+
+        assert!(key1.starts_with(&prefix), "Any key should match empty prefix");
+        assert!(key2.starts_with(&prefix), "Empty key should match empty prefix");
+    }
+
+    #[test]
+    fn test_key_serialization() {
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+        let key = Key::new_kv(ns, "testkey");
+
+        // Test JSON roundtrip
+        let json = serde_json::to_string(&key).unwrap();
+        let key2: Key = serde_json::from_str(&json).unwrap();
+        assert_eq!(key, key2, "Key should roundtrip through JSON");
+    }
+
+    #[test]
+    fn test_key_equality() {
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        let key1 = Key::new_kv(ns.clone(), "mykey");
+        let key2 = Key::new_kv(ns.clone(), "mykey");
+        let key3 = Key::new_kv(ns.clone(), "other");
+
+        assert_eq!(key1, key2, "Identical keys should be equal");
+        assert_ne!(key1, key3, "Different user_keys should not be equal");
+    }
+
+    #[test]
+    fn test_key_clone() {
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        let key1 = Key::new_kv(ns, "mykey");
+        let key2 = key1.clone();
+
+        assert_eq!(key1, key2, "Cloned key should equal original");
+    }
+
+    #[test]
+    fn test_key_hash() {
+        use std::collections::HashSet;
+
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        let key1 = Key::new_kv(ns.clone(), "key1");
+        let key2 = Key::new_kv(ns.clone(), "key2");
+        let key3 = Key::new_kv(ns.clone(), "key1"); // Duplicate
+
+        let mut set = HashSet::new();
+        set.insert(key1);
+        set.insert(key2);
+        set.insert(key3);
+
+        assert_eq!(set.len(), 2, "Set should contain 2 unique keys");
+    }
+
+    #[test]
+    fn test_key_binary_user_key() {
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        // Test with binary data (not UTF-8)
+        let binary_data = vec![0u8, 1, 2, 255, 254, 253];
+        let key = Key::new(ns.clone(), TypeTag::KV, binary_data.clone());
+
+        assert_eq!(key.user_key, binary_data, "Binary user_key should be preserved");
     }
 }
