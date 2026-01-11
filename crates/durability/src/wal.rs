@@ -532,17 +532,30 @@ impl WAL {
         let mut entries = Vec::new();
         let mut file_offset = start_offset;
 
+        // Buffer for leftover bytes from previous chunk (entry spanning chunk boundary)
+        let mut leftover: Vec<u8> = Vec::new();
+
         // Read file in chunks
         loop {
             // Read into buffer
-            let mut buf = vec![0u8; 64 * 1024]; // 64KB buffer
-            let bytes_read = reader.read(&mut buf)?;
+            let mut read_buf = vec![0u8; 64 * 1024]; // 64KB buffer
+            let bytes_read = reader.read(&mut read_buf)?;
 
             if bytes_read == 0 {
-                break; // EOF
+                // EOF - leftover bytes (if any) are an incomplete entry
+                break;
             }
 
-            buf.truncate(bytes_read);
+            read_buf.truncate(bytes_read);
+
+            // Combine leftover from previous chunk with new data
+            let buf = if leftover.is_empty() {
+                read_buf
+            } else {
+                let mut combined = std::mem::take(&mut leftover);
+                combined.extend_from_slice(&read_buf);
+                combined
+            };
 
             // Decode entries from buffer
             let mut offset_in_buf = 0;
@@ -554,15 +567,10 @@ impl WAL {
                         file_offset += bytes_consumed as u64;
                     }
                     Err(_) => {
-                        // Could be incomplete entry at end or corruption
-                        // If buffer wasn't full, we're at EOF - incomplete entry is expected
-                        if bytes_read < buf.capacity() {
-                            // EOF, incomplete entry at end is expected (partial write)
-                            return Ok(entries);
-                        }
-                        // Buffer was full but decode failed - might need more data
-                        // For simplicity, break and return what we have
-                        return Ok(entries);
+                        // Could be incomplete entry at end of buffer
+                        // Save leftover bytes for next iteration
+                        leftover = buf[offset_in_buf..].to_vec();
+                        break;
                     }
                 }
             }
