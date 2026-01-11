@@ -12,12 +12,13 @@
 #![warn(clippy::all)]
 
 // Module declarations
+pub mod encoding; // Story #18: Entry encoding/decoding with CRC
 pub mod wal; // Story #17: WALEntry types
 
 // Stubs for future stories
-// pub mod encoding;   // Story #18, #21
 // pub mod snapshot;   // M4
 // pub mod recovery;   // Story #23-25
 
 // Re-export commonly used types
+pub use encoding::{decode_entry, encode_entry};
 pub use wal::WALEntry;
