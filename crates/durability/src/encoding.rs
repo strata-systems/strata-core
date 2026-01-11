@@ -12,7 +12,7 @@
 //! - **length**: Total size of type + payload + crc (NOT including length itself)
 //! - **type**: Entry type tag (1=BeginTxn, 2=Write, 3=Delete, 4=CommitTxn, 5=AbortTxn, 6=Checkpoint)
 //! - **payload**: bincode-serialized WALEntry
-//! - **crc32**: CRC32 checksum over [type][payload]
+//! - **crc32**: CRC32 checksum over \[type\]\[payload\]
 //!
 //! ## Why This Format
 //!
