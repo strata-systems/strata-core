@@ -144,17 +144,93 @@ cargo test -p in-mem-core --all
 
 **Critical checks:**
 - [ ] UnifiedStore implements Storage trait correctly
-- [ ] Version management is monotonic and thread-safe
-- [ ] Secondary indices stay consistent
-- [ ] TTL cleanup is transactional (no races)
+- [ ] Version management is monotonic and thread-safe (AtomicU64)
+- [ ] Secondary indices stay consistent (run_index, type_index, ttl_index)
+- [ ] TTL cleanup is transactional (no direct mutations)
+- [ ] TTL expiration is logical (filtered at read time)
+- [ ] ClonedSnapshotView implements SnapshotView trait
+- [ ] Snapshots are isolated (writes after snapshot don't appear)
+- [ ] scan_prefix uses BTreeMap range queries correctly
+- [ ] scan_by_run uses run_index (O(run size) not O(total))
+- [ ] scan_by_type uses type_index
+- [ ] Concurrent writes don't cause version collisions
+- [ ] find_expired_keys uses ttl_index (O(expired) not O(total))
 - [ ] Known RwLock bottleneck documented
+- [ ] Known snapshot cloning cost documented
+- [ ] Coverage ≥85% for storage crate
 
 **Tests to run:**
 ```bash
-cargo test test_concurrent_reads --nocapture
-cargo test test_version_monotonic --nocapture
-cargo test test_ttl_cleanup_transactional --nocapture
+# Core storage functionality
+cargo test -p in-mem-storage test_put_and_get --nocapture
+cargo test -p in-mem-storage test_version_monotonicity --nocapture
+cargo test -p in-mem-storage test_delete --nocapture
+
+# Concurrent access
+cargo test -p in-mem-storage test_concurrent_writes --nocapture
+
+# TTL functionality
+cargo test -p in-mem-storage test_ttl_expiration --nocapture
+cargo test -p in-mem-storage test_find_expired_keys_uses_index --nocapture
+cargo test -p in-mem-storage test_ttl_cleaner --nocapture
+
+# Secondary indices
+cargo test -p in-mem-storage test_scan_by_run_uses_index --nocapture
+cargo test -p in-mem-storage test_scan_by_type --nocapture
+cargo test -p in-mem-storage test_indices_stay_consistent --nocapture
+
+# Snapshots
+cargo test -p in-mem-storage test_snapshot_isolation --nocapture
+cargo test -p in-mem-storage test_snapshot_is_immutable --nocapture
+
+# Prefix scanning
+cargo test -p in-mem-storage test_scan_prefix --nocapture
+
+# Integration and stress tests
+cargo test -p in-mem-storage --test integration_tests
+cargo test -p in-mem-storage --test stress_tests --release
+
+# All tests in release mode
+cargo test -p in-mem-storage --all --release
 ```
+
+**Epic 2 Specific Validations:**
+
+1. **Version Monotonicity** (CRITICAL!)
+   - Verify versions increase monotonically: 1, 2, 3, ...
+   - No version collisions under concurrent writes
+   - current_version() always returns accurate count
+   - Test: 10 threads × 100 writes = 1000 sequential versions
+
+2. **Index Consistency** (CRITICAL!)
+   - After random operations, all indices match main storage
+   - put() updates all 3 indices atomically
+   - delete() removes from all 3 indices atomically
+   - Scan via index matches full iteration results
+
+3. **TTL Correctness** (CRITICAL!)
+   - Expired values return None on get()
+   - Expired values don't appear in scans
+   - TTL cleanup doesn't race with active writes
+   - TTL index enables O(expired) cleanup, not O(total)
+
+4. **Snapshot Isolation** (CRITICAL!)
+   - Snapshots capture version at creation time
+   - Writes after snapshot creation don't appear in snapshot
+   - Multiple concurrent snapshots work correctly
+   - Snapshot cloning doesn't corrupt original store
+
+5. **Scan Correctness**
+   - scan_prefix returns only keys with matching prefix
+   - scan_prefix uses BTreeMap range (not full iteration)
+   - scan_by_run filters by namespace.run_id correctly
+   - scan_by_type filters by type_tag correctly
+
+6. **Thread Safety**
+   - RwLock properly protects shared state
+   - No data races under concurrent access
+   - AtomicU64 version counter thread-safe
+   - No deadlocks in any operation
 
 ### Epic 3: WAL Implementation
 
