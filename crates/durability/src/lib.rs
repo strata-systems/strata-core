@@ -8,26 +8,16 @@
 //! - Snapshot creation and loading
 //! - Recovery: Replay WAL from last snapshot
 
-// Module declarations (will be implemented in Epic 3 & 4)
-// pub mod wal;        // Story #17-20
+#![warn(missing_docs)]
+#![warn(clippy::all)]
+
+// Module declarations
+pub mod wal; // Story #17: WALEntry types
+
+// Stubs for future stories
 // pub mod encoding;   // Story #18, #21
 // pub mod snapshot;   // M4
 // pub mod recovery;   // Story #23-25
 
-#![warn(missing_docs)]
-#![warn(clippy::all)]
-
-/// Placeholder for durability functionality
-pub fn placeholder() {
-    // This crate will contain WAL and snapshot implementation
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_placeholder() {
-        placeholder();
-    }
-}
+// Re-export commonly used types
+pub use wal::WALEntry;
