@@ -26,7 +26,14 @@
 //! - `WAL::read_entries()` - Scan from offset, decode entries
 //! - `WAL::read_all()` - Scan from beginning
 //! - `WAL::flush()` - Flush buffered writes
+//! - `WAL::fsync()` - Force sync to disk
 //! - `WAL::size()` - Get current file size
+//!
+//! ## Durability Modes
+//!
+//! - `Strict` - fsync after every commit (slow, maximum durability)
+//! - `Batched` - fsync every N commits OR T ms (DEFAULT, good balance)
+//! - `Async` - background thread fsyncs periodically (fast, may lose recent writes)
 
 use crate::encoding::{decode_entry, encode_entry};
 use in_mem_core::{
@@ -38,6 +45,10 @@ use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 /// WAL entry types
@@ -185,22 +196,90 @@ impl WALEntry {
 }
 
 // ============================================================================
+// Durability Modes
+// ============================================================================
+
+/// Durability mode configuration
+///
+/// Controls when fsync is called to ensure data reaches disk.
+///
+/// # Modes
+///
+/// - `Strict` - Maximum durability, fsync after every write (slow)
+/// - `Batched` - Balance of speed and safety (DEFAULT)
+/// - `Async` - Maximum speed, background fsync (may lose recent writes)
+///
+/// # Default
+///
+/// The default mode is `Batched { interval_ms: 100, batch_size: 1000 }`,
+/// which fsyncs every 100ms or every 1000 writes, whichever comes first.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DurabilityMode {
+    /// fsync after every commit (slow, maximum durability)
+    ///
+    /// Use when data loss is unacceptable, even for a single write.
+    /// Expect 10ms+ latency per write.
+    Strict,
+
+    /// fsync every N commits OR every T milliseconds
+    ///
+    /// Good balance of speed and safety. May lose up to batch_size
+    /// writes or interval_ms of data on crash.
+    Batched {
+        /// Maximum time between fsyncs in milliseconds
+        interval_ms: u64,
+        /// Maximum writes between fsyncs
+        batch_size: usize,
+    },
+
+    /// Background thread fsyncs periodically
+    ///
+    /// Maximum speed, minimal latency. May lose up to interval_ms
+    /// of writes on crash. Best for agent workloads where speed
+    /// matters more than perfect durability.
+    Async {
+        /// Time between fsyncs in milliseconds
+        interval_ms: u64,
+    },
+}
+
+impl Default for DurabilityMode {
+    fn default() -> Self {
+        // Default: batched with 100ms interval or 1000 commits
+        DurabilityMode::Batched {
+            interval_ms: 100,
+            batch_size: 1000,
+        }
+    }
+}
+
+// ============================================================================
 // WAL File Operations
 // ============================================================================
 
-/// Write-Ahead Log
+/// Write-Ahead Log with configurable durability
 ///
 /// Append-only log of WAL entries persisted to disk.
 /// File format: sequence of encoded entries (self-describing, no framing).
 ///
+/// # Durability Modes
+///
+/// The WAL supports three durability modes:
+/// - `Strict` - fsync after every write (slow but safest)
+/// - `Batched` - fsync periodically by time or count (DEFAULT)
+/// - `Async` - background thread handles fsync (fastest)
+///
 /// # Example
 ///
 /// ```ignore
-/// use in_mem_durability::wal::{WAL, WALEntry};
+/// use in_mem_durability::wal::{WAL, WALEntry, DurabilityMode};
 ///
-/// let mut wal = WAL::open("data/wal/segment.wal")?;
+/// // Open with default batched mode
+/// let mut wal = WAL::open("data/wal/segment.wal", DurabilityMode::default())?;
 /// wal.append(&entry)?;
-/// wal.flush()?;
+///
+/// // Open with strict mode for maximum durability
+/// let mut wal = WAL::open("data/wal/segment.wal", DurabilityMode::Strict)?;
 ///
 /// let entries = wal.read_all()?;
 /// ```
@@ -208,15 +287,30 @@ pub struct WAL {
     /// File path
     path: PathBuf,
 
-    /// File handle (buffered writer for appends)
-    writer: BufWriter<File>,
+    /// File handle (buffered writer for appends, shared for async mode)
+    writer: Arc<Mutex<BufWriter<File>>>,
 
-    /// Current file offset (for error reporting and size tracking)
-    current_offset: u64,
+    /// Current file offset (atomic for thread-safe access)
+    current_offset: Arc<AtomicU64>,
+
+    /// Durability mode
+    durability_mode: DurabilityMode,
+
+    /// Last fsync time (for batched mode)
+    last_fsync: Arc<Mutex<Instant>>,
+
+    /// Writes since last fsync (for batched mode)
+    writes_since_fsync: Arc<AtomicU64>,
+
+    /// Background fsync thread handle (for async mode)
+    fsync_thread: Option<JoinHandle<()>>,
+
+    /// Shutdown flag for async thread
+    shutdown: Arc<AtomicBool>,
 }
 
 impl WAL {
-    /// Open existing WAL or create new one
+    /// Open existing WAL or create new one with specified durability mode
     ///
     /// Creates parent directories if they don't exist.
     /// Opens file in append mode with read capability.
@@ -224,12 +318,23 @@ impl WAL {
     /// # Arguments
     ///
     /// * `path` - Path to WAL file
+    /// * `durability_mode` - Durability mode for fsync behavior
     ///
     /// # Returns
     ///
     /// * `Ok(WAL)` - Opened WAL handle
     /// * `Err` - If file operations fail
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Open with default batched mode
+    /// let wal = WAL::open("data/wal/segment.wal", DurabilityMode::default())?;
+    ///
+    /// // Open with strict mode
+    /// let wal = WAL::open("data/wal/segment.wal", DurabilityMode::Strict)?;
+    /// ```
+    pub fn open<P: AsRef<Path>>(path: P, durability_mode: DurabilityMode) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
 
         // Create parent directory if needed
@@ -247,21 +352,56 @@ impl WAL {
             .open(&path)?;
 
         // Get current file size (start offset)
-        let current_offset = file.metadata()?.len();
+        let current_offset = Arc::new(AtomicU64::new(file.metadata()?.len()));
 
-        let writer = BufWriter::new(file);
+        let writer = Arc::new(Mutex::new(BufWriter::new(file)));
+        let last_fsync = Arc::new(Mutex::new(Instant::now()));
+        let writes_since_fsync = Arc::new(AtomicU64::new(0));
+        let shutdown = Arc::new(AtomicBool::new(false));
+
+        // Spawn background fsync thread for async mode
+        let fsync_thread = if let DurabilityMode::Async { interval_ms } = durability_mode {
+            let writer = Arc::clone(&writer);
+            let shutdown = Arc::clone(&shutdown);
+            let interval = Duration::from_millis(interval_ms);
+
+            Some(thread::spawn(move || {
+                while !shutdown.load(Ordering::Relaxed) {
+                    thread::sleep(interval);
+
+                    if shutdown.load(Ordering::Relaxed) {
+                        break;
+                    }
+
+                    if let Ok(mut w) = writer.lock() {
+                        let _ = w.flush();
+                        let _ = w.get_mut().sync_all();
+                    }
+                }
+            }))
+        } else {
+            None
+        };
 
         Ok(Self {
             path,
             writer,
             current_offset,
+            durability_mode,
+            last_fsync,
+            writes_since_fsync,
+            fsync_thread,
+            shutdown,
         })
     }
 
-    /// Append entry to WAL
+    /// Append entry to WAL with durability mode handling
     ///
     /// Encodes entry and writes to end of file.
-    /// Does NOT fsync (added in next story for durability modes).
+    /// Handles fsync based on configured durability mode:
+    /// - Strict: fsync after every write
+    /// - Batched: fsync after batch_size writes OR interval_ms elapsed
+    /// - Async: just flush, background thread handles fsync
     ///
     /// # Arguments
     ///
@@ -272,30 +412,92 @@ impl WAL {
     /// * `Ok(u64)` - Offset where entry was written
     /// * `Err` - If encoding or writing fails
     pub fn append(&mut self, entry: &WALEntry) -> Result<u64> {
-        let offset = self.current_offset;
+        let offset = self.current_offset.load(Ordering::SeqCst);
 
         // Encode entry
         let encoded = encode_entry(entry)?;
 
         // Write to file
-        self.writer.write_all(&encoded).map_err(|e| {
-            Error::StorageError(format!("Failed to write entry at offset {}: {}", offset, e))
-        })?;
+        {
+            let mut writer = self.writer.lock().unwrap();
+            writer.write_all(&encoded).map_err(|e| {
+                Error::StorageError(format!("Failed to write entry at offset {}: {}", offset, e))
+            })?;
+        }
 
         // Update offset
-        self.current_offset += encoded.len() as u64;
+        self.current_offset
+            .fetch_add(encoded.len() as u64, Ordering::SeqCst);
+
+        // Handle durability mode
+        match self.durability_mode {
+            DurabilityMode::Strict => {
+                // Flush and fsync immediately
+                self.fsync()?;
+            }
+            DurabilityMode::Batched {
+                interval_ms,
+                batch_size,
+            } => {
+                self.writes_since_fsync.fetch_add(1, Ordering::SeqCst);
+
+                let should_fsync = {
+                    let last = self.last_fsync.lock().unwrap();
+                    let elapsed = last.elapsed().as_millis() as u64;
+                    let writes = self.writes_since_fsync.load(Ordering::SeqCst);
+
+                    elapsed >= interval_ms || writes >= batch_size as u64
+                };
+
+                if should_fsync {
+                    self.fsync()?;
+                    self.writes_since_fsync.store(0, Ordering::SeqCst);
+                    *self.last_fsync.lock().unwrap() = Instant::now();
+                }
+            }
+            DurabilityMode::Async { .. } => {
+                // Background thread handles fsync
+                // Just flush buffer to ensure writes are visible to reader
+                let mut writer = self.writer.lock().unwrap();
+                writer
+                    .flush()
+                    .map_err(|e| Error::StorageError(format!("Failed to flush: {}", e)))?;
+            }
+        }
 
         Ok(offset)
     }
 
-    /// Flush buffered writes to disk
+    /// Flush buffered writes to OS buffers
     ///
     /// Note: This flushes to OS buffers, not necessarily to disk.
-    /// For true durability, fsync is needed (added in next story).
+    /// For true durability, use fsync().
     pub fn flush(&mut self) -> Result<()> {
-        self.writer
+        let mut writer = self.writer.lock().unwrap();
+        writer
             .flush()
             .map_err(|e| Error::StorageError(format!("Failed to flush WAL: {}", e)))
+    }
+
+    /// Force sync to disk (flush + fsync)
+    ///
+    /// Ensures all buffered data is written to disk.
+    /// This is the most durable option but also the slowest.
+    pub fn fsync(&self) -> Result<()> {
+        let mut writer = self.writer.lock().unwrap();
+
+        // Flush buffer
+        writer
+            .flush()
+            .map_err(|e| Error::StorageError(format!("Failed to flush: {}", e)))?;
+
+        // Fsync to disk
+        writer
+            .get_mut()
+            .sync_all()
+            .map_err(|e| Error::StorageError(format!("Failed to fsync: {}", e)))?;
+
+        Ok(())
     }
 
     /// Read all entries from WAL starting at offset
@@ -313,6 +515,12 @@ impl WAL {
     /// * `Ok(Vec<WALEntry>)` - Decoded entries
     /// * `Err` - If file operations fail or mid-file corruption detected
     pub fn read_entries(&self, start_offset: u64) -> Result<Vec<WALEntry>> {
+        // Flush any buffered writes before reading
+        {
+            let mut writer = self.writer.lock().unwrap();
+            let _ = writer.flush();
+        }
+
         // Open separate read handle (writer is buffered, don't interfere)
         let file = File::open(&self.path)?;
 
@@ -353,9 +561,7 @@ impl WAL {
                             return Ok(entries);
                         }
                         // Buffer was full but decode failed - might need more data
-                        // Seek back and try reading more in next iteration
                         // For simplicity, break and return what we have
-                        // (A more sophisticated implementation would handle spanning entries)
                         return Ok(entries);
                     }
                 }
@@ -374,12 +580,31 @@ impl WAL {
 
     /// Get current file size (offset for next write)
     pub fn size(&self) -> u64 {
-        self.current_offset
+        self.current_offset.load(Ordering::SeqCst)
     }
 
     /// Get file path
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Get durability mode
+    pub fn durability_mode(&self) -> DurabilityMode {
+        self.durability_mode
+    }
+}
+
+impl Drop for WAL {
+    fn drop(&mut self) {
+        // Shutdown async fsync thread if running
+        self.shutdown.store(true, Ordering::Relaxed);
+
+        if let Some(handle) = self.fsync_thread.take() {
+            let _ = handle.join();
+        }
+
+        // Final fsync to ensure all data is durable
+        let _ = self.fsync();
     }
 }
 
@@ -599,7 +824,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let wal_path = temp_dir.path().join("test.wal");
 
-        let wal = WAL::open(&wal_path).unwrap();
+        let wal = WAL::open(&wal_path, DurabilityMode::default()).unwrap();
         assert_eq!(wal.size(), 0);
         assert!(wal_path.exists());
     }
@@ -609,7 +834,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let wal_path = temp_dir.path().join("test.wal");
 
-        let mut wal = WAL::open(&wal_path).unwrap();
+        let mut wal = WAL::open(&wal_path, DurabilityMode::default()).unwrap();
 
         let run_id = RunId::new();
         let entry1 = WALEntry::BeginTxn {
@@ -636,7 +861,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let wal_path = temp_dir.path().join("test.wal");
 
-        let mut wal = WAL::open(&wal_path).unwrap();
+        let mut wal = WAL::open(&wal_path, DurabilityMode::default()).unwrap();
 
         let run_id = RunId::new();
         let ns = Namespace::new(
@@ -681,7 +906,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let wal_path = temp_dir.path().join("test.wal");
 
-        let mut wal = WAL::open(&wal_path).unwrap();
+        let mut wal = WAL::open(&wal_path, DurabilityMode::default()).unwrap();
 
         let run_id = RunId::new();
         let entry1 = WALEntry::BeginTxn {
@@ -717,7 +942,7 @@ mod tests {
 
         // Write entry and close
         {
-            let mut wal = WAL::open(&wal_path).unwrap();
+            let mut wal = WAL::open(&wal_path, DurabilityMode::default()).unwrap();
             wal.append(&entry1).unwrap();
             wal.flush().unwrap();
             initial_size = wal.size();
@@ -725,7 +950,7 @@ mod tests {
 
         // Reopen and verify entry still there
         {
-            let wal = WAL::open(&wal_path).unwrap();
+            let wal = WAL::open(&wal_path, DurabilityMode::default()).unwrap();
             assert_eq!(wal.size(), initial_size);
 
             let entries = wal.read_all().unwrap();
@@ -749,21 +974,21 @@ mod tests {
 
         // Write first entry and close
         {
-            let mut wal = WAL::open(&wal_path).unwrap();
+            let mut wal = WAL::open(&wal_path, DurabilityMode::default()).unwrap();
             wal.append(&entry1).unwrap();
             wal.flush().unwrap();
         }
 
         // Reopen and append second entry
         {
-            let mut wal = WAL::open(&wal_path).unwrap();
+            let mut wal = WAL::open(&wal_path, DurabilityMode::default()).unwrap();
             wal.append(&entry2).unwrap();
             wal.flush().unwrap();
         }
 
         // Read all entries
         {
-            let wal = WAL::open(&wal_path).unwrap();
+            let wal = WAL::open(&wal_path, DurabilityMode::default()).unwrap();
             let entries = wal.read_all().unwrap();
             assert_eq!(entries.len(), 2);
             assert_eq!(entries[0], entry1);
@@ -776,8 +1001,183 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let wal_path = temp_dir.path().join("nested").join("dir").join("test.wal");
 
-        let wal = WAL::open(&wal_path).unwrap();
+        let wal = WAL::open(&wal_path, DurabilityMode::default()).unwrap();
         assert_eq!(wal.size(), 0);
         assert!(wal_path.exists());
+    }
+
+    // ========================================================================
+    // Durability Mode Tests
+    // ========================================================================
+
+    #[test]
+    fn test_durability_mode_default() {
+        let mode = DurabilityMode::default();
+        assert_eq!(
+            mode,
+            DurabilityMode::Batched {
+                interval_ms: 100,
+                batch_size: 1000,
+            }
+        );
+    }
+
+    #[test]
+    fn test_strict_mode() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("strict.wal");
+
+        let mut wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
+        assert_eq!(wal.durability_mode(), DurabilityMode::Strict);
+
+        let run_id = RunId::new();
+        let entry = WALEntry::BeginTxn {
+            txn_id: 1,
+            run_id,
+            timestamp: now(),
+        };
+
+        // Append triggers immediate fsync in strict mode
+        wal.append(&entry).unwrap();
+
+        // Reopen without explicit flush - entry should be durable
+        drop(wal);
+        let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
+        let entries = wal.read_all().unwrap();
+        assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
+    fn test_batched_mode_by_count() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("batched.wal");
+
+        let mut wal = WAL::open(
+            &wal_path,
+            DurabilityMode::Batched {
+                interval_ms: 10000, // Long interval, won't trigger
+                batch_size: 10,
+            },
+        )
+        .unwrap();
+
+        let run_id = RunId::new();
+
+        // Append 10 entries - triggers batch fsync at 10
+        for i in 0..10 {
+            let entry = WALEntry::BeginTxn {
+                txn_id: i,
+                run_id,
+                timestamp: now(),
+            };
+            wal.append(&entry).unwrap();
+        }
+
+        // Entries should be durable after batch_size reached
+        drop(wal);
+        let wal = WAL::open(
+            &wal_path,
+            DurabilityMode::Batched {
+                interval_ms: 10000,
+                batch_size: 10,
+            },
+        )
+        .unwrap();
+        let entries = wal.read_all().unwrap();
+        assert_eq!(entries.len(), 10);
+    }
+
+    #[test]
+    fn test_batched_mode_by_time() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("batched_time.wal");
+
+        let mut wal = WAL::open(
+            &wal_path,
+            DurabilityMode::Batched {
+                interval_ms: 10, // Short interval
+                batch_size: 1000000,
+            },
+        )
+        .unwrap();
+
+        let run_id = RunId::new();
+        let entry = WALEntry::BeginTxn {
+            txn_id: 1,
+            run_id,
+            timestamp: now(),
+        };
+
+        wal.append(&entry).unwrap();
+
+        // Wait for interval to elapse
+        thread::sleep(Duration::from_millis(20));
+
+        // Append another entry - should trigger time-based fsync
+        let entry2 = WALEntry::CommitTxn { txn_id: 1, run_id };
+        wal.append(&entry2).unwrap();
+
+        drop(wal);
+        let wal = WAL::open(
+            &wal_path,
+            DurabilityMode::Batched {
+                interval_ms: 10,
+                batch_size: 1000000,
+            },
+        )
+        .unwrap();
+        let entries = wal.read_all().unwrap();
+        assert_eq!(entries.len(), 2);
+    }
+
+    #[test]
+    fn test_async_mode() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("async.wal");
+
+        let mut wal = WAL::open(&wal_path, DurabilityMode::Async { interval_ms: 50 }).unwrap();
+
+        let run_id = RunId::new();
+        let entry = WALEntry::BeginTxn {
+            txn_id: 1,
+            run_id,
+            timestamp: now(),
+        };
+
+        wal.append(&entry).unwrap();
+
+        // Wait for background fsync
+        thread::sleep(Duration::from_millis(100));
+
+        drop(wal);
+        let wal = WAL::open(&wal_path, DurabilityMode::Async { interval_ms: 50 }).unwrap();
+        let entries = wal.read_all().unwrap();
+        assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
+    fn test_drop_performs_final_fsync() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("drop.wal");
+
+        let run_id = RunId::new();
+        let entry = WALEntry::BeginTxn {
+            txn_id: 1,
+            run_id,
+            timestamp: now(),
+        };
+
+        // Use async mode with long interval - data won't be synced by background thread
+        {
+            let mut wal =
+                WAL::open(&wal_path, DurabilityMode::Async { interval_ms: 10000 }).unwrap();
+            wal.append(&entry).unwrap();
+            // Drop should call final fsync
+        }
+
+        // Entry should still be readable after drop's final fsync
+        let wal = WAL::open(&wal_path, DurabilityMode::default()).unwrap();
+        let entries = wal.read_all().unwrap();
+        assert_eq!(entries.len(), 1);
     }
 }
