@@ -109,6 +109,37 @@ Epic 3 implements the Write-Ahead Log (WAL) with durability modes and comprehens
 
 ## Phase 3: Code Review 👀
 
+### TDD Integrity (CRITICAL!)
+**MUST VERIFY**: Tests were not modified to hide bugs
+
+- [ ] Review git history for test file changes after initial implementation
+- [ ] Check for comments like "changed test", "modified test", "adjusted test"
+- [ ] Verify tests expose bugs rather than working around them
+- [ ] Look for test logic changes in bug-related commits
+- [ ] Run `git log -p --all -- '*test*.rs' | grep -B5 -A5 "workaround\|bypass\|skip"`
+
+**Red flags**:
+- Test changed after finding a bug instead of fixing the bug
+- Test made less strict to pass
+- Test uses different data to avoid triggering a bug
+- Comments mentioning "temporary fix" or "TODO: fix properly"
+
+**Example of WRONG approach** (from issue #51):
+- Test found: Zero-length entries cause panic
+- WRONG: Changed test to use non-zero data
+- CORRECT: Fix decoder to validate length >= 5
+
+**How to verify**:
+```bash
+# Check for suspicious test modifications
+git log --oneline --all -- 'crates/durability/tests/*.rs' | head -20
+git show <commit-hash> # Review each test change carefully
+```
+
+**If violations found**: REJECT epic, fix bugs, restore proper tests.
+
+---
+
 ### Architecture Adherence
 - [ ] Follows layered architecture (durability layer independent)
 - [ ] No dependencies on storage or concurrency layers
