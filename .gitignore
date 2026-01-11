@@ -23,5 +23,5 @@ ARCHITECTURE.md
 architecture-plan.md
 
 # Claude Code and local development
-.claude/
+.claude
 github-issues/

@@ -99,24 +99,43 @@ See [MILESTONES.md](docs/milestones/MILESTONES.md) for detailed milestone breakd
 
 ## Quick Start
 
-**Note**: Project is in active development. This section will be updated as implementation progresses.
+```rust
+use in_mem::Database;
 
-### Prerequisites
+// Open or create a database
+let db = Database::open("./my-agent-db")?;
 
-- Rust 1.70+ (2021 edition)
-- Cargo
+// Begin a run (all operations are run-scoped)
+let run_id = db.begin_run();
 
-### Installation (Planned)
+// Store and retrieve data
+db.put(run_id, b"key", b"value")?;
+let value = db.get(run_id, b"key")?;
+
+// End the run
+db.end_run(run_id)?;
+```
+
+**📚 Full Documentation**: See **[Reference Documentation](docs/reference/)** for:
+- [Getting Started Guide](docs/reference/getting-started.md) - Installation, common patterns, best practices
+- [API Reference](docs/reference/api-reference.md) - Complete API documentation
+- [Architecture Overview](docs/reference/architecture.md) - How in-mem works internally
+
+### Installation
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+in-mem = "0.1"
+```
+
+Or clone and build:
 
 ```bash
-# Clone the repository
 git clone https://github.com/anibjoshi/in-mem.git
 cd in-mem
-
-# Build the workspace
 cargo build --release
-
-# Run tests
 cargo test --all
 
 # Run benchmarks
@@ -254,36 +273,40 @@ See [M1_ARCHITECTURE.md](M1_ARCHITECTURE.md) for complete architecture specifica
 
 ## Documentation
 
-### Core Documentation (main branch)
+### 📖 User Documentation
 
-**Architecture & Design**:
-- [M1_ARCHITECTURE.md](docs/architecture/M1_ARCHITECTURE.md) - Complete M1 architecture specification
-- [Architecture Diagrams](docs/diagrams/m1-architecture.md) - Visual architecture diagrams
+**Start here** for using **in-mem** in your projects:
 
-**Development**:
-- [Getting Started](docs/development/GETTING_STARTED.md) - Quick start guide for new developers
-- [TDD Methodology](docs/development/TDD_METHODOLOGY.md) - Test-Driven Development approach
-- [Development Workflow](docs/development/DEVELOPMENT_WORKFLOW.md) - Git workflow
+- **[Reference Documentation](docs/reference/)** - Complete user guides
+  - [Getting Started](docs/reference/getting-started.md) - Quick start, installation, common patterns
+  - [API Reference](docs/reference/api-reference.md) - Complete API documentation
+  - [Architecture Overview](docs/reference/architecture.md) - How in-mem works
 
-**Project Management**:
-- [Milestones](docs/milestones/MILESTONES.md) - Project roadmap M1-M5
-- [Project Status](docs/milestones/PROJECT_STATUS.md) - Current status and metrics
+### 🔧 Developer Documentation
 
-### Historical Documentation ([docs-archive branch](https://github.com/anibjoshi/in-mem/tree/docs-archive))
+**For contributors** building in-mem:
 
-**M1 Completion**:
-- M1 Completion Report - Epic-by-epic results, performance benchmarks
-- 9-Phase Quality Audit Report - Comprehensive quality validation
-- Epic Reviews (1-4) - Detailed epic validation reports
+- [M1 Architecture Spec](docs/architecture/M1_ARCHITECTURE.md) - Detailed technical specification
+- [Development Workflow](docs/development/DEVELOPMENT_WORKFLOW.md) - Git workflow and contribution guide
+- [TDD Methodology](docs/development/TDD_METHODOLOGY.md) - Testing strategy and best practices
+- [Developer Onboarding](docs/development/GETTING_STARTED.md) - Setup for new contributors
 
-**Development Process**:
-- Claude Coordination Guide - Multi-agent coordination
-- Epic Review Process - Quality gates and validation
-- TDD Lessons Learned - Insights from M1
+### 📊 Project Documentation
 
-**Planning**:
-- Epic Claude Prompts (2-5) - Implementation guidance for agents
-- Original Spec - Initial project specification
+**Project status and planning**:
+
+- [Project Status](docs/milestones/PROJECT_STATUS.md) - Current development status
+- [Milestones](docs/milestones/MILESTONES.md) - Roadmap M1-M5 with timeline
+- [Architecture Diagrams](docs/diagrams/m1-architecture.md) - Visual system diagrams
+
+### 📦 Historical Documentation
+
+**M1 development artifacts** preserved in [docs-archive branch](https://github.com/anibjoshi/in-mem/tree/docs-archive):
+
+- M1 Completion Report (541 lines) - Epic results and benchmarks
+- 9-Phase Quality Audit Report (980 lines) - Comprehensive validation
+- Epic Reviews and Summaries - Development retrospectives
+- Claude Coordination Prompts - Multi-agent implementation guides
 
 ## License
 
