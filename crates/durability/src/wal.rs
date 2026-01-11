@@ -1135,8 +1135,6 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let wal_path = temp_dir.path().join("async.wal");
 
-        let mut wal = WAL::open(&wal_path, DurabilityMode::Async { interval_ms: 50 }).unwrap();
-
         let run_id = RunId::new();
         let entry = WALEntry::BeginTxn {
             txn_id: 1,
@@ -1144,15 +1142,19 @@ mod tests {
             timestamp: now(),
         };
 
-        wal.append(&entry).unwrap();
+        // Write entry with async mode
+        {
+            let mut wal = WAL::open(&wal_path, DurabilityMode::Async { interval_ms: 50 }).unwrap();
+            wal.append(&entry).unwrap();
 
-        // Wait for background fsync
-        thread::sleep(Duration::from_millis(100));
+            // Drop will trigger final fsync - deterministic, no sleep needed
+        }
 
-        drop(wal);
+        // Reopen and verify entry was fsynced (by Drop handler)
         let wal = WAL::open(&wal_path, DurabilityMode::Async { interval_ms: 50 }).unwrap();
         let entries = wal.read_all().unwrap();
-        assert_eq!(entries.len(), 1);
+        assert_eq!(entries.len(), 1, "Entry should be persisted by Drop handler fsync");
+        assert_eq!(entries[0], entry);
     }
 
     #[test]
