@@ -24,53 +24,238 @@ Multi-phase quality audit with mutation testing, coverage analysis, and systemat
 
 ---
 
-## Phase 1: Test Integrity Audit (Git History Analysis)
+## Phase 1: Test Correctness Review (Manual Inspection)
 
 ### Objective
-Identify any tests that were modified after initial implementation, especially changes that made tests less strict or worked around bugs.
+**CRITICAL**: Validate that every test in Epics 1-3 is testing the RIGHT behavior, not just passing behavior.
+
+**The Problem**: Agent execution can silently rewrite tests during implementation, leaving no trace in git history or comments. The final commit looks "clean" but the test may be wrong.
 
 ### Methodology
 
-#### 1.1 Git History Forensics
+#### 1.1 Test Inventory
 ```bash
-# Analyze all test file changes in Epics 1 & 2
-git log --all --oneline --graph -- 'crates/core/tests/*.rs' 'crates/core/src/*test*.rs'
-git log --all --oneline --graph -- 'crates/storage/tests/*.rs' 'crates/storage/src/*test*.rs'
+# List ALL tests in Epics 1-3
+echo "=== Epic 1: Core Types ==="
+fd -e rs -x rg "^\s*#\[test\]" -A 1 {} crates/core/
 
-# Look for suspicious commit messages
-git log --all --grep="fix test" --grep="adjust test" --grep="update test" \
-  --grep="workaround" --grep="temporary" --grep="TODO" \
-  -- 'crates/core/**/*.rs' 'crates/storage/**/*.rs'
+echo "=== Epic 2: Storage Layer ==="
+fd -e rs -x rg "^\s*#\[test\]" -A 1 {} crates/storage/
 
-# Check for test deletions (red flag!)
-git log --all --diff-filter=D -- 'crates/core/tests/*.rs' 'crates/storage/tests/*.rs'
-
-# Find commits that modified tests after implementation
-git log --all -p -- 'crates/core/tests/*.rs' 'crates/storage/tests/*.rs' | \
-  grep -B10 -A10 "workaround\|bypass\|skip\|ignore\|TODO\|FIXME\|HACK"
+echo "=== Epic 3: WAL Implementation ==="
+fd -e rs -x rg "^\s*#\[test\]" -A 1 {} crates/durability/
 ```
 
-#### 1.2 Red Flags to Look For
-- [ ] Test assertions made less strict (e.g., `assert_eq!` → `assert!`)
-- [ ] Test data changed to avoid triggering failures
-- [ ] Tests wrapped in `#[ignore]` or `#[should_panic]` after initially passing
-- [ ] Error conditions changed to match implementation instead of spec
-- [ ] Comments like "temporarily disabled", "TODO: fix", "workaround for bug"
-- [ ] Tests deleted entirely
-- [ ] Multiple attempts to make a test pass (3+ commits on same test)
+**Expected counts** (from PROJECT_STATUS.md):
+- Epic 1: ~75 tests
+- Epic 2: ~87 tests
+- Epic 3: ~54 tests
+- **Total: ~216 tests to review**
 
-#### 1.3 Analysis Output
-Create detailed report: `docs/milestones/TEST_INTEGRITY_REPORT.md`
-- List of all modified tests
-- Reason for each modification (legitimate refactor vs workaround)
-- Flagged suspicious changes requiring investigation
-- Bugs discovered during audit
+#### 1.2 Test Review Checklist (Per Test)
+
+For **EVERY test** in Epics 1-3, ask:
+
+**1. Does this test have a clear purpose?**
+- [ ] Test name describes what's being tested
+- [ ] Test name describes expected behavior
+- [ ] Test follows naming: `test_{component}_{scenario}_{expected}`
+
+**2. Is the test asserting the RIGHT thing?**
+- [ ] Assertions match the specification (not just "what the code does")
+- [ ] Assertions are strict enough (e.g., `assert_eq!` not just `assert!`)
+- [ ] Error cases have specific error type checks (not just `.is_err()`)
+- [ ] Edge cases are tested (not just happy path)
+
+**3. Is the test data realistic?**
+- [ ] Test data exercises the actual use case
+- [ ] Test data not crafted to avoid a specific bug
+- [ ] Test data includes boundary conditions
+
+**4. Are there suspicious patterns?**
+- [ ] Test uses `.unwrap()` excessively (may be hiding errors)
+- [ ] Test has commented-out assertions
+- [ ] Test has TODO/FIXME comments
+- [ ] Test logic is overly complex (may be working around a bug)
+- [ ] Test has multiple unrelated assertions (testing too much)
+
+**5. Does the test actually fail if we break the code?**
+- [ ] Mark for mutation testing (Phase 4)
+
+#### 1.3 Systematic Review Process
+
+**Step 1: Create Test Review Spreadsheet**
+```
+Test Name | File | Purpose | Assertions | Concerns | Status
+----------|------|---------|------------|----------|--------
+test_runid_new | core/types.rs:45 | RunId creation | assert_ne | None | ✅
+test_key_ordering | core/types.rs:67 | BTree ordering | assert!(a<b) | Weak assertion? | ⚠️
+...
+```
+
+**Step 2: Review Core Types Tests** (Epic 1)
+Files to review:
+- `crates/core/src/types.rs` (mod tests)
+- `crates/core/src/value.rs` (mod tests)
+- `crates/core/src/error.rs` (mod tests)
+- `crates/core/tests/*.rs` (if any)
+
+**Common issues to look for**:
+- RunId uniqueness: Does test verify UUIDs are actually unique? (generate 1000, check no duplicates)
+- Key ordering: Does test verify ordering matches spec? (not just "sorts somehow")
+- Value serialization: Does test roundtrip ALL variants? (not just a few)
+- Error conversions: Does test verify error messages? (not just error type)
+
+**Step 3: Review Storage Tests** (Epic 2)
+Files to review:
+- `crates/storage/src/unified.rs` (mod tests)
+- `crates/storage/src/index.rs` (mod tests)
+- `crates/storage/src/ttl.rs` (mod tests)
+- `crates/storage/src/snapshot.rs` (mod tests)
+- `crates/storage/tests/*.rs` (if any)
+
+**Critical areas**:
+- **Concurrent access**: Do tests actually run multi-threaded? (not just claim to)
+- **Secondary indices**: Do tests verify indices ALWAYS match main store? (check after every operation)
+- **TTL expiration**: Do tests verify expired entries are REALLY gone? (not just "marked expired")
+- **Version counter**: Do tests verify versions are monotonic and gap-free?
+
+**Step 4: Review WAL Tests** (Epic 3)
+Files to review:
+- `crates/durability/src/wal.rs` (mod tests)
+- `crates/durability/src/encoding.rs` (mod tests)
+- `crates/durability/tests/corruption_test.rs`
+- `crates/durability/tests/corruption_simulation_test.rs`
+
+**Known good** (from Epic 3 review):
+- Issue #51 discovered and properly fixed
+- 16 corruption scenarios tested
+- TDD integrity verified
+
+**Still check**:
+- Corruption tests: Do they test corruption at EVERY possible offset? (not just a few)
+- Durability modes: Do tests verify fsync actually happens? (not just "no error")
+- Recovery: Do tests verify data EXACTLY matches pre-crash? (not just "something recovered")
+
+#### 1.4 Deep Dive: Suspicious Test Examples
+
+**Example 1: Weak Assertion**
+```rust
+// ❌ BAD - Too weak, doesn't verify actual behavior
+#[test]
+fn test_key_ordering() {
+    let k1 = Key::new(...);
+    let k2 = Key::new(...);
+    assert!(k1 != k2); // Just checks they're different, not ordering
+}
+
+// ✅ GOOD - Verifies specific ordering
+#[test]
+fn test_key_ordering() {
+    let k1 = Key::new_kv(ns.clone(), b"aaa");
+    let k2 = Key::new_kv(ns.clone(), b"bbb");
+    assert!(k1 < k2, "Keys should be ordered by user_key");
+    assert_eq!(k1.cmp(&k2), Ordering::Less);
+}
+```
+
+**Example 2: Hidden Error**
+```rust
+// ❌ BAD - unwrap hides if get() returns wrong error
+#[test]
+fn test_get_nonexistent() {
+    let store = UnifiedStore::new();
+    let result = store.get(&key).unwrap(); // Should this unwrap?
+    assert!(result.is_none());
+}
+
+// ✅ GOOD - Explicit error handling
+#[test]
+fn test_get_nonexistent() {
+    let store = UnifiedStore::new();
+    match store.get(&key) {
+        Ok(None) => {}, // Expected
+        Ok(Some(_)) => panic!("Found nonexistent key"),
+        Err(e) => panic!("Unexpected error: {:?}", e),
+    }
+}
+```
+
+**Example 3: Test Data Crafted to Avoid Bug**
+```rust
+// ❌ SUSPICIOUS - Why specifically 100 bytes? Avoiding a bug at 0 or max?
+#[test]
+fn test_large_value() {
+    let value = vec![0u8; 100]; // Why 100?
+    store.put(key, value).unwrap();
+}
+
+// ✅ BETTER - Test actual boundaries
+#[test]
+fn test_value_sizes() {
+    // Empty
+    store.put(key.clone(), vec![]).unwrap();
+    // Small
+    store.put(key.clone(), vec![1]).unwrap();
+    // Large (1MB)
+    store.put(key.clone(), vec![0u8; 1024*1024]).unwrap();
+}
+```
+
+#### 1.5 Cross-Reference with Specification
+
+For each test, cross-reference with:
+- **M1_ARCHITECTURE.md** - Does test match spec?
+- **TDD_METHODOLOGY.md** - Does test follow TDD principles?
+- **GitHub issue** - Does test cover acceptance criteria?
+
+**Red flag**: Test passes but doesn't cover any acceptance criteria from the issue.
+
+#### 1.6 Create Test Correctness Report
+
+**Template**: `docs/milestones/TEST_CORRECTNESS_REPORT.md`
+
+```markdown
+# Test Correctness Report - Epic 1
+
+## Summary
+- Total tests reviewed: X
+- Tests with concerns: Y
+- Tests flagged for rewrite: Z
+
+## Core Types (crates/core)
+
+### ✅ Correct Tests
+- `test_runid_new` - Verifies UUID generation
+- `test_namespace_equality` - Proper equality check
+...
+
+### ⚠️ Concerns
+- `test_key_ordering` (types.rs:67)
+  - **Issue**: Weak assertion, only checks inequality
+  - **Should test**: Specific ordering by namespace → type_tag → user_key
+  - **Action**: Strengthen test with ordering verification
+
+### ❌ Incorrect Tests (Rewrite Required)
+- `test_value_serialization` (value.rs:123)
+  - **Issue**: Only tests Bytes variant, ignores Event/StateMachine/Trace
+  - **Should test**: ALL 5 Value enum variants
+  - **Action**: Rewrite to test all variants
+
+## Storage Layer (crates/storage)
+...
+```
 
 ### Deliverable
-**Test Integrity Report** with:
-- ✅ CLEAN - No suspicious test modifications
-- ⚠️  CONCERNS - Some tests need review
-- ❌ CRITICAL - Tests were adjusted to hide bugs
+**Test Correctness Report** with:
+- ✅ CORRECT - Tests verify right behavior
+- ⚠️  CONCERNS - Tests need strengthening
+- ❌ INCORRECT - Tests must be rewritten
+
+**Action Items**:
+- List of tests to strengthen (with specific changes)
+- List of tests to rewrite (with reason)
+- List of MISSING tests (gaps in coverage)
 
 ---
 
