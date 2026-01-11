@@ -4,12 +4,14 @@
 //! - `BTreeMap<Key, VersionedValue>` for ordered key storage
 //! - `parking_lot::RwLock` for thread-safe access
 //! - `AtomicU64` for monotonically increasing version numbers
+//! - Secondary indices for efficient run and type queries
 //!
 //! # Design Notes
 //!
 //! - **No version history**: Each key stores only its latest value (acceptable for MVP)
 //! - **Logical TTL expiration**: Expired values are filtered at read time, not deleted
 //! - **Version allocation before write lock**: Prevents lock contention during version assignment
+//! - **Secondary indices**: run_index and type_index enable O(subset) queries instead of O(total)
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -18,16 +20,29 @@ use std::time::Duration;
 
 use parking_lot::RwLock;
 
-use in_mem_core::{Key, Result, RunId, Storage, Value, VersionedValue};
+use in_mem_core::{Key, Result, RunId, Storage, TypeTag, Value, VersionedValue};
+
+use crate::index::{RunIndex, TypeIndex};
 
 /// Unified storage backend using BTreeMap with RwLock
 ///
 /// Implements the Storage trait for MVP functionality.
 /// Thread-safe through `parking_lot::RwLock` and `AtomicU64`.
+///
+/// # Secondary Indices
+///
+/// - `run_index`: Maps RunId → Set<Key> for efficient run-scoped queries (O(run size) vs O(total))
+/// - `type_index`: Maps TypeTag → Set<Key> for efficient type-scoped queries
+///
+/// All indices are updated atomically with the main data store within the same write lock.
 #[derive(Debug)]
 pub struct UnifiedStore {
     /// The main data store: ordered map from Key to VersionedValue
     data: Arc<RwLock<BTreeMap<Key, VersionedValue>>>,
+    /// Secondary index: RunId → Keys for efficient run-scoped queries
+    run_index: Arc<RwLock<RunIndex>>,
+    /// Secondary index: TypeTag → Keys for efficient type-scoped queries
+    type_index: Arc<RwLock<TypeIndex>>,
     /// Global version counter for monotonically increasing versions
     version: AtomicU64,
 }
@@ -35,12 +50,49 @@ pub struct UnifiedStore {
 impl UnifiedStore {
     /// Create a new empty UnifiedStore
     ///
+    /// Initializes the main data store and secondary indices.
     /// Initial version is 0 (no writes have occurred).
     pub fn new() -> Self {
         Self {
             data: Arc::new(RwLock::new(BTreeMap::new())),
+            run_index: Arc::new(RwLock::new(RunIndex::new())),
+            type_index: Arc::new(RwLock::new(TypeIndex::new())),
             version: AtomicU64::new(0),
         }
+    }
+
+    /// Scan all keys of a given type at or before max_version
+    ///
+    /// Uses type_index for efficient O(type size) lookup instead of O(total data).
+    /// Returns all key-value pairs where:
+    /// - Key has the specified type_tag
+    /// - Value version <= max_version
+    /// - Value is not expired
+    pub fn scan_by_type(
+        &self,
+        type_tag: TypeTag,
+        max_version: u64,
+    ) -> Result<Vec<(Key, VersionedValue)>> {
+        let type_idx = self.type_index.read();
+        let data = self.data.read();
+
+        let results = if let Some(keys) = type_idx.get(&type_tag) {
+            keys.iter()
+                .filter_map(|key| {
+                    data.get(key).and_then(|vv| {
+                        if vv.version <= max_version && !vv.is_expired() {
+                            Some((key.clone(), vv.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        Ok(results)
     }
 
     /// Allocate the next version atomically
@@ -82,15 +134,36 @@ impl Storage for UnifiedStore {
 
         let versioned_value = VersionedValue::new(value, version, ttl);
 
+        // Acquire ALL locks (data + indices) for atomic update
         let mut data = self.data.write();
-        data.insert(key, versioned_value);
+        let mut run_idx = self.run_index.write();
+        let mut type_idx = self.type_index.write();
+
+        // Insert into main storage
+        data.insert(key.clone(), versioned_value);
+
+        // Update secondary indices
+        run_idx.insert(key.namespace.run_id, key.clone());
+        type_idx.insert(key.type_tag, key);
 
         Ok(version)
     }
 
     fn delete(&self, key: &Key) -> Result<Option<VersionedValue>> {
+        // Acquire ALL locks for atomic update
         let mut data = self.data.write();
-        Ok(data.remove(key))
+        let mut run_idx = self.run_index.write();
+        let mut type_idx = self.type_index.write();
+
+        let removed = data.remove(key);
+
+        if removed.is_some() {
+            // Update secondary indices
+            run_idx.remove(key.namespace.run_id, key);
+            type_idx.remove(key.type_tag, key);
+        }
+
+        Ok(removed)
     }
 
     fn scan_prefix(&self, prefix: &Key, max_version: u64) -> Result<Vec<(Key, VersionedValue)>> {
@@ -107,15 +180,25 @@ impl Storage for UnifiedStore {
     }
 
     fn scan_by_run(&self, run_id: RunId, max_version: u64) -> Result<Vec<(Key, VersionedValue)>> {
+        // Use run_index for efficient O(run size) lookup instead of O(total data)
+        let run_idx = self.run_index.read();
         let data = self.data.read();
 
-        let results: Vec<(Key, VersionedValue)> = data
-            .iter()
-            .filter(|(k, vv)| {
-                k.namespace.run_id == run_id && vv.version <= max_version && !vv.is_expired()
-            })
-            .map(|(k, vv)| (k.clone(), vv.clone()))
-            .collect();
+        let results = if let Some(keys) = run_idx.get(&run_id) {
+            keys.iter()
+                .filter_map(|key| {
+                    data.get(key).and_then(|vv| {
+                        if vv.version <= max_version && !vv.is_expired() {
+                            Some((key.clone(), vv.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         Ok(results)
     }
@@ -535,5 +618,258 @@ mod tests {
     fn test_default_trait() {
         let store = UnifiedStore::default();
         assert_eq!(store.current_version(), 0);
+    }
+
+    // ========================================
+    // Secondary Index Tests (Story #13)
+    // ========================================
+
+    #[test]
+    fn test_scan_by_run_uses_index() {
+        // This test verifies that scan_by_run uses the run_index efficiently.
+        // It creates multiple runs and ensures only the requested run's keys are returned.
+        let store = UnifiedStore::new();
+
+        // Create three different runs
+        let run1 = RunId::new();
+        let run2 = RunId::new();
+        let run3 = RunId::new();
+
+        let ns1 = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run1,
+        );
+        let ns2 = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run2,
+        );
+        let ns3 = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run3,
+        );
+
+        // Insert keys for all three runs
+        store
+            .put(Key::new_kv(ns1.clone(), "key1"), Value::I64(1), None)
+            .unwrap();
+        store
+            .put(Key::new_kv(ns1.clone(), "key2"), Value::I64(2), None)
+            .unwrap();
+        store
+            .put(Key::new_kv(ns2.clone(), "key3"), Value::I64(3), None)
+            .unwrap();
+        store
+            .put(Key::new_kv(ns3.clone(), "key4"), Value::I64(4), None)
+            .unwrap();
+        store
+            .put(Key::new_kv(ns3.clone(), "key5"), Value::I64(5), None)
+            .unwrap();
+        store
+            .put(Key::new_kv(ns3.clone(), "key6"), Value::I64(6), None)
+            .unwrap();
+
+        // Scan for run1 - should get exactly 2 keys
+        let results1 = store.scan_by_run(run1, u64::MAX).unwrap();
+        assert_eq!(results1.len(), 2);
+
+        // Scan for run2 - should get exactly 1 key
+        let results2 = store.scan_by_run(run2, u64::MAX).unwrap();
+        assert_eq!(results2.len(), 1);
+
+        // Scan for run3 - should get exactly 3 keys
+        let results3 = store.scan_by_run(run3, u64::MAX).unwrap();
+        assert_eq!(results3.len(), 3);
+
+        // Scan for non-existent run - should get 0 keys
+        let results_empty = store.scan_by_run(RunId::new(), u64::MAX).unwrap();
+        assert_eq!(results_empty.len(), 0);
+    }
+
+    #[test]
+    fn test_scan_by_type() {
+        let store = UnifiedStore::new();
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        // Insert different types of keys
+        store
+            .put(Key::new_kv(ns.clone(), "kv1"), Value::I64(1), None)
+            .unwrap();
+        store
+            .put(Key::new_kv(ns.clone(), "kv2"), Value::I64(2), None)
+            .unwrap();
+        store
+            .put(Key::new_event(ns.clone(), 1), Value::I64(100), None)
+            .unwrap();
+        store
+            .put(Key::new_event(ns.clone(), 2), Value::I64(101), None)
+            .unwrap();
+        store
+            .put(Key::new_event(ns.clone(), 3), Value::I64(102), None)
+            .unwrap();
+        store
+            .put(Key::new_trace(ns.clone(), 1), Value::I64(200), None)
+            .unwrap();
+
+        // Scan by KV type - should get 2 keys
+        let kv_results = store.scan_by_type(TypeTag::KV, u64::MAX).unwrap();
+        assert_eq!(kv_results.len(), 2);
+        for (key, _) in &kv_results {
+            assert_eq!(key.type_tag, TypeTag::KV);
+        }
+
+        // Scan by Event type - should get 3 keys
+        let event_results = store.scan_by_type(TypeTag::Event, u64::MAX).unwrap();
+        assert_eq!(event_results.len(), 3);
+        for (key, _) in &event_results {
+            assert_eq!(key.type_tag, TypeTag::Event);
+        }
+
+        // Scan by Trace type - should get 1 key
+        let trace_results = store.scan_by_type(TypeTag::Trace, u64::MAX).unwrap();
+        assert_eq!(trace_results.len(), 1);
+        for (key, _) in &trace_results {
+            assert_eq!(key.type_tag, TypeTag::Trace);
+        }
+
+        // Scan by StateMachine type - should get 0 keys
+        let sm_results = store.scan_by_type(TypeTag::StateMachine, u64::MAX).unwrap();
+        assert_eq!(sm_results.len(), 0);
+    }
+
+    #[test]
+    fn test_scan_by_type_respects_max_version() {
+        let store = UnifiedStore::new();
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        // Insert at version 1
+        store
+            .put(Key::new_kv(ns.clone(), "kv1"), Value::I64(1), None)
+            .unwrap();
+
+        // Insert at version 2
+        store
+            .put(Key::new_kv(ns.clone(), "kv2"), Value::I64(2), None)
+            .unwrap();
+
+        // Insert at version 3
+        store
+            .put(Key::new_kv(ns.clone(), "kv3"), Value::I64(3), None)
+            .unwrap();
+
+        // Scan with max_version=1 - should only return kv1
+        let results = store.scan_by_type(TypeTag::KV, 1).unwrap();
+        assert_eq!(results.len(), 1);
+
+        // Scan with max_version=2 - should return kv1 and kv2
+        let results = store.scan_by_type(TypeTag::KV, 2).unwrap();
+        assert_eq!(results.len(), 2);
+
+        // Scan with max_version=MAX - should return all 3
+        let results = store.scan_by_type(TypeTag::KV, u64::MAX).unwrap();
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_indices_stay_consistent() {
+        // Test that indices are updated correctly on put and delete
+        let store = UnifiedStore::new();
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        let key1 = Key::new_kv(ns.clone(), "key1");
+        let key2 = Key::new_event(ns.clone(), 1);
+
+        // Initially, indices should be empty
+        assert_eq!(store.scan_by_run(run_id, u64::MAX).unwrap().len(), 0);
+        assert_eq!(store.scan_by_type(TypeTag::KV, u64::MAX).unwrap().len(), 0);
+        assert_eq!(
+            store.scan_by_type(TypeTag::Event, u64::MAX).unwrap().len(),
+            0
+        );
+
+        // Insert keys
+        store.put(key1.clone(), Value::I64(1), None).unwrap();
+        store.put(key2.clone(), Value::I64(2), None).unwrap();
+
+        // Indices should reflect the inserts
+        assert_eq!(store.scan_by_run(run_id, u64::MAX).unwrap().len(), 2);
+        assert_eq!(store.scan_by_type(TypeTag::KV, u64::MAX).unwrap().len(), 1);
+        assert_eq!(
+            store.scan_by_type(TypeTag::Event, u64::MAX).unwrap().len(),
+            1
+        );
+
+        // Delete one key
+        store.delete(&key1).unwrap();
+
+        // Indices should reflect the delete
+        assert_eq!(store.scan_by_run(run_id, u64::MAX).unwrap().len(), 1);
+        assert_eq!(store.scan_by_type(TypeTag::KV, u64::MAX).unwrap().len(), 0);
+        assert_eq!(
+            store.scan_by_type(TypeTag::Event, u64::MAX).unwrap().len(),
+            1
+        );
+
+        // Delete the other key
+        store.delete(&key2).unwrap();
+
+        // Both indices should be empty
+        assert_eq!(store.scan_by_run(run_id, u64::MAX).unwrap().len(), 0);
+        assert_eq!(
+            store.scan_by_type(TypeTag::Event, u64::MAX).unwrap().len(),
+            0
+        );
+    }
+
+    #[test]
+    fn test_overwrite_does_not_duplicate_index_entries() {
+        // Test that overwriting a key doesn't create duplicate index entries
+        let store = UnifiedStore::new();
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        let key = Key::new_kv(ns.clone(), "key1");
+
+        // Insert the key multiple times (overwrite)
+        store.put(key.clone(), Value::I64(1), None).unwrap();
+        store.put(key.clone(), Value::I64(2), None).unwrap();
+        store.put(key.clone(), Value::I64(3), None).unwrap();
+
+        // run_index should have only 1 entry for this key
+        let run_results = store.scan_by_run(run_id, u64::MAX).unwrap();
+        assert_eq!(run_results.len(), 1);
+        assert_eq!(run_results[0].1.value, Value::I64(3)); // Latest value
+
+        // type_index should have only 1 entry for this key
+        let type_results = store.scan_by_type(TypeTag::KV, u64::MAX).unwrap();
+        assert_eq!(type_results.len(), 1);
     }
 }

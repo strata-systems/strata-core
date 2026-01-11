@@ -10,9 +10,10 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
+pub mod index;
 pub mod unified;
-// pub mod index;      // Story #13
 // pub mod ttl;        // Story #14
 // pub mod snapshot;   // Story #15
 
+pub use index::{RunIndex, TypeIndex};
 pub use unified::UnifiedStore;
