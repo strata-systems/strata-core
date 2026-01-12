@@ -9,6 +9,7 @@
 //! - CAS is validated separately from read-set
 //! - Write skew is ALLOWED (do not try to prevent it)
 
+use crate::transaction::CASOperation;
 use in_mem_core::traits::Storage;
 use in_mem_core::types::Key;
 use in_mem_core::value::Value;
@@ -169,6 +170,46 @@ pub fn validate_write_set<S: Storage>(
     let _ = write_set; // Acknowledge parameter (used for type checking)
 
     ValidationResult::ok()
+}
+
+/// Validate CAS operations against current storage state
+///
+/// Per spec Section 3.1 Condition 3:
+/// - For each CAS op, check if current version matches expected_version
+/// - If versions don't match, report CASConflict
+///
+/// Per spec Section 3.4:
+/// - CAS does NOT add to read_set (validated separately)
+/// - expected_version=0 means "key must not exist"
+///
+/// # Arguments
+/// * `cas_set` - CAS operations to validate
+/// * `store` - Storage to check current versions against
+///
+/// # Returns
+/// ValidationResult with any CASConflicts found
+pub fn validate_cas_set<S: Storage>(cas_set: &[CASOperation], store: &S) -> ValidationResult {
+    let mut result = ValidationResult::ok();
+
+    for cas_op in cas_set {
+        // Get current version from storage
+        let current_version = match store.get(&cas_op.key) {
+            Ok(Some(vv)) => vv.version,
+            Ok(None) => 0, // Key doesn't exist = version 0
+            Err(_) => 0,   // Storage error = treat as non-existent
+        };
+
+        // Check if expected version matches
+        if current_version != cas_op.expected_version {
+            result.conflicts.push(ConflictType::CASConflict {
+                key: cas_op.key.clone(),
+                expected_version: cas_op.expected_version,
+                current_version,
+            });
+        }
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -711,6 +752,244 @@ mod tests {
             // But read-set validation catches the conflict
             let read_result = validate_read_set(&read_set, &store);
             assert!(!read_result.is_valid());
+        }
+    }
+
+    // === CAS Validation Tests ===
+
+    mod cas_tests {
+        use super::*;
+        use crate::CASOperation;
+        use in_mem_core::value::Value;
+        use in_mem_storage::UnifiedStore;
+
+        fn create_test_store() -> UnifiedStore {
+            UnifiedStore::new()
+        }
+
+        fn create_test_namespace() -> Namespace {
+            Namespace::new("t".into(), "a".into(), "g".into(), RunId::new())
+        }
+
+        fn create_key(ns: &Namespace, name: &[u8]) -> Key {
+            Key::new(ns.clone(), TypeTag::KV, name.to_vec())
+        }
+
+        #[test]
+        fn test_validate_cas_set_empty() {
+            let store = create_test_store();
+            let cas_set: Vec<CASOperation> = Vec::new();
+
+            let result = validate_cas_set(&cas_set, &store);
+
+            assert!(result.is_valid());
+        }
+
+        #[test]
+        fn test_validate_cas_version_matches() {
+            let store = create_test_store();
+            let ns = create_test_namespace();
+            let key = create_key(&ns, b"counter");
+
+            // Put key
+            store.put(key.clone(), Value::I64(100), None).unwrap();
+            let current_version = store.get(&key).unwrap().unwrap().version;
+
+            // CAS with matching version
+            let cas_set = vec![CASOperation {
+                key: key.clone(),
+                expected_version: current_version,
+                new_value: Value::I64(101),
+            }];
+
+            let result = validate_cas_set(&cas_set, &store);
+
+            assert!(result.is_valid());
+        }
+
+        #[test]
+        fn test_validate_cas_version_mismatch() {
+            let store = create_test_store();
+            let ns = create_test_namespace();
+            let key = create_key(&ns, b"counter");
+
+            // Put key
+            store.put(key.clone(), Value::I64(100), None).unwrap();
+            let v1 = store.get(&key).unwrap().unwrap().version;
+
+            // Concurrent transaction modifies it
+            store.put(key.clone(), Value::I64(200), None).unwrap();
+
+            // CAS with old version
+            let cas_set = vec![CASOperation {
+                key: key.clone(),
+                expected_version: v1,
+                new_value: Value::I64(101),
+            }];
+
+            let result = validate_cas_set(&cas_set, &store);
+
+            assert!(!result.is_valid());
+            assert_eq!(result.conflict_count(), 1);
+            match &result.conflicts[0] {
+                ConflictType::CASConflict {
+                    expected_version,
+                    current_version,
+                    ..
+                } => {
+                    assert_eq!(*expected_version, v1);
+                    assert!(*current_version > v1);
+                }
+                _ => panic!("Expected CASConflict"),
+            }
+        }
+
+        #[test]
+        fn test_validate_cas_version_zero_key_not_exists() {
+            let store = create_test_store();
+            let ns = create_test_namespace();
+            let key = create_key(&ns, b"new_key");
+
+            // CAS with expected_version=0 on non-existent key (should succeed)
+            let cas_set = vec![CASOperation {
+                key: key.clone(),
+                expected_version: 0,
+                new_value: Value::String("initial".into()),
+            }];
+
+            let result = validate_cas_set(&cas_set, &store);
+
+            assert!(
+                result.is_valid(),
+                "CAS with version 0 on non-existent key should succeed"
+            );
+        }
+
+        #[test]
+        fn test_validate_cas_version_zero_key_exists() {
+            let store = create_test_store();
+            let ns = create_test_namespace();
+            let key = create_key(&ns, b"existing_key");
+
+            // Key exists
+            store
+                .put(key.clone(), Value::String("exists".into()), None)
+                .unwrap();
+
+            // CAS with expected_version=0 should fail (key exists)
+            let cas_set = vec![CASOperation {
+                key: key.clone(),
+                expected_version: 0,
+                new_value: Value::String("new".into()),
+            }];
+
+            let result = validate_cas_set(&cas_set, &store);
+
+            assert!(!result.is_valid());
+            match &result.conflicts[0] {
+                ConflictType::CASConflict {
+                    expected_version,
+                    current_version,
+                    ..
+                } => {
+                    assert_eq!(*expected_version, 0);
+                    assert!(*current_version > 0);
+                }
+                _ => panic!("Expected CASConflict"),
+            }
+        }
+
+        #[test]
+        fn test_validate_cas_nonzero_version_key_not_exists() {
+            let store = create_test_store();
+            let ns = create_test_namespace();
+            let key = create_key(&ns, b"missing_key");
+
+            // CAS expecting version 5 on non-existent key (should fail)
+            let cas_set = vec![CASOperation {
+                key: key.clone(),
+                expected_version: 5,
+                new_value: Value::I64(10),
+            }];
+
+            let result = validate_cas_set(&cas_set, &store);
+
+            assert!(!result.is_valid());
+            match &result.conflicts[0] {
+                ConflictType::CASConflict {
+                    expected_version,
+                    current_version,
+                    ..
+                } => {
+                    assert_eq!(*expected_version, 5);
+                    assert_eq!(*current_version, 0); // Key doesn't exist
+                }
+                _ => panic!("Expected CASConflict"),
+            }
+        }
+
+        #[test]
+        fn test_validate_cas_multiple_operations() {
+            let store = create_test_store();
+            let ns = create_test_namespace();
+            let key1 = create_key(&ns, b"key1");
+            let key2 = create_key(&ns, b"key2");
+
+            store.put(key1.clone(), Value::I64(1), None).unwrap();
+            store.put(key2.clone(), Value::I64(2), None).unwrap();
+            let v1 = store.get(&key1).unwrap().unwrap().version;
+            let v2 = store.get(&key2).unwrap().unwrap().version;
+
+            let cas_set = vec![
+                CASOperation {
+                    key: key1.clone(),
+                    expected_version: v1,
+                    new_value: Value::I64(10),
+                },
+                CASOperation {
+                    key: key2.clone(),
+                    expected_version: v2,
+                    new_value: Value::I64(20),
+                },
+            ];
+
+            let result = validate_cas_set(&cas_set, &store);
+
+            assert!(result.is_valid());
+        }
+
+        #[test]
+        fn test_validate_cas_multiple_partial_conflict() {
+            let store = create_test_store();
+            let ns = create_test_namespace();
+            let key1 = create_key(&ns, b"key1");
+            let key2 = create_key(&ns, b"key2");
+
+            store.put(key1.clone(), Value::I64(1), None).unwrap();
+            store.put(key2.clone(), Value::I64(2), None).unwrap();
+            let v1 = store.get(&key1).unwrap().unwrap().version;
+            let v2 = store.get(&key2).unwrap().unwrap().version;
+
+            // Modify only key1
+            store.put(key1.clone(), Value::I64(10), None).unwrap();
+
+            let cas_set = vec![
+                CASOperation {
+                    key: key1.clone(),
+                    expected_version: v1, // Old version - will conflict
+                    new_value: Value::I64(100),
+                },
+                CASOperation {
+                    key: key2.clone(),
+                    expected_version: v2, // Current version - OK
+                    new_value: Value::I64(200),
+                },
+            ];
+
+            let result = validate_cas_set(&cas_set, &store);
+
+            assert!(!result.is_valid());
+            assert_eq!(result.conflict_count(), 1); // Only key1 conflicts
         }
     }
 }
