@@ -6,11 +6,43 @@
 //!
 //! See `docs/architecture/M2_TRANSACTION_SEMANTICS.md` for the full specification.
 
+use crate::validation::{validate_transaction, ValidationResult};
 use in_mem_core::error::{Error, Result};
-use in_mem_core::traits::SnapshotView;
+use in_mem_core::traits::{SnapshotView, Storage};
 use in_mem_core::types::{Key, RunId};
 use in_mem_core::value::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+/// Error type for commit failures
+///
+/// Per spec Core Invariants:
+/// - All-or-nothing commit: transaction either commits or aborts entirely
+/// - First-committer-wins: conflicts are detected based on read-set
+#[derive(Debug, Clone)]
+pub enum CommitError {
+    /// Transaction aborted due to validation conflicts
+    ///
+    /// Per spec Section 3: Conflicts detected in read-set or CAS-set
+    ValidationFailed(ValidationResult),
+
+    /// Transaction was not in correct state for commit
+    ///
+    /// Commit requires Active state to transition to Validating
+    InvalidState(String),
+}
+
+impl std::fmt::Display for CommitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CommitError::ValidationFailed(result) => {
+                write!(f, "Commit failed: {} conflict(s)", result.conflict_count())
+            }
+            CommitError::InvalidState(msg) => write!(f, "Invalid state: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for CommitError {}
 
 /// Status of a transaction in its lifecycle
 ///
@@ -574,6 +606,61 @@ impl TransactionContext {
                 Ok(())
             }
         }
+    }
+
+    // === Commit Operation ===
+
+    /// Commit the transaction
+    ///
+    /// Per spec Section 3 and Core Invariants:
+    /// 1. Transition to Validating state
+    /// 2. Run validation against current storage
+    /// 3. If valid: transition to Committed
+    /// 4. If invalid: transition to Aborted
+    ///
+    /// # Arguments
+    /// * `store` - Storage to validate against
+    ///
+    /// # Returns
+    /// - Ok(()) if transaction committed successfully
+    /// - Err(CommitError::ValidationFailed) if transaction aborted due to conflicts
+    /// - Err(CommitError::InvalidState) if not in Active state
+    ///
+    /// # Note
+    /// This method performs validation and state transitions only.
+    /// Actual write application is handled separately in Story #89.
+    /// Full atomic commit with WAL is implemented in Story #91.
+    ///
+    /// # Spec Reference
+    /// - Section 3.1: When conflicts occur
+    /// - Section 3.3: First-committer-wins rule
+    /// - Core Invariants: All-or-nothing commit
+    pub fn commit<S: Storage>(&mut self, store: &S) -> std::result::Result<(), CommitError> {
+        // Step 1: Transition to Validating
+        if !self.is_active() {
+            return Err(CommitError::InvalidState(format!(
+                "Cannot commit transaction {} from {:?} state - must be Active",
+                self.txn_id, self.status
+            )));
+        }
+        self.status = TransactionStatus::Validating;
+
+        // Step 2: Validate against current storage state
+        let validation_result = validate_transaction(self, store);
+
+        if !validation_result.is_valid() {
+            // Step 3a: Validation failed - abort
+            let conflict_count = validation_result.conflict_count();
+            self.status = TransactionStatus::Aborted {
+                reason: format!("Commit failed: {} conflict(s) detected", conflict_count),
+            };
+            return Err(CommitError::ValidationFailed(validation_result));
+        }
+
+        // Step 3b: Validation passed - mark committed
+        self.status = TransactionStatus::Committed;
+
+        Ok(())
     }
 
     // === Introspection ===
@@ -1630,5 +1717,337 @@ mod tests {
         assert!(txn.write_set.contains_key(&key1));
         assert!(txn.delete_set.contains(&key2));
         assert_eq!(txn.cas_set[0].key, key3);
+    }
+
+    // === Commit Tests ===
+
+    mod commit_tests {
+        use super::*;
+        use in_mem_storage::UnifiedStore;
+
+        fn create_test_store() -> UnifiedStore {
+            UnifiedStore::new()
+        }
+
+        fn create_txn_with_store(store: &UnifiedStore) -> TransactionContext {
+            let snapshot = store.create_snapshot();
+            let run_id = RunId::new();
+            TransactionContext::with_snapshot(1, run_id, Box::new(snapshot))
+        }
+
+        #[test]
+        fn test_commit_empty_transaction() {
+            let store = create_test_store();
+            let mut txn = create_txn_with_store(&store);
+
+            let result = txn.commit(&store);
+
+            assert!(result.is_ok());
+            assert!(txn.is_committed());
+        }
+
+        #[test]
+        fn test_commit_read_only_transaction_no_conflict() {
+            let store = create_test_store();
+            let ns = create_test_namespace();
+            let key = create_test_key(&ns, b"key");
+
+            store
+                .put(key.clone(), Value::I64(100), None)
+                .expect("put failed");
+
+            let mut txn = create_txn_with_store(&store);
+            let _ = txn.get(&key).expect("get failed"); // Read adds to read_set
+
+            // No concurrent modification - should commit
+            let result = txn.commit(&store);
+            assert!(result.is_ok());
+            assert!(txn.is_committed());
+        }
+
+        #[test]
+        fn test_commit_read_only_with_concurrent_modification() {
+            let store = create_test_store();
+            let ns = create_test_namespace();
+            let key = create_test_key(&ns, b"key");
+
+            store
+                .put(key.clone(), Value::I64(100), None)
+                .expect("put failed");
+
+            let mut txn = create_txn_with_store(&store);
+            let _ = txn.get(&key).expect("get failed"); // Read adds to read_set
+
+            // Concurrent modification
+            store
+                .put(key.clone(), Value::I64(200), None)
+                .expect("put failed");
+
+            // Per spec Section 3.1: Read-write conflict
+            let result = txn.commit(&store);
+            assert!(result.is_err());
+            assert!(txn.is_aborted());
+
+            if let Err(CommitError::ValidationFailed(validation)) = result {
+                assert!(!validation.is_valid());
+                assert_eq!(validation.conflict_count(), 1);
+            } else {
+                panic!("Expected ValidationFailed error");
+            }
+        }
+
+        #[test]
+        fn test_commit_with_blind_write() {
+            let store = create_test_store();
+            let ns = create_test_namespace();
+            let key = create_test_key(&ns, b"key");
+
+            store
+                .put(key.clone(), Value::I64(100), None)
+                .expect("put failed");
+
+            let mut txn = create_txn_with_store(&store);
+            // Blind write - no read first
+            txn.put(key.clone(), Value::I64(200)).expect("put failed");
+
+            // Concurrent modification
+            store
+                .put(key.clone(), Value::I64(300), None)
+                .expect("put failed");
+
+            // Per spec Section 3.2 Scenario 1: Blind writes do NOT conflict
+            let result = txn.commit(&store);
+            assert!(result.is_ok());
+            assert!(txn.is_committed());
+        }
+
+        #[test]
+        fn test_commit_with_read_write_conflict() {
+            let store = create_test_store();
+            let ns = create_test_namespace();
+            let key = create_test_key(&ns, b"key");
+
+            store
+                .put(key.clone(), Value::I64(100), None)
+                .expect("put failed");
+
+            let mut txn = create_txn_with_store(&store);
+            let _ = txn.get(&key).expect("get failed"); // Read adds to read_set
+            txn.put(key.clone(), Value::I64(200)).expect("put failed");
+
+            // Concurrent modification
+            store
+                .put(key.clone(), Value::I64(300), None)
+                .expect("put failed");
+
+            // Per spec Section 3.1 Condition 1: Read-write conflict
+            let result = txn.commit(&store);
+            assert!(result.is_err());
+            assert!(txn.is_aborted());
+
+            if let Err(CommitError::ValidationFailed(validation)) = result {
+                assert!(!validation.is_valid());
+                assert_eq!(validation.conflict_count(), 1);
+            } else {
+                panic!("Expected ValidationFailed error");
+            }
+        }
+
+        #[test]
+        fn test_commit_with_cas_conflict() {
+            let store = create_test_store();
+            let ns = create_test_namespace();
+            let key = create_test_key(&ns, b"counter");
+
+            store
+                .put(key.clone(), Value::I64(0), None)
+                .expect("put failed");
+            let v1 = store.get(&key).expect("get failed").unwrap().version;
+
+            let mut txn = create_txn_with_store(&store);
+            txn.cas(key.clone(), v1, Value::I64(1)).expect("cas failed");
+
+            // Concurrent modification
+            store
+                .put(key.clone(), Value::I64(100), None)
+                .expect("put failed");
+
+            // Per spec Section 3.1 Condition 3: CAS conflict
+            let result = txn.commit(&store);
+            assert!(result.is_err());
+            assert!(txn.is_aborted());
+        }
+
+        #[test]
+        fn test_commit_first_committer_wins() {
+            let store = create_test_store();
+            let ns = create_test_namespace();
+            let key = create_test_key(&ns, b"shared");
+
+            store
+                .put(key.clone(), Value::String("initial".into()), None)
+                .expect("put failed");
+
+            // T1 and T2 both read and write the same key
+            let mut txn1 = create_txn_with_store(&store);
+            let _ = txn1.get(&key).expect("get failed");
+            txn1.put(key.clone(), Value::String("from_t1".into()))
+                .expect("put failed");
+
+            let mut txn2 = create_txn_with_store(&store);
+            let _ = txn2.get(&key).expect("get failed");
+            txn2.put(key.clone(), Value::String("from_t2".into()))
+                .expect("put failed");
+
+            // T1 commits first - should succeed
+            let result1 = txn1.commit(&store);
+            assert!(result1.is_ok());
+            assert!(txn1.is_committed());
+
+            // Simulate T1's write being applied (will be proper in Story #89)
+            store
+                .put(key.clone(), Value::String("from_t1".into()), None)
+                .expect("put failed");
+
+            // T2 tries to commit - should fail (read-set version changed)
+            let result2 = txn2.commit(&store);
+            assert!(result2.is_err());
+            assert!(txn2.is_aborted());
+        }
+
+        #[test]
+        fn test_cannot_commit_twice() {
+            let store = create_test_store();
+            let mut txn = create_txn_with_store(&store);
+
+            let result1 = txn.commit(&store);
+            assert!(result1.is_ok());
+
+            let result2 = txn.commit(&store);
+            assert!(result2.is_err());
+
+            if let Err(CommitError::InvalidState(msg)) = result2 {
+                assert!(msg.contains("Committed"));
+            } else {
+                panic!("Expected InvalidState error");
+            }
+        }
+
+        #[test]
+        fn test_cannot_commit_aborted_transaction() {
+            let store = create_test_store();
+            let mut txn = create_txn_with_store(&store);
+
+            txn.mark_aborted("Manual abort".to_string())
+                .expect("abort failed");
+
+            let result = txn.commit(&store);
+            assert!(result.is_err());
+
+            if let Err(CommitError::InvalidState(msg)) = result {
+                assert!(msg.contains("Aborted"));
+            } else {
+                panic!("Expected InvalidState error");
+            }
+        }
+
+        #[test]
+        fn test_commit_transitions_to_validating_then_committed() {
+            let store = create_test_store();
+            let mut txn = create_txn_with_store(&store);
+
+            assert!(txn.is_active());
+
+            let result = txn.commit(&store);
+
+            assert!(result.is_ok());
+            // Should end up in Committed state (validating is transient)
+            assert!(txn.is_committed());
+        }
+
+        #[test]
+        fn test_commit_with_cas_success() {
+            let store = create_test_store();
+            let ns = create_test_namespace();
+            let key = create_test_key(&ns, b"counter");
+
+            store
+                .put(key.clone(), Value::I64(0), None)
+                .expect("put failed");
+            let v1 = store.get(&key).expect("get failed").unwrap().version;
+
+            let mut txn = create_txn_with_store(&store);
+            txn.cas(key.clone(), v1, Value::I64(1)).expect("cas failed");
+
+            // No concurrent modification - CAS should succeed
+            let result = txn.commit(&store);
+            assert!(result.is_ok());
+            assert!(txn.is_committed());
+        }
+
+        #[test]
+        fn test_commit_with_multiple_operations() {
+            let store = create_test_store();
+            let ns = create_test_namespace();
+            let key1 = create_test_key(&ns, b"key1");
+            let key2 = create_test_key(&ns, b"key2");
+            let key3 = create_test_key(&ns, b"key3");
+
+            // Setup
+            store
+                .put(key1.clone(), Value::I64(1), None)
+                .expect("put failed");
+            store
+                .put(key2.clone(), Value::I64(2), None)
+                .expect("put failed");
+
+            let mut txn = create_txn_with_store(&store);
+
+            // Mix of operations
+            let _ = txn.get(&key1).expect("get failed"); // Read
+            txn.put(key1.clone(), Value::I64(10)).expect("put failed"); // Write after read
+            txn.put(key3.clone(), Value::I64(30)).expect("put failed"); // Blind write (new key)
+            txn.delete(key2.clone()).expect("delete failed"); // Delete
+
+            // No concurrent modifications - should commit
+            let result = txn.commit(&store);
+            assert!(result.is_ok());
+            assert!(txn.is_committed());
+        }
+
+        #[test]
+        fn test_commit_error_display() {
+            let store = create_test_store();
+            let ns = create_test_namespace();
+            let key = create_test_key(&ns, b"key");
+
+            store
+                .put(key.clone(), Value::I64(100), None)
+                .expect("put failed");
+
+            let mut txn = create_txn_with_store(&store);
+            let _ = txn.get(&key).expect("get failed");
+
+            // Concurrent modification
+            store
+                .put(key.clone(), Value::I64(200), None)
+                .expect("put failed");
+
+            let result = txn.commit(&store);
+            if let Err(e) = result {
+                let display = format!("{}", e);
+                assert!(display.contains("conflict"));
+            } else {
+                panic!("Expected error");
+            }
+        }
+
+        #[test]
+        fn test_commit_invalid_state_display() {
+            let err = CommitError::InvalidState("test reason".to_string());
+            let display = format!("{}", err);
+            assert!(display.contains("Invalid state"));
+            assert!(display.contains("test reason"));
+        }
     }
 }

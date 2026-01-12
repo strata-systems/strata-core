@@ -9,7 +9,7 @@
 //! - CAS is validated separately from read-set
 //! - Write skew is ALLOWED (do not try to prevent it)
 
-use crate::transaction::CASOperation;
+use crate::transaction::{CASOperation, TransactionContext};
 use in_mem_core::traits::Storage;
 use in_mem_core::types::Key;
 use in_mem_core::value::Value;
@@ -208,6 +208,45 @@ pub fn validate_cas_set<S: Storage>(cas_set: &[CASOperation], store: &S) -> Vali
             });
         }
     }
+
+    result
+}
+
+/// Validate a complete transaction against current storage state
+///
+/// Per spec Section 3 (Conflict Detection):
+/// 1. Validates read-set: detects read-write conflicts (first-committer-wins)
+/// 2. Validates write-set: currently no-op (blind writes don't conflict)
+/// 3. Validates CAS-set: ensures expected versions still match
+///
+/// # Arguments
+/// * `txn` - Transaction to validate (should be in Validating state for correctness,
+///   but this function doesn't enforce that)
+/// * `store` - Current storage state to validate against
+///
+/// # Returns
+/// ValidationResult containing any conflicts found
+///
+/// # Spec Reference
+/// - Section 3.1: When conflicts occur
+/// - Section 3.2: Conflict scenarios
+/// - Section 3.3: First-committer-wins rule
+pub fn validate_transaction<S: Storage>(txn: &TransactionContext, store: &S) -> ValidationResult {
+    let mut result = ValidationResult::ok();
+
+    // 1. Validate read-set (detects read-write conflicts)
+    result.merge(validate_read_set(&txn.read_set, store));
+
+    // 2. Validate write-set (currently no-op, but may detect conflicts in future)
+    result.merge(validate_write_set(
+        &txn.write_set,
+        &txn.read_set,
+        txn.start_version,
+        store,
+    ));
+
+    // 3. Validate CAS-set (detects version mismatches)
+    result.merge(validate_cas_set(&txn.cas_set, store));
 
     result
 }
