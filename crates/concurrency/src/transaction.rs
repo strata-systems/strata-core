@@ -30,6 +30,12 @@ pub enum CommitError {
     ///
     /// Commit requires Active state to transition to Validating
     InvalidState(String),
+
+    /// WAL write failed during commit
+    ///
+    /// Per spec Section 5: WAL must be written before storage for durability.
+    /// If WAL write fails, the transaction cannot be durably committed.
+    WALError(String),
 }
 
 impl std::fmt::Display for CommitError {
@@ -39,6 +45,7 @@ impl std::fmt::Display for CommitError {
                 write!(f, "Commit failed: {} conflict(s)", result.conflict_count())
             }
             CommitError::InvalidState(msg) => write!(f, "Invalid state: {}", msg),
+            CommitError::WALError(msg) => write!(f, "WAL error: {}", msg),
         }
     }
 }
@@ -544,6 +551,17 @@ impl TransactionContext {
     /// Check if transaction is aborted
     pub fn is_aborted(&self) -> bool {
         matches!(self.status, TransactionStatus::Aborted { .. })
+    }
+
+    /// Check if transaction can be rolled back
+    ///
+    /// A transaction can be rolled back if it's in Active or Validating state.
+    /// Once committed or aborted, rollback is not possible.
+    pub fn can_rollback(&self) -> bool {
+        matches!(
+            self.status,
+            TransactionStatus::Active | TransactionStatus::Validating
+        )
     }
 
     /// Check if transaction can accept operations
