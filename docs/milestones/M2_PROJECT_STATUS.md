@@ -166,6 +166,7 @@ All M2 implementation MUST comply with `docs/architecture/M2_TRANSACTION_SEMANTI
 - [EPIC_7_REVIEW.md](EPIC_7_REVIEW.md) - Epic 7 validation report
 - [epic-6-claude-prompts.md](../prompts/epic-6-claude-prompts.md) - Epic 6 implementation prompts
 - [epic-7-claude-prompts.md](../prompts/epic-7-claude-prompts.md) - Epic 7 implementation prompts
+- [epic-8-claude-prompts.md](../prompts/epic-8-claude-prompts.md) - Epic 8 implementation prompts
 - [M2_PROMPT_HEADER.md](../prompts/M2_PROMPT_HEADER.md) - Header template for M2 prompts
 
 ---
