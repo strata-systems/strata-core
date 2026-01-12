@@ -4,19 +4,61 @@
 //! - Storage initialization
 //! - WAL opening
 //! - Automatic recovery on startup
+//! - Transaction API (M2)
+//!
+//! ## Transaction API
+//!
+//! The Database provides two ways to execute transactions:
+//!
+//! 1. **Closure API** (recommended): `db.transaction(run_id, |txn| { ... })`
+//!    - Automatic commit on success, abort on error
+//!    - Returns the closure's return value
+//!
+//! 2. **Manual API**: `begin_transaction()` + `commit_transaction()`
+//!    - For cases requiring external control over commit timing
+//!
+//! Per spec Section 4: Implicit transactions wrap M1-style operations.
 
+use in_mem_concurrency::{
+    validate_transaction, RecoveryCoordinator, TransactionContext, TransactionManager,
+    TransactionWALWriter,
+};
 use in_mem_core::error::{Error, Result};
-use in_mem_durability::replay_wal;
+use in_mem_core::traits::Storage;
+use in_mem_core::types::RunId;
 use in_mem_durability::wal::{DurabilityMode, WAL};
 use in_mem_storage::UnifiedStore;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tracing::info;
 
-/// Main database struct
+/// Main database struct with transaction support
 ///
-/// Orchestrates storage, WAL, and recovery.
+/// Orchestrates storage, WAL, recovery, and transactions.
 /// Create a database by calling `Database::open()`.
+///
+/// # Transaction Support (M2)
+///
+/// The Database provides transaction APIs per spec Section 4:
+/// - `transaction()`: Execute a closure within a transaction
+/// - `begin_transaction()`: Start a manual transaction
+/// - `commit_transaction()`: Commit a manual transaction
+///
+/// # Example
+///
+/// ```ignore
+/// use in_mem_engine::Database;
+/// use in_mem_core::types::RunId;
+///
+/// let db = Database::open("/path/to/data")?;
+/// let run_id = RunId::new();
+///
+/// // Closure API (recommended)
+/// let result = db.transaction(run_id, |txn| {
+///     txn.put(key, value)?;
+///     Ok(())
+/// })?;
+/// ```
 pub struct Database {
     /// Data directory path
     data_dir: PathBuf,
@@ -26,6 +68,11 @@ pub struct Database {
 
     /// Write-ahead log (protected by mutex for exclusive access)
     wal: Arc<Mutex<WAL>>,
+
+    /// Transaction manager for version and ID allocation
+    ///
+    /// Per spec Section 6.1: Single monotonic counter for the entire database.
+    txn_manager: TransactionManager,
 }
 
 impl Database {
@@ -76,6 +123,11 @@ impl Database {
     ///
     /// * `Ok(Database)` - Ready-to-use database instance
     /// * `Err` - If directory creation, WAL opening, or recovery fails
+    ///
+    /// # Recovery
+    ///
+    /// Per spec Section 5: Uses RecoveryCoordinator to replay WAL and
+    /// initialize TransactionManager with the recovered version.
     pub fn open_with_mode<P: AsRef<Path>>(
         path: P,
         durability_mode: DurabilityMode,
@@ -85,33 +137,34 @@ impl Database {
         // Create data directory
         std::fs::create_dir_all(&data_dir).map_err(Error::IoError)?;
 
-        // Create WAL directory and open WAL
+        // Create WAL directory
         let wal_dir = data_dir.join("wal");
         std::fs::create_dir_all(&wal_dir).map_err(Error::IoError)?;
 
         let wal_path = wal_dir.join("current.wal");
-        let wal = WAL::open(&wal_path, durability_mode)?;
 
-        // Create empty storage
-        let storage = Arc::new(UnifiedStore::new());
-
-        // Replay WAL to restore state
-        let stats = replay_wal(&wal, storage.as_ref())?;
+        // Use RecoveryCoordinator for proper transaction-aware recovery
+        // This replays the WAL and initializes the TransactionManager
+        let recovery = RecoveryCoordinator::new(wal_path.clone());
+        let result = recovery.recover()?;
 
         info!(
-            txns_applied = stats.txns_applied,
-            writes_applied = stats.writes_applied,
-            deletes_applied = stats.deletes_applied,
-            incomplete_txns = stats.incomplete_txns,
-            orphaned_entries = stats.orphaned_entries,
-            final_version = stats.final_version,
+            txns_replayed = result.stats.txns_replayed,
+            writes_applied = result.stats.writes_applied,
+            deletes_applied = result.stats.deletes_applied,
+            incomplete_txns = result.stats.incomplete_txns,
+            final_version = result.stats.final_version,
             "Recovery complete"
         );
 
+        // Re-open WAL for appending (recovery opened read-only)
+        let wal = WAL::open(&wal_path, durability_mode)?;
+
         Ok(Self {
             data_dir,
-            storage,
+            storage: Arc::new(result.storage),
             wal: Arc::new(Mutex::new(wal)),
+            txn_manager: result.txn_manager,
         })
     }
 
@@ -143,6 +196,155 @@ impl Database {
     pub fn flush(&self) -> Result<()> {
         let wal = self.wal.lock().unwrap();
         wal.fsync()
+    }
+
+    // ========================================================================
+    // Transaction API (M2)
+    // ========================================================================
+
+    /// Execute a transaction with the given closure
+    ///
+    /// Per spec Section 4:
+    /// - Creates TransactionContext with snapshot
+    /// - Executes closure with transaction
+    /// - Validates and commits on success
+    /// - Aborts on error
+    ///
+    /// # Arguments
+    /// * `run_id` - RunId for namespace isolation
+    /// * `f` - Closure that performs transaction operations
+    ///
+    /// # Returns
+    /// * `Ok(T)` - Closure return value on successful commit
+    /// * `Err` - On validation conflict or closure error
+    ///
+    /// # Example
+    /// ```ignore
+    /// let result = db.transaction(run_id, |txn| {
+    ///     let val = txn.get(&key)?;
+    ///     txn.put(key, new_value)?;
+    ///     Ok(val)
+    /// })?;
+    /// ```
+    pub fn transaction<F, T>(&self, run_id: RunId, f: F) -> Result<T>
+    where
+        F: FnOnce(&mut TransactionContext) -> Result<T>,
+    {
+        let mut txn = self.begin_transaction(run_id);
+
+        // Execute closure
+        let result = f(&mut txn);
+
+        match result {
+            Ok(value) => {
+                // Commit on success
+                self.commit_transaction(&mut txn)?;
+                Ok(value)
+            }
+            Err(e) => {
+                // Abort on error (just discard, per spec no AbortTxn in WAL for user aborts)
+                let _ = txn.mark_aborted(format!("Closure error: {}", e));
+                Err(e)
+            }
+        }
+    }
+
+    /// Begin a new transaction (for manual control)
+    ///
+    /// Returns a TransactionContext that must be manually committed or aborted.
+    /// Prefer `transaction()` closure API for automatic handling.
+    ///
+    /// # Arguments
+    /// * `run_id` - RunId for namespace isolation
+    ///
+    /// # Returns
+    /// * `TransactionContext` - Active transaction ready for operations
+    ///
+    /// # Example
+    /// ```ignore
+    /// let mut txn = db.begin_transaction(run_id);
+    /// txn.put(key, value)?;
+    /// db.commit_transaction(&mut txn)?;
+    /// ```
+    pub fn begin_transaction(&self, run_id: RunId) -> TransactionContext {
+        let txn_id = self.txn_manager.next_txn_id();
+        let snapshot = self.storage.create_snapshot();
+
+        TransactionContext::with_snapshot(txn_id, run_id, Box::new(snapshot))
+    }
+
+    /// Commit a transaction
+    ///
+    /// Per spec commit sequence:
+    /// 1. Validate (conflict detection)
+    /// 2. Allocate commit version
+    /// 3. Write to WAL (BeginTxn, Writes, CommitTxn)
+    /// 4. Apply to storage
+    ///
+    /// # Arguments
+    /// * `txn` - Transaction to commit
+    ///
+    /// # Returns
+    /// * `Ok(())` - Transaction committed successfully
+    /// * `Err(TransactionConflict)` - Validation failed, transaction aborted
+    ///
+    /// # Errors
+    /// - `TransactionConflict` - Read-write or CAS conflict detected
+    /// - `InvalidState` - Transaction not in Active state
+    pub fn commit_transaction(&self, txn: &mut TransactionContext) -> Result<()> {
+        // 1. Validate
+        txn.mark_validating()?;
+        let validation = validate_transaction(txn, self.storage.as_ref());
+
+        if !validation.is_valid() {
+            let _ = txn.mark_aborted(format!("Validation failed: {:?}", validation.conflicts));
+            return Err(Error::TransactionConflict(format!(
+                "Conflicts: {:?}",
+                validation.conflicts
+            )));
+        }
+
+        // 2. Allocate commit version
+        let commit_version = self.txn_manager.allocate_version();
+
+        // 3. Write to WAL
+        {
+            let mut wal = self.wal.lock().unwrap();
+            let mut wal_writer = TransactionWALWriter::new(&mut wal, txn.txn_id, txn.run_id);
+
+            // Write BeginTxn
+            wal_writer.write_begin()?;
+
+            // Write all operations
+            for (key, value) in &txn.write_set {
+                wal_writer.write_put(key.clone(), value.clone(), commit_version)?;
+            }
+            for key in &txn.delete_set {
+                wal_writer.write_delete(key.clone(), commit_version)?;
+            }
+
+            // Write CommitTxn (this also flushes)
+            wal_writer.write_commit()?;
+        }
+
+        // 4. Apply to storage
+        for (key, value) in &txn.write_set {
+            self.storage
+                .put_with_version(key.clone(), value.clone(), commit_version, None)?;
+        }
+        for key in &txn.delete_set {
+            self.storage.delete_with_version(key, commit_version)?;
+        }
+
+        // Mark committed
+        txn.mark_committed()?;
+
+        Ok(())
+    }
+
+    /// Get the transaction manager (for testing/internal use)
+    pub fn txn_manager(&self) -> &TransactionManager {
+        &self.txn_manager
     }
 }
 
@@ -413,5 +615,268 @@ mod tests {
 
         // Flush should succeed
         assert!(db.flush().is_ok());
+    }
+
+    // ========================================================================
+    // Transaction API Tests (M2 Story #98)
+    // ========================================================================
+
+    fn create_test_namespace(run_id: RunId) -> Namespace {
+        Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        )
+    }
+
+    #[test]
+    fn test_transaction_closure_api() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+
+        let run_id = RunId::new();
+        let ns = create_test_namespace(run_id);
+        let key = Key::new_kv(ns, "test_key");
+
+        // Execute transaction
+        let result = db.transaction(run_id, |txn| {
+            txn.put(key.clone(), Value::I64(42))?;
+            Ok(())
+        });
+
+        assert!(result.is_ok());
+
+        // Verify data was committed
+        let stored = db.storage().get(&key).unwrap().unwrap();
+        assert_eq!(stored.value, Value::I64(42));
+    }
+
+    #[test]
+    fn test_transaction_returns_closure_value() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+
+        let run_id = RunId::new();
+        let ns = create_test_namespace(run_id);
+        let key = Key::new_kv(ns, "test_key");
+
+        // Pre-populate using transaction
+        db.transaction(run_id, |txn| {
+            txn.put(key.clone(), Value::I64(100))?;
+            Ok(())
+        })
+        .unwrap();
+
+        // Transaction returns a value
+        let result: Result<i64> = db.transaction(run_id, |txn| {
+            let val = txn.get(&key)?.unwrap();
+            if let Value::I64(n) = val {
+                Ok(n)
+            } else {
+                Err(Error::InvalidState("wrong type".to_string()))
+            }
+        });
+
+        assert_eq!(result.unwrap(), 100);
+    }
+
+    #[test]
+    fn test_transaction_read_your_writes() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+
+        let run_id = RunId::new();
+        let ns = create_test_namespace(run_id);
+        let key = Key::new_kv(ns, "ryw_key");
+
+        // Per spec Section 2.1: "Its own uncommitted writes - always visible"
+        let result: Result<Value> = db.transaction(run_id, |txn| {
+            txn.put(key.clone(), Value::String("written".to_string()))?;
+
+            // Should see our own write
+            let val = txn.get(&key)?.unwrap();
+            Ok(val)
+        });
+
+        assert_eq!(result.unwrap(), Value::String("written".to_string()));
+    }
+
+    #[test]
+    fn test_transaction_aborts_on_closure_error() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+
+        let run_id = RunId::new();
+        let ns = create_test_namespace(run_id);
+        let key = Key::new_kv(ns, "abort_key");
+
+        // Transaction that errors
+        let result: Result<()> = db.transaction(run_id, |txn| {
+            txn.put(key.clone(), Value::I64(999))?;
+            Err(Error::InvalidState("intentional error".to_string()))
+        });
+
+        assert!(result.is_err());
+
+        // Data should NOT be committed
+        assert!(db.storage().get(&key).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_begin_and_commit_manual() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+
+        let run_id = RunId::new();
+        let ns = create_test_namespace(run_id);
+        let key = Key::new_kv(ns, "manual_key");
+
+        // Manual transaction control
+        let mut txn = db.begin_transaction(run_id);
+        txn.put(key.clone(), Value::I64(123)).unwrap();
+
+        // Commit manually
+        db.commit_transaction(&mut txn).unwrap();
+
+        // Verify committed
+        let stored = db.storage().get(&key).unwrap().unwrap();
+        assert_eq!(stored.value, Value::I64(123));
+    }
+
+    #[test]
+    fn test_transaction_wal_logging() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("db");
+        let run_id = RunId::new();
+        let ns = create_test_namespace(run_id);
+        let key = Key::new_kv(ns, "wal_key");
+
+        // Execute transaction
+        {
+            let db = Database::open(&db_path).unwrap();
+            db.transaction(run_id, |txn| {
+                txn.put(key.clone(), Value::I64(42))?;
+                Ok(())
+            })
+            .unwrap();
+        }
+
+        // Reopen database (triggers recovery from WAL)
+        {
+            let db = Database::open(&db_path).unwrap();
+            let stored = db.storage().get(&key).unwrap().unwrap();
+            assert_eq!(stored.value, Value::I64(42));
+        }
+    }
+
+    #[test]
+    fn test_transaction_version_allocation() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+
+        let run_id = RunId::new();
+        let ns = create_test_namespace(run_id);
+
+        // First transaction
+        db.transaction(run_id, |txn| {
+            txn.put(Key::new_kv(ns.clone(), "key1"), Value::I64(1))?;
+            Ok(())
+        })
+        .unwrap();
+
+        let v1 = db.storage().current_version();
+        assert!(v1 > 0);
+
+        // Second transaction
+        db.transaction(run_id, |txn| {
+            txn.put(Key::new_kv(ns.clone(), "key2"), Value::I64(2))?;
+            Ok(())
+        })
+        .unwrap();
+
+        let v2 = db.storage().current_version();
+        assert!(v2 > v1); // Versions must be monotonic
+    }
+
+    #[test]
+    fn test_txn_manager_accessor() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+
+        // TxnManager should be accessible
+        let _txn_manager = db.txn_manager();
+        // Initial version should be 0 for empty database
+        assert_eq!(db.txn_manager().current_version(), 0);
+    }
+
+    #[test]
+    fn test_transaction_multi_key() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+
+        let run_id = RunId::new();
+        let ns = create_test_namespace(run_id);
+
+        // Transaction with multiple keys
+        db.transaction(run_id, |txn| {
+            txn.put(Key::new_kv(ns.clone(), "a"), Value::I64(1))?;
+            txn.put(Key::new_kv(ns.clone(), "b"), Value::I64(2))?;
+            txn.put(Key::new_kv(ns.clone(), "c"), Value::I64(3))?;
+            Ok(())
+        })
+        .unwrap();
+
+        // All keys should have the same version (per spec Section 6.1)
+        let v_a = db
+            .storage()
+            .get(&Key::new_kv(ns.clone(), "a"))
+            .unwrap()
+            .unwrap()
+            .version;
+        let v_b = db
+            .storage()
+            .get(&Key::new_kv(ns.clone(), "b"))
+            .unwrap()
+            .unwrap()
+            .version;
+        let v_c = db
+            .storage()
+            .get(&Key::new_kv(ns.clone(), "c"))
+            .unwrap()
+            .unwrap()
+            .version;
+
+        assert_eq!(v_a, v_b);
+        assert_eq!(v_b, v_c);
+    }
+
+    #[test]
+    fn test_transaction_with_delete() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+
+        let run_id = RunId::new();
+        let ns = create_test_namespace(run_id);
+        let key = Key::new_kv(ns, "to_delete");
+
+        // Create key
+        db.transaction(run_id, |txn| {
+            txn.put(key.clone(), Value::I64(100))?;
+            Ok(())
+        })
+        .unwrap();
+
+        assert!(db.storage().get(&key).unwrap().is_some());
+
+        // Delete key
+        db.transaction(run_id, |txn| {
+            txn.delete(key.clone())?;
+            Ok(())
+        })
+        .unwrap();
+
+        // Key should be gone
+        assert!(db.storage().get(&key).unwrap().is_none());
     }
 }

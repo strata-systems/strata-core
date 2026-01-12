@@ -81,7 +81,7 @@ impl TransactionManager {
     /// Allocate next commit version (increment global version)
     ///
     /// Per spec Section 6.1: Version incremented ONCE for the whole transaction.
-    fn allocate_commit_version(&self) -> u64 {
+    pub fn allocate_version(&self) -> u64 {
         self.version.fetch_add(1, Ordering::SeqCst) + 1
     }
 
@@ -126,7 +126,7 @@ impl TransactionManager {
         // but NOT yet durable (not in WAL)
 
         // Step 2: Allocate commit version
-        let commit_version = self.allocate_commit_version();
+        let commit_version = self.allocate_version();
 
         // Step 3-5: Write to WAL (durability)
         let txn_id = self.next_txn_id();
@@ -286,10 +286,10 @@ mod tests {
     }
 
     #[test]
-    fn test_allocate_commit_version() {
+    fn test_allocate_version() {
         let manager = TransactionManager::new(10);
-        assert_eq!(manager.allocate_commit_version(), 11);
-        assert_eq!(manager.allocate_commit_version(), 12);
+        assert_eq!(manager.allocate_version(), 11);
+        assert_eq!(manager.allocate_version(), 12);
         assert_eq!(manager.current_version(), 12);
     }
 

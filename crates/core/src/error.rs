@@ -53,11 +53,24 @@ pub enum Error {
     /// Invalid state transition (M2 transactions)
     #[error("Invalid state: {0}")]
     InvalidState(String),
+
+    /// Transaction conflict detected during commit (M2)
+    #[error("Transaction conflict: {0}")]
+    TransactionConflict(String),
 }
 
 impl From<bincode::Error> for Error {
     fn from(e: bincode::Error) -> Self {
         Error::SerializationError(e.to_string())
+    }
+}
+
+impl Error {
+    /// Check if this error is a transaction conflict
+    ///
+    /// Used for retry logic - only conflict errors should be retried.
+    pub fn is_conflict(&self) -> bool {
+        matches!(self, Error::TransactionConflict(_))
     }
 }
 
@@ -194,5 +207,22 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("Invalid state"));
         assert!(msg.contains("transaction not active"));
+    }
+
+    #[test]
+    fn test_error_display_transaction_conflict() {
+        let err = Error::TransactionConflict("read-write conflict on key".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("Transaction conflict"));
+        assert!(msg.contains("read-write conflict on key"));
+    }
+
+    #[test]
+    fn test_is_conflict() {
+        let conflict = Error::TransactionConflict("conflict".to_string());
+        let not_conflict = Error::InvalidState("state".to_string());
+
+        assert!(conflict.is_conflict());
+        assert!(!not_conflict.is_conflict());
     }
 }
