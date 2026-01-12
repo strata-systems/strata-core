@@ -25,7 +25,9 @@ use in_mem_concurrency::{
 };
 use in_mem_core::error::{Error, Result};
 use in_mem_core::traits::Storage;
-use in_mem_core::types::RunId;
+use in_mem_core::types::{Key, RunId};
+use in_mem_core::value::Value;
+use in_mem_core::VersionedValue;
 use in_mem_durability::wal::{DurabilityMode, WAL};
 use in_mem_storage::UnifiedStore;
 use std::path::{Path, PathBuf};
@@ -317,12 +319,20 @@ impl Database {
             // Write BeginTxn
             wal_writer.write_begin()?;
 
-            // Write all operations
+            // Write all operations (puts, deletes, and CAS)
             for (key, value) in &txn.write_set {
                 wal_writer.write_put(key.clone(), value.clone(), commit_version)?;
             }
             for key in &txn.delete_set {
                 wal_writer.write_delete(key.clone(), commit_version)?;
+            }
+            // CAS operations are written as puts after validation
+            for cas_op in &txn.cas_set {
+                wal_writer.write_put(
+                    cas_op.key.clone(),
+                    cas_op.new_value.clone(),
+                    commit_version,
+                )?;
             }
 
             // Write CommitTxn (this also flushes)
@@ -336,6 +346,15 @@ impl Database {
         }
         for key in &txn.delete_set {
             self.storage.delete_with_version(key, commit_version)?;
+        }
+        // CAS operations are applied as puts after validation
+        for cas_op in &txn.cas_set {
+            self.storage.put_with_version(
+                cas_op.key.clone(),
+                cas_op.new_value.clone(),
+                commit_version,
+                None,
+            )?;
         }
 
         // Mark committed
@@ -358,6 +377,123 @@ impl Database {
     /// - Commit rate
     pub fn metrics(&self) -> TransactionMetrics {
         self.coordinator.metrics()
+    }
+
+    // ========================================================================
+    // Implicit Transactions (M1 Compatibility)
+    // ========================================================================
+
+    /// Put a key-value pair (M1 compatibility)
+    ///
+    /// Per spec Section 4.2: Wraps in implicit transaction, commits immediately.
+    /// This provides backwards compatibility with M1-style operations.
+    ///
+    /// # Arguments
+    /// * `run_id` - RunId for namespace isolation
+    /// * `key` - Key to store
+    /// * `value` - Value to store
+    ///
+    /// # Returns
+    /// * `Ok(())` - Value stored successfully
+    /// * `Err(TransactionConflict)` - Conflict detected (rare for implicit txns)
+    ///
+    /// # Example
+    /// ```ignore
+    /// db.put(run_id, key, Value::I64(42))?;
+    /// ```
+    pub fn put(&self, run_id: RunId, key: Key, value: Value) -> Result<()> {
+        self.transaction(run_id, |txn| {
+            txn.put(key.clone(), value.clone())?;
+            Ok(())
+        })
+    }
+
+    /// Get a value by key (M1 compatibility)
+    ///
+    /// Per spec Section 4.2: Read-only, creates snapshot, always succeeds.
+    /// This provides backwards compatibility with M1-style operations.
+    ///
+    /// Unlike writes, reads don't need a full transaction - just a snapshot.
+    /// This is an optimization per spec Section 4.2.
+    ///
+    /// # Arguments
+    /// * `key` - Key to retrieve
+    ///
+    /// # Returns
+    /// * `Ok(Some(VersionedValue))` - Value found
+    /// * `Ok(None)` - Key doesn't exist
+    ///
+    /// # Example
+    /// ```ignore
+    /// if let Some(vv) = db.get(&key)? {
+    ///     println!("Value: {:?}, Version: {}", vv.value, vv.version);
+    /// }
+    /// ```
+    pub fn get(&self, key: &Key) -> Result<Option<VersionedValue>> {
+        // For read-only operations, we can skip the full transaction
+        // and just use a snapshot directly (per spec Section 4.2)
+        use in_mem_core::traits::SnapshotView;
+        let snapshot = self.storage.create_snapshot();
+        snapshot.get(key)
+    }
+
+    /// Delete a key (M1 compatibility)
+    ///
+    /// Per spec Section 4.2: Wraps in implicit transaction, commits immediately.
+    /// This provides backwards compatibility with M1-style operations.
+    ///
+    /// # Arguments
+    /// * `run_id` - RunId for namespace isolation
+    /// * `key` - Key to delete
+    ///
+    /// # Returns
+    /// * `Ok(())` - Key deleted (or didn't exist)
+    /// * `Err(TransactionConflict)` - Conflict detected (rare for implicit txns)
+    ///
+    /// # Example
+    /// ```ignore
+    /// db.delete(run_id, key)?;
+    /// ```
+    pub fn delete(&self, run_id: RunId, key: Key) -> Result<()> {
+        self.transaction(run_id, |txn| {
+            txn.delete(key.clone())?;
+            Ok(())
+        })
+    }
+
+    /// Compare-and-swap (M1 compatibility with explicit version)
+    ///
+    /// Per spec Section 3.4: CAS validates expected_version before write.
+    /// The operation succeeds only if the current version matches expected_version.
+    ///
+    /// # Arguments
+    /// * `run_id` - RunId for namespace isolation
+    /// * `key` - Key to update
+    /// * `expected_version` - Version the key must have (0 = key must not exist)
+    /// * `new_value` - New value to write if version matches
+    ///
+    /// # Returns
+    /// * `Ok(())` - CAS succeeded
+    /// * `Err(TransactionConflict)` - Version mismatch or conflict
+    ///
+    /// # Example
+    /// ```ignore
+    /// // Get current version
+    /// let vv = db.get(&key)?.unwrap();
+    /// // Atomic update only if version matches
+    /// db.cas(run_id, key, vv.version, Value::I64(new_val))?;
+    /// ```
+    pub fn cas(
+        &self,
+        run_id: RunId,
+        key: Key,
+        expected_version: u64,
+        new_value: Value,
+    ) -> Result<()> {
+        self.transaction(run_id, |txn| {
+            txn.cas(key.clone(), expected_version, new_value.clone())?;
+            Ok(())
+        })
     }
 }
 
@@ -931,5 +1067,195 @@ mod tests {
 
         // Key should be gone
         assert!(db.storage().get(&key).unwrap().is_none());
+    }
+
+    // ========================================================================
+    // Implicit Transaction Tests (M1 Compatibility - Story #100)
+    // ========================================================================
+
+    #[test]
+    fn test_implicit_put() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+
+        let run_id = RunId::new();
+        let ns = create_test_namespace(run_id);
+        let key = Key::new_kv(ns, "implicit_put");
+
+        // M1-style put
+        db.put(run_id, key.clone(), Value::I64(42)).unwrap();
+
+        // Verify stored
+        let stored = db.storage().get(&key).unwrap().unwrap();
+        assert_eq!(stored.value, Value::I64(42));
+    }
+
+    #[test]
+    fn test_implicit_get() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+
+        let run_id = RunId::new();
+        let ns = create_test_namespace(run_id);
+        let key = Key::new_kv(ns, "implicit_get");
+
+        // Pre-populate using put
+        db.put(run_id, key.clone(), Value::I64(100)).unwrap();
+
+        // M1-style get
+        let result = db.get(&key).unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().value, Value::I64(100));
+    }
+
+    #[test]
+    fn test_implicit_get_nonexistent() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+
+        let run_id = RunId::new();
+        let ns = create_test_namespace(run_id);
+        let key = Key::new_kv(ns, "nonexistent");
+
+        // M1-style get for nonexistent key
+        let result = db.get(&key).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_implicit_delete() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+
+        let run_id = RunId::new();
+        let ns = create_test_namespace(run_id);
+        let key = Key::new_kv(ns, "to_delete_implicit");
+
+        // Pre-populate
+        db.put(run_id, key.clone(), Value::I64(1)).unwrap();
+        assert!(db.get(&key).unwrap().is_some());
+
+        // M1-style delete
+        db.delete(run_id, key.clone()).unwrap();
+
+        // Verify deleted
+        assert!(db.get(&key).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_implicit_cas_success() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+
+        let run_id = RunId::new();
+        let ns = create_test_namespace(run_id);
+        let key = Key::new_kv(ns, "cas_key");
+
+        // Initial put
+        db.put(run_id, key.clone(), Value::I64(1)).unwrap();
+        let current = db.get(&key).unwrap().unwrap();
+
+        // CAS with correct version
+        db.cas(run_id, key.clone(), current.version, Value::I64(2))
+            .unwrap();
+
+        // Verify updated
+        let updated = db.get(&key).unwrap().unwrap();
+        assert_eq!(updated.value, Value::I64(2));
+    }
+
+    #[test]
+    fn test_implicit_cas_failure() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+
+        let run_id = RunId::new();
+        let ns = create_test_namespace(run_id);
+        let key = Key::new_kv(ns, "cas_fail");
+
+        // Initial put
+        db.put(run_id, key.clone(), Value::I64(1)).unwrap();
+
+        // CAS with wrong version
+        let result = db.cas(run_id, key.clone(), 999, Value::I64(2));
+        assert!(result.is_err());
+
+        // Value should be unchanged
+        let stored = db.get(&key).unwrap().unwrap();
+        assert_eq!(stored.value, Value::I64(1));
+    }
+
+    #[test]
+    fn test_implicit_operations_durable() {
+        // Verify implicit operations are written to WAL and survive restart
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("db");
+        let run_id = RunId::new();
+        let ns = create_test_namespace(run_id);
+
+        let key1 = Key::new_kv(ns.clone(), "durable1");
+        let key2 = Key::new_kv(ns.clone(), "durable2");
+
+        // Write and close
+        {
+            let db = Database::open(&db_path).unwrap();
+            db.put(run_id, key1.clone(), Value::I64(100)).unwrap();
+            db.put(run_id, key2.clone(), Value::String("test".to_string()))
+                .unwrap();
+        }
+
+        // Reopen and verify
+        {
+            let db = Database::open(&db_path).unwrap();
+            let v1 = db.get(&key1).unwrap().unwrap();
+            let v2 = db.get(&key2).unwrap().unwrap();
+
+            assert_eq!(v1.value, Value::I64(100));
+            assert_eq!(v2.value, Value::String("test".to_string()));
+        }
+    }
+
+    #[test]
+    fn test_implicit_cas_create_new_key() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+
+        let run_id = RunId::new();
+        let ns = create_test_namespace(run_id);
+        let key = Key::new_kv(ns, "new_cas_key");
+
+        // CAS with version 0 should create new key (key doesn't exist)
+        db.cas(run_id, key.clone(), 0, Value::I64(42)).unwrap();
+
+        // Verify created
+        let stored = db.get(&key).unwrap().unwrap();
+        assert_eq!(stored.value, Value::I64(42));
+    }
+
+    #[test]
+    fn test_implicit_mixed_operations() {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+
+        let run_id = RunId::new();
+        let ns = create_test_namespace(run_id);
+
+        // Put, Get, CAS, Get, Delete, Get
+        let key = Key::new_kv(ns, "mixed_ops");
+
+        // Put
+        db.put(run_id, key.clone(), Value::I64(1)).unwrap();
+        let v1 = db.get(&key).unwrap().unwrap();
+        assert_eq!(v1.value, Value::I64(1));
+
+        // CAS to increment
+        db.cas(run_id, key.clone(), v1.version, Value::I64(2))
+            .unwrap();
+        let v2 = db.get(&key).unwrap().unwrap();
+        assert_eq!(v2.value, Value::I64(2));
+
+        // Delete
+        db.delete(run_id, key.clone()).unwrap();
+        assert!(db.get(&key).unwrap().is_none());
     }
 }
