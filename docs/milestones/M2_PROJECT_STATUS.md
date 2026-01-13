@@ -1,8 +1,8 @@
 # M2 Project Status: Transactions
 
-**Last Updated**: 2026-01-11
+**Last Updated**: 2026-01-13
 
-## Current Phase: Epic 8 Complete, Epic 9 Ready
+## Current Phase: Epics 6-11 Complete, Epic 12 Pending
 
 ---
 
@@ -19,20 +19,18 @@
 | Epic | Name | Stories | Status |
 |------|------|---------|--------|
 | 6 | Transaction Foundations | #78-#82 | ✅ Complete |
-| 7 | Transaction Semantics | #83-#87 | ✅ Complete |
-| 8 | Durability & Commit | #88-#92 | ✅ Complete |
-| 9 | Recovery Support | #93-#97 | ⏳ Ready to Start |
-| 10 | Database API Integration | #98-#102 | Blocked by Epic 9 |
-| 11 | Backwards Compatibility | #103-#107 | Blocked by Epic 10 |
-| 12 | OCC Validation & Benchmarking | #108-#112 | Blocked by Epic 11 |
+| 7 | Transaction Semantics | #83-#88 | ✅ Complete |
+| 8 | Durability & Commit | #89-#93 | ✅ Complete |
+| 9 | Recovery Support | #94-#97 | ✅ Complete |
+| 10 | Database API Integration | #98-#102 | ⏳ 2 stories remaining |
+| 11 | Backwards Compatibility | #103-#105 | ✅ Complete |
+| 12 | OCC Validation & Benchmarking | #106-#109 | ⏳ Not started |
 
-**Overall Progress**: 3/7 epics complete (15/32 stories)
+**Overall Progress**: 6/7 epics complete (26/32 stories closed)
 
 ---
 
 ## Epic 6: Transaction Foundations ✅ COMPLETE
-
-**Merged to develop**: 2026-01-11
 
 ### Stories Completed
 
@@ -46,22 +44,12 @@
 
 ### Deliverables
 - `docs/architecture/M2_TRANSACTION_SEMANTICS.md` (1104 lines)
-- `crates/concurrency/src/transaction.rs` (1634 lines)
-- `crates/concurrency/src/snapshot.rs` (499 lines)
-- 95 tests in concurrency crate
-
-### Key Implementation
-- TransactionContext with read/write/delete/cas sets
-- ClonedSnapshotView for snapshot isolation
-- Read-your-writes and read-your-deletes semantics
-- Buffered write operations
-- State machine: Active → Validating → Committed/Aborted
+- `crates/concurrency/src/transaction.rs`
+- `crates/concurrency/src/snapshot.rs`
 
 ---
 
 ## Epic 7: Transaction Semantics ✅ COMPLETE
-
-**Merged to develop**: 2026-01-11
 
 ### Stories Completed
 
@@ -72,65 +60,135 @@
 | #85 | Write-Set Validation | ✅ |
 | #86 | CAS Validation | ✅ |
 | #87 | Full Transaction Validation | ✅ |
+| #88 | Conflict Examples & Documentation | ✅ |
 
 ### Deliverables
-- `crates/concurrency/src/validation.rs` (996 lines)
-- 30 new tests in concurrency crate (125 total)
-
-### Key Implementation
-- ConflictType enum (ReadWriteConflict, CASConflict)
-- ValidationResult struct for accumulating conflicts
-- validate_read_set() - detects when read key versions changed
-- validate_write_set() - always OK (blind writes don't conflict per spec)
-- validate_cas_set() - validates expected_version matches current
+- `crates/concurrency/src/validation.rs`
+- `crates/concurrency/tests/m2_integration_tests.rs`
 
 ---
 
 ## Epic 8: Durability & Commit ✅ COMPLETE
 
-**Merged to develop**: 2026-01-11
+### Stories Completed
+
+| Story | Title | Status |
+|-------|-------|--------|
+| #89 | WAL Transaction Entries | ✅ |
+| #90 | Commit Application | ✅ |
+| #91 | Commit Coordinator | ✅ |
+| #92 | Abort Handling | ✅ |
+| #93 | Atomic Commit Integration Test | ✅ |
+
+### Deliverables
+- `crates/concurrency/src/manager.rs` - TransactionManager
+- `crates/concurrency/src/wal_writer.rs` - TransactionWALWriter
+
+---
+
+## Epic 9: Recovery Support ✅ COMPLETE
 
 ### Stories Completed
 
 | Story | Title | Status |
 |-------|-------|--------|
-| #88 | Transaction Commit Path | ✅ |
-| #89 | Write Application | ✅ |
-| #90 | WAL Integration | ✅ |
-| #91 | Atomic Commit | ✅ |
-| #92 | Rollback Support | ✅ |
+| #94 | Incomplete Transaction Detection | ✅ |
+| #95 | Transaction Replay | ✅ |
+| #96 | Recovery Integration | ✅ |
+| #97 | Recovery Crash Tests | ✅ |
 
 ### Deliverables
-- `crates/concurrency/src/manager.rs` (655 lines) - TransactionManager
-- `crates/concurrency/src/wal_writer.rs` (376 lines) - TransactionWALWriter
-- `crates/concurrency/src/transaction.rs` (2940 lines) - commit(), apply_writes()
-- `crates/concurrency/src/validation.rs` (1034 lines) - validate_transaction()
-- 72 new tests in concurrency crate (197 total)
-
-### Key Implementation
-- TransactionManager for atomic commit coordination
-- TransactionWALWriter for WAL entry generation
-- commit() method on TransactionContext
-- apply_writes() for storage application
-- Commit sequence: validation → WAL → storage
-- All-or-nothing atomicity enforced
+- `crates/concurrency/src/recovery.rs` - RecoveryCoordinator
+- Recovery tests in `crates/engine/tests/database_transaction_tests.rs`
 
 ---
 
-## Epic 9: Recovery Support ⏳ NEXT
-
-**Status**: Ready to start
-**Dependencies**: Epic 8 (complete)
+## Epic 10: Database API Integration ⏳ 2 REMAINING
 
 ### Stories
 
-| Story | Title | Est. | Dependencies | Status |
-|-------|-------|------|--------------|--------|
-| #93 | Recovery Infrastructure | 4h | Epic 8 | ⏳ Ready |
-| #94 | WAL Replay | 3h | #93 | Blocked |
-| #95 | Transaction Recovery | 4h | #94 | Blocked |
-| #96 | Crash Recovery Testing | 4h | #95 | Blocked |
-| #97 | Recovery Validation | 3h | #96 | Blocked |
+| Story | Title | Status |
+|-------|-------|--------|
+| #98 | Database Transaction API | ✅ |
+| #99 | Cross-Primitive Transactions | ⏳ NOT IMPLEMENTED |
+| #100 | Transaction Context Lifecycle | ✅ |
+| #101 | Retry Backoff Strategy | ✅ |
+| #102 | Transaction Timeout Support | ⏳ NOT IMPLEMENTED |
+
+### Deliverables Complete
+- `crates/engine/src/database.rs` - transaction(), transaction_with_retry()
+- `crates/engine/src/coordinator.rs` - TransactionCoordinator
+
+### Remaining Work
+- **#99**: Cross-primitive transaction tests (KV + Event keys in single txn)
+- **#102**: Transaction timeout support (is_expired(), transaction_with_timeout())
+
+See: `docs/prompts/epic-10-11-remaining-prompts.md`
+
+---
+
+## Epic 11: Backwards Compatibility ✅ COMPLETE
+
+### Stories Completed
+
+| Story | Title | Status |
+|-------|-------|--------|
+| #103 | Implicit Transaction Wrapper | ✅ |
+| #104 | M1 Test Suite Verification | ✅ |
+| #105 | Migration Guide | ✅ (Closed - M1 API fully backward compatible) |
+
+### Deliverables
+- M1 API (db.get, db.put, db.delete, db.cas) implemented via implicit transactions
+- All existing tests pass
+
+---
+
+## Epic 12: OCC Validation & Benchmarking ⏳ NOT STARTED
+
+### Stories
+
+| Story | Title | Status |
+|-------|-------|--------|
+| #106 | Multi-Threaded Conflict Tests | ⏳ |
+| #107 | Transaction Performance Benchmarks | ⏳ |
+| #108 | Memory Usage Profiling | ⏳ |
+| #109 | M2 Completion Validation | ⏳ |
+
+### Blocked By
+- Epic 10 stories #99, #102
+
+---
+
+## Test Summary
+
+| Crate | Tests |
+|-------|-------|
+| in-mem-concurrency | 223 |
+| in-mem-core | 71 |
+| in-mem-storage | 53 |
+| in-mem-durability | 38 |
+| in-mem-engine | 47+ |
+| **Total** | **~500+** |
+
+All tests passing.
+
+---
+
+## Remaining Work
+
+### Immediate (Epic 10)
+1. **#99**: Cross-Primitive Transaction tests
+2. **#102**: Transaction Timeout Support
+
+### After Epic 10 (Epic 12)
+3. **#106**: Multi-Threaded Conflict Tests
+4. **#107**: Transaction Performance Benchmarks
+5. **#108**: Memory Usage Profiling
+6. **#109**: M2 Completion Validation
+
+### Prompts Available
+- `docs/prompts/epic-10-11-remaining-prompts.md` - Stories #99, #102
+- Epic 12 prompts to be created after #99, #102 complete
 
 ---
 
@@ -138,72 +196,9 @@
 
 ```
 main                              ← Protected (M2 complete will merge here)
-  └── develop                     ← Has Epics 6, 7, 8
-       └── epic-9-recovery        ← Epic 9 branch (next)
-            └── epic-9-story-93-* ← Story branches
+  └── develop                     ← Current working branch (Epics 6-10 merged)
 ```
 
-### Rules
-1. Story PRs → Epic branch (NOT main, NOT develop)
-2. Epic branches → develop (after all stories complete)
-3. develop → main (at M2 completion)
-
 ---
 
-## Spec Compliance
-
-All M2 implementation MUST comply with `docs/architecture/M2_TRANSACTION_SEMANTICS.md`:
-
-| Requirement | Epic 6 | Epic 7 | Epic 8 |
-|-------------|--------|--------|--------|
-| Snapshot Isolation (NOT Serializability) | ✅ | ✅ | ✅ |
-| Read-your-writes | ✅ | N/A | ✅ |
-| Read-your-deletes | ✅ | N/A | ✅ |
-| CAS does NOT auto-add to read_set | ✅ | ✅ | ✅ |
-| Version 0 = never existed | ✅ | ✅ | ✅ |
-| First-committer-wins | N/A | ✅ | ✅ |
-| Write skew ALLOWED | N/A | ✅ | ✅ |
-| Phantom reads ALLOWED | N/A | ✅ | ✅ |
-| All-or-nothing commits | N/A | N/A | ✅ |
-| WAL before storage | N/A | N/A | ✅ |
-| Monotonic versions | N/A | N/A | ✅ |
-
----
-
-## Test Summary
-
-| Crate | Tests | Coverage |
-|-------|-------|----------|
-| in-mem-concurrency | 197 | 100% (transaction.rs, validation.rs, manager.rs, wal_writer.rs) |
-| in-mem-core | 69 | 95%+ |
-| in-mem-storage | 58 | 90%+ |
-| in-mem-durability | 44 | 96%+ |
-| in-mem-engine | 8 | 78%+ |
-| **Total** | **~456** | **90%+** |
-
----
-
-## Next Steps
-
-1. **Start Epic 9**: Create `epic-9-recovery` branch from develop
-2. Read `docs/architecture/M2_TRANSACTION_SEMANTICS.md` Section 5 (Replay Semantics)
-3. Implement Story #93 (Recovery Infrastructure)
-4. Stories #94-#95 (WAL Replay, Transaction Recovery)
-5. Stories #96-#97 (Crash Recovery Testing, Validation)
-
----
-
-## Documentation
-
-- [M2_TRANSACTION_SEMANTICS.md](../architecture/M2_TRANSACTION_SEMANTICS.md) - Authoritative spec
-- [EPIC_6_REVIEW.md](EPIC_6_REVIEW.md) - Epic 6 validation report
-- [EPIC_7_REVIEW.md](EPIC_7_REVIEW.md) - Epic 7 validation report
-- [EPIC_8_REVIEW.md](EPIC_8_REVIEW.md) - Epic 8 validation report
-- [epic-6-claude-prompts.md](../prompts/epic-6-claude-prompts.md) - Epic 6 implementation prompts
-- [epic-7-claude-prompts.md](../prompts/epic-7-claude-prompts.md) - Epic 7 implementation prompts
-- [epic-8-claude-prompts.md](../prompts/epic-8-claude-prompts.md) - Epic 8 implementation prompts
-- [M2_PROMPT_HEADER.md](../prompts/M2_PROMPT_HEADER.md) - Header template for M2 prompts
-
----
-
-*Last updated: 2026-01-11*
+*Last updated: 2026-01-13*
