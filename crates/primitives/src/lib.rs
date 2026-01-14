@@ -52,7 +52,7 @@ pub mod trace;
 pub use event_log::{ChainVerification, Event, EventLog};
 pub use kv::{KVStore, KVTransaction};
 pub use state_cell::{State, StateCell};
-// pub use trace::{TraceStore, Trace, TraceType};
+pub use trace::{Trace, TraceStore, TraceTree, TraceType};
 // pub use run_index::{RunIndex, RunMetadata, RunStatus};
 
 // Re-export extension traits for convenience
