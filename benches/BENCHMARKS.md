@@ -7,16 +7,34 @@ MVP success is semantic correctness first, performance second.
 
 ## Benchmark Path Types (Layer Labels)
 
-Every benchmark explicitly labels what layer it measures:
+The prefix indicates the **primary semantic being exercised**, not which module owns the code path.
 
-| Prefix | Layer | What It Measures |
-|--------|-------|------------------|
-| `engine_*` | Engine API | Full path via `Database` API (includes WAL, locks) |
-| `wal_*` | WAL/Recovery | Recovery and durability operations |
-| `snapshot_*` | Snapshot | Snapshot isolation semantics |
-| `conflict_*` | Concurrency | Multi-threaded conflict detection |
+| Prefix | Primary Semantic | What It Exercises |
+|--------|-----------------|-------------------|
+| `engine_*` | End-to-end API path | Full Database API (includes WAL, locks, whatever engine includes at that milestone) |
+| `wal_*` | Recovery/durability | WAL replay, crash recovery (no engine runtime path) |
+| `txn_*` | Transaction lifecycle | Begin, operations, validate, commit (M2 only) |
+| `snapshot_*` | Snapshot semantics | Point-in-time consistent reads (M2 only) |
+| `conflict_*` | Concurrency patterns | Multi-thread contention, first-committer-wins (M2 only) |
 
-**Why this matters:** You must not accidentally compare storage-layer numbers to transaction-layer numbers.
+**Why this taxonomy:**
+- `txn_*` separates "commit cost" from "snapshot read cost"
+- Prefixes stay stable as the engine grows
+- You won't accidentally compare snapshot costs to transaction costs
+
+---
+
+## Durability Mode Labels
+
+All write benchmarks explicitly label their durability mode:
+
+| Label | Meaning |
+|-------|---------|
+| `dur_strict` | fsync on every write (current M1 default) |
+| `dur_batched_Nms` | Batched fsync every N milliseconds (future) |
+| `dur_async` | WAL append, no fsync (future) |
+
+**Why this matters:** If you change durability mode and forget to update benchmarks, baselines become meaningless. The label prevents self-deception.
 
 ---
 
@@ -30,8 +48,17 @@ Benchmarks explicitly label their access pattern:
 | `uniform` | Random keys from full keyspace | Arbitrary state access |
 | `working_set_N` | Small subset (N keys) | Frequently accessed subset |
 | `miss` | Key not found | Error path, existence checks |
+| `rotating` | Sequential through keyspace | Cache miss testing |
 
-**Why this matters:** Hot-key benchmarks lie about real-world performance.
+**Why this matters:** Hot-key benchmarks lie about real-world performance. Uniform benchmarks reveal actual BTreeMap and memory hierarchy costs.
+
+---
+
+## Deterministic Randomness
+
+All "random" access patterns use a fixed seed (`BENCH_SEED = 0xDEADBEEF_CAFEBABE`).
+
+**Why this matters:** Non-seeded RNG causes run-to-run variance. Baseline diffs become noisy. When you see a regression, you want to reproduce it exactly.
 
 ---
 
@@ -60,45 +87,45 @@ benches/
 
 | Benchmark | Semantic Guarantee | Regression Detection | Agent Pattern |
 |-----------|-------------------|----------------------|---------------|
-| `engine_get/hot_key` | Read path correctness | Lock overhead | Config reads |
-| `engine_get/uniform` | Random access performance | BTreeMap scaling | State lookups |
-| `engine_get/working_set_100` | Hot subset performance | Cache behavior | Frequent state |
-| `engine_get/miss` | Miss path efficiency | Error handling | Existence checks |
-| `engine_put/insert` | New key + WAL durability | fsync cost | New state creation |
-| `engine_put/overwrite_hot_key` | Update + version increment | Update path | Counter updates |
-| `engine_put/overwrite_uniform` | Random updates | Write distribution | State updates |
-| `engine_delete/existing_key` | Tombstone creation | Delete cost | Cleanup |
-| `engine_delete/nonexistent_key` | No-op efficiency | Miss handling | Idempotent cleanup |
-| `engine_value_size/put_bytes/*` | Serialization scaling | Large value cost | Blob storage |
-| `engine_key_scaling/get_at_scale/*` | O(log n) guarantee | BTreeMap degradation | Large databases |
-| `wal_recovery/insert_only/*` | Pure append replay | Recovery scaling | Normal restart |
-| `wal_recovery/overwrite_heavy` | Version history replay | MVCC overhead | Long-running agent |
-| `wal_recovery/delete_heavy` | Tombstone replay | Delete handling | Cleanup-heavy workload |
+| `engine_get/hot_key` | Returns latest committed version | Lock overhead | Config reads |
+| `engine_get/uniform` | Returns correct value for any key | BTreeMap scaling | State lookups |
+| `engine_get/working_set_100` | Returns correct value from subset | Cache behavior | Frequent state |
+| `engine_get/miss` | Returns None for non-existent key | Miss path cost | Existence checks |
+| `engine_put/insert/dur_strict/*` | New key persisted before return | fsync cost | New state creation |
+| `engine_put/overwrite/dur_strict/hot_key` | Update replaces old value | Update path | Counter updates |
+| `engine_put/overwrite/dur_strict/uniform` | Updates persisted correctly | Write distribution | State updates |
+| `engine_delete/existing/dur_strict` | Delete makes key unreadable | Tombstone cost | Cleanup |
+| `engine_delete/nonexistent` | Delete of missing key is no-op | Miss handling | Idempotent cleanup |
+| `engine_value_size/put_bytes/dur_strict/*` | Large values persisted correctly | Serialization scaling | Blob storage |
+| `engine_key_scaling/get_rotating/*` | O(log n) lookup holds at scale | BTreeMap + cache effects | Large databases |
+| `wal_recovery/insert_only/*` | All keys readable after recovery | Recovery scaling | Normal restart |
+| `wal_recovery/overwrite_heavy` | Only latest version after recovery | MVCC overhead | Long-running agent |
+| `wal_recovery/delete_heavy` | Deleted keys return None | Tombstone replay | Cleanup-heavy workload |
 
 ### M2 Transaction Benchmarks
 
 | Benchmark | Semantic Guarantee | Regression Detection | Agent Pattern |
 |-----------|-------------------|----------------------|---------------|
-| `engine_txn_commit/single_put` | Minimal txn overhead | OCC cost | Single state update |
-| `engine_txn_commit/multi_put/*` | Atomic batch commit | Write-set scaling | Related state updates |
-| `engine_txn_commit/read_modify_write` | RMW atomicity | Read-set + write cost | Counter increment |
-| `engine_cas/success_sequential` | CAS happy path | Version check cost | Optimistic updates |
-| `engine_cas/failure_version_mismatch` | Fast failure | Conflict detection | Stale read detection |
-| `engine_cas/create_new_key` | Atomic creation | Insert-if-absent | Resource claiming |
-| `engine_cas/retry_until_success` | Retry pattern | Retry overhead | Coordination |
-| `snapshot_isolation/single_read` | Snapshot read | Snapshot creation | State query |
-| `snapshot_isolation/multi_read_10` | Consistent multi-read | Read-set tracking | Gathering state |
-| `snapshot_isolation/after_versions/*` | Version scaling | MVCC overhead | Long-running system |
-| `snapshot_isolation/read_your_writes` | Write visibility | Pending write lookup | Build-up before commit |
-| `read_heavy/reads_then_write/*` | Read-dominated txn | Read-set scaling | Typical agent pattern |
-| `read_heavy/read_only_10` | Pure read txn | No write-set overhead | Query-only |
-| `conflict_detection/disjoint_keys/*` | Parallel scaling | Lock contention | Partitioned agents |
-| `conflict_detection/same_key/*` | Contention handling | Conflict resolution | Global counter |
-| `conflict_detection/cas_one_winner` | First-committer-wins | CAS race correctness | Lock acquisition |
+| `txn_commit/single_put` | Single-key write is atomic | OCC minimal cost | Single state update |
+| `txn_commit/multi_put/*` | Multi-key write is atomic | Write-set scaling | Related state updates |
+| `txn_commit/read_modify_write` | Read + write is atomic | Read-set + write cost | Counter increment |
+| `txn_commit/readN_write1/*` | N reads + 1 write is atomic | Read-set validation | **Canonical agent workload** |
+| `txn_cas/success_sequential` | CAS succeeds when version matches | Version check cost | Optimistic updates |
+| `txn_cas/failure_version_mismatch` | CAS fails when version mismatched | Fast failure path | Stale read detection |
+| `txn_cas/create_new_key` | CAS v0 creates key atomically | Insert-if-absent | Resource claiming |
+| `txn_cas/retry_until_success` | CAS retry converges | Retry overhead | Coordination |
+| `snapshot/single_read` | Read sees consistent snapshot | Snapshot creation | State query |
+| `snapshot/multi_read_10` | All reads see same snapshot | Read-set tracking | Gathering state |
+| `snapshot/after_versions/*` | Snapshot cost constant vs history | MVCC overhead | Long-running system |
+| `snapshot/read_your_writes` | Transaction sees own writes | Pending write lookup | Build-up before commit |
+| `snapshot/read_only_10` | Pure read has no write-set | No conflict possible | Query-only |
+| `conflict/disjoint_keys/*` | No conflicts when keys don't overlap | Parallel scaling | Partitioned agents |
+| `conflict/same_key/*` | Conflict causes abort, not partial | Conflict resolution | Global counter |
+| `conflict/cas_one_winner` | Exactly one CAS winner | First-committer-wins | Lock acquisition |
 
 ---
 
-## Target Performance
+## Target Performance (Per Access Pattern)
 
 ### Important Context
 
@@ -106,30 +133,57 @@ These targets assume:
 - Single-process, in-memory
 - RwLock-based concurrency
 - BTreeMap-backed storage
-- WAL-logged mutations (fsync per operation)
+- WAL-logged mutations (fsync per operation in `dur_strict` mode)
 - Versioned values with snapshot isolation
 
 **Stretch goals are optimistic.** Initial implementations may be 2-5x slower. That's fine. Correctness first.
 
 ### M1: Storage + WAL
 
+#### engine_get (by access pattern)
+
+| Access Pattern | Stretch | Acceptable | Concern |
+|---------------|---------|------------|---------|
+| hot_key | >1M ops/s | >200K ops/s | <100K ops/s |
+| working_set_100 | >500K ops/s | >100K ops/s | <50K ops/s |
+| uniform (10K keys) | >200K ops/s | >50K ops/s | <25K ops/s |
+| miss | >500K ops/s | >100K ops/s | <50K ops/s |
+
+#### engine_put (by operation type)
+
 | Operation | Stretch | Acceptable | Concern |
 |-----------|---------|------------|---------|
-| engine_get (any pattern) | >1M ops/s | >100K ops/s | <50K ops/s |
-| engine_put (insert) | >10K ops/s | >1K ops/s | <500 ops/s |
-| engine_put (overwrite) | >50K ops/s | >10K ops/s | <5K ops/s |
-| wal_recovery/50K ops | <500ms | <2s | >5s |
-| engine_key_scaling (500K keys) | <1µs lookup | <5µs lookup | >10µs lookup |
+| insert/dur_strict | >10K ops/s | >1K ops/s | <500 ops/s |
+| overwrite/dur_strict/hot_key | >50K ops/s | >10K ops/s | <5K ops/s |
+| overwrite/dur_strict/uniform | >20K ops/s | >5K ops/s | <2K ops/s |
+
+#### engine_key_scaling/get_rotating
+
+| Key Count | Stretch | Acceptable | Concern |
+|-----------|---------|------------|---------|
+| 10K keys | <500ns | <1µs | >2µs |
+| 100K keys | <1µs | <2µs | >5µs |
+| 1M keys | <2µs | <5µs | >10µs |
+
+#### wal_recovery
+
+| Workload | Stretch | Acceptable | Concern |
+|----------|---------|------------|---------|
+| insert_only/50K | <500ms | <2s | >5s |
+| overwrite_heavy | <500ms | <2s | >5s |
+| delete_heavy | <500ms | <2s | >5s |
 
 ### M2: Transactions + OCC
 
-| Operation | Stretch | Acceptable | Concern |
+| Benchmark | Stretch | Acceptable | Concern |
 |-----------|---------|------------|---------|
-| engine_txn_commit (single) | >5K txns/s | >1K txns/s | <500 txns/s |
-| engine_cas (success) | >50K ops/s | >10K ops/s | <5K ops/s |
-| snapshot_isolation/single_read | >50K ops/s | >10K ops/s | <5K ops/s |
-| conflict_detection/disjoint (4 threads) | >80% scaling | >50% scaling | <30% scaling |
-| conflict_detection/same_key (4 threads) | >2K txns/s | >500 txns/s | <200 txns/s |
+| txn_commit/single_put | >5K txns/s | >1K txns/s | <500 txns/s |
+| txn_commit/readN_write1/10 | >3K txns/s | >500 txns/s | <200 txns/s |
+| txn_commit/readN_write1/100 | >1K txns/s | >200 txns/s | <100 txns/s |
+| txn_cas/success_sequential | >50K ops/s | >10K ops/s | <5K ops/s |
+| snapshot/single_read | >50K ops/s | >10K ops/s | <5K ops/s |
+| conflict/disjoint_keys (4 threads) | >80% scaling | >50% scaling | <30% scaling |
+| conflict/same_key (4 threads) | >2K txns/s | >500 txns/s | <200 txns/s |
 
 ---
 
@@ -157,11 +211,10 @@ cargo bench --bench m1_storage -- "wal_recovery"
 cargo bench --bench m2_transactions
 
 # By category
-cargo bench --bench m2_transactions -- "engine_txn_commit"
-cargo bench --bench m2_transactions -- "engine_cas"
-cargo bench --bench m2_transactions -- "snapshot_isolation"
-cargo bench --bench m2_transactions -- "read_heavy"
-cargo bench --bench m2_transactions -- "conflict_detection"
+cargo bench --bench m2_transactions -- "txn_commit"
+cargo bench --bench m2_transactions -- "txn_cas"
+cargo bench --bench m2_transactions -- "snapshot"
+cargo bench --bench m2_transactions -- "conflict"
 ```
 
 ### Comparison Mode
@@ -190,7 +243,17 @@ engine_get/hot_key
 
 - Three numbers: [lower bound, estimate, upper bound] at 95% confidence
 - `thrpt` = throughput in elements/second
-- 4.97M ops/s = well above "acceptable" (>100K ops/s)
+- 4.97M ops/s = well above "acceptable" (>200K ops/s for hot_key)
+
+### Conflict Benchmark Output
+
+```
+conflict/same_key/4: 1234 commits, 567 aborts (68.5% success) in 2.00s
+```
+
+- Commits = successful transactions
+- Aborts = conflict-induced rollbacks
+- Success ratio indicates contention severity
 
 ### Regression Detection
 
@@ -220,19 +283,47 @@ For every benchmark, verify:
 1. **All setup is outside the timed loop**
    - No key allocation in `b.iter()`
    - No value construction in `b.iter()`
-   - No random number generation in `b.iter()`
+   - No random number generation in `b.iter()` (LCG state mutation is fine)
 
 2. **Access pattern is explicitly labeled**
-   - `hot_key`, `uniform`, `working_set`, or `miss`
+   - `hot_key`, `uniform`, `working_set`, `miss`, or `rotating`
 
 3. **Layer is explicitly labeled**
-   - `engine_`, `wal_`, `snapshot_`, or `conflict_`
+   - `engine_`, `wal_`, `txn_`, `snapshot_`, or `conflict_`
 
-4. **Four questions answered:**
+4. **Durability mode is labeled for writes**
+   - `dur_strict`, `dur_batched_*`, or `dur_async`
+
+5. **Fixed seed for reproducibility**
+   - Uses `BENCH_SEED` for any randomness in setup
+
+6. **Four questions answered:**
    - What semantic guarantee does this exercise?
    - What layer does it measure?
    - What regression would it detect?
    - What real agent pattern does it approximate?
+
+---
+
+## Invariant Validation
+
+**Performance without correctness is meaningless.**
+
+### Contract
+
+1. **Benchmarks do NOT assert invariants inline** - this keeps overhead out of the timed loop
+2. **Invariants are validated in separate tests** - run after benchmarks
+3. **If you change semantics, update invariants BEFORE updating benchmarks**
+
+### Validation Procedure
+
+After running benchmarks, validate invariants:
+
+```bash
+cargo test --test m1_m2_comprehensive invariant -- --nocapture
+```
+
+If benchmarks pass but invariant tests fail, the benchmarks are measuring a broken system.
 
 ---
 
@@ -258,7 +349,7 @@ For every benchmark, verify:
 
 ```rust
 // --- Benchmark: descriptive_name ---
-// Semantic: What guarantee does this exercise?
+// Semantic: What guarantee does this exercise? (testable property)
 // Real pattern: What agent behavior does this simulate?
 {
     // Setup OUTSIDE bench_function
@@ -267,8 +358,10 @@ For every benchmark, verify:
     let keys = pregenerate_keys(&ns, "prefix", COUNT); // Pre-allocate!
 
     group.bench_function("descriptive_name", |b| {
+        let mut rng_state = BENCH_SEED; // Fixed seed!
         b.iter(|| {
             // ONLY the operation under test
+            let idx = (lcg_next(&mut rng_state) as usize) % COUNT;
             black_box(db.get(&keys[idx]).unwrap())
         });
     });
@@ -277,23 +370,11 @@ For every benchmark, verify:
 
 ### Checklist for New Benchmarks
 
-- [ ] Layer labeled in name (`engine_`, `wal_`, etc.)
+- [ ] Layer labeled in name (`engine_`, `wal_`, `txn_`, `snapshot_`, `conflict_`)
 - [ ] Access pattern labeled if applicable (`hot_key`, `uniform`, etc.)
+- [ ] Durability mode labeled for writes (`dur_strict`, etc.)
 - [ ] All setup outside timed loop
-- [ ] Comment explains semantic guarantee
+- [ ] Fixed seed (`BENCH_SEED`) for any randomness
+- [ ] Comment explains semantic guarantee (testable property)
 - [ ] Comment explains real agent pattern
 - [ ] Four questions can be answered
-
----
-
-## Invariant Validation After Benchmarks
-
-**Performance without correctness is meaningless.**
-
-After running benchmarks, validate invariants:
-
-```bash
-cargo test --test m1_m2_comprehensive invariant -- --nocapture
-```
-
-If benchmarks pass but invariant tests fail, the benchmarks are measuring a broken system.

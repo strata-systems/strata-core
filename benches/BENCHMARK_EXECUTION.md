@@ -40,27 +40,29 @@ Record results for:
 - [ ] `engine_get/working_set_100` - Hot subset of 100 keys
 - [ ] `engine_get/miss` - Key not found path
 
-### engine_put (Write Performance)
-- [ ] `engine_put/insert` - New key creation + WAL
-- [ ] `engine_put/overwrite_hot_key` - Update single key
-- [ ] `engine_put/overwrite_uniform` - Random updates
+### engine_put (Write Performance - dur_strict)
+- [ ] `engine_put/insert/dur_strict/uniform` - New key creation + WAL
+- [ ] `engine_put/overwrite/dur_strict/hot_key` - Update single key
+- [ ] `engine_put/overwrite/dur_strict/uniform` - Random updates
 
 ### engine_delete (Delete Performance)
-- [ ] `engine_delete/existing_key` - Tombstone creation
-- [ ] `engine_delete/nonexistent_key` - No-op efficiency
+- [ ] `engine_delete/existing/dur_strict` - Tombstone creation
+- [ ] `engine_delete/nonexistent` - No-op efficiency
 
 ### engine_value_size (Serialization Scaling)
-- [ ] `engine_value_size/put_bytes/64`
-- [ ] `engine_value_size/put_bytes/256`
-- [ ] `engine_value_size/put_bytes/1024`
-- [ ] `engine_value_size/put_bytes/4096`
+- [ ] `engine_value_size/put_bytes/dur_strict/64`
+- [ ] `engine_value_size/put_bytes/dur_strict/256`
+- [ ] `engine_value_size/put_bytes/dur_strict/1024`
+- [ ] `engine_value_size/put_bytes/dur_strict/4096`
+- [ ] `engine_value_size/put_bytes/dur_strict/65536`
 
-### engine_key_scaling (O(log n) Guarantee)
-- [ ] `engine_key_scaling/get_at_scale/1000`
-- [ ] `engine_key_scaling/get_at_scale/10000`
-- [ ] `engine_key_scaling/get_at_scale/100000`
+### engine_key_scaling (Cache Boundary Tests)
+- [ ] `engine_key_scaling/get_rotating/10000`
+- [ ] `engine_key_scaling/get_rotating/100000`
+- [ ] `engine_key_scaling/get_rotating/1000000`
 
 ### wal_recovery (Recovery Performance)
+- [ ] `wal_recovery/insert_only/1000`
 - [ ] `wal_recovery/insert_only/10000`
 - [ ] `wal_recovery/insert_only/50000`
 - [ ] `wal_recovery/overwrite_heavy` - Version history replay
@@ -70,11 +72,12 @@ Record results for:
 
 | Benchmark | Stretch | Acceptable | Concern |
 |-----------|---------|------------|---------|
-| engine_get (any pattern) | >1M ops/s | >100K ops/s | <50K ops/s |
-| engine_put (insert) | >10K ops/s | >1K ops/s | <500 ops/s |
-| engine_put (overwrite) | >50K ops/s | >10K ops/s | <5K ops/s |
-| wal_recovery/50K | <500ms | <2s | >5s |
-| engine_key_scaling (500K) | <1µs | <5µs | >10µs |
+| engine_get/hot_key | >1M ops/s | >200K ops/s | <100K ops/s |
+| engine_get/uniform | >200K ops/s | >50K ops/s | <25K ops/s |
+| engine_put/insert/dur_strict | >10K ops/s | >1K ops/s | <500 ops/s |
+| engine_put/overwrite/dur_strict/hot_key | >50K ops/s | >10K ops/s | <5K ops/s |
+| wal_recovery/insert_only/50000 | <500ms | <2s | >5s |
+| engine_key_scaling/get_rotating/1000000 | <2µs | <5µs | >10µs |
 
 ## Phase 3: M2 Transaction Benchmarks
 
@@ -86,49 +89,49 @@ cargo bench --bench m2_transactions -- --noplot
 
 Record results for:
 
-### engine_txn_commit (Transaction Overhead)
-- [ ] `engine_txn_commit/single_put` - Minimal txn cost
-- [ ] `engine_txn_commit/multi_put/5`
-- [ ] `engine_txn_commit/multi_put/10`
-- [ ] `engine_txn_commit/multi_put/50`
-- [ ] `engine_txn_commit/read_modify_write` - RMW atomicity
+### txn_commit (Transaction Overhead)
+- [ ] `txn_commit/single_put` - Minimal txn cost
+- [ ] `txn_commit/multi_put/3`
+- [ ] `txn_commit/multi_put/5`
+- [ ] `txn_commit/multi_put/10`
+- [ ] `txn_commit/read_modify_write` - RMW atomicity
+- [ ] `txn_commit/readN_write1/1` - Canonical agent workload
+- [ ] `txn_commit/readN_write1/10` - **Key benchmark**
+- [ ] `txn_commit/readN_write1/100` - Large read-set validation
 
-### engine_cas (Compare-and-Swap)
-- [ ] `engine_cas/success_sequential` - Happy path
-- [ ] `engine_cas/failure_version_mismatch` - Fast failure
-- [ ] `engine_cas/create_new_key` - Atomic creation
-- [ ] `engine_cas/retry_until_success` - Retry pattern
+### txn_cas (Compare-and-Swap)
+- [ ] `txn_cas/success_sequential` - Happy path
+- [ ] `txn_cas/failure_version_mismatch` - Fast failure
+- [ ] `txn_cas/create_new_key` - Atomic creation
+- [ ] `txn_cas/retry_until_success` - Retry pattern
 
-### snapshot_isolation (MVCC)
-- [ ] `snapshot_isolation/single_read` - Snapshot creation cost
-- [ ] `snapshot_isolation/multi_read_10` - Multi-key reads
-- [ ] `snapshot_isolation/after_versions/10`
-- [ ] `snapshot_isolation/after_versions/100`
-- [ ] `snapshot_isolation/after_versions/1000`
-- [ ] `snapshot_isolation/read_your_writes` - Pending write lookup
+### snapshot (MVCC Semantics)
+- [ ] `snapshot/single_read` - Snapshot creation cost
+- [ ] `snapshot/multi_read_10` - Multi-key reads
+- [ ] `snapshot/after_versions/10`
+- [ ] `snapshot/after_versions/100`
+- [ ] `snapshot/after_versions/1000`
+- [ ] `snapshot/read_your_writes` - Pending write lookup
+- [ ] `snapshot/read_only_10` - Pure read transaction
 
-### read_heavy (Typical Agent Pattern)
-- [ ] `read_heavy/reads_then_write/1_read`
-- [ ] `read_heavy/reads_then_write/10_reads`
-- [ ] `read_heavy/reads_then_write/100_reads`
-- [ ] `read_heavy/read_only_10` - Pure read transaction
-
-### conflict_detection (Concurrency)
-- [ ] `conflict_detection/disjoint_keys/2_threads`
-- [ ] `conflict_detection/disjoint_keys/4_threads`
-- [ ] `conflict_detection/same_key/2_threads`
-- [ ] `conflict_detection/same_key/4_threads`
-- [ ] `conflict_detection/cas_one_winner`
+### conflict (Concurrency - reports commits/aborts)
+- [ ] `conflict/disjoint_keys/2`
+- [ ] `conflict/disjoint_keys/4`
+- [ ] `conflict/disjoint_keys/8`
+- [ ] `conflict/same_key/2`
+- [ ] `conflict/same_key/4`
+- [ ] `conflict/cas_one_winner`
 
 ### M2 Expected Ranges
 
 | Benchmark | Stretch | Acceptable | Concern |
 |-----------|---------|------------|---------|
-| engine_txn_commit (single) | >5K txns/s | >1K txns/s | <500 txns/s |
-| engine_cas (success) | >50K ops/s | >10K ops/s | <5K ops/s |
-| snapshot_isolation/single_read | >50K ops/s | >10K ops/s | <5K ops/s |
-| conflict_detection/disjoint (4t) | >80% scaling | >50% scaling | <30% scaling |
-| conflict_detection/same_key (4t) | >2K txns/s | >500 txns/s | <200 txns/s |
+| txn_commit/single_put | >5K txns/s | >1K txns/s | <500 txns/s |
+| txn_commit/readN_write1/10 | >3K txns/s | >500 txns/s | <200 txns/s |
+| txn_cas/success_sequential | >50K ops/s | >10K ops/s | <5K ops/s |
+| snapshot/single_read | >50K ops/s | >10K ops/s | <5K ops/s |
+| conflict/disjoint_keys/4 | >80% scaling | >50% scaling | <30% scaling |
+| conflict/same_key/4 | >2K txns/s | >500 txns/s | <200 txns/s |
 
 ## Phase 4: Save Baseline
 
@@ -151,6 +154,7 @@ Create a benchmark report with this format:
 - CPU: [model, cores]
 - Memory: [total RAM]
 - Rust version: [rustc --version]
+- BENCH_SEED: 0xDEADBEEF_CAFEBABE
 
 ## M1 Storage Results
 
@@ -158,18 +162,20 @@ Create a benchmark report with this format:
 |-----------|--------|---------------|--------|
 | engine_get/hot_key | X ops/s | +Y% | OK/CONCERN |
 | engine_get/uniform | X ops/s | +Y% | OK/CONCERN |
-| engine_put/insert | X ops/s | +Y% | OK/CONCERN |
+| engine_put/insert/dur_strict/uniform | X ops/s | +Y% | OK/CONCERN |
 | wal_recovery/insert_only/50000 | Xms | +Y% | OK/CONCERN |
+| engine_key_scaling/get_rotating/1000000 | Xµs | +Y% | OK/CONCERN |
 | ... | ... | ... | ... |
 
 ## M2 Transaction Results
 
 | Benchmark | Result | vs Acceptable | Status |
 |-----------|--------|---------------|--------|
-| engine_txn_commit/single_put | X txns/s | +Y% | OK/CONCERN |
-| engine_cas/success_sequential | X ops/s | +Y% | OK/CONCERN |
-| snapshot_isolation/single_read | X ops/s | +Y% | OK/CONCERN |
-| conflict_detection/disjoint_keys/4_threads | X% scaling | +Y% | OK/CONCERN |
+| txn_commit/single_put | X txns/s | +Y% | OK/CONCERN |
+| txn_commit/readN_write1/10 | X txns/s | +Y% | OK/CONCERN |
+| txn_cas/success_sequential | X ops/s | +Y% | OK/CONCERN |
+| conflict/disjoint_keys/4 | X% scaling | +Y% | OK/CONCERN |
+| conflict/same_key/4 | X commits, Y aborts (Z% success) | +W% | OK/CONCERN |
 | ... | ... | ... | ... |
 
 ## Observations
@@ -177,6 +183,7 @@ Create a benchmark report with this format:
 - [Any unexpected results]
 - [Bottlenecks identified]
 - [Access pattern insights]
+- [Conflict benchmark commit/abort ratios]
 
 ## Action Items
 
@@ -210,7 +217,18 @@ engine_get/hot_key
 - Three numbers: [lower bound, estimate, upper bound] at 95% confidence
 - Use the **middle number** (estimate) for reporting
 - `thrpt` = throughput in elements/second
-- 4.97M ops/s = well above "acceptable" (>100K ops/s)
+- 4.97M ops/s = well above "acceptable" (>200K ops/s for hot_key)
+
+### Reading Conflict Benchmark Output
+
+```
+conflict/same_key/4: 1234 commits, 567 aborts (68.5% success) in 2.00s
+```
+
+- Logged once per sample via `eprintln!`
+- Commits = successful transactions
+- Aborts = conflict-induced rollbacks
+- Success ratio indicates contention severity
 
 ### Regression Detection
 
@@ -256,15 +274,18 @@ cargo bench --bench m2_transactions -- --noplot
 cargo bench --bench m1_storage -- "engine_get"
 cargo bench --bench m1_storage -- "engine_put"
 cargo bench --bench m1_storage -- "wal_recovery"
-cargo bench --bench m2_transactions -- "engine_txn_commit"
-cargo bench --bench m2_transactions -- "engine_cas"
-cargo bench --bench m2_transactions -- "snapshot_isolation"
-cargo bench --bench m2_transactions -- "conflict_detection"
+cargo bench --bench m2_transactions -- "txn_commit"
+cargo bench --bench m2_transactions -- "txn_cas"
+cargo bench --bench m2_transactions -- "snapshot"
+cargo bench --bench m2_transactions -- "conflict"
 
 # By access pattern
 cargo bench --bench m1_storage -- "hot_key"
 cargo bench --bench m1_storage -- "uniform"
-cargo bench --bench m1_storage -- "working_set"
+cargo bench --bench m1_storage -- "dur_strict"
+
+# The canonical agent workload benchmark
+cargo bench --bench m2_transactions -- "readN_write1"
 
 # Compare to baseline
 cargo bench --bench m1_storage -- --baseline current
@@ -290,12 +311,14 @@ If any benchmark shows "CONCERN" or "CRITICAL" status:
 **Result**: [X ops/s]
 **Expected**: [>Y ops/s (acceptable)]
 **Gap**: [Z% below acceptable]
-**Layer**: [engine/wal/snapshot/conflict]
-**Access Pattern**: [hot_key/uniform/working_set/miss]
+**Layer**: [engine/wal/txn/snapshot/conflict]
+**Access Pattern**: [hot_key/uniform/working_set/miss/rotating]
+**Durability Mode**: [dur_strict/dur_async/N/A]
 
 ### Environment
 - OS:
 - Rust version:
+- BENCH_SEED: 0xDEADBEEF_CAFEBABE
 
 ### Reproduction
 ```bash
@@ -319,7 +342,8 @@ A benchmark run is successful if:
 - [ ] All M1 benchmarks meet "acceptable" thresholds
 - [ ] All M2 benchmarks meet "acceptable" thresholds
 - [ ] No benchmark shows >20% regression from baseline (if baseline exists)
-- [ ] Results are documented with layer and access pattern context
+- [ ] Results are documented with layer, access pattern, and durability mode context
+- [ ] Conflict benchmarks report commit/abort ratios
 
 If any criterion is not met, document the gap and create issues for investigation.
 Do NOT block on performance issues - correctness comes first.
