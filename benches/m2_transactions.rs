@@ -1,30 +1,34 @@
-//! M2 Transaction Benchmarks
+//! M2 Transaction Benchmarks - Semantic Regression Harness
 //!
-//! These benchmarks focus on M2 (OCC + Snapshot Isolation) primitives.
-//! Includes: transactions, conflict detection, CAS, version growth.
+//! ## Benchmark Path Types (Layer Labels)
 //!
-//! ## What M2 is:
-//! - Snapshot isolation
-//! - Optimistic concurrency control
-//! - First-committer-wins conflict detection
-//! - CAS semantics
+//! - `engine_txn_*`: Full transaction via Database::transaction() API
+//! - `engine_cas_*`: CAS operations via Database::cas() API
 //!
-//! ## Target Performance (MVP)
+//! Note: All benchmarks use the engine layer. TransactionContext internals
+//! are not directly exposed for benchmarking.
 //!
-//! | Operation                | Stretch Goal   | Acceptable     | Notes                    |
-//! |--------------------------|----------------|----------------|--------------------------|
-//! | Txn commit (no conflict) | 5-10K txns/s   | 2-5K txns/s    | Single-threaded          |
-//! | Txn commit (conflict)    | 2-5K txns/s    | 1-2K txns/s    | With retry overhead      |
-//! | CAS                      | 5-20K ops/s    | 2-5K ops/s     | + version validation     |
-//! | Snapshot read            | 50-100K ops/s  | 20-50K ops/s   | No conflict possible     |
+//! ## What These Benchmarks Prove
 //!
-//! **These are stretch goals. MVP success is semantic correctness first,
-//! performance second.**
+//! | Benchmark | Semantic Guarantee | Regression Detection |
+//! |-----------|-------------------|----------------------|
+//! | engine_txn_commit/* | Atomic commit correctness | OCC validation cost |
+//! | engine_cas/* | CAS semantics (version check) | Version comparison overhead |
+//! | snapshot_isolation/* | Point-in-time reads | Snapshot creation cost |
+//! | conflict_detection/* | First-committer-wins | Conflict check scaling |
+//! | read_heavy/* | Read-dominated workloads | Read-set tracking cost |
+//!
+//! ## Conflict Shapes
+//!
+//! - `same_key`: All threads contend on identical key (worst case)
+//! - `disjoint_keys`: Threads use non-overlapping keys (best case)
+//! - `cas_conflict`: CAS version mismatch detection
 //!
 //! ## Running
 //!
 //! ```bash
 //! cargo bench --bench m2_transactions
+//! cargo bench --bench m2_transactions -- "engine_cas"  # specific group
 //! ```
 
 use criterion::{
@@ -40,7 +44,7 @@ use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 // =============================================================================
-// Test Utilities
+// Test Utilities - All allocation happens here, outside timed loops
 // =============================================================================
 
 fn create_namespace(run_id: RunId) -> Namespace {
@@ -56,69 +60,101 @@ fn make_key(ns: &Namespace, name: &str) -> Key {
     Key::new_kv(ns.clone(), name)
 }
 
-// =============================================================================
-// Transaction Commit (Single-Threaded, No Conflict)
-// =============================================================================
+/// Pre-generate keys to avoid allocation in timed loops
+fn pregenerate_keys(ns: &Namespace, prefix: &str, count: usize) -> Vec<Key> {
+    (0..count)
+        .map(|i| make_key(ns, &format!("{}_{:06}", prefix, i)))
+        .collect()
+}
 
-fn transaction_commit_benchmarks(c: &mut Criterion) {
-    let mut group = c.benchmark_group("m2_transaction_commit");
+// =============================================================================
+// Engine Layer: Transaction Commit Benchmarks
+// =============================================================================
+// Semantic: Full transaction lifecycle (begin, operations, validate, commit)
+// Regression: OCC validation cost, snapshot creation, write-set serialization
+
+fn engine_txn_commit_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("engine_txn_commit");
     group.throughput(Throughput::Elements(1));
 
-    // Single-key transaction
+    // --- Benchmark: single_put (minimal transaction) ---
+    // Semantic: Simplest possible write transaction
+    // Real pattern: Agent storing single state update
     {
         let temp_dir = TempDir::new().unwrap();
         let db = Database::open(temp_dir.path().join("db")).unwrap();
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
 
-        group.bench_function("single_key_put", |b| {
-            let counter = AtomicU64::new(0);
+        const MAX_KEYS: usize = 500_000;
+        let keys = pregenerate_keys(&ns, "single", MAX_KEYS);
+        let counter = AtomicU64::new(0);
+
+        group.bench_function("single_put", |b| {
             b.iter(|| {
-                let i = counter.fetch_add(1, Ordering::Relaxed);
+                let i = counter.fetch_add(1, Ordering::Relaxed) as usize;
+                if i >= MAX_KEYS {
+                    panic!("Benchmark exceeded pre-generated keys");
+                }
                 let result = db.transaction(run_id, |txn| {
-                    let key = make_key(&ns, &format!("txn_{}", i));
-                    txn.put(key, Value::I64(i as i64))?;
+                    txn.put(keys[i].clone(), Value::I64(i as i64))?;
                     Ok(())
                 });
-                black_box(result.unwrap());
+                black_box(result.unwrap())
             });
         });
     }
 
-    // Multi-key transaction (atomic batch)
+    // --- Benchmark: multi_put (batch transaction) ---
+    // Semantic: Atomic multi-key writes
+    // Real pattern: Agent storing related state atomically
     for num_keys in [3, 5, 10] {
         let temp_dir = TempDir::new().unwrap();
         let db = Database::open(temp_dir.path().join("db")).unwrap();
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
 
+        const MAX_BATCHES: usize = 100_000;
+        let all_keys: Vec<Vec<Key>> = (0..MAX_BATCHES)
+            .map(|batch| {
+                (0..num_keys)
+                    .map(|i| make_key(&ns, &format!("batch_{}_{}", batch, i)))
+                    .collect()
+            })
+            .collect();
+        let counter = AtomicU64::new(0);
+
         group.bench_with_input(
-            BenchmarkId::new("multi_key_put", num_keys),
+            BenchmarkId::new("multi_put", num_keys),
             &num_keys,
-            |b, &num_keys| {
-                let counter = AtomicU64::new(0);
+            |b, _| {
                 b.iter(|| {
-                    let i = counter.fetch_add(1, Ordering::Relaxed);
+                    let batch_idx = counter.fetch_add(1, Ordering::Relaxed) as usize;
+                    if batch_idx >= MAX_BATCHES {
+                        panic!("Benchmark exceeded pre-generated batches");
+                    }
+                    let keys = &all_keys[batch_idx];
                     let result = db.transaction(run_id, |txn| {
-                        for j in 0..num_keys {
-                            let key = make_key(&ns, &format!("batch_{}_{}", i, j));
-                            txn.put(key, Value::I64((i * num_keys as u64 + j as u64) as i64))?;
+                        for (i, key) in keys.iter().enumerate() {
+                            txn.put(key.clone(), Value::I64(i as i64))?;
                         }
                         Ok(())
                     });
-                    black_box(result.unwrap());
+                    black_box(result.unwrap())
                 });
             },
         );
     }
 
-    // Read-modify-write transaction
+    // --- Benchmark: read_modify_write (RMW pattern) ---
+    // Semantic: Read then update based on current value
+    // Real pattern: Counter increment, state machine transitions
     {
         let temp_dir = TempDir::new().unwrap();
         let db = Database::open(temp_dir.path().join("db")).unwrap();
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
-        let key = make_key(&ns, "rmw_key");
+        let key = make_key(&ns, "rmw_counter");
         db.put(run_id, key.clone(), Value::I64(0)).unwrap();
 
         group.bench_function("read_modify_write", |b| {
@@ -132,7 +168,7 @@ fn transaction_commit_benchmarks(c: &mut Criterion) {
                     txn.put(key.clone(), Value::I64(n + 1))?;
                     Ok(())
                 });
-                black_box(result.unwrap());
+                black_box(result.unwrap())
             });
         });
     }
@@ -141,67 +177,112 @@ fn transaction_commit_benchmarks(c: &mut Criterion) {
 }
 
 // =============================================================================
-// CAS Performance
+// Engine Layer: CAS Benchmarks
 // =============================================================================
+// Semantic: Compare-and-swap with version validation
+// Regression: Version comparison overhead, conflict detection cost
 
-fn cas_benchmarks(c: &mut Criterion) {
-    let mut group = c.benchmark_group("m2_cas");
+fn engine_cas_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("engine_cas");
     group.throughput(Throughput::Elements(1));
 
-    // CAS success (sequential, no conflict)
+    // --- Benchmark: success_sequential (no contention) ---
+    // Semantic: CAS succeeds when version matches
+    // Real pattern: Single-threaded state updates with optimistic locking
     {
         let temp_dir = TempDir::new().unwrap();
         let db = Database::open(temp_dir.path().join("db")).unwrap();
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
-        let key = make_key(&ns, "cas_key");
+        let key = make_key(&ns, "cas_seq");
         db.put(run_id, key.clone(), Value::I64(0)).unwrap();
 
-        group.bench_function("sequential_success", |b| {
+        group.bench_function("success_sequential", |b| {
             b.iter(|| {
                 let current = db.get(&key).unwrap().unwrap();
                 let new_val = match current.value {
                     Value::I64(n) => n + 1,
                     _ => 1,
                 };
-                let result = db.cas(run_id, key.clone(), current.version, Value::I64(new_val));
-                black_box(result.unwrap());
+                black_box(db.cas(run_id, key.clone(), current.version, Value::I64(new_val)).unwrap())
             });
         });
     }
 
-    // CAS failure (wrong version)
+    // --- Benchmark: failure_version_mismatch ---
+    // Semantic: CAS fails fast when version doesn't match
+    // Real pattern: Detecting stale reads
     {
         let temp_dir = TempDir::new().unwrap();
         let db = Database::open(temp_dir.path().join("db")).unwrap();
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
-        let key = make_key(&ns, "cas_fail_key");
+        let key = make_key(&ns, "cas_fail");
         db.put(run_id, key.clone(), Value::I64(0)).unwrap();
 
-        group.bench_function("failure_wrong_version", |b| {
+        group.bench_function("failure_version_mismatch", |b| {
             b.iter(|| {
-                // Always use wrong version
+                // Always use wrong version - should fail fast
                 let result = db.cas(run_id, key.clone(), 999999, Value::I64(1));
-                black_box(result.is_err());
+                black_box(result.is_err())
             });
         });
     }
 
-    // CAS create (version 0 = insert if not exists)
+    // --- Benchmark: create_new_key (version 0 = insert if not exists) ---
+    // Semantic: CAS with version 0 creates new key atomically
+    // Real pattern: Claiming a resource, initializing state
     {
         let temp_dir = TempDir::new().unwrap();
         let db = Database::open(temp_dir.path().join("db")).unwrap();
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
 
+        const MAX_KEYS: usize = 500_000;
+        let keys = pregenerate_keys(&ns, "cas_create", MAX_KEYS);
+        // Counter must be outside bench_function to persist across warm-up and measurement
+        let counter = AtomicU64::new(0);
+
         group.bench_function("create_new_key", |b| {
-            let counter = AtomicU64::new(0);
             b.iter(|| {
-                let i = counter.fetch_add(1, Ordering::Relaxed);
-                let key = make_key(&ns, &format!("cas_new_{}", i));
-                let result = db.cas(run_id, key, 0, Value::I64(i as i64));
-                black_box(result.unwrap());
+                let i = counter.fetch_add(1, Ordering::Relaxed) as usize;
+                if i >= MAX_KEYS {
+                    panic!("Benchmark exceeded pre-generated keys");
+                }
+                black_box(db.cas(run_id, keys[i].clone(), 0, Value::I64(i as i64)).unwrap())
+            });
+        });
+    }
+
+    // --- Benchmark: retry_until_success (bounded retry loop) ---
+    // Semantic: CAS retry pattern under self-contention
+    // Real pattern: Agent coordination with optimistic retry
+    {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+        let run_id = RunId::new();
+        let ns = create_namespace(run_id);
+        let key = make_key(&ns, "cas_retry");
+        db.put(run_id, key.clone(), Value::I64(0)).unwrap();
+
+        group.bench_function("retry_until_success", |b| {
+            b.iter(|| {
+                let mut attempts = 0;
+                loop {
+                    let current = db.get(&key).unwrap().unwrap();
+                    let new_val = match current.value {
+                        Value::I64(n) => n + 1,
+                        _ => 1,
+                    };
+                    let result = db.cas(run_id, key.clone(), current.version, Value::I64(new_val));
+                    if result.is_ok() {
+                        break black_box(attempts);
+                    }
+                    attempts += 1;
+                    if attempts > 100 {
+                        panic!("CAS retry exceeded limit");
+                    }
+                }
             });
         });
     }
@@ -210,69 +291,122 @@ fn cas_benchmarks(c: &mut Criterion) {
 }
 
 // =============================================================================
-// Snapshot Read Performance
+// Snapshot Isolation Benchmarks
 // =============================================================================
+// Semantic: Point-in-time consistent reads within transaction
+// Regression: Snapshot creation cost, version lookup overhead
 
-fn snapshot_read_benchmarks(c: &mut Criterion) {
-    let mut group = c.benchmark_group("m2_snapshot_read");
+fn snapshot_isolation_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("snapshot_isolation");
     group.throughput(Throughput::Elements(1));
 
-    // Read within transaction (snapshot consistency)
+    // --- Benchmark: snapshot_read (read within transaction) ---
+    // Semantic: Reading from consistent snapshot
+    // Real pattern: Agent reading state during computation
     {
         let temp_dir = TempDir::new().unwrap();
         let db = Database::open(temp_dir.path().join("db")).unwrap();
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
 
-        // Pre-populate
-        for i in 0..1000 {
-            let key = make_key(&ns, &format!("snap_key_{}", i));
-            db.put(run_id, key, Value::I64(i)).unwrap();
+        // Pre-populate with 1000 keys
+        let keys = pregenerate_keys(&ns, "snap", 1000);
+        for (i, key) in keys.iter().enumerate() {
+            db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
         }
 
-        group.bench_function("single_read_in_txn", |b| {
-            let key = make_key(&ns, "snap_key_500");
+        let lookup_key = keys[500].clone();
+
+        group.bench_function("single_read", |b| {
             b.iter(|| {
-                let result = db.transaction(run_id, |txn| txn.get(&key));
-                black_box(result.unwrap());
+                let result = db.transaction(run_id, |txn| txn.get(&lookup_key));
+                black_box(result.unwrap())
             });
         });
+    }
 
-        group.bench_function("multi_read_in_txn", |b| {
-            let keys: Vec<_> = (0..10)
-                .map(|i| make_key(&ns, &format!("snap_key_{}", i * 100)))
-                .collect();
+    // --- Benchmark: snapshot_multi_read ---
+    // Semantic: Multiple reads in same snapshot (consistent view)
+    // Real pattern: Agent gathering related state
+    {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+        let run_id = RunId::new();
+        let ns = create_namespace(run_id);
 
+        let keys = pregenerate_keys(&ns, "multi", 1000);
+        for (i, key) in keys.iter().enumerate() {
+            db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
+        }
+
+        // Read 10 keys per transaction
+        let read_keys: Vec<_> = (0..10).map(|i| keys[i * 100].clone()).collect();
+
+        group.bench_function("multi_read_10", |b| {
             b.iter(|| {
                 let result = db.transaction(run_id, |txn| {
-                    for key in &keys {
+                    for key in &read_keys {
                         txn.get(key)?;
                     }
                     Ok(())
                 });
-                black_box(result.unwrap());
+                black_box(result.unwrap())
             });
         });
     }
 
-    // Read-your-writes within transaction
+    // --- Benchmark: version_count_scaling ---
+    // Semantic: Snapshot cost should not grow with version history
+    // Real pattern: Long-running agent with many state updates
+    for num_versions in [10, 100, 1000] {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+        let run_id = RunId::new();
+        let ns = create_namespace(run_id);
+        let key = make_key(&ns, "versioned");
+
+        // Create version history
+        for v in 0..num_versions {
+            db.put(run_id, key.clone(), Value::I64(v as i64)).unwrap();
+        }
+
+        group.bench_with_input(
+            BenchmarkId::new("after_versions", num_versions),
+            &num_versions,
+            |b, _| {
+                b.iter(|| {
+                    let result = db.transaction(run_id, |txn| txn.get(&key));
+                    black_box(result.unwrap())
+                });
+            },
+        );
+    }
+
+    // --- Benchmark: read_your_writes ---
+    // Semantic: Transaction sees its own uncommitted writes
+    // Real pattern: Agent building up state before commit
     {
         let temp_dir = TempDir::new().unwrap();
         let db = Database::open(temp_dir.path().join("db")).unwrap();
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
 
+        const MAX_KEYS: usize = 100_000;
+        let keys = pregenerate_keys(&ns, "ryw", MAX_KEYS);
+        let counter = AtomicU64::new(0);
+
         group.bench_function("read_your_writes", |b| {
-            let counter = AtomicU64::new(0);
             b.iter(|| {
-                let i = counter.fetch_add(1, Ordering::Relaxed);
-                let key = make_key(&ns, &format!("ryw_{}", i));
+                let i = counter.fetch_add(1, Ordering::Relaxed) as usize;
+                if i >= MAX_KEYS {
+                    panic!("Benchmark exceeded pre-generated keys");
+                }
                 let result = db.transaction(run_id, |txn| {
-                    txn.put(key.clone(), Value::I64(i as i64))?;
-                    let val = txn.get(&key)?;
+                    txn.put(keys[i].clone(), Value::I64(i as i64))?;
+                    let val = txn.get(&keys[i])?;
                     Ok(val)
                 });
-                black_box(result.unwrap());
+                black_box(result.unwrap())
             });
         });
     }
@@ -281,18 +415,97 @@ fn snapshot_read_benchmarks(c: &mut Criterion) {
 }
 
 // =============================================================================
-// Conflict Detection (Multi-Threaded)
+// Read-Heavy Transaction Benchmarks
 // =============================================================================
+// Semantic: Agents typically read much more than they write
+// Regression: Read-set tracking overhead, snapshot lookup cost
+
+fn read_heavy_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("read_heavy");
+    group.throughput(Throughput::Elements(1));
+
+    // Pre-setup for read-heavy workloads
+    let temp_dir = TempDir::new().unwrap();
+    let db = Database::open(temp_dir.path().join("db")).unwrap();
+    let run_id = RunId::new();
+    let ns = create_namespace(run_id);
+
+    // Pre-populate with 10000 keys
+    let keys = pregenerate_keys(&ns, "rh", 10_000);
+    for (i, key) in keys.iter().enumerate() {
+        db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
+    }
+
+    let write_key = make_key(&ns, "rh_write");
+    db.put(run_id, write_key.clone(), Value::I64(0)).unwrap();
+
+    // --- Benchmark: N reads + 1 write (varying read count) ---
+    // Semantic: Typical agent pattern - gather state, make decision, write result
+    for num_reads in [1, 10, 100] {
+        let read_keys: Vec<_> = keys.iter().take(num_reads).cloned().collect();
+        let write_key = write_key.clone();
+        let counter = AtomicU64::new(0);
+
+        group.bench_with_input(
+            BenchmarkId::new("reads_then_write", num_reads),
+            &num_reads,
+            |b, _| {
+                b.iter(|| {
+                    let i = counter.fetch_add(1, Ordering::Relaxed);
+                    let result = db.transaction(run_id, |txn| {
+                        // Read phase
+                        for key in &read_keys {
+                            txn.get(key)?;
+                        }
+                        // Write phase
+                        txn.put(write_key.clone(), Value::I64(i as i64))?;
+                        Ok(())
+                    });
+                    black_box(result.unwrap())
+                });
+            },
+        );
+    }
+
+    // --- Benchmark: read_only transaction ---
+    // Semantic: Pure read transaction (no write-set, no conflict possible)
+    // Real pattern: Agent querying state without modification
+    {
+        let read_keys: Vec<_> = keys.iter().take(10).cloned().collect();
+
+        group.bench_function("read_only_10", |b| {
+            b.iter(|| {
+                let result = db.transaction(run_id, |txn| {
+                    for key in &read_keys {
+                        txn.get(key)?;
+                    }
+                    Ok(())
+                });
+                black_box(result.unwrap())
+            });
+        });
+    }
+
+    group.finish();
+}
+
+// =============================================================================
+// Conflict Detection Benchmarks (Multi-Threaded)
+// =============================================================================
+// Semantic: First-committer-wins under concurrent access
+// Regression: Conflict detection scaling with thread count
 
 fn conflict_detection_benchmarks(c: &mut Criterion) {
-    let mut group = c.benchmark_group("m2_conflict_detection");
-    group.sample_size(30);
+    let mut group = c.benchmark_group("conflict_detection");
+    group.sample_size(20);
 
-    // No contention (different keys per thread)
+    // --- Conflict shape: disjoint_keys (no actual conflicts) ---
+    // Semantic: Threads work on non-overlapping keys
+    // Real pattern: Partitioned agent workloads
     for num_threads in [2, 4, 8] {
         group.throughput(Throughput::Elements(num_threads as u64));
         group.bench_with_input(
-            BenchmarkId::new("no_contention_threads", num_threads),
+            BenchmarkId::new("disjoint_keys", num_threads),
             &num_threads,
             |b, &num_threads| {
                 b.iter_custom(|iters| {
@@ -309,10 +522,14 @@ fn conflict_detection_benchmarks(c: &mut Criterion) {
                             let barrier = Arc::clone(&barrier);
                             let ns = create_namespace(run_id);
 
+                            // Pre-generate keys for this thread
+                            let keys: Vec<_> = (0..ops_per_thread as usize)
+                                .map(|i| make_key(&ns, &format!("t{}_{}", thread_id, i)))
+                                .collect();
+
                             thread::spawn(move || {
                                 barrier.wait();
-                                for i in 0..ops_per_thread {
-                                    let key = make_key(&ns, &format!("t{}_{}", thread_id, i));
+                                for (i, key) in keys.iter().enumerate() {
                                     db.transaction(run_id, |txn| {
                                         txn.put(key.clone(), Value::I64(i as i64))?;
                                         Ok(())
@@ -336,11 +553,13 @@ fn conflict_detection_benchmarks(c: &mut Criterion) {
         );
     }
 
-    // High contention (same key, all threads)
+    // --- Conflict shape: same_key (maximum contention) ---
+    // Semantic: All threads contend on single key
+    // Real pattern: Global counter, leader election
     for num_threads in [2, 4] {
         group.throughput(Throughput::Elements(num_threads as u64));
         group.bench_with_input(
-            BenchmarkId::new("high_contention_threads", num_threads),
+            BenchmarkId::new("same_key", num_threads),
             &num_threads,
             |b, &num_threads| {
                 b.iter_custom(|iters| {
@@ -378,6 +597,7 @@ fn conflict_detection_benchmarks(c: &mut Criterion) {
                                         if result.is_ok() {
                                             break;
                                         }
+                                        // Brief backoff
                                         thread::sleep(Duration::from_micros(10));
                                     }
                                 }
@@ -398,7 +618,9 @@ fn conflict_detection_benchmarks(c: &mut Criterion) {
         );
     }
 
-    // CAS under contention (exactly one winner)
+    // --- Conflict shape: cas_contention (CAS race) ---
+    // Semantic: Multiple CAS attempts, exactly one winner per round
+    // Real pattern: Distributed lock acquisition
     group.bench_function("cas_one_winner", |b| {
         b.iter_custom(|iters| {
             let mut total_elapsed = Duration::ZERO;
@@ -455,104 +677,27 @@ fn conflict_detection_benchmarks(c: &mut Criterion) {
 }
 
 // =============================================================================
-// Version Growth Impact
-// =============================================================================
-
-fn version_growth_benchmarks(c: &mut Criterion) {
-    let mut group = c.benchmark_group("m2_version_growth");
-    group.sample_size(20);
-
-    // Measure transaction overhead as version count grows
-    // (Tests that snapshot creation doesn't degrade with history)
-    for num_prior_versions in [100, 1000, 10000] {
-        let temp_dir = TempDir::new().unwrap();
-        let db = Database::open(temp_dir.path().join("db")).unwrap();
-        let run_id = RunId::new();
-        let ns = create_namespace(run_id);
-
-        // Create version history by updating same key many times
-        let key = make_key(&ns, "versioned_key");
-        for i in 0..num_prior_versions {
-            db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
-        }
-
-        group.throughput(Throughput::Elements(1));
-        group.bench_with_input(
-            BenchmarkId::new("txn_after_versions", num_prior_versions),
-            &num_prior_versions,
-            |b, _| {
-                let counter = AtomicU64::new(num_prior_versions as u64);
-                b.iter(|| {
-                    let i = counter.fetch_add(1, Ordering::Relaxed);
-                    let result = db.transaction(run_id, |txn| {
-                        let _ = txn.get(&key)?;
-                        txn.put(key.clone(), Value::I64(i as i64))?;
-                        Ok(())
-                    });
-                    black_box(result.unwrap());
-                });
-            },
-        );
-    }
-
-    // Measure snapshot read with many versions
-    for num_keys in [1000, 10000] {
-        let temp_dir = TempDir::new().unwrap();
-        let db = Database::open(temp_dir.path().join("db")).unwrap();
-        let run_id = RunId::new();
-        let ns = create_namespace(run_id);
-
-        // Create keys with varying version counts
-        for i in 0..num_keys {
-            let key = make_key(&ns, &format!("multi_ver_{}", i));
-            // Update each key 5 times
-            for v in 0..5 {
-                db.put(run_id, key.clone(), Value::I64(v)).unwrap();
-            }
-        }
-
-        let lookup_key = make_key(&ns, &format!("multi_ver_{}", num_keys / 2));
-
-        group.throughput(Throughput::Elements(1));
-        group.bench_with_input(
-            BenchmarkId::new("snapshot_read_versioned", num_keys),
-            &num_keys,
-            |b, _| {
-                b.iter(|| {
-                    let result = db.transaction(run_id, |txn| txn.get(&lookup_key));
-                    black_box(result.unwrap());
-                });
-            },
-        );
-    }
-
-    group.finish();
-}
-
-// =============================================================================
 // Benchmark Groups
 // =============================================================================
 
 criterion_group!(
-    name = m2_commit;
+    name = txn_commit;
     config = Criterion::default().measurement_time(Duration::from_secs(10));
-    targets = transaction_commit_benchmarks, cas_benchmarks, snapshot_read_benchmarks
+    targets = engine_txn_commit_benchmarks, engine_cas_benchmarks
 );
 
 criterion_group!(
-    name = m2_conflict;
+    name = snapshot;
+    config = Criterion::default().measurement_time(Duration::from_secs(10));
+    targets = snapshot_isolation_benchmarks, read_heavy_benchmarks
+);
+
+criterion_group!(
+    name = conflict;
     config = Criterion::default()
         .measurement_time(Duration::from_secs(15))
-        .sample_size(30);
+        .sample_size(20);
     targets = conflict_detection_benchmarks
 );
 
-criterion_group!(
-    name = m2_version;
-    config = Criterion::default()
-        .measurement_time(Duration::from_secs(10))
-        .sample_size(20);
-    targets = version_growth_benchmarks
-);
-
-criterion_main!(m2_commit, m2_conflict, m2_version);
+criterion_main!(txn_commit, snapshot, conflict);

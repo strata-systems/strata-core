@@ -1,29 +1,33 @@
-//! M1 Storage Benchmarks
+//! M1 Storage Benchmarks - Semantic Regression Harness
 //!
-//! These benchmarks focus on M1 (Storage + WAL) primitives only.
-//! No transactions, no isolation, no concurrency guarantees.
+//! ## Benchmark Path Types (Layer Labels)
 //!
-//! ## What M1 is:
-//! - Single-threaded correctness
-//! - Deterministic state rebuild
-//! - Append-only WAL
+//! - `engine_*`: Via Database API (includes WAL, locks, full path)
 //!
-//! ## Target Performance (MVP)
+//! Note: All current benchmarks use the engine layer via Database API.
+//! Storage-layer and WAL-layer isolation would require internal API exposure.
 //!
-//! | Operation     | Stretch Goal   | Acceptable     | Notes                    |
-//! |---------------|----------------|----------------|--------------------------|
-//! | KV get        | 50-200K ops/s  | 10-40K ops/s   | RwLock + BTreeMap        |
-//! | KV put        | 10-50K ops/s   | 5-20K ops/s    | + WAL append             |
-//! | WAL append    | 100K+ ops/s    | 20K+ ops/s     | Buffered writes          |
-//! | WAL replay    | <300ms/1M ops  | <1s/1M ops     | Cold start               |
+//! ## Key Access Patterns
 //!
-//! **These are stretch goals. MVP success is semantic correctness first,
-//! performance second.**
+//! - `hot_key`: Single key, repeated access (best case, cache-friendly)
+//! - `uniform`: Random keys from full keyspace (realistic agent pattern)
+//! - `working_set`: Small subset of keys (80/20 skewed access)
+//!
+//! ## What These Benchmarks Prove
+//!
+//! | Benchmark | Semantic Guarantee | Regression Detection |
+//! |-----------|-------------------|----------------------|
+//! | engine_get/* | Read path correctness | BTreeMap/lock overhead |
+//! | engine_put/* | Write + WAL durability | fsync/serialization cost |
+//! | engine_delete/* | Tombstone semantics | Delete vs insert parity |
+//! | wal_recovery/* | Crash recovery correctness | Replay scaling |
+//! | key_scaling/* | O(log n) lookup guarantee | BTreeMap degradation |
 //!
 //! ## Running
 //!
 //! ```bash
 //! cargo bench --bench m1_storage
+//! cargo bench --bench m1_storage -- "engine_get"  # specific group
 //! ```
 
 use criterion::{
@@ -37,7 +41,7 @@ use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
 // =============================================================================
-// Test Utilities
+// Test Utilities - All allocation happens here, outside timed loops
 // =============================================================================
 
 fn create_namespace(run_id: RunId) -> Namespace {
@@ -53,138 +57,169 @@ fn make_key(ns: &Namespace, name: &str) -> Key {
     Key::new_kv(ns.clone(), name)
 }
 
-// =============================================================================
-// KV Get Throughput
-// =============================================================================
+/// Pre-generate keys to avoid allocation in timed loops
+fn pregenerate_keys(ns: &Namespace, prefix: &str, count: usize) -> Vec<Key> {
+    (0..count)
+        .map(|i| make_key(ns, &format!("{}_{:06}", prefix, i)))
+        .collect()
+}
 
-fn kv_get_benchmarks(c: &mut Criterion) {
-    let mut group = c.benchmark_group("m1_kv_get");
+/// Simple LCG for deterministic "random" key selection without allocation
+fn lcg_next(state: &mut u64) -> u64 {
+    *state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+    *state
+}
 
-    // Pre-populate database
+// =============================================================================
+// Engine Layer: KV Get Benchmarks
+// =============================================================================
+// Semantic: Read path through full engine stack (RwLock acquire, BTreeMap lookup)
+// Regression: Lock contention changes, map implementation changes
+// Agent pattern: Frequent state lookups during execution
+
+fn engine_get_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("engine_get");
+    group.throughput(Throughput::Elements(1));
+
+    // --- Setup (outside all timed loops) ---
     let temp_dir = TempDir::new().unwrap();
     let db = Database::open(temp_dir.path().join("db")).unwrap();
     let run_id = RunId::new();
     let ns = create_namespace(run_id);
 
-    for i in 0..10_000 {
-        let key = make_key(&ns, &format!("key_{:05}", i));
-        db.put(run_id, key, Value::I64(i)).unwrap();
+    const NUM_KEYS: usize = 10_000;
+    let keys = pregenerate_keys(&ns, "key", NUM_KEYS);
+
+    // Populate database
+    for (i, key) in keys.iter().enumerate() {
+        db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
     }
 
-    group.throughput(Throughput::Elements(1));
+    let hot_key = keys[NUM_KEYS / 2].clone();
+    let miss_key = make_key(&ns, "nonexistent_key");
+    let working_set: Vec<_> = keys[0..100].to_vec(); // 1% of keys
 
-    // Get existing key (hot path)
-    group.bench_function("existing_key", |b| {
-        let key = make_key(&ns, "key_05000");
+    // --- Benchmark: hot_key (single key, best case) ---
+    // Semantic: Measures lock acquire + single BTreeMap lookup
+    // Real pattern: Agent reading same config key repeatedly
+    group.bench_function("hot_key", |b| {
+        b.iter(|| black_box(db.get(&hot_key).unwrap()));
+    });
+
+    // --- Benchmark: miss (key not found) ---
+    // Semantic: Full lookup path returning None
+    // Regression: Miss path should not be slower than hit path
+    group.bench_function("miss", |b| {
+        b.iter(|| black_box(db.get(&miss_key).unwrap()));
+    });
+
+    // --- Benchmark: uniform (random from full keyspace) ---
+    // Semantic: Realistic random access pattern
+    // Real pattern: Agent accessing arbitrary state keys
+    group.bench_function("uniform", |b| {
+        let mut rng_state = 12345u64;
         b.iter(|| {
-            let result = db.get(&key);
-            black_box(result.unwrap());
+            let idx = (lcg_next(&mut rng_state) as usize) % NUM_KEYS;
+            black_box(db.get(&keys[idx]).unwrap())
         });
     });
 
-    // Get nonexistent key (miss path)
-    group.bench_function("nonexistent_key", |b| {
-        let key = make_key(&ns, "nonexistent");
+    // --- Benchmark: working_set (small hot subset) ---
+    // Semantic: 80/20 access pattern simulation
+    // Real pattern: Agent with frequently accessed state subset
+    group.bench_function("working_set_100", |b| {
+        let mut rng_state = 54321u64;
         b.iter(|| {
-            let result = db.get(&key);
-            black_box(result.unwrap());
+            let idx = (lcg_next(&mut rng_state) as usize) % working_set.len();
+            black_box(db.get(&working_set[idx]).unwrap())
         });
     });
-
-    // Get with varying key positions (early, middle, late in BTreeMap)
-    for position in ["early", "middle", "late"] {
-        let key_name = match position {
-            "early" => "key_00100",
-            "middle" => "key_05000",
-            "late" => "key_09900",
-            _ => unreachable!(),
-        };
-        let key = make_key(&ns, key_name);
-
-        group.bench_with_input(
-            BenchmarkId::new("position", position),
-            &position,
-            |b, _| {
-                b.iter(|| {
-                    let result = db.get(&key);
-                    black_box(result.unwrap());
-                });
-            },
-        );
-    }
 
     group.finish();
 }
 
 // =============================================================================
-// KV Put Throughput
+// Engine Layer: KV Put Benchmarks (includes WAL)
 // =============================================================================
+// Semantic: Write path through engine (serialize, WAL append, fsync, map update)
+// Note: WAL is always enabled in Database API. Cannot isolate storage-only cost.
+// Regression: fsync overhead, serialization changes, lock contention
 
-fn kv_put_benchmarks(c: &mut Criterion) {
-    let mut group = c.benchmark_group("m1_kv_put");
+fn engine_put_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("engine_put");
     group.throughput(Throughput::Elements(1));
 
-    // Put unique keys (append pattern)
+    // --- Benchmark: insert (unique keys, append pattern) ---
+    // Semantic: New key insertion with WAL durability
+    // Real pattern: Agent creating new state entries
     {
         let temp_dir = TempDir::new().unwrap();
         let db = Database::open(temp_dir.path().join("db")).unwrap();
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
 
-        group.bench_function("unique_keys", |b| {
-            let counter = AtomicU64::new(0);
+        // Pre-generate keys outside timed loop
+        const MAX_KEYS: usize = 500_000;
+        let keys = pregenerate_keys(&ns, "insert", MAX_KEYS);
+        let counter = AtomicU64::new(0);
+
+        group.bench_function("insert", |b| {
             b.iter(|| {
-                let i = counter.fetch_add(1, Ordering::Relaxed);
-                let key = make_key(&ns, &format!("unique_{}", i));
-                let result = db.put(run_id, key, Value::I64(i as i64));
-                black_box(result.unwrap());
+                let i = counter.fetch_add(1, Ordering::Relaxed) as usize;
+                if i >= MAX_KEYS {
+                    panic!("Benchmark exceeded pre-generated keys");
+                }
+                black_box(db.put(run_id, keys[i].clone(), Value::I64(i as i64)).unwrap())
             });
         });
     }
 
-    // Put overwrite (update pattern)
+    // --- Benchmark: overwrite_hot_key (same key, update pattern) ---
+    // Semantic: Update existing key, version increment
+    // Real pattern: Agent updating counter or status
     {
         let temp_dir = TempDir::new().unwrap();
         let db = Database::open(temp_dir.path().join("db")).unwrap();
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
-        let key = make_key(&ns, "overwrite_key");
+        let key = make_key(&ns, "hot_overwrite");
         db.put(run_id, key.clone(), Value::I64(0)).unwrap();
 
-        group.bench_function("overwrite_same_key", |b| {
-            let counter = AtomicU64::new(0);
+        let counter = AtomicU64::new(0);
+
+        group.bench_function("overwrite_hot_key", |b| {
             b.iter(|| {
                 let i = counter.fetch_add(1, Ordering::Relaxed);
-                let result = db.put(run_id, key.clone(), Value::I64(i as i64));
-                black_box(result.unwrap());
+                black_box(db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap())
             });
         });
     }
 
-    // Delete throughput
+    // --- Benchmark: overwrite_uniform (random key updates) ---
+    // Semantic: Update random existing keys
+    // Real pattern: Agent updating various state entries
     {
         let temp_dir = TempDir::new().unwrap();
         let db = Database::open(temp_dir.path().join("db")).unwrap();
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
 
-        group.bench_function("delete", |b| {
-            let counter = AtomicU64::new(0);
-            b.iter_custom(|iters| {
-                // Setup: create keys
-                let start_idx = counter.fetch_add(iters, Ordering::Relaxed);
-                for i in start_idx..(start_idx + iters) {
-                    let key = make_key(&ns, &format!("del_{}", i));
-                    db.put(run_id, key, Value::I64(i as i64)).unwrap();
-                }
+        const NUM_KEYS: usize = 1_000;
+        let keys = pregenerate_keys(&ns, "uniform", NUM_KEYS);
 
-                // Benchmark: delete
-                let start = Instant::now();
-                for i in start_idx..(start_idx + iters) {
-                    let key = make_key(&ns, &format!("del_{}", i));
-                    db.delete(run_id, key).unwrap();
-                }
-                start.elapsed()
+        // Pre-populate
+        for (i, key) in keys.iter().enumerate() {
+            db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
+        }
+
+        let counter = AtomicU64::new(0);
+
+        group.bench_function("overwrite_uniform", |b| {
+            let mut rng_state = 11111u64;
+            b.iter(|| {
+                let idx = (lcg_next(&mut rng_state) as usize) % NUM_KEYS;
+                let i = counter.fetch_add(1, Ordering::Relaxed);
+                black_box(db.put(run_id, keys[idx].clone(), Value::I64(i as i64)).unwrap())
             });
         });
     }
@@ -193,30 +228,98 @@ fn kv_put_benchmarks(c: &mut Criterion) {
 }
 
 // =============================================================================
-// Value Size Impact
+// Engine Layer: Delete Benchmarks
 // =============================================================================
+// Semantic: Delete creates tombstone, requires existing key
+// Regression: Delete should have similar cost to insert (both WAL writes)
 
-fn value_size_benchmarks(c: &mut Criterion) {
-    let mut group = c.benchmark_group("m1_value_size");
+fn engine_delete_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("engine_delete");
+    group.throughput(Throughput::Elements(1));
 
-    for value_size in [64, 256, 1024, 4096, 16384] {
+    // --- Benchmark: delete (tombstone creation) ---
+    // Semantic: Delete existing key, tombstone in WAL
+    // Real pattern: Agent cleanup of temporary state
+    group.bench_function("existing_key", |b| {
+        let counter = AtomicU64::new(0);
+
+        b.iter_custom(|iters| {
+            // Setup for this iteration batch (outside timing)
+            let temp_dir = TempDir::new().unwrap();
+            let db = Database::open(temp_dir.path().join("db")).unwrap();
+            let run_id = RunId::new();
+            let ns = create_namespace(run_id);
+
+            let start_idx = counter.fetch_add(iters, Ordering::Relaxed);
+            let keys: Vec<_> = (0..iters)
+                .map(|i| make_key(&ns, &format!("del_{}", start_idx + i)))
+                .collect();
+
+            // Create keys to delete
+            for (i, key) in keys.iter().enumerate() {
+                db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
+            }
+
+            // Timed: delete only
+            let start = Instant::now();
+            for key in &keys {
+                db.delete(run_id, key.clone()).unwrap();
+            }
+            start.elapsed()
+        });
+    });
+
+    // --- Benchmark: delete_nonexistent (no-op path) ---
+    // Semantic: Delete of missing key should be cheap
+    {
         let temp_dir = TempDir::new().unwrap();
         let db = Database::open(temp_dir.path().join("db")).unwrap();
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
-        let data = vec![0u8; value_size];
+        let key = make_key(&ns, "never_existed");
+
+        group.bench_function("nonexistent_key", |b| {
+            b.iter(|| black_box(db.delete(run_id, key.clone())));
+        });
+    }
+
+    group.finish();
+}
+
+// =============================================================================
+// Value Size Scaling
+// =============================================================================
+// Semantic: Serialization and WAL cost scales with value size
+// Regression: Large values should not cause disproportionate slowdown
+
+fn value_size_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("engine_value_size");
+
+    for value_size in [32, 256, 1024, 4096, 65536] {
+        let temp_dir = TempDir::new().unwrap();
+        let db = Database::open(temp_dir.path().join("db")).unwrap();
+        let run_id = RunId::new();
+        let ns = create_namespace(run_id);
+
+        // Pre-allocate value (outside timed loop)
+        let value_data = vec![0xABu8; value_size];
+        let value = Value::Bytes(value_data);
+
+        const MAX_KEYS: usize = 100_000;
+        let keys = pregenerate_keys(&ns, &format!("size_{}", value_size), MAX_KEYS);
+        let counter = AtomicU64::new(0);
 
         group.throughput(Throughput::Bytes(value_size as u64));
         group.bench_with_input(
             BenchmarkId::new("put_bytes", value_size),
             &value_size,
             |b, _| {
-                let counter = AtomicU64::new(0);
                 b.iter(|| {
-                    let i = counter.fetch_add(1, Ordering::Relaxed);
-                    let key = make_key(&ns, &format!("sized_{}", i));
-                    let result = db.put(run_id, key, Value::Bytes(data.clone()));
-                    black_box(result.unwrap());
+                    let i = counter.fetch_add(1, Ordering::Relaxed) as usize;
+                    if i >= MAX_KEYS {
+                        panic!("Benchmark exceeded pre-generated keys");
+                    }
+                    black_box(db.put(run_id, keys[i].clone(), value.clone()).unwrap())
                 });
             },
         );
@@ -226,114 +329,141 @@ fn value_size_benchmarks(c: &mut Criterion) {
 }
 
 // =============================================================================
-// WAL Replay Performance
+// Key Count Scaling
 // =============================================================================
+// Semantic: O(log n) BTreeMap lookup must hold as key count grows
+// Regression: Lookup time should grow logarithmically, not linearly
 
-fn wal_replay_benchmarks(c: &mut Criterion) {
-    let mut group = c.benchmark_group("m1_wal_replay");
-    group.sample_size(20); // Fewer samples, these are slow
+fn key_scaling_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("engine_key_scaling");
+    group.sample_size(20);
+    group.throughput(Throughput::Elements(1));
 
-    for num_ops in [1_000, 10_000, 50_000] {
-        let temp_dir = TempDir::new().unwrap();
-        let db_path = temp_dir.path().join("db");
-
-        // Setup: populate database
-        {
-            let db = Database::open(&db_path).unwrap();
-            let run_id = RunId::new();
-            let ns = create_namespace(run_id);
-
-            for i in 0..num_ops {
-                let key = make_key(&ns, &format!("key_{}", i));
-                db.put(run_id, key, Value::I64(i as i64)).unwrap();
-            }
-            db.flush().unwrap();
-        }
-
-        group.throughput(Throughput::Elements(num_ops as u64));
-        group.bench_with_input(
-            BenchmarkId::new("replay_ops", num_ops),
-            &num_ops,
-            |b, _| {
-                b.iter(|| {
-                    // Re-open triggers recovery
-                    let db = Database::open(&db_path).unwrap();
-                    black_box(db);
-                });
-            },
-        );
-    }
-
-    // Mixed workload replay (puts + deletes)
-    {
-        let temp_dir = TempDir::new().unwrap();
-        let db_path = temp_dir.path().join("db");
-        let num_ops = 10_000;
-
-        {
-            let db = Database::open(&db_path).unwrap();
-            let run_id = RunId::new();
-            let ns = create_namespace(run_id);
-
-            for i in 0..num_ops {
-                let key = make_key(&ns, &format!("mixed_{}", i));
-                db.put(run_id, key, Value::I64(i as i64)).unwrap();
-            }
-            // Delete every 10th key
-            for i in (0..num_ops).step_by(10) {
-                let key = make_key(&ns, &format!("mixed_{}", i));
-                db.delete(run_id, key).unwrap();
-            }
-            db.flush().unwrap();
-        }
-
-        group.throughput(Throughput::Elements(num_ops as u64));
-        group.bench_function("replay_mixed_workload", |b| {
-            b.iter(|| {
-                let db = Database::open(&db_path).unwrap();
-                black_box(db);
-            });
-        });
-    }
-
-    group.finish();
-}
-
-// =============================================================================
-// Memory Overhead (Key Count Scaling)
-// =============================================================================
-
-fn memory_overhead_benchmarks(c: &mut Criterion) {
-    let mut group = c.benchmark_group("m1_memory_overhead");
-    group.sample_size(10);
-
-    // Measure get latency as key count increases
-    // (This indirectly measures BTreeMap lookup scaling)
-    for num_keys in [1_000, 10_000, 100_000] {
+    for num_keys in [1_000, 10_000, 100_000, 500_000] {
         let temp_dir = TempDir::new().unwrap();
         let db = Database::open(temp_dir.path().join("db")).unwrap();
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
 
-        // Populate
-        for i in 0..num_keys {
-            let key = make_key(&ns, &format!("key_{:06}", i));
-            db.put(run_id, key, Value::I64(i as i64)).unwrap();
+        // Populate (outside timing)
+        let keys = pregenerate_keys(&ns, "scale", num_keys);
+        for (i, key) in keys.iter().enumerate() {
+            db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
         }
 
-        let lookup_key = make_key(&ns, &format!("key_{:06}", num_keys / 2));
+        // Lookup key in middle of keyspace
+        let lookup_key = keys[num_keys / 2].clone();
 
-        group.throughput(Throughput::Elements(1));
         group.bench_with_input(
             BenchmarkId::new("get_at_scale", num_keys),
             &num_keys,
             |b, _| {
-                b.iter(|| {
-                    let result = db.get(&lookup_key);
-                    black_box(result.unwrap());
-                });
+                b.iter(|| black_box(db.get(&lookup_key).unwrap()));
             },
         );
+    }
+
+    group.finish();
+}
+
+// =============================================================================
+// WAL Recovery Benchmarks
+// =============================================================================
+// Semantic: Database must recover all committed state after restart
+// Regression: Recovery time should scale linearly with WAL size
+
+fn wal_recovery_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("wal_recovery");
+    group.sample_size(10);
+
+    // --- Recovery: insert-only workload ---
+    // Semantic: Pure append WAL replay
+    for num_ops in [1_000, 10_000, 50_000] {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("db");
+
+        // Setup: create WAL with insert-only ops
+        {
+            let db = Database::open(&db_path).unwrap();
+            let run_id = RunId::new();
+            let ns = create_namespace(run_id);
+            let keys = pregenerate_keys(&ns, "insert", num_ops);
+
+            for (i, key) in keys.iter().enumerate() {
+                db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
+            }
+            db.flush().unwrap();
+        }
+
+        group.throughput(Throughput::Elements(num_ops as u64));
+        group.bench_with_input(
+            BenchmarkId::new("insert_only", num_ops),
+            &num_ops,
+            |b, _| {
+                b.iter(|| black_box(Database::open(&db_path).unwrap()));
+            },
+        );
+    }
+
+    // --- Recovery: overwrite-heavy workload ---
+    // Semantic: Many versions of same keys
+    {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("db");
+        const NUM_KEYS: usize = 100;
+        const VERSIONS_PER_KEY: usize = 100;
+
+        {
+            let db = Database::open(&db_path).unwrap();
+            let run_id = RunId::new();
+            let ns = create_namespace(run_id);
+            let keys = pregenerate_keys(&ns, "overwrite", NUM_KEYS);
+
+            for v in 0..VERSIONS_PER_KEY {
+                for (i, key) in keys.iter().enumerate() {
+                    db.put(run_id, key.clone(), Value::I64((v * NUM_KEYS + i) as i64))
+                        .unwrap();
+                }
+            }
+            db.flush().unwrap();
+        }
+
+        let total_ops = NUM_KEYS * VERSIONS_PER_KEY;
+        group.throughput(Throughput::Elements(total_ops as u64));
+        group.bench_function("overwrite_heavy", |b| {
+            b.iter(|| black_box(Database::open(&db_path).unwrap()));
+        });
+    }
+
+    // --- Recovery: delete-heavy workload ---
+    // Semantic: Insert then delete most keys (tombstone replay)
+    {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("db");
+        const NUM_KEYS: usize = 10_000;
+
+        {
+            let db = Database::open(&db_path).unwrap();
+            let run_id = RunId::new();
+            let ns = create_namespace(run_id);
+            let keys = pregenerate_keys(&ns, "deletes", NUM_KEYS);
+
+            // Insert all
+            for (i, key) in keys.iter().enumerate() {
+                db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
+            }
+            // Delete 80%
+            for key in keys.iter().take(NUM_KEYS * 8 / 10) {
+                db.delete(run_id, key.clone()).unwrap();
+            }
+            db.flush().unwrap();
+        }
+
+        let total_ops = NUM_KEYS + (NUM_KEYS * 8 / 10);
+        group.throughput(Throughput::Elements(total_ops as u64));
+        group.bench_function("delete_heavy", |b| {
+            b.iter(|| black_box(Database::open(&db_path).unwrap()));
+        });
     }
 
     group.finish();
@@ -344,25 +474,25 @@ fn memory_overhead_benchmarks(c: &mut Criterion) {
 // =============================================================================
 
 criterion_group!(
-    name = m1_kv;
+    name = engine_kv;
     config = Criterion::default().measurement_time(Duration::from_secs(10));
-    targets = kv_get_benchmarks, kv_put_benchmarks, value_size_benchmarks
+    targets = engine_get_benchmarks, engine_put_benchmarks, engine_delete_benchmarks
 );
 
 criterion_group!(
-    name = m1_wal;
-    config = Criterion::default()
-        .measurement_time(Duration::from_secs(15))
-        .sample_size(20);
-    targets = wal_replay_benchmarks
-);
-
-criterion_group!(
-    name = m1_memory;
+    name = engine_scaling;
     config = Criterion::default()
         .measurement_time(Duration::from_secs(10))
-        .sample_size(10);
-    targets = memory_overhead_benchmarks
+        .sample_size(20);
+    targets = value_size_benchmarks, key_scaling_benchmarks
 );
 
-criterion_main!(m1_kv, m1_wal, m1_memory);
+criterion_group!(
+    name = wal;
+    config = Criterion::default()
+        .measurement_time(Duration::from_secs(15))
+        .sample_size(10);
+    targets = wal_recovery_benchmarks
+);
+
+criterion_main!(engine_kv, engine_scaling, wal);
