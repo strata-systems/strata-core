@@ -84,10 +84,10 @@ main                          <- Protected: only accepts merges from develop
 1. **Story PRs go to EPIC branch, NOT main**
    ```bash
    # CORRECT: PR base is epic branch
-   gh pr create --base epic-13-primitives-foundation --head epic-13-story-166-crate-setup
+   /opt/homebrew/bin/gh pr create --base epic-13-primitives-foundation --head epic-13-story-166-crate-setup
 
    # WRONG: Never PR directly to main
-   gh pr create --base main --head epic-13-story-166-crate-setup  # NEVER DO THIS
+   /opt/homebrew/bin/gh pr create --base main --head epic-13-story-166-crate-setup  # NEVER DO THIS
    ```
 
 2. **Epic branches merge to develop** (after all stories complete)
@@ -178,9 +178,11 @@ Different runs CANNOT see each other's data. This is enforced by key prefix isol
 
 ## Tool Paths
 
-Use fully qualified paths:
+**ALWAYS use fully qualified paths:**
 - Cargo: `~/.cargo/bin/cargo`
-- GitHub CLI: `/opt/homebrew/bin/gh` (or `gh` if in PATH)
+- GitHub CLI: `/opt/homebrew/bin/gh`
+
+Do NOT use `gh` without the full path - it may not be in PATH.
 
 ---
 
@@ -260,7 +262,7 @@ git merge --no-ff epic-<N>-<name> -m "Epic <N>: <Name> complete"
 git push origin develop
 
 # Close epic issue
-gh issue close <epic-issue> --comment "Epic complete. All validation passed."
+/opt/homebrew/bin/gh issue close <epic-issue> --comment "Epic complete. All validation passed."
 ```
 
 ---

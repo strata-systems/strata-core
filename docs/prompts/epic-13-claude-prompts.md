@@ -91,7 +91,7 @@ Before writing ANY code, read these sections of `docs/architecture/M3_ARCHITECTU
 ### Start Story
 
 ```bash
-gh issue view 166
+/opt/homebrew/bin/gh issue view 166
 ./scripts/start-story.sh 13 166 crate-setup
 ```
 
@@ -320,7 +320,7 @@ mod type_tag_tests {
 ### Start Story
 
 ```bash
-gh issue view 167
+/opt/homebrew/bin/gh issue view 167
 ./scripts/start-story.sh 13 167 key-helpers
 ```
 
@@ -505,7 +505,7 @@ mod key_construction_tests {
 ### Start Story
 
 ```bash
-gh issue view 168
+/opt/homebrew/bin/gh issue view 168
 ./scripts/start-story.sh 13 168 extension-traits
 ```
 
@@ -717,7 +717,7 @@ git push origin develop
 ### 4. Close Epic Issue
 
 ```bash
-gh issue close 159 --comment "Epic 13: Primitives Foundation - COMPLETE
+/opt/homebrew/bin/gh issue close 159 --comment "Epic 13: Primitives Foundation - COMPLETE
 
 All 3 stories completed:
 - #166: Primitives Crate Setup & TypeTag Extensions

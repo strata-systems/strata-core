@@ -96,7 +96,7 @@ Phase 3 (Sequential - after #170, #171, #172):
 ### Start Story
 
 ```bash
-gh issue view 169
+/opt/homebrew/bin/gh issue view 169
 ./scripts/start-story.sh 14 169 kvstore-core
 ```
 
@@ -229,7 +229,7 @@ mod tests {
 ### Start Story
 
 ```bash
-gh issue view 170
+/opt/homebrew/bin/gh issue view 170
 ./scripts/start-story.sh 14 170 kvstore-single-op
 ```
 
@@ -401,7 +401,7 @@ mod single_op_tests {
 ### Start Story
 
 ```bash
-gh issue view 171
+/opt/homebrew/bin/gh issue view 171
 ./scripts/start-story.sh 14 171 kvstore-multi-op
 ```
 
@@ -511,7 +511,7 @@ fn test_transaction_read_your_writes() {
 ### Start Story
 
 ```bash
-gh issue view 172
+/opt/homebrew/bin/gh issue view 172
 ./scripts/start-story.sh 14 172 kvstore-list
 ```
 
@@ -622,7 +622,7 @@ fn test_list_with_values() {
 ### Start Story
 
 ```bash
-gh issue view 173
+/opt/homebrew/bin/gh issue view 173
 ./scripts/start-story.sh 14 173 kvstore-ext
 ```
 
@@ -724,7 +724,7 @@ Complete:
 Stories: #169, #170, #171, #172, #173
 "
 
-gh issue close 160 --comment "Epic 14: KVStore Primitive - COMPLETE"
+/opt/homebrew/bin/gh issue close 160 --comment "Epic 14: KVStore Primitive - COMPLETE"
 ```
 
 ---

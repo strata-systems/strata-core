@@ -128,7 +128,7 @@ Phase 4 (Sequential):
 ### Start Story
 
 ```bash
-gh issue view 191
+/opt/homebrew/bin/gh issue view 191
 ./scripts/start-story.sh 18 191 runindex-core
 ```
 
@@ -985,7 +985,7 @@ Complete:
 Stories: #191, #192, #193, #194, #195, #196
 "
 
-gh issue close 164 --comment "Epic 18: RunIndex Primitive - COMPLETE"
+/opt/homebrew/bin/gh issue close 164 --comment "Epic 18: RunIndex Primitive - COMPLETE"
 ```
 
 ---

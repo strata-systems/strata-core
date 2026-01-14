@@ -805,11 +805,11 @@ Create comprehensive M3 completion validation and report.
 Run:
 ```bash
 # Check all stories are closed
-gh issue list --state closed --label "M3" | wc -l
+/opt/homebrew/bin/gh issue list --state closed --label "M3" | wc -l
 # Should be 36
 
 # Check all PRs merged
-gh pr list --state merged --label "M3" | wc -l
+/opt/homebrew/bin/gh pr list --state merged --label "M3" | wc -l
 ```
 
 ### 2. Test Coverage Verification
@@ -976,7 +976,7 @@ After all stories are complete:
 
 ```bash
 # 1. Verify all stories merged
-gh pr list --state merged --label "epic-19"
+/opt/homebrew/bin/gh pr list --state merged --label "epic-19"
 
 # 2. Run full test suite
 ~/.cargo/bin/cargo test --workspace
@@ -991,7 +991,7 @@ git merge --no-ff epic-19-integration-validation -m "Epic 19: Integration & Vali
 git push origin develop
 
 # 5. Close epic issue
-gh issue close 165 --comment "Epic 19 complete. All 5 stories delivered."
+/opt/homebrew/bin/gh issue close 165 --comment "Epic 19 complete. All 5 stories delivered."
 ```
 
 ---
@@ -1002,7 +1002,7 @@ After Epic 19 is complete, M3 is done:
 
 ```bash
 # 1. Verify all M3 epics complete
-gh issue list --state closed --label "M3" --json number,title
+/opt/homebrew/bin/gh issue list --state closed --label "M3" --json number,title
 
 # 2. Merge develop to main
 git checkout main

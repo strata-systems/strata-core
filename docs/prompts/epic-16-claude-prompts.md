@@ -114,7 +114,7 @@ Phase 3 (Sequential):
 ### Start Story
 
 ```bash
-gh issue view 180
+/opt/homebrew/bin/gh issue view 180
 ./scripts/start-story.sh 16 180 statecell-core
 ```
 
@@ -739,7 +739,7 @@ IMPORTANT: Transition closures must be PURE functions.
 Stories: #180, #181, #182, #183, #184
 "
 
-gh issue close 162 --comment "Epic 16: StateCell Primitive - COMPLETE"
+/opt/homebrew/bin/gh issue close 162 --comment "Epic 16: StateCell Primitive - COMPLETE"
 ```
 
 ---

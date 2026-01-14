@@ -82,7 +82,7 @@ ls -la crates/primitives/src/<expected_files>
 
 ```bash
 # Verify all story PRs are merged to epic branch
-gh pr list --state merged --base epic-<N>-<name> --json number,title
+/opt/homebrew/bin/gh pr list --state merged --base epic-<N>-<name> --json number,title
 
 # Should match the number of stories in the epic
 ```
@@ -325,7 +325,7 @@ All validation phases passed."
 git push origin develop
 
 # 5. Close epic issue
-gh issue close <epic-issue-number> --comment "Epic complete. All stories delivered and validated."
+/opt/homebrew/bin/gh issue close <epic-issue-number> --comment "Epic complete. All stories delivered and validated."
 ```
 
 ---

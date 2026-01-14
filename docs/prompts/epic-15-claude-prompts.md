@@ -98,7 +98,7 @@ Phase 4 (Sequential):
 ### Start Story
 
 ```bash
-gh issue view 174
+/opt/homebrew/bin/gh issue view 174
 ./scripts/start-story.sh 15 174 eventlog-core
 ```
 
@@ -236,7 +236,7 @@ mod tests {
 ### Start Story
 
 ```bash
-gh issue view 175
+/opt/homebrew/bin/gh issue view 175
 ./scripts/start-story.sh 15 175 eventlog-append
 ```
 
@@ -698,7 +698,7 @@ Complete:
 Stories: #174, #175, #176, #177, #178, #179
 "
 
-gh issue close 161 --comment "Epic 15: EventLog Primitive - COMPLETE"
+/opt/homebrew/bin/gh issue close 161 --comment "Epic 15: EventLog Primitive - COMPLETE"
 ```
 
 ---

@@ -101,7 +101,7 @@ Phase 4 (Sequential):
 ### Start Story
 
 ```bash
-gh issue view 185
+/opt/homebrew/bin/gh issue view 185
 ./scripts/start-story.sh 17 185 tracestore-core
 ```
 
@@ -789,7 +789,7 @@ Designed for debuggability, not high-volume telemetry.
 Stories: #185, #186, #187, #188, #189, #190
 "
 
-gh issue close 163 --comment "Epic 17: TraceStore Primitive - COMPLETE"
+/opt/homebrew/bin/gh issue close 163 --comment "Epic 17: TraceStore Primitive - COMPLETE"
 ```
 
 ---
