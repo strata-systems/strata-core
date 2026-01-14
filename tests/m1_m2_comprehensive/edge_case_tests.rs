@@ -187,9 +187,7 @@ mod extreme_values {
             nested = values::array(vec![nested]);
         }
 
-        tdb.db
-            .put(tdb.run_id, key.clone(), nested.clone())
-            .unwrap();
+        tdb.db.put(tdb.run_id, key.clone(), nested.clone()).unwrap();
 
         let val = tdb.db.get(&key).unwrap().unwrap();
         assert_eq!(val.value, nested);
@@ -291,7 +289,11 @@ mod key_edge_cases {
                 .put(tdb.run_id, key.clone(), values::string(name))
                 .unwrap();
 
-            let val = tdb.db.get(&key).unwrap().expect(&format!("Key '{}' not found", name));
+            let val = tdb
+                .db
+                .get(&key)
+                .unwrap()
+                .expect(&format!("Key '{}' not found", name));
             assert_eq!(val.value, values::string(name));
         }
     }
@@ -310,13 +312,12 @@ mod key_edge_cases {
         let tdb = TestDb::new();
 
         let keys = [
-            "key",
-            "key ",  // trailing space
-            " key",  // leading space
-            "Key",   // different case
-            "KEY",   // all caps
-            "key1",  // with number
-            "key_",  // trailing underscore
+            "key", "key ", // trailing space
+            " key", // leading space
+            "Key",  // different case
+            "KEY",  // all caps
+            "key1", // with number
+            "key_", // trailing underscore
         ];
 
         for (i, name) in keys.iter().enumerate() {
@@ -330,7 +331,12 @@ mod key_edge_cases {
         for (i, name) in keys.iter().enumerate() {
             let key = kv_key(&tdb.ns, name);
             let val = tdb.db.get(&key).unwrap().unwrap();
-            assert_eq!(val.value, values::int(i as i64), "Mismatch for key: '{}'", name);
+            assert_eq!(
+                val.value,
+                values::int(i as i64),
+                "Mismatch for key: '{}'",
+                name
+            );
         }
     }
 
@@ -369,9 +375,9 @@ mod namespace_edge_cases {
     fn test_empty_namespace_components() {
         let run_id = RunId::new();
         let ns = Namespace::new(
-            "".to_string(),     // empty tenant
-            "".to_string(),     // empty app
-            "".to_string(),     // empty agent
+            "".to_string(), // empty tenant
+            "".to_string(), // empty app
+            "".to_string(), // empty agent
             run_id,
         );
 
@@ -408,8 +414,18 @@ mod namespace_edge_cases {
 
         let run_id = RunId::new();
 
-        let ns1 = Namespace::new("tenant1".to_string(), "app".to_string(), "agent".to_string(), run_id);
-        let ns2 = Namespace::new("tenant2".to_string(), "app".to_string(), "agent".to_string(), run_id);
+        let ns1 = Namespace::new(
+            "tenant1".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+        let ns2 = Namespace::new(
+            "tenant2".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
 
         let key1 = kv_key(&ns1, "shared_name");
         let key2 = kv_key(&ns2, "shared_name");
@@ -539,12 +555,17 @@ mod transaction_edge_cases {
         let tdb = TestDb::new();
         let key = tdb.key("inner_error");
 
-        fn inner_work(txn: &mut in_mem_concurrency::transaction::TransactionContext, key: Key) -> Result<(), Error> {
+        fn inner_work(
+            txn: &mut in_mem_concurrency::transaction::TransactionContext,
+            key: Key,
+        ) -> Result<(), Error> {
             txn.put(key, values::int(42))?;
             Err(Error::InvalidOperation("inner error".to_string()))
         }
 
-        let result: Result<(), Error> = tdb.db.transaction(tdb.run_id, |txn| inner_work(txn, key.clone()));
+        let result: Result<(), Error> = tdb
+            .db
+            .transaction(tdb.run_id, |txn| inner_work(txn, key.clone()));
 
         assert!(result.is_err());
         assert!(tdb.db.get(&key).unwrap().is_none()); // Not committed
@@ -556,16 +577,14 @@ mod transaction_edge_cases {
         let key = tdb.key("zero_timeout");
 
         // Zero timeout should expire immediately (or nearly so)
-        let result: Result<(), Error> = tdb.db.transaction_with_timeout(
-            tdb.run_id,
-            Duration::ZERO,
-            |txn| {
-                // Even a simple put might exceed zero timeout
-                std::thread::sleep(Duration::from_millis(1));
-                txn.put(key.clone(), values::int(1))?;
-                Ok(())
-            },
-        );
+        let result: Result<(), Error> =
+            tdb.db
+                .transaction_with_timeout(tdb.run_id, Duration::ZERO, |txn| {
+                    // Even a simple put might exceed zero timeout
+                    std::thread::sleep(Duration::from_millis(1));
+                    txn.put(key.clone(), values::int(1))?;
+                    Ok(())
+                });
 
         // Should timeout
         assert!(result.is_err());
@@ -579,11 +598,11 @@ mod transaction_edge_cases {
         let tdb = TestDb::new();
 
         // No retries means first failure is final
-        let result: Result<(), Error> = tdb.db.transaction_with_retry(
-            tdb.run_id,
-            RetryConfig::no_retry(),
-            |_txn| Err(Error::TransactionConflict("fail".to_string())),
-        );
+        let result: Result<(), Error> =
+            tdb.db
+                .transaction_with_retry(tdb.run_id, RetryConfig::no_retry(), |_txn| {
+                    Err(Error::TransactionConflict("fail".to_string()))
+                });
 
         assert!(result.is_err());
     }
@@ -810,8 +829,14 @@ mod type_tag_edge_cases {
 
         // All should be retrievable
         assert_eq!(tdb.db.get(&kv_key).unwrap().unwrap().value, values::int(1));
-        assert_eq!(tdb.db.get(&event_key).unwrap().unwrap().value, values::int(2));
-        assert_eq!(tdb.db.get(&state_key).unwrap().unwrap().value, values::int(3));
+        assert_eq!(
+            tdb.db.get(&event_key).unwrap().unwrap().value,
+            values::int(2)
+        );
+        assert_eq!(
+            tdb.db.get(&state_key).unwrap().unwrap().value,
+            values::int(3)
+        );
     }
 
     #[test]
@@ -822,7 +847,9 @@ mod type_tag_edge_cases {
         let kv = kv_key(&tdb.ns, "shared_name");
         let state = state_key(&tdb.ns, "shared_name");
 
-        tdb.db.put(tdb.run_id, kv.clone(), values::int(100)).unwrap();
+        tdb.db
+            .put(tdb.run_id, kv.clone(), values::int(100))
+            .unwrap();
         tdb.db
             .put(tdb.run_id, state.clone(), values::int(200))
             .unwrap();

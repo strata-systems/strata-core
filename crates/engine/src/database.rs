@@ -762,7 +762,10 @@ impl Drop for Database {
                 }
             }
             Err(e) => {
-                eprintln!("WARNING: Failed to acquire WAL lock on database drop: {}", e);
+                eprintln!(
+                    "WARNING: Failed to acquire WAL lock on database drop: {}",
+                    e
+                );
             }
         }
     }

@@ -42,15 +42,13 @@ mod error_types {
         let tdb = TestDb::new();
         let key = tdb.key("timeout_error");
 
-        let result: Result<(), Error> = tdb.db.transaction_with_timeout(
-            tdb.run_id,
-            Duration::from_millis(5),
-            |txn| {
-                txn.put(key.clone(), values::int(1))?;
-                thread::sleep(Duration::from_millis(20));
-                Ok(())
-            },
-        );
+        let result: Result<(), Error> =
+            tdb.db
+                .transaction_with_timeout(tdb.run_id, Duration::from_millis(5), |txn| {
+                    txn.put(key.clone(), values::int(1))?;
+                    thread::sleep(Duration::from_millis(20));
+                    Ok(())
+                });
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -97,7 +95,12 @@ mod error_types {
         let actual_version = tdb.db.get(&key).unwrap().unwrap().version;
 
         // CAS with wrong version
-        let result = tdb.db.cas(tdb.run_id, key.clone(), actual_version + 100, values::int(2));
+        let result = tdb.db.cas(
+            tdb.run_id,
+            key.clone(),
+            actual_version + 100,
+            values::int(2),
+        );
 
         assert!(result.is_err());
         // The error type depends on implementation
@@ -380,10 +383,7 @@ mod error_recovery {
             })
             .unwrap();
 
-        assert_eq!(
-            tdb.db.get(&key).unwrap().unwrap().value,
-            values::int(42)
-        );
+        assert_eq!(tdb.db.get(&key).unwrap().unwrap().value, values::int(42));
     }
 
     #[test]
@@ -414,15 +414,13 @@ mod error_recovery {
         let key2 = tdb.key("after_timeout");
 
         // Timeout
-        let _: Result<(), Error> = tdb.db.transaction_with_timeout(
-            tdb.run_id,
-            Duration::from_millis(5),
-            |txn| {
-                txn.put(key1.clone(), values::int(1))?;
-                thread::sleep(Duration::from_millis(20));
-                Ok(())
-            },
-        );
+        let _: Result<(), Error> =
+            tdb.db
+                .transaction_with_timeout(tdb.run_id, Duration::from_millis(5), |txn| {
+                    txn.put(key1.clone(), values::int(1))?;
+                    thread::sleep(Duration::from_millis(20));
+                    Ok(())
+                });
 
         // Should still work
         tdb.db
@@ -531,15 +529,13 @@ mod error_messages {
         let tdb = TestDb::new();
         let key = tdb.key("timeout_msg");
 
-        let result: Result<(), Error> = tdb.db.transaction_with_timeout(
-            tdb.run_id,
-            Duration::from_millis(5),
-            |txn| {
-                txn.put(key.clone(), values::int(1))?;
-                thread::sleep(Duration::from_millis(20));
-                Ok(())
-            },
-        );
+        let result: Result<(), Error> =
+            tdb.db
+                .transaction_with_timeout(tdb.run_id, Duration::from_millis(5), |txn| {
+                    txn.put(key.clone(), values::int(1))?;
+                    thread::sleep(Duration::from_millis(20));
+                    Ok(())
+                });
 
         if let Err(Error::TransactionTimeout(msg)) = result {
             // Message should mention the timeout

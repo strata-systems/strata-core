@@ -52,7 +52,10 @@ mod basic_recovery {
             let db = pdb.open();
             for i in 0..100 {
                 let key = pdb.key(&format!("multi_{}", i));
-                let val = db.get(&key).unwrap().expect(&format!("Key {} should exist", i));
+                let val = db
+                    .get(&key)
+                    .unwrap()
+                    .expect(&format!("Key {} should exist", i));
                 assert_eq!(val.value, values::int(i));
             }
         }
@@ -211,7 +214,9 @@ mod transaction_recovery {
     fn test_committed_transaction_recovered() {
         let pdb = PersistentTestDb::new();
 
-        let keys: Vec<_> = (0..10).map(|i| pdb.key(&format!("committed_{}", i))).collect();
+        let keys: Vec<_> = (0..10)
+            .map(|i| pdb.key(&format!("committed_{}", i)))
+            .collect();
 
         {
             let db = pdb.open();
@@ -357,8 +362,14 @@ mod durability_modes {
         let key = kv_key(&ns, "batched_test");
 
         {
-            let db = Database::open_with_mode(&db_path, DurabilityMode::Batched { interval_ms: 50, batch_size: 1000 })
-                .unwrap();
+            let db = Database::open_with_mode(
+                &db_path,
+                DurabilityMode::Batched {
+                    interval_ms: 50,
+                    batch_size: 1000,
+                },
+            )
+            .unwrap();
             db.put(run_id, key.clone(), values::int(42)).unwrap();
 
             // Give batch time to flush
@@ -367,7 +378,10 @@ mod durability_modes {
 
         {
             let db = Database::open(&db_path).unwrap();
-            let val = db.get(&key).unwrap().expect("Key should exist after batch flush");
+            let val = db
+                .get(&key)
+                .unwrap()
+                .expect("Key should exist after batch flush");
             assert_eq!(val.value, values::int(42));
         }
     }
@@ -381,7 +395,8 @@ mod durability_modes {
         let key = kv_key(&ns, "async_test");
 
         {
-            let db = Database::open_with_mode(&db_path, DurabilityMode::Async { interval_ms: 100 }).unwrap();
+            let db = Database::open_with_mode(&db_path, DurabilityMode::Async { interval_ms: 100 })
+                .unwrap();
             db.put(run_id, key.clone(), values::int(42)).unwrap();
 
             // Explicit flush to ensure durability
@@ -764,10 +779,7 @@ mod recovery_after_errors {
             let db = pdb.open();
 
             // Good key should exist
-            assert_eq!(
-                db.get(&good_key).unwrap().unwrap().value,
-                values::int(42)
-            );
+            assert_eq!(db.get(&good_key).unwrap().unwrap().value, values::int(42));
 
             // Bad keys should not exist
             for key in &bad_keys {

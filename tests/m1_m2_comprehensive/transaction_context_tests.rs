@@ -835,7 +835,10 @@ mod value_types {
             ("string", values::string("hello world")),
             ("string_empty", values::string("")),
             ("bytes", values::bytes(&[0, 1, 255])),
-            ("array", values::array(vec![values::int(1), values::string("a")])),
+            (
+                "array",
+                values::array(vec![values::int(1), values::string("a")]),
+            ),
             (
                 "map",
                 values::map(vec![("key", values::int(42)), ("nested", values::null())]),

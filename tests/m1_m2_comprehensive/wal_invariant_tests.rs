@@ -179,9 +179,7 @@ mod no_partial_writes {
         let committed_keys: Vec<Key> = (0..5)
             .map(|i| pdb.key(&format!("committed_{}", i)))
             .collect();
-        let aborted_keys: Vec<Key> = (0..5)
-            .map(|i| pdb.key(&format!("aborted_{}", i)))
-            .collect();
+        let aborted_keys: Vec<Key> = (0..5).map(|i| pdb.key(&format!("aborted_{}", i))).collect();
 
         {
             let db = pdb.open();
@@ -221,7 +219,9 @@ mod no_partial_writes {
     fn test_mid_transaction_error_no_partial_state() {
         let pdb = PersistentTestDb::new();
 
-        let keys: Vec<Key> = (0..10).map(|i| pdb.key(&format!("mid_error_{}", i))).collect();
+        let keys: Vec<Key> = (0..10)
+            .map(|i| pdb.key(&format!("mid_error_{}", i)))
+            .collect();
 
         {
             let db = pdb.open();
@@ -729,7 +729,8 @@ mod prefix_consistency {
                 let db = pdb.open();
                 for i in 0..10 {
                     let key = pdb.key(&format!("phase_{}_key_{}", phase, i));
-                    db.put(pdb.run_id, key, values::int(phase * 100 + i)).unwrap();
+                    db.put(pdb.run_id, key, values::int(phase * 100 + i))
+                        .unwrap();
                 }
             }
 
@@ -777,9 +778,7 @@ mod incomplete_transaction_handling {
         let committed_keys: Vec<Key> = (0..5)
             .map(|i| pdb.key(&format!("committed_{}", i)))
             .collect();
-        let aborted_keys: Vec<Key> = (0..5)
-            .map(|i| pdb.key(&format!("aborted_{}", i)))
-            .collect();
+        let aborted_keys: Vec<Key> = (0..5).map(|i| pdb.key(&format!("aborted_{}", i))).collect();
 
         // Capture state before any transactions
         let state_before = {
@@ -962,7 +961,10 @@ mod additional_invariants {
             ("float", values::float(std::f64::consts::PI)),
             ("string", values::string("hello world")),
             ("bytes", values::bytes(&[0, 1, 2, 255])),
-            ("array", values::array(vec![values::int(1), values::string("a")])),
+            (
+                "array",
+                values::array(vec![values::int(1), values::string("a")]),
+            ),
             ("map", values::map(vec![("key", values::int(42))])),
             ("large", values::large_bytes(10)), // 10KB
         ];

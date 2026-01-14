@@ -135,7 +135,9 @@ mod snapshot_isolation {
         let tdb = TestDb::new();
         let key = tdb.key("repeatable_read");
 
-        tdb.db.put(tdb.run_id, key.clone(), values::int(42)).unwrap();
+        tdb.db
+            .put(tdb.run_id, key.clone(), values::int(42))
+            .unwrap();
 
         tdb.db
             .transaction(tdb.run_id, |txn| {
@@ -397,7 +399,8 @@ mod retry_workflows {
         let account_b = kv_key(&ns, "account_b");
 
         // Initial balances: A=1000, B=0
-        db.put(run_id, account_a.clone(), values::int(1000)).unwrap();
+        db.put(run_id, account_a.clone(), values::int(1000))
+            .unwrap();
         db.put(run_id, account_b.clone(), values::int(0)).unwrap();
 
         // Multiple concurrent transfers from A to B
@@ -545,10 +548,7 @@ mod cross_primitive {
             .unwrap();
 
         // Both should be committed atomically
-        assert_eq!(
-            tdb.db.get(&kv_key).unwrap().unwrap().value,
-            values::int(42)
-        );
+        assert_eq!(tdb.db.get(&kv_key).unwrap().unwrap().value, values::int(42));
         assert_eq!(
             tdb.db.get(&event_key).unwrap().unwrap().value,
             values::string("event_data")
@@ -1021,7 +1021,10 @@ mod real_world_scenarios {
             .transaction(tdb.run_id, |txn| {
                 txn.put(
                     user_key.clone(),
-                    values::map(vec![("name", values::string("Alice")), ("age", values::int(30))]),
+                    values::map(vec![
+                        ("name", values::string("Alice")),
+                        ("age", values::int(30)),
+                    ]),
                 )?;
                 txn.put(
                     session_key.clone(),

@@ -36,7 +36,9 @@ mod snapshot_immutability {
         let key = tdb.key("immutable_read");
 
         // Pre-populate
-        tdb.db.put(tdb.run_id, key.clone(), values::int(42)).unwrap();
+        tdb.db
+            .put(tdb.run_id, key.clone(), values::int(42))
+            .unwrap();
 
         tdb.db
             .transaction(tdb.run_id, |txn| {
@@ -305,10 +307,7 @@ mod no_dirty_reads {
 
         // THE INVARIANT: T2 must have seen 100 (committed value), not 999 (uncommitted)
         let seen = t2_read_value.load(Ordering::Relaxed);
-        assert!(
-            seen == 100 || seen == 999,
-            "Unexpected value: {}", seen
-        );
+        assert!(seen == 100 || seen == 999, "Unexpected value: {}", seen);
         // Note: Due to timing, T2 might read 100 (before T1 commits) or 999 (after)
         // But it must NEVER see an intermediate state
     }
@@ -372,11 +371,7 @@ mod no_dirty_reads {
         // THE INVARIANT: T2 must never have seen 999
         let values = observed_values.lock().unwrap();
         for &v in values.iter() {
-            assert_eq!(
-                v, 100,
-                "Dirty read detected: saw {} instead of 100",
-                v
-            );
+            assert_eq!(v, 100, "Dirty read detected: saw {} instead of 100", v);
         }
     }
 }
@@ -420,7 +415,9 @@ mod read_your_own_writes {
         let key = tdb.key("ryw_overwrite");
 
         // Pre-populate
-        tdb.db.put(tdb.run_id, key.clone(), values::int(100)).unwrap();
+        tdb.db
+            .put(tdb.run_id, key.clone(), values::int(100))
+            .unwrap();
 
         tdb.db
             .transaction(tdb.run_id, |txn| {
@@ -449,7 +446,9 @@ mod read_your_own_writes {
         let key = tdb.key("ryw_delete");
 
         // Pre-populate
-        tdb.db.put(tdb.run_id, key.clone(), values::int(42)).unwrap();
+        tdb.db
+            .put(tdb.run_id, key.clone(), values::int(42))
+            .unwrap();
 
         tdb.db
             .transaction(tdb.run_id, |txn| {
@@ -460,10 +459,7 @@ mod read_your_own_writes {
                 txn.delete(key.clone())?;
 
                 // Must see delete (key appears gone)
-                assert!(
-                    txn.get(&key)?.is_none(),
-                    "Did not see own delete"
-                );
+                assert!(txn.get(&key)?.is_none(), "Did not see own delete");
 
                 Ok(())
             })
@@ -856,7 +852,12 @@ mod conflict_detection {
 
                 // Write to a DIFFERENT key (to test that the transaction can commit)
                 let other_key = kv_key(
-                    &in_mem_core::types::Namespace::new("test".to_string(), "test".to_string(), "test".to_string(), run_id),
+                    &in_mem_core::types::Namespace::new(
+                        "test".to_string(),
+                        "test".to_string(),
+                        "test".to_string(),
+                        run_id,
+                    ),
                     "other",
                 );
                 txn.put(other_key, values::int(999))?;
@@ -970,7 +971,9 @@ mod version_semantics {
         );
 
         // Tombstone: CAS(version=0) FAILS (tombstone has version > 0)
-        let tombstone_cas = tdb.db.cas(tdb.run_id, tombstone_key.clone(), 0, values::int(1));
+        let tombstone_cas = tdb
+            .db
+            .cas(tdb.run_id, tombstone_key.clone(), 0, values::int(1));
         // Note: This depends on implementation - if tombstones track version,
         // CAS(v=0) should fail. If not, behavior may differ.
         // The spec says tombstones have version > 0, so this SHOULD fail.
@@ -1452,7 +1455,9 @@ mod snapshot_multi_key_consistency {
 
         let (run_id, ns) = create_namespace();
 
-        let accounts: Vec<Key> = (0..3).map(|i| kv_key(&ns, &format!("account_{}", i))).collect();
+        let accounts: Vec<Key> = (0..3)
+            .map(|i| kv_key(&ns, &format!("account_{}", i)))
+            .collect();
 
         // Total money in system: 300
         for account in &accounts {
@@ -1517,8 +1522,14 @@ mod snapshot_multi_key_consistency {
                     };
 
                     // Transfer (this preserves total)
-                    txn.put(accounts_transfer[from].clone(), values::int(from_balance - amount))?;
-                    txn.put(accounts_transfer[to].clone(), values::int(to_balance + amount))?;
+                    txn.put(
+                        accounts_transfer[from].clone(),
+                        values::int(from_balance - amount),
+                    )?;
+                    txn.put(
+                        accounts_transfer[to].clone(),
+                        values::int(to_balance + amount),
+                    )?;
                     Ok(())
                 });
             }
@@ -1558,9 +1569,7 @@ mod multi_key_atomicity {
     fn test_committed_transaction_all_keys_present() {
         let tdb = TestDb::new();
 
-        let keys: Vec<Key> = (0..10)
-            .map(|i| tdb.key(&format!("atomic_{}", i)))
-            .collect();
+        let keys: Vec<Key> = (0..10).map(|i| tdb.key(&format!("atomic_{}", i))).collect();
 
         tdb.db
             .transaction(tdb.run_id, |txn| {

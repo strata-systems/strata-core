@@ -44,9 +44,7 @@
 //! cargo bench --bench comprehensive_benchmarks -- "1000 keys"
 //! ```
 
-use criterion::{
-    black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput,
-};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use in_mem_core::traits::Storage;
 use in_mem_core::types::{Key, Namespace, RunId, TypeTag};
 use in_mem_core::value::Value;
@@ -405,7 +403,8 @@ fn concurrency_benchmarks(c: &mut Criterion) {
                     let contested_key = make_key(&ns, "contested");
 
                     // Initialize
-                    db.put(run_id, contested_key.clone(), Value::I64(0)).unwrap();
+                    db.put(run_id, contested_key.clone(), Value::I64(0))
+                        .unwrap();
 
                     let barrier = Arc::new(Barrier::new(num_threads + 1));
                     let ops_per_thread = iters / num_threads as u64;
@@ -541,7 +540,8 @@ fn concurrency_benchmarks(c: &mut Criterion) {
 
                         thread::spawn(move || {
                             barrier.wait();
-                            let result = db.cas(run_id, key, initial_version, Value::I64(id as i64));
+                            let result =
+                                db.cas(run_id, key, initial_version, Value::I64(id as i64));
                             if result.is_ok() {
                                 winners.fetch_add(1, Ordering::Relaxed);
                             }
@@ -600,17 +600,13 @@ fn recovery_benchmarks(c: &mut Criterion) {
         }
 
         group.throughput(Throughput::Elements(num_ops as u64));
-        group.bench_with_input(
-            BenchmarkId::new("wal_replay", num_ops),
-            &num_ops,
-            |b, _| {
-                b.iter(|| {
-                    // Re-open database (triggers recovery)
-                    let db = Database::open(&db_path).unwrap();
-                    black_box(db.storage().current_version());
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("wal_replay", num_ops), &num_ops, |b, _| {
+            b.iter(|| {
+                // Re-open database (triggers recovery)
+                let db = Database::open(&db_path).unwrap();
+                black_box(db.storage().current_version());
+            });
+        });
     }
 
     // ---------------------------------------------------------------------------
@@ -675,11 +671,8 @@ fn durability_benchmarks(c: &mut Criterion) {
     // ---------------------------------------------------------------------------
     {
         let temp_dir = TempDir::new().unwrap();
-        let db = Database::open_with_mode(
-            temp_dir.path().join("db"),
-            DurabilityMode::Strict,
-        )
-        .unwrap();
+        let db =
+            Database::open_with_mode(temp_dir.path().join("db"), DurabilityMode::Strict).unwrap();
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
 
@@ -964,7 +957,8 @@ fn scenario_benchmarks(c: &mut Criterion) {
 
                                 for step in 0..ops_per_agent {
                                     // Agent-local state update
-                                    let local_key = make_key(&ns, &format!("agent_{}_state", agent_id));
+                                    let local_key =
+                                        make_key(&ns, &format!("agent_{}_state", agent_id));
                                     db.put(run_id, local_key, Value::I64(step as i64)).unwrap();
 
                                     // Occasional shared state update

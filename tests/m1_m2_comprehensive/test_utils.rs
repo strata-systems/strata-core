@@ -370,7 +370,7 @@ impl DatabaseStateSnapshot {
         for type_tag in [
             in_mem_core::types::TypeTag::KV,
             in_mem_core::types::TypeTag::Event,
-            in_mem_core::types::TypeTag::StateMachine,
+            in_mem_core::types::TypeTag::State,
         ] {
             let prefix = Key::new(ns.clone(), type_tag, vec![]);
             if let Ok(iter_entries) = storage.scan_prefix(&prefix, u64::MAX) {
@@ -427,7 +427,11 @@ impl DatabaseStateSnapshot {
                 None => missing_in_other.push(key_str.clone()),
                 Some((other_value, other_version)) => {
                     if value != other_value {
-                        value_mismatches.push((key_str.clone(), value.clone(), other_value.clone()));
+                        value_mismatches.push((
+                            key_str.clone(),
+                            value.clone(),
+                            other_value.clone(),
+                        ));
                     }
                     if version != other_version {
                         version_mismatches.push((key_str.clone(), *version, *other_version));
@@ -507,15 +511,8 @@ pub mod invariants {
 
     /// Assert that a transaction either fully committed or fully aborted
     /// (no partial writes visible)
-    pub fn assert_atomic_transaction(
-        db: &Database,
-        keys: &[Key],
-        expected_all_exist: bool,
-    ) {
-        let existence: Vec<bool> = keys
-            .iter()
-            .map(|k| db.get(k).unwrap().is_some())
-            .collect();
+    pub fn assert_atomic_transaction(db: &Database, keys: &[Key], expected_all_exist: bool) {
+        let existence: Vec<bool> = keys.iter().map(|k| db.get(k).unwrap().is_some()).collect();
 
         let all_exist = existence.iter().all(|&e| e);
         let none_exist = existence.iter().all(|&e| !e);
@@ -525,7 +522,11 @@ pub mod invariants {
             "Atomicity violation: keys have mixed existence {:?}. \
              Expected all {} but got mixed state.",
             existence,
-            if expected_all_exist { "present" } else { "absent" }
+            if expected_all_exist {
+                "present"
+            } else {
+                "absent"
+            }
         );
 
         if expected_all_exist {

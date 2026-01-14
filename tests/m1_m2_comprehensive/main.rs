@@ -56,20 +56,20 @@
 // Tier 1: Core Invariants (sacred, fast, must pass)
 // =============================================================================
 
-mod wal_invariant_tests;      // M1.1-M1.8: WAL semantics
+mod acid_property_tests;
 mod snapshot_invariant_tests; // M2.2-M2.13: Snapshot Isolation
-mod acid_property_tests;      // M2.1, M2.6, M2.14-M2.16: ACID properties
+mod wal_invariant_tests; // M1.1-M1.8: WAL semantics // M2.1, M2.6, M2.14-M2.16: ACID properties
 
 // =============================================================================
 // Tier 2: Behavioral Scenarios (medium, workflow tests)
 // =============================================================================
 
 mod database_api_tests;
-mod transaction_context_tests;
-mod transaction_workflow_tests;
 mod edge_case_tests;
 mod error_handling_tests;
 mod recovery_tests;
+mod transaction_context_tests;
+mod transaction_workflow_tests;
 
 // =============================================================================
 // Tier 3: Stress/Chaos (opt-in, slow) - use #[ignore] on individual tests

@@ -125,9 +125,7 @@ mod atomicity {
             })
             .collect();
 
-        let new_keys: Vec<Key> = (0..5)
-            .map(|i| tdb.key(&format!("new_{}", i)))
-            .collect();
+        let new_keys: Vec<Key> = (0..5).map(|i| tdb.key(&format!("new_{}", i))).collect();
 
         // Transaction that creates, updates, and deletes
         let result: Result<(), Error> = tdb.db.transaction(tdb.run_id, |txn| {
@@ -202,7 +200,9 @@ mod consistency {
         let accounts: Vec<Key> = (0..5).map(|i| tdb.key(&format!("account_{}", i))).collect();
 
         for key in &accounts {
-            tdb.db.put(tdb.run_id, key.clone(), values::int(200)).unwrap();
+            tdb.db
+                .put(tdb.run_id, key.clone(), values::int(200))
+                .unwrap();
         }
 
         fn get_sum(db: &Database, accounts: &[Key]) -> i64 {
@@ -246,7 +246,9 @@ mod consistency {
         let tdb = TestDb::new();
 
         let key = tdb.key("consistent_key");
-        tdb.db.put(tdb.run_id, key.clone(), values::int(42)).unwrap();
+        tdb.db
+            .put(tdb.run_id, key.clone(), values::int(42))
+            .unwrap();
 
         // Failed update attempt
         let _: Result<(), Error> = tdb.db.transaction(tdb.run_id, |txn| {
@@ -495,11 +497,14 @@ mod isolation {
         let tdb = TestDb::new();
         let key = tdb.key("repeatable");
 
-        tdb.db.put(tdb.run_id, key.clone(), values::int(42)).unwrap();
+        tdb.db
+            .put(tdb.run_id, key.clone(), values::int(42))
+            .unwrap();
 
         tdb.db
             .transaction(tdb.run_id, |txn| {
-                let reads: Vec<Option<Value>> = (0..5).map(|_| txn.get(&key).ok().flatten()).collect();
+                let reads: Vec<Option<Value>> =
+                    (0..5).map(|_| txn.get(&key).ok().flatten()).collect();
 
                 // ISOLATION: all reads must be identical
                 for i in 1..reads.len() {
@@ -529,7 +534,9 @@ mod durability {
     fn test_durability_survives_restart() {
         let pdb = PersistentTestDb::new();
 
-        let keys: Vec<Key> = (0..50).map(|i| pdb.key(&format!("durable_{}", i))).collect();
+        let keys: Vec<Key> = (0..50)
+            .map(|i| pdb.key(&format!("durable_{}", i)))
+            .collect();
 
         // Write and commit
         {
@@ -559,7 +566,9 @@ mod durability {
     fn test_durability_transaction_commits_survive() {
         let pdb = PersistentTestDb::new();
 
-        let keys: Vec<Key> = (0..10).map(|i| pdb.key(&format!("txn_durable_{}", i))).collect();
+        let keys: Vec<Key> = (0..10)
+            .map(|i| pdb.key(&format!("txn_durable_{}", i)))
+            .collect();
 
         // Transaction
         {
@@ -690,7 +699,10 @@ mod durability {
             // Write new data
             {
                 let db = pdb.open_strict(); // Use strict mode for guaranteed durability
-                eprintln!("Storage version before writes: {}", db.storage().current_version());
+                eprintln!(
+                    "Storage version before writes: {}",
+                    db.storage().current_version()
+                );
 
                 for i in 0..10 {
                     let key = pdb.key(&format!("cycle_{}_key_{}", cycle, i));
@@ -698,7 +710,10 @@ mod durability {
                         .unwrap();
                 }
 
-                eprintln!("Storage version after writes: {}", db.storage().current_version());
+                eprintln!(
+                    "Storage version after writes: {}",
+                    db.storage().current_version()
+                );
             }
 
             // Crash - database dropped here
@@ -712,7 +727,10 @@ mod durability {
                 let entries = wal.read_all().unwrap();
                 eprintln!("WAL entries count: {}", entries.len());
                 // Count commits
-                let commits = entries.iter().filter(|e| matches!(e, in_mem_durability::wal::WALEntry::CommitTxn { .. })).count();
+                let commits = entries
+                    .iter()
+                    .filter(|e| matches!(e, in_mem_durability::wal::WALEntry::CommitTxn { .. }))
+                    .count();
                 eprintln!("Committed transactions in WAL: {}", commits);
             }
 
@@ -722,13 +740,18 @@ mod durability {
                 let wal_path = pdb.path().join("wal/current.wal");
                 let recovery = in_mem_concurrency::RecoveryCoordinator::new(wal_path.clone());
                 let recovery_result = recovery.recover().unwrap();
-                eprintln!("Recovery stats: txns_replayed={}, writes_applied={}, incomplete={}",
+                eprintln!(
+                    "Recovery stats: txns_replayed={}, writes_applied={}, incomplete={}",
                     recovery_result.stats.txns_replayed,
                     recovery_result.stats.writes_applied,
-                    recovery_result.stats.incomplete_txns);
+                    recovery_result.stats.incomplete_txns
+                );
 
                 let db = pdb.open_strict();
-                eprintln!("Storage version after reopen: {}", db.storage().current_version());
+                eprintln!(
+                    "Storage version after reopen: {}",
+                    db.storage().current_version()
+                );
 
                 // Debug: print first key we're looking for
                 let check_key = pdb.key("cycle_0_key_0");
@@ -782,10 +805,7 @@ mod durability {
         // Verify delete survived
         {
             let db = pdb.open();
-            assert!(
-                db.get(&key).unwrap().is_none(),
-                "Delete was not durable"
-            );
+            assert!(db.get(&key).unwrap().is_none(), "Delete was not durable");
         }
 
         // Multiple more crashes
@@ -820,7 +840,8 @@ mod combined_acid {
         // Initial state: A=1000, B=0, sum=1000
         {
             let db = Database::open(&db_path).unwrap();
-            db.put(run_id, account_a.clone(), values::int(1000)).unwrap();
+            db.put(run_id, account_a.clone(), values::int(1000))
+                .unwrap();
             db.put(run_id, account_b.clone(), values::int(0)).unwrap();
         }
 
@@ -944,7 +965,10 @@ mod combined_acid {
         }
 
         // All increments should have succeeded
-        assert_eq!(successful_increments.load(Ordering::Relaxed), num_increments);
+        assert_eq!(
+            successful_increments.load(Ordering::Relaxed),
+            num_increments
+        );
 
         // Final value should equal number of increments (ACID: no lost updates)
         let final_value = match db.get(&counter_key).unwrap().unwrap().value {
@@ -953,7 +977,8 @@ mod combined_acid {
         };
 
         assert_eq!(
-            final_value, num_increments as i64,
+            final_value,
+            num_increments as i64,
             "ACID violated: lost {} updates",
             num_increments as i64 - final_value
         );

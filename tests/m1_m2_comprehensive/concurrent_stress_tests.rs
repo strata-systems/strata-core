@@ -615,8 +615,12 @@ mod contention_patterns {
                         });
 
                         match result {
-                            Ok(_) => { success.fetch_add(1, Ordering::Relaxed); },
-                            Err(e) if e.is_conflict() => { conflicts.fetch_add(1, Ordering::Relaxed); },
+                            Ok(_) => {
+                                success.fetch_add(1, Ordering::Relaxed);
+                            }
+                            Err(e) if e.is_conflict() => {
+                                conflicts.fetch_add(1, Ordering::Relaxed);
+                            }
                             _ => {}
                         }
                     }
@@ -914,7 +918,11 @@ mod data_integrity {
             })
             .sum();
 
-        assert_eq!(sum, 300, "Atomicity violated! Sum is {} instead of 300", sum);
+        assert_eq!(
+            sum, 300,
+            "Atomicity violated! Sum is {} instead of 300",
+            sum
+        );
     }
 
     #[test]
@@ -957,11 +965,7 @@ mod data_integrity {
         let unique: HashSet<_> = versions.iter().collect();
 
         // All versions should be unique
-        assert_eq!(
-            unique.len(),
-            versions.len(),
-            "Duplicate versions detected!"
-        );
+        assert_eq!(unique.len(), versions.len(), "Duplicate versions detected!");
     }
 }
 
@@ -1012,22 +1016,18 @@ mod resource_usage {
         let attempts = AtomicU64::new(0);
 
         // Transaction that fails many times before succeeding
-        db.transaction_with_retry(
-            run_id,
-            RetryConfig::new().with_max_retries(100),
-            |txn| {
-                let count = attempts.fetch_add(1, Ordering::Relaxed);
-                if count < 50 {
-                    return Err(Error::TransactionConflict("simulated".to_string()));
-                }
+        db.transaction_with_retry(run_id, RetryConfig::new().with_max_retries(100), |txn| {
+            let count = attempts.fetch_add(1, Ordering::Relaxed);
+            if count < 50 {
+                return Err(Error::TransactionConflict("simulated".to_string()));
+            }
 
-                let v = txn.get(&key)?.unwrap_or(Value::I64(0));
-                if let Value::I64(n) = v {
-                    txn.put(key.clone(), values::int(n + 1))?;
-                }
-                Ok(())
-            },
-        )
+            let v = txn.get(&key)?.unwrap_or(Value::I64(0));
+            if let Value::I64(n) = v {
+                txn.put(key.clone(), values::int(n + 1))?;
+            }
+            Ok(())
+        })
         .unwrap();
 
         // Should work normally after many retries

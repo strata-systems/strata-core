@@ -38,11 +38,8 @@ mod lifecycle {
     #[test]
     fn test_open_with_mode_strict() {
         let temp_dir = TempDir::new().unwrap();
-        let db = Database::open_with_mode(
-            temp_dir.path().join("db"),
-            DurabilityMode::Strict,
-        )
-        .unwrap();
+        let db =
+            Database::open_with_mode(temp_dir.path().join("db"), DurabilityMode::Strict).unwrap();
 
         // Verify database is functional
         let (run_id, ns) = create_namespace();
@@ -56,7 +53,10 @@ mod lifecycle {
         let temp_dir = TempDir::new().unwrap();
         let db = Database::open_with_mode(
             temp_dir.path().join("db"),
-            DurabilityMode::Batched { interval_ms: 100, batch_size: 1000 },
+            DurabilityMode::Batched {
+                interval_ms: 100,
+                batch_size: 1000,
+            },
         )
         .unwrap();
 
@@ -307,7 +307,9 @@ mod transaction_api {
         let key = tdb.key("existing_data");
 
         // Pre-populate
-        tdb.db.put(tdb.run_id, key.clone(), values::int(10)).unwrap();
+        tdb.db
+            .put(tdb.run_id, key.clone(), values::int(10))
+            .unwrap();
 
         let read_value = tdb
             .db
@@ -326,7 +328,9 @@ mod transaction_api {
         let key = tdb.key("delete_test");
 
         // Pre-populate
-        tdb.db.put(tdb.run_id, key.clone(), values::int(50)).unwrap();
+        tdb.db
+            .put(tdb.run_id, key.clone(), values::int(50))
+            .unwrap();
 
         // Delete in transaction
         tdb.db
@@ -346,7 +350,9 @@ mod transaction_api {
         let key = tdb.key("delete_read_test");
 
         // Pre-populate
-        tdb.db.put(tdb.run_id, key.clone(), values::int(50)).unwrap();
+        tdb.db
+            .put(tdb.run_id, key.clone(), values::int(50))
+            .unwrap();
 
         let read_after_delete = tdb
             .db
@@ -416,15 +422,13 @@ mod retry_api {
         let key = tdb.key("retry_first");
         let attempts = AtomicU64::new(0);
 
-        let result = tdb.db.transaction_with_retry(
-            tdb.run_id,
-            RetryConfig::new(),
-            |txn| {
+        let result = tdb
+            .db
+            .transaction_with_retry(tdb.run_id, RetryConfig::new(), |txn| {
                 attempts.fetch_add(1, Ordering::Relaxed);
                 txn.put(key.clone(), values::int(1))?;
                 Ok(())
-            },
-        );
+            });
 
         assert!(result.is_ok());
         assert_eq!(attempts.load(Ordering::Relaxed), 1);
@@ -495,14 +499,12 @@ mod retry_api {
         let tdb = TestDb::new();
         let attempts = AtomicU64::new(0);
 
-        let result: Result<(), Error> = tdb.db.transaction_with_retry(
-            tdb.run_id,
-            RetryConfig::no_retry(),
-            |_txn| {
-                attempts.fetch_add(1, Ordering::Relaxed);
-                Err(Error::TransactionConflict("fail".to_string()))
-            },
-        );
+        let result: Result<(), Error> =
+            tdb.db
+                .transaction_with_retry(tdb.run_id, RetryConfig::no_retry(), |_txn| {
+                    attempts.fetch_add(1, Ordering::Relaxed);
+                    Err(Error::TransactionConflict("fail".to_string()))
+                });
 
         assert!(result.is_err());
         assert_eq!(attempts.load(Ordering::Relaxed), 1); // No retries
@@ -559,17 +561,15 @@ mod retry_api {
         let tdb = TestDb::new();
         let attempts = AtomicU64::new(0);
 
-        let result = tdb.db.transaction_with_retry(
-            tdb.run_id,
-            RetryConfig::new(),
-            |_txn| {
+        let result = tdb
+            .db
+            .transaction_with_retry(tdb.run_id, RetryConfig::new(), |_txn| {
                 let count = attempts.fetch_add(1, Ordering::Relaxed);
                 if count < 1 {
                     return Err(Error::TransactionConflict("retry".to_string()));
                 }
                 Ok("success after retry")
-            },
-        );
+            });
 
         assert_eq!(result.unwrap(), "success after retry");
     }
@@ -587,20 +587,15 @@ mod timeout_api {
         let tdb = TestDb::new();
         let key = tdb.key("timeout_ok");
 
-        let result = tdb.db.transaction_with_timeout(
-            tdb.run_id,
-            Duration::from_secs(10),
-            |txn| {
+        let result = tdb
+            .db
+            .transaction_with_timeout(tdb.run_id, Duration::from_secs(10), |txn| {
                 txn.put(key.clone(), values::int(42))?;
                 Ok(42)
-            },
-        );
+            });
 
         assert_eq!(result.unwrap(), 42);
-        assert_eq!(
-            tdb.db.get(&key).unwrap().unwrap().value,
-            values::int(42)
-        );
+        assert_eq!(tdb.db.get(&key).unwrap().unwrap().value, values::int(42));
     }
 
     #[test]
@@ -608,15 +603,13 @@ mod timeout_api {
         let tdb = TestDb::new();
         let key = tdb.key("timeout_exceeded");
 
-        let result: Result<(), Error> = tdb.db.transaction_with_timeout(
-            tdb.run_id,
-            Duration::from_millis(10),
-            |txn| {
-                txn.put(key.clone(), values::int(999))?;
-                thread::sleep(Duration::from_millis(50));
-                Ok(())
-            },
-        );
+        let result: Result<(), Error> =
+            tdb.db
+                .transaction_with_timeout(tdb.run_id, Duration::from_millis(10), |txn| {
+                    txn.put(key.clone(), values::int(999))?;
+                    thread::sleep(Duration::from_millis(50));
+                    Ok(())
+                });
 
         assert!(result.is_err());
         assert!(result.unwrap_err().is_timeout());
@@ -631,17 +624,15 @@ mod timeout_api {
         let key = tdb.key("timeout_at_commit");
 
         // The timeout is checked BEFORE commit, not during
-        let result: Result<(), Error> = tdb.db.transaction_with_timeout(
-            tdb.run_id,
-            Duration::from_millis(5),
-            |txn| {
-                // Do fast work
-                txn.put(key.clone(), values::int(1))?;
-                // But then sleep so timeout expires before commit
-                thread::sleep(Duration::from_millis(20));
-                Ok(())
-            },
-        );
+        let result: Result<(), Error> =
+            tdb.db
+                .transaction_with_timeout(tdb.run_id, Duration::from_millis(5), |txn| {
+                    // Do fast work
+                    txn.put(key.clone(), values::int(1))?;
+                    // But then sleep so timeout expires before commit
+                    thread::sleep(Duration::from_millis(20));
+                    Ok(())
+                });
 
         assert!(result.is_err());
         assert!(result.unwrap_err().is_timeout());
@@ -654,14 +645,12 @@ mod timeout_api {
         // Many fast transactions should all succeed
         for i in 0..100 {
             let key = tdb.key(&format!("fast_{}", i));
-            let result = tdb.db.transaction_with_timeout(
-                tdb.run_id,
-                Duration::from_secs(5),
-                |txn| {
-                    txn.put(key.clone(), values::int(i))?;
-                    Ok(())
-                },
-            );
+            let result =
+                tdb.db
+                    .transaction_with_timeout(tdb.run_id, Duration::from_secs(5), |txn| {
+                        txn.put(key.clone(), values::int(i))?;
+                        Ok(())
+                    });
             assert!(result.is_ok());
         }
     }
@@ -670,14 +659,12 @@ mod timeout_api {
     fn test_timeout_closure_error_takes_precedence() {
         let tdb = TestDb::new();
 
-        let result: Result<(), Error> = tdb.db.transaction_with_timeout(
-            tdb.run_id,
-            Duration::from_millis(10),
-            |_txn| {
-                // Error before sleeping
-                Err(Error::InvalidOperation("closure error".to_string()))
-            },
-        );
+        let result: Result<(), Error> =
+            tdb.db
+                .transaction_with_timeout(tdb.run_id, Duration::from_millis(10), |_txn| {
+                    // Error before sleeping
+                    Err(Error::InvalidOperation("closure error".to_string()))
+                });
 
         // Should get the closure error, not timeout
         match result {
@@ -713,10 +700,7 @@ mod manual_transaction {
         tdb.db.commit_transaction(&mut txn).unwrap();
 
         assert!(txn.is_committed());
-        assert_eq!(
-            tdb.db.get(&key).unwrap().unwrap().value,
-            values::int(77)
-        );
+        assert_eq!(tdb.db.get(&key).unwrap().unwrap().value, values::int(77));
     }
 
     #[test]
@@ -781,7 +765,9 @@ mod implicit_transactions {
         let tdb = TestDb::new();
         let key = tdb.key("implicit_put");
 
-        tdb.db.put(tdb.run_id, key.clone(), values::int(10)).unwrap();
+        tdb.db
+            .put(tdb.run_id, key.clone(), values::int(10))
+            .unwrap();
 
         let val = tdb.db.get(&key).unwrap().unwrap();
         assert_eq!(val.value, values::int(10));
@@ -792,7 +778,9 @@ mod implicit_transactions {
         let tdb = TestDb::new();
         let key = tdb.key("implicit_get");
 
-        tdb.db.put(tdb.run_id, key.clone(), values::int(20)).unwrap();
+        tdb.db
+            .put(tdb.run_id, key.clone(), values::int(20))
+            .unwrap();
         let val = tdb.db.get(&key).unwrap();
 
         assert_eq!(val.unwrap().value, values::int(20));
@@ -812,7 +800,9 @@ mod implicit_transactions {
         let tdb = TestDb::new();
         let key = tdb.key("implicit_delete");
 
-        tdb.db.put(tdb.run_id, key.clone(), values::int(30)).unwrap();
+        tdb.db
+            .put(tdb.run_id, key.clone(), values::int(30))
+            .unwrap();
         assert!(tdb.db.get(&key).unwrap().is_some());
 
         tdb.db.delete(tdb.run_id, key.clone()).unwrap();
@@ -978,14 +968,8 @@ mod run_isolation {
         tdb.db.put(run1, key1.clone(), values::int(100)).unwrap();
         tdb.db.put(run2, key2.clone(), values::int(200)).unwrap();
 
-        assert_eq!(
-            tdb.db.get(&key1).unwrap().unwrap().value,
-            values::int(100)
-        );
-        assert_eq!(
-            tdb.db.get(&key2).unwrap().unwrap().value,
-            values::int(200)
-        );
+        assert_eq!(tdb.db.get(&key1).unwrap().unwrap().value, values::int(100));
+        assert_eq!(tdb.db.get(&key2).unwrap().unwrap().value, values::int(200));
     }
 
     #[test]

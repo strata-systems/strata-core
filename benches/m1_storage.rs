@@ -44,9 +44,7 @@
 //! cargo bench --bench m1_storage -- "engine_get"  # specific group
 //! ```
 
-use criterion::{
-    black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput,
-};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use in_mem_core::types::{Key, Namespace, RunId};
 use in_mem_core::value::Value;
 use in_mem_engine::Database;
@@ -195,7 +193,10 @@ fn engine_put_benchmarks(c: &mut Criterion) {
                 if i >= MAX_KEYS {
                     panic!("Benchmark exceeded pre-generated keys");
                 }
-                black_box(db.put(run_id, keys[i].clone(), Value::I64(i as i64)).unwrap())
+                black_box(
+                    db.put(run_id, keys[i].clone(), Value::I64(i as i64))
+                        .unwrap(),
+                )
             });
         });
     }
@@ -245,7 +246,10 @@ fn engine_put_benchmarks(c: &mut Criterion) {
             b.iter(|| {
                 let idx = (lcg_next(&mut rng_state) as usize) % NUM_KEYS;
                 let i = counter.fetch_add(1, Ordering::Relaxed);
-                black_box(db.put(run_id, keys[idx].clone(), Value::I64(i as i64)).unwrap())
+                black_box(
+                    db.put(run_id, keys[idx].clone(), Value::I64(i as i64))
+                        .unwrap(),
+                )
             });
         });
     }

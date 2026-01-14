@@ -38,9 +38,7 @@
 //! cargo bench --bench m2_transactions -- "txn_cas"  # specific group
 //! ```
 
-use criterion::{
-    black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput,
-};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use in_mem_core::types::{Key, Namespace, RunId};
 use in_mem_core::value::Value;
 use in_mem_engine::Database;
@@ -271,7 +269,10 @@ fn txn_cas_benchmarks(c: &mut Criterion) {
                     Value::I64(n) => n + 1,
                     _ => 1,
                 };
-                black_box(db.cas(run_id, key.clone(), current.version, Value::I64(new_val)).unwrap())
+                black_box(
+                    db.cas(run_id, key.clone(), current.version, Value::I64(new_val))
+                        .unwrap(),
+                )
             });
         });
     }
@@ -316,7 +317,10 @@ fn txn_cas_benchmarks(c: &mut Criterion) {
                 if i >= MAX_KEYS {
                     panic!("Benchmark exceeded pre-generated keys");
                 }
-                black_box(db.cas(run_id, keys[i].clone(), 0, Value::I64(i as i64)).unwrap())
+                black_box(
+                    db.cas(run_id, keys[i].clone(), 0, Value::I64(i as i64))
+                        .unwrap(),
+                )
             });
         });
     }
@@ -564,10 +568,13 @@ fn conflict_benchmarks(c: &mut Criterion) {
 
                                     let _ = lcg_next(&mut rng_state); // consume for consistency
 
-                                    if db.transaction(run_id, |txn| {
-                                        txn.put(key, Value::I64(local_commits as i64))?;
-                                        Ok(())
-                                    }).is_ok() {
+                                    if db
+                                        .transaction(run_id, |txn| {
+                                            txn.put(key, Value::I64(local_commits as i64))?;
+                                            Ok(())
+                                        })
+                                        .is_ok()
+                                    {
                                         local_commits += 1;
                                     }
                                 }
@@ -619,7 +626,8 @@ fn conflict_benchmarks(c: &mut Criterion) {
                     let ns = create_namespace(run_id);
                     let contested_key = make_key(&ns, "contested");
 
-                    db.put(run_id, contested_key.clone(), Value::I64(0)).unwrap();
+                    db.put(run_id, contested_key.clone(), Value::I64(0))
+                        .unwrap();
 
                     let barrier = Arc::new(Barrier::new(num_threads + 1));
                     let total_commits = Arc::new(AtomicU64::new(0));
@@ -733,7 +741,8 @@ fn conflict_benchmarks(c: &mut Criterion) {
 
                         thread::spawn(move || {
                             barrier.wait();
-                            let result = db.cas(run_id, key, initial_version, Value::I64(id as i64));
+                            let result =
+                                db.cas(run_id, key, initial_version, Value::I64(id as i64));
                             if result.is_ok() {
                                 winners.fetch_add(1, Ordering::Relaxed);
                             } else {
@@ -756,7 +765,12 @@ fn conflict_benchmarks(c: &mut Criterion) {
                 let winner_count = winners.load(Ordering::Relaxed);
                 let loser_count = losers.load(Ordering::Relaxed);
                 assert_eq!(winner_count, 1, "Expected exactly 1 CAS winner");
-                assert_eq!(loser_count, (num_threads - 1) as u64, "Expected {} CAS losers", num_threads - 1);
+                assert_eq!(
+                    loser_count,
+                    (num_threads - 1) as u64,
+                    "Expected {} CAS losers",
+                    num_threads - 1
+                );
             }
 
             total_elapsed
