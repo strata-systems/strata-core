@@ -260,6 +260,140 @@ impl ShardedStore {
             .map(|shard| shard.len())
             .unwrap_or(0)
     }
+
+    // ========================================================================
+    // List Operations (Story #229)
+    // ========================================================================
+
+    /// List all entries for a run
+    ///
+    /// NOTE: Slower than BTreeMap range scan. Requires collect + sort.
+    /// This is acceptable because list operations are NOT on the hot path.
+    ///
+    /// # Arguments
+    ///
+    /// * `run_id` - The run to list entries for
+    ///
+    /// # Returns
+    ///
+    /// Vector of (Key, VersionedValue) pairs, sorted by key
+    pub fn list_run(&self, run_id: &RunId) -> Vec<(Key, VersionedValue)> {
+        self.shards
+            .get(run_id)
+            .map(|shard| {
+                let mut results: Vec<_> = shard
+                    .data
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+
+                // Sort for consistent ordering (Key implements Ord)
+                results.sort_by(|(a, _), (b, _)| a.cmp(b));
+                results
+            })
+            .unwrap_or_default()
+    }
+
+    /// List entries matching a key prefix
+    ///
+    /// Returns all entries where `key.starts_with(prefix)`.
+    /// The prefix key determines namespace, type_tag, and user_key prefix.
+    ///
+    /// NOTE: Requires filter + sort, O(n) where n = shard size.
+    /// Use sparingly; not for hot path operations.
+    ///
+    /// # Arguments
+    ///
+    /// * `prefix` - Prefix key to match (namespace + type_tag + user_key prefix)
+    ///
+    /// # Returns
+    ///
+    /// Vector of (Key, VersionedValue) pairs matching prefix, sorted by key
+    pub fn list_by_prefix(&self, prefix: &Key) -> Vec<(Key, VersionedValue)> {
+        let run_id = prefix.namespace.run_id;
+        self.shards
+            .get(&run_id)
+            .map(|shard| {
+                let mut results: Vec<_> = shard
+                    .data
+                    .iter()
+                    .filter(|(k, _)| k.starts_with(prefix))
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+
+                // Sort for consistent ordering
+                results.sort_by(|(a, _), (b, _)| a.cmp(b));
+                results
+            })
+            .unwrap_or_default()
+    }
+
+    /// List entries of a specific type for a run
+    ///
+    /// Filters by TypeTag within a run's shard.
+    ///
+    /// # Arguments
+    ///
+    /// * `run_id` - The run to query
+    /// * `type_tag` - The type to filter by (KV, Event, State, etc.)
+    ///
+    /// # Returns
+    ///
+    /// Vector of (Key, VersionedValue) pairs of the specified type, sorted
+    pub fn list_by_type(
+        &self,
+        run_id: &RunId,
+        type_tag: in_mem_core::types::TypeTag,
+    ) -> Vec<(Key, VersionedValue)> {
+        self.shards
+            .get(run_id)
+            .map(|shard| {
+                let mut results: Vec<_> = shard
+                    .data
+                    .iter()
+                    .filter(|(k, _)| k.type_tag == type_tag)
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+
+                // Sort for consistent ordering
+                results.sort_by(|(a, _), (b, _)| a.cmp(b));
+                results
+            })
+            .unwrap_or_default()
+    }
+
+    /// Count entries of a specific type for a run
+    pub fn count_by_type(
+        &self,
+        run_id: &RunId,
+        type_tag: in_mem_core::types::TypeTag,
+    ) -> usize {
+        self.shards
+            .get(run_id)
+            .map(|shard| {
+                shard
+                    .data
+                    .iter()
+                    .filter(|(k, _)| k.type_tag == type_tag)
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+
+    /// Iterate over all runs
+    ///
+    /// Returns an iterator over all RunIds that have data
+    pub fn run_ids(&self) -> Vec<RunId> {
+        self.shards.iter().map(|entry| *entry.key()).collect()
+    }
+
+    /// Clear all data for a run
+    ///
+    /// Removes the entire shard for the given run.
+    /// Returns true if the run existed and was removed.
+    pub fn clear_run(&self, run_id: &RunId) -> bool {
+        self.shards.remove(run_id).is_some()
+    }
 }
 
 impl Default for ShardedStore {
@@ -562,5 +696,273 @@ mod tests {
 
         assert_eq!(store.shard_count(), 10);
         assert_eq!(store.total_entries(), 1000);
+    }
+
+    // ========================================================================
+    // Story #229: List Operations Tests
+    // ========================================================================
+
+    #[test]
+    fn test_list_run_empty() {
+        let store = ShardedStore::new();
+        let run_id = RunId::new();
+
+        let results = store.list_run(&run_id);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_list_run() {
+        use in_mem_core::value::Value;
+
+        let store = ShardedStore::new();
+        let run_id = RunId::new();
+
+        // Insert some keys
+        for i in 0..5 {
+            let key = create_test_key(run_id, &format!("key{}", i));
+            store.put(key, create_versioned_value(Value::I64(i), 1));
+        }
+
+        let results = store.list_run(&run_id);
+        assert_eq!(results.len(), 5);
+
+        // Verify sorted order
+        for i in 0..results.len() - 1 {
+            assert!(results[i].0 < results[i + 1].0);
+        }
+    }
+
+    #[test]
+    fn test_list_by_prefix() {
+        use in_mem_core::value::Value;
+        use in_mem_core::types::Namespace;
+
+        let store = ShardedStore::new();
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        // Insert keys with different prefixes
+        store.put(
+            Key::new_kv(ns.clone(), "user:alice"),
+            create_versioned_value(Value::I64(1), 1),
+        );
+        store.put(
+            Key::new_kv(ns.clone(), "user:bob"),
+            create_versioned_value(Value::I64(2), 1),
+        );
+        store.put(
+            Key::new_kv(ns.clone(), "config:timeout"),
+            create_versioned_value(Value::I64(3), 1),
+        );
+
+        // Query with "user:" prefix
+        let prefix = Key::new_kv(ns.clone(), "user:");
+        let results = store.list_by_prefix(&prefix);
+
+        assert_eq!(results.len(), 2);
+        // Should be alice, bob in sorted order
+        assert!(results[0].0.user_key_string().unwrap().contains("alice"));
+        assert!(results[1].0.user_key_string().unwrap().contains("bob"));
+    }
+
+    #[test]
+    fn test_list_by_prefix_empty() {
+        use in_mem_core::value::Value;
+        use in_mem_core::types::Namespace;
+
+        let store = ShardedStore::new();
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        store.put(
+            Key::new_kv(ns.clone(), "data:foo"),
+            create_versioned_value(Value::I64(1), 1),
+        );
+
+        // Query with non-matching prefix
+        let prefix = Key::new_kv(ns.clone(), "user:");
+        let results = store.list_by_prefix(&prefix);
+
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_list_by_type() {
+        use in_mem_core::value::Value;
+        use in_mem_core::types::{Namespace, TypeTag};
+
+        let store = ShardedStore::new();
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        // Insert KV entries
+        store.put(
+            Key::new_kv(ns.clone(), "kv1"),
+            create_versioned_value(Value::I64(1), 1),
+        );
+        store.put(
+            Key::new_kv(ns.clone(), "kv2"),
+            create_versioned_value(Value::I64(2), 1),
+        );
+
+        // Insert Event entries
+        store.put(
+            Key::new_event(ns.clone(), 1),
+            create_versioned_value(Value::I64(10), 1),
+        );
+
+        // Insert State entries
+        store.put(
+            Key::new_state(ns.clone(), "state1"),
+            create_versioned_value(Value::I64(20), 1),
+        );
+
+        // Query by type
+        let kv_results = store.list_by_type(&run_id, TypeTag::KV);
+        assert_eq!(kv_results.len(), 2);
+
+        let event_results = store.list_by_type(&run_id, TypeTag::Event);
+        assert_eq!(event_results.len(), 1);
+
+        let state_results = store.list_by_type(&run_id, TypeTag::State);
+        assert_eq!(state_results.len(), 1);
+
+        let trace_results = store.list_by_type(&run_id, TypeTag::Trace);
+        assert!(trace_results.is_empty());
+    }
+
+    #[test]
+    fn test_count_by_type() {
+        use in_mem_core::value::Value;
+        use in_mem_core::types::{Namespace, TypeTag};
+
+        let store = ShardedStore::new();
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        // Insert mixed types
+        for i in 0..5 {
+            store.put(
+                Key::new_kv(ns.clone(), &format!("kv{}", i)),
+                create_versioned_value(Value::I64(i), 1),
+            );
+        }
+        for i in 0..3 {
+            store.put(
+                Key::new_event(ns.clone(), i as u64),
+                create_versioned_value(Value::I64(i), 1),
+            );
+        }
+
+        assert_eq!(store.count_by_type(&run_id, TypeTag::KV), 5);
+        assert_eq!(store.count_by_type(&run_id, TypeTag::Event), 3);
+        assert_eq!(store.count_by_type(&run_id, TypeTag::State), 0);
+    }
+
+    #[test]
+    fn test_run_ids() {
+        use in_mem_core::value::Value;
+
+        let store = ShardedStore::new();
+        let run1 = RunId::new();
+        let run2 = RunId::new();
+        let run3 = RunId::new();
+
+        // Insert data for 3 runs
+        store.put(create_test_key(run1, "k1"), create_versioned_value(Value::I64(1), 1));
+        store.put(create_test_key(run2, "k1"), create_versioned_value(Value::I64(2), 1));
+        store.put(create_test_key(run3, "k1"), create_versioned_value(Value::I64(3), 1));
+
+        let run_ids = store.run_ids();
+        assert_eq!(run_ids.len(), 3);
+        assert!(run_ids.contains(&run1));
+        assert!(run_ids.contains(&run2));
+        assert!(run_ids.contains(&run3));
+    }
+
+    #[test]
+    fn test_clear_run() {
+        use in_mem_core::value::Value;
+
+        let store = ShardedStore::new();
+        let run_id = RunId::new();
+
+        // Insert some data
+        for i in 0..5 {
+            let key = create_test_key(run_id, &format!("key{}", i));
+            store.put(key, create_versioned_value(Value::I64(i), 1));
+        }
+
+        assert_eq!(store.run_entry_count(&run_id), 5);
+        assert!(store.has_run(&run_id));
+
+        // Clear the run
+        assert!(store.clear_run(&run_id));
+
+        assert_eq!(store.run_entry_count(&run_id), 0);
+        assert!(!store.has_run(&run_id));
+    }
+
+    #[test]
+    fn test_clear_run_nonexistent() {
+        let store = ShardedStore::new();
+        let run_id = RunId::new();
+
+        // Clear non-existent run returns false
+        assert!(!store.clear_run(&run_id));
+    }
+
+    #[test]
+    fn test_list_sorted_order() {
+        use in_mem_core::value::Value;
+        use in_mem_core::types::Namespace;
+
+        let store = ShardedStore::new();
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+
+        // Insert in random order
+        let keys = vec!["zebra", "apple", "mango", "banana"];
+        for k in &keys {
+            store.put(
+                Key::new_kv(ns.clone(), *k),
+                create_versioned_value(Value::String(k.to_string()), 1),
+            );
+        }
+
+        let results = store.list_run(&run_id);
+        let result_keys: Vec<_> = results
+            .iter()
+            .map(|(k, _)| k.user_key_string().unwrap())
+            .collect();
+
+        // Should be sorted: apple, banana, mango, zebra
+        assert_eq!(result_keys, vec!["apple", "banana", "mango", "zebra"]);
     }
 }
