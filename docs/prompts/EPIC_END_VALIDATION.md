@@ -370,49 +370,49 @@ grep -r "purity\|pure\|Purity" crates/primitives/src/state_cell.rs
 #### Epic 20: Performance Foundation
 ```bash
 # Verify baseline tag exists
-git tag -l | grep "m4-baseline"
+git tag -l | grep "m3_baseline_perf"
 
-# Verify DurabilityMode enum
-grep -r "enum DurabilityMode" crates/core/src/
+# Verify DurabilityMode enum (in durability crate, not core)
+grep -r "enum DurabilityMode" crates/durability/src/
 
-# Verify instrumentation
-~/.cargo/bin/cargo test --package in-mem-core perf_trace
+# Verify instrumentation (in engine crate, not core)
+~/.cargo/bin/cargo test --package in-mem-engine --features perf-trace perf
 ```
 
 #### Epic 21: Durability Modes
 ```bash
-# Verify all three modes work
-~/.cargo/bin/cargo test --package in-mem-core durability
+# Verify all three modes work (durability crate)
+~/.cargo/bin/cargo test --package in-mem-durability durability
 
-# Verify graceful shutdown
-~/.cargo/bin/cargo test --package in-mem-core test_shutdown
+# Verify graceful shutdown (engine crate)
+~/.cargo/bin/cargo test --package in-mem-engine test_shutdown
 
-# Verify per-operation override
-~/.cargo/bin/cargo test --package in-mem-core test_override
+# Verify per-operation override (engine crate)
+~/.cargo/bin/cargo test --package in-mem-engine test_override
 ```
 
 #### Epic 22: Sharded Storage
 ```bash
-# Verify ShardedStore implementation
-~/.cargo/bin/cargo test --package in-mem-core sharded
+# Verify ShardedStore implementation (storage crate)
+~/.cargo/bin/cargo test --package in-mem-storage sharded
 
 # Verify snapshot acquisition time < 2µs
 ~/.cargo/bin/cargo bench --bench m4_performance -- snapshot
 
-# Verify migration from old storage
-~/.cargo/bin/cargo test --package in-mem-core test_migration
+# Verify migration from old storage (storage crate)
+~/.cargo/bin/cargo test --package in-mem-storage test_migration
 ```
 
 #### Epic 23: Transaction Pooling
 ```bash
-# Verify pool implementation
-~/.cargo/bin/cargo test --package in-mem-core transaction_pool
+# Verify pool implementation (concurrency crate)
+~/.cargo/bin/cargo test --package in-mem-concurrency transaction_pool
 
-# Verify reset() preserves capacity
-~/.cargo/bin/cargo test --package in-mem-core test_reset_capacity
+# Verify reset() preserves capacity (concurrency crate)
+~/.cargo/bin/cargo test --package in-mem-concurrency test_reset_capacity
 
-# Verify no pool exhaustion under load
-~/.cargo/bin/cargo test --package in-mem-core test_pool_stress
+# Verify no pool exhaustion under load (concurrency crate)
+~/.cargo/bin/cargo test --package in-mem-concurrency test_pool_stress
 ```
 
 #### Epic 24: Read Path Optimization
