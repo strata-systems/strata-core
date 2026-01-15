@@ -37,13 +37,19 @@ mod typetag_isolation {
         let run_id = tp.run_id;
 
         // Write to KV with key "data"
-        tp.kv.put(&run_id, "data", values::string("kv-value")).unwrap();
+        tp.kv
+            .put(&run_id, "data", values::string("kv-value"))
+            .unwrap();
 
         // Write to Event with "data" as event_type
-        tp.event_log.append(&run_id, "data", values::string("event-value")).unwrap();
+        tp.event_log
+            .append(&run_id, "data", values::string("event-value"))
+            .unwrap();
 
         // Write to State with "data" as cell name
-        tp.state_cell.init(&run_id, "data", values::string("state-value")).unwrap();
+        tp.state_cell
+            .init(&run_id, "data", values::string("state-value"))
+            .unwrap();
 
         // Verify each primitive sees only its own data
         let kv_val = tp.kv.get(&run_id, "data").unwrap();
@@ -65,7 +71,9 @@ mod typetag_isolation {
 
         // Create many KV keys
         for i in 0..10 {
-            tp.kv.put(&run_id, &format!("key_{}", i), values::int(i)).unwrap();
+            tp.kv
+                .put(&run_id, &format!("key_{}", i), values::int(i))
+                .unwrap();
         }
 
         // EventLog should see nothing
@@ -83,12 +91,17 @@ mod typetag_isolation {
 
         // Append events
         for i in 0..10 {
-            tp.event_log.append(&run_id, &format!("event_{}", i), values::int(i)).unwrap();
+            tp.event_log
+                .append(&run_id, &format!("event_{}", i), values::int(i))
+                .unwrap();
         }
 
         // StateCell should see nothing with those names
         for i in 0..10 {
-            let state = tp.state_cell.read(&run_id, &format!("event_{}", i)).unwrap();
+            let state = tp
+                .state_cell
+                .read(&run_id, &format!("event_{}", i))
+                .unwrap();
             assert!(state.is_none(), "StateCell should not see EventLog data");
         }
     }
@@ -100,7 +113,9 @@ mod typetag_isolation {
 
         // Create state cells
         for i in 0..10 {
-            tp.state_cell.init(&run_id, &format!("cell_{}", i), values::int(i)).unwrap();
+            tp.state_cell
+                .init(&run_id, &format!("cell_{}", i), values::int(i))
+                .unwrap();
         }
 
         // KV should not see these keys
@@ -131,8 +146,12 @@ mod run_namespace_isolation {
         let run2 = RunId::new();
 
         // Same key, different runs, different values
-        tp.kv.put(&run1, "shared-key", values::string("run1-value")).unwrap();
-        tp.kv.put(&run2, "shared-key", values::string("run2-value")).unwrap();
+        tp.kv
+            .put(&run1, "shared-key", values::string("run1-value"))
+            .unwrap();
+        tp.kv
+            .put(&run2, "shared-key", values::string("run2-value"))
+            .unwrap();
 
         // Each run sees only its own value
         assert_eq!(
@@ -152,8 +171,12 @@ mod run_namespace_isolation {
         let run2 = RunId::new();
 
         // Append to both runs
-        tp.event_log.append(&run1, "event", values::string("run1")).unwrap();
-        tp.event_log.append(&run2, "event", values::string("run2")).unwrap();
+        tp.event_log
+            .append(&run1, "event", values::string("run1"))
+            .unwrap();
+        tp.event_log
+            .append(&run2, "event", values::string("run2"))
+            .unwrap();
 
         // Each run sees only its own event
         let events1 = tp.event_log.read_range(&run1, 0, 100).unwrap();
@@ -172,8 +195,12 @@ mod run_namespace_isolation {
         let run2 = RunId::new();
 
         // Same cell name in different runs
-        tp.state_cell.init(&run1, "counter", values::int(100)).unwrap();
-        tp.state_cell.init(&run2, "counter", values::int(200)).unwrap();
+        tp.state_cell
+            .init(&run1, "counter", values::int(100))
+            .unwrap();
+        tp.state_cell
+            .init(&run2, "counter", values::int(200))
+            .unwrap();
 
         let state1 = tp.state_cell.read(&run1, "counter").unwrap().unwrap();
         let state2 = tp.state_cell.read(&run2, "counter").unwrap().unwrap();
@@ -221,7 +248,12 @@ mod run_namespace_isolation {
         // Verify each run sees only its own value
         for (i, run_id) in runs.iter().enumerate() {
             let val = tp.kv.get(run_id, "key").unwrap();
-            assert_eq!(val, Some(values::int(i as i64)), "Run {} saw wrong value", i);
+            assert_eq!(
+                val,
+                Some(values::int(i as i64)),
+                "Run {} saw wrong value",
+                i
+            );
         }
     }
 
@@ -280,7 +312,8 @@ mod facade_identity {
 
         // Append with first handle
         let log1 = EventLog::new(tp.db.clone());
-        log1.append(&run_id, "event", values::string("data")).unwrap();
+        log1.append(&run_id, "event", values::string("data"))
+            .unwrap();
         drop(log1);
 
         // Read with new handle
@@ -332,7 +365,8 @@ mod facade_identity {
         // Rapid create/write/drop cycles
         for i in 0..100 {
             let kv = KVStore::new(tp.db.clone());
-            kv.put(&run_id, &format!("key_{}", i), values::int(i)).unwrap();
+            kv.put(&run_id, &format!("key_{}", i), values::int(i))
+                .unwrap();
             drop(kv);
         }
 
@@ -405,7 +439,10 @@ mod value_type_safety {
         tp.kv.put(&run_id, "false", Value::Bool(false)).unwrap();
 
         assert_eq!(tp.kv.get(&run_id, "true").unwrap(), Some(Value::Bool(true)));
-        assert_eq!(tp.kv.get(&run_id, "false").unwrap(), Some(Value::Bool(false)));
+        assert_eq!(
+            tp.kv.get(&run_id, "false").unwrap(),
+            Some(Value::Bool(false))
+        );
     }
 
     #[test]
@@ -424,7 +461,10 @@ mod value_type_safety {
 
         let data = vec![0u8, 1, 2, 255, 128, 64];
         tp.kv.put(&run_id, "bytes", values::bytes(&data)).unwrap();
-        assert_eq!(tp.kv.get(&run_id, "bytes").unwrap(), Some(values::bytes(&data)));
+        assert_eq!(
+            tp.kv.get(&run_id, "bytes").unwrap(),
+            Some(values::bytes(&data))
+        );
     }
 
     #[test]
@@ -475,9 +515,15 @@ mod value_type_safety {
         let run_id = tp.run_id;
 
         // Test different value types as event payloads
-        tp.event_log.append(&run_id, "int", values::int(42)).unwrap();
-        tp.event_log.append(&run_id, "str", values::string("hello")).unwrap();
-        tp.event_log.append(&run_id, "arr", values::array(vec![values::int(1)])).unwrap();
+        tp.event_log
+            .append(&run_id, "int", values::int(42))
+            .unwrap();
+        tp.event_log
+            .append(&run_id, "str", values::string("hello"))
+            .unwrap();
+        tp.event_log
+            .append(&run_id, "arr", values::array(vec![values::int(1)]))
+            .unwrap();
 
         let events = tp.event_log.read_range(&run_id, 0, 100).unwrap();
         assert_eq!(events[0].payload, values::int(42));
@@ -492,10 +538,15 @@ mod value_type_safety {
 
         // Init with complex value
         let complex = values::map(vec![
-            ("nested", values::array(vec![values::int(1), values::int(2)])),
+            (
+                "nested",
+                values::array(vec![values::int(1), values::int(2)]),
+            ),
             ("flag", values::bool_val(true)),
         ]);
-        tp.state_cell.init(&run_id, "complex", complex.clone()).unwrap();
+        tp.state_cell
+            .init(&run_id, "complex", complex.clone())
+            .unwrap();
 
         let state = tp.state_cell.read(&run_id, "complex").unwrap().unwrap();
         assert_eq!(state.value, complex);
@@ -541,7 +592,9 @@ mod deterministic_key_ordering {
         let run_id = tp.run_id;
 
         for i in 0..20 {
-            tp.kv.put(&run_id, &format!("key_{:03}", i), values::int(i)).unwrap();
+            tp.kv
+                .put(&run_id, &format!("key_{:03}", i), values::int(i))
+                .unwrap();
         }
 
         let pairs1 = tp.kv.list_with_values(&run_id, None).unwrap();
@@ -656,7 +709,10 @@ mod no_hidden_writes {
         let run_id = tp.run_id;
 
         // Successful append
-        let (seq1, _) = tp.event_log.append(&run_id, "first", values::int(1)).unwrap();
+        let (seq1, _) = tp
+            .event_log
+            .append(&run_id, "first", values::int(1))
+            .unwrap();
         assert_eq!(seq1, 0);
 
         // Failed append (simulate via low-level transaction)
@@ -668,7 +724,10 @@ mod no_hidden_writes {
         assert!(result.is_err());
 
         // Next successful append should get sequence 1 (not 2)
-        let (seq2, _) = tp.event_log.append(&run_id, "second", values::int(3)).unwrap();
+        let (seq2, _) = tp
+            .event_log
+            .append(&run_id, "second", values::int(3))
+            .unwrap();
         assert_eq!(seq2, 1, "Aborted transaction consumed sequence number");
     }
 
@@ -703,7 +762,9 @@ mod no_hidden_writes {
 
         // Setup some data
         tp.kv.put(&run_id, "key", values::int(1)).unwrap();
-        tp.event_log.append(&run_id, "event", values::int(2)).unwrap();
+        tp.event_log
+            .append(&run_id, "event", values::int(2))
+            .unwrap();
         tp.state_cell.init(&run_id, "cell", values::int(3)).unwrap();
 
         // Failed read-only transaction
@@ -718,7 +779,13 @@ mod no_hidden_writes {
 
         // Data should be unchanged
         assert_eq!(tp.kv.get(&run_id, "key").unwrap(), Some(values::int(1)));
-        assert_eq!(tp.event_log.read(&run_id, 0).unwrap().unwrap().payload, values::int(2));
-        assert_eq!(tp.state_cell.read(&run_id, "cell").unwrap().unwrap().value, values::int(3));
+        assert_eq!(
+            tp.event_log.read(&run_id, 0).unwrap().unwrap().payload,
+            values::int(2)
+        );
+        assert_eq!(
+            tp.state_cell.read(&run_id, "cell").unwrap().unwrap().value,
+            values::int(3)
+        );
     }
 }

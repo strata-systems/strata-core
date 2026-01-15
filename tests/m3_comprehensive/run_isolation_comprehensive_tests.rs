@@ -26,7 +26,9 @@ mod n_run_isolation {
         // Each run writes to all primitives with unique data
         for (i, run) in runs.iter().enumerate() {
             tp.kv.put(run, "counter", values::int(i as i64)).unwrap();
-            tp.kv.put(run, "name", values::string(&format!("run_{}", i))).unwrap();
+            tp.kv
+                .put(run, "name", values::string(&format!("run_{}", i)))
+                .unwrap();
             tp.event_log
                 .append(run, &format!("init_{}", i), values::int(i as i64))
                 .unwrap();
@@ -36,7 +38,10 @@ mod n_run_isolation {
             tp.trace_store
                 .record(
                     run,
-                    TraceType::Custom { name: format!("Trace{}", i), data: values::int(i as i64) },
+                    TraceType::Custom {
+                        name: format!("Trace{}", i),
+                        data: values::int(i as i64),
+                    },
                     vec![],
                     values::null(),
                 )
@@ -128,19 +133,28 @@ mod concurrent_run_operations {
         let runs = Arc::new(runs);
 
         // Each thread writes to its own run
-        let results = concurrent::run_with_shared(num_threads, (tp.clone(), runs.clone()), |i, (tp, runs)| {
-            let run = &runs[i];
-            tp.kv.put(run, "value", values::int(i as i64)).unwrap();
-            tp.event_log.append(run, "event", values::int(i as i64)).unwrap();
-            i
-        });
+        let results = concurrent::run_with_shared(
+            num_threads,
+            (tp.clone(), runs.clone()),
+            |i, (tp, runs)| {
+                let run = &runs[i];
+                tp.kv.put(run, "value", values::int(i as i64)).unwrap();
+                tp.event_log
+                    .append(run, "event", values::int(i as i64))
+                    .unwrap();
+                i
+            },
+        );
 
         // All threads completed
         assert_eq!(results.len(), num_threads);
 
         // Verify each run has correct data
         for (i, run) in runs.iter().enumerate() {
-            assert_eq!(tp.kv.get(run, "value").unwrap(), Some(values::int(i as i64)));
+            assert_eq!(
+                tp.kv.get(run, "value").unwrap(),
+                Some(values::int(i as i64))
+            );
             let events = tp.event_log.read_range(run, 0, 10).unwrap();
             assert_eq!(events.len(), 1);
         }
@@ -162,10 +176,14 @@ mod concurrent_run_operations {
         let runs = Arc::new(runs);
 
         // Concurrent reads
-        let results = concurrent::run_with_shared(num_threads, (tp.clone(), runs.clone()), |i, (tp, runs)| {
-            let run = &runs[i];
-            tp.kv.get(run, "value").unwrap()
-        });
+        let results = concurrent::run_with_shared(
+            num_threads,
+            (tp.clone(), runs.clone()),
+            |i, (tp, runs)| {
+                let run = &runs[i];
+                tp.kv.get(run, "value").unwrap()
+            },
+        );
 
         // All reads returned correct values
         for (i, result) in results.iter().enumerate() {
@@ -182,13 +200,18 @@ mod concurrent_run_operations {
         let results = concurrent::run_with_shared(num_threads, tp.clone(), |i, tp| {
             let run = tp.new_run();
             tp.kv.put(&run, "creator", values::int(i as i64)).unwrap();
-            tp.event_log.append(&run, "created", values::int(i as i64)).unwrap();
+            tp.event_log
+                .append(&run, "created", values::int(i as i64))
+                .unwrap();
             run
         });
 
         // Verify all runs were created with correct data
         for (i, run) in results.iter().enumerate() {
-            assert_eq!(tp.kv.get(run, "creator").unwrap(), Some(values::int(i as i64)));
+            assert_eq!(
+                tp.kv.get(run, "creator").unwrap(),
+                Some(values::int(i as i64))
+            );
         }
     }
 }
@@ -214,8 +237,12 @@ mod run_delete_isolation {
         // Write to both runs
         tp.kv.put(&run_a, "key", values::string("a")).unwrap();
         tp.kv.put(&run_b, "key", values::string("b")).unwrap();
-        tp.event_log.append(&run_a, "event_a", values::null()).unwrap();
-        tp.event_log.append(&run_b, "event_b", values::null()).unwrap();
+        tp.event_log
+            .append(&run_a, "event_a", values::null())
+            .unwrap();
+        tp.event_log
+            .append(&run_b, "event_b", values::null())
+            .unwrap();
 
         // Delete run A from RunIndex
         tp.run_index.delete_run(&meta_a.name).unwrap();
@@ -235,9 +262,9 @@ mod run_delete_isolation {
         let tp = TestPrimitives::new();
 
         // Create run metadata entries
-        let metas: Vec<_> = (0..5).map(|i| {
-            tp.run_index.create_run(&format!("run-{}", i)).unwrap()
-        }).collect();
+        let metas: Vec<_> = (0..5)
+            .map(|i| tp.run_index.create_run(&format!("run-{}", i)).unwrap())
+            .collect();
 
         // Create actual runs for data storage
         let runs: Vec<_> = (0..5).map(|_| tp.new_run()).collect();
@@ -273,12 +300,17 @@ mod run_delete_isolation {
             tp.kv.put(run, "kv_key", values::int(1)).unwrap();
             tp.event_log.append(run, "event", values::null()).unwrap();
             tp.state_cell.init(run, "cell", values::int(0)).unwrap();
-            tp.trace_store.record(
-                run,
-                TraceType::Thought { content: "thinking".into(), confidence: None },
-                vec![],
-                values::null(),
-            ).unwrap();
+            tp.trace_store
+                .record(
+                    run,
+                    TraceType::Thought {
+                        content: "thinking".into(),
+                        confidence: None,
+                    },
+                    vec![],
+                    values::null(),
+                )
+                .unwrap();
         }
 
         // Both runs have data
@@ -334,9 +366,15 @@ mod cross_run_leakage_prevention {
         let run2 = tp.new_run();
 
         // Append events to each run
-        tp.event_log.append(&run1, "run1_event", values::null()).unwrap();
-        tp.event_log.append(&run2, "run2_event_1", values::null()).unwrap();
-        tp.event_log.append(&run2, "run2_event_2", values::null()).unwrap();
+        tp.event_log
+            .append(&run1, "run1_event", values::null())
+            .unwrap();
+        tp.event_log
+            .append(&run2, "run2_event_1", values::null())
+            .unwrap();
+        tp.event_log
+            .append(&run2, "run2_event_2", values::null())
+            .unwrap();
 
         // read_range() returns only events for that run
         let run1_events = tp.event_log.read_range(&run1, 0, 100).unwrap();
@@ -378,24 +416,42 @@ mod cross_run_leakage_prevention {
         let run2 = tp.new_run();
 
         // Record traces in each run
-        let id1 = tp.trace_store.record(
-            &run1,
-            TraceType::Thought { content: "T1".into(), confidence: None },
-            vec![],
-            values::null(),
-        ).unwrap();
-        let id2 = tp.trace_store.record(
-            &run2,
-            TraceType::Thought { content: "T2".into(), confidence: None },
-            vec![],
-            values::null(),
-        ).unwrap();
-        let id3 = tp.trace_store.record(
-            &run2,
-            TraceType::Thought { content: "T3".into(), confidence: None },
-            vec![],
-            values::null(),
-        ).unwrap();
+        let id1 = tp
+            .trace_store
+            .record(
+                &run1,
+                TraceType::Thought {
+                    content: "T1".into(),
+                    confidence: None,
+                },
+                vec![],
+                values::null(),
+            )
+            .unwrap();
+        let id2 = tp
+            .trace_store
+            .record(
+                &run2,
+                TraceType::Thought {
+                    content: "T2".into(),
+                    confidence: None,
+                },
+                vec![],
+                values::null(),
+            )
+            .unwrap();
+        let id3 = tp
+            .trace_store
+            .record(
+                &run2,
+                TraceType::Thought {
+                    content: "T3".into(),
+                    confidence: None,
+                },
+                vec![],
+                values::null(),
+            )
+            .unwrap();
 
         // list() returns only traces for that run
         let run1_traces = tp.trace_store.list(&run1).unwrap();
@@ -416,13 +472,17 @@ mod cross_run_leakage_prevention {
         let run2 = tp.new_run();
 
         // Write to run1
-        tp.kv.put(&run1, "secret", values::string("run1_secret")).unwrap();
+        tp.kv
+            .put(&run1, "secret", values::string("run1_secret"))
+            .unwrap();
 
         // run2 cannot see run1's data
         assert_eq!(tp.kv.get(&run2, "secret").unwrap(), None);
 
         // Writing to run2 with same key doesn't affect run1
-        tp.kv.put(&run2, "secret", values::string("run2_secret")).unwrap();
+        tp.kv
+            .put(&run2, "secret", values::string("run2_secret"))
+            .unwrap();
         assert_eq!(
             tp.kv.get(&run1, "secret").unwrap(),
             Some(values::string("run1_secret"))

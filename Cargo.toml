@@ -63,6 +63,10 @@ debug = false
 [profile.bench]
 inherits = "release"
 
+[features]
+default = []
+perf-trace = []  # Enable per-layer timing instrumentation for M4
+
 [dependencies]
 in-mem-core = { path = "crates/core" }
 in-mem-storage = { path = "crates/storage" }
@@ -91,4 +95,8 @@ harness = false
 
 [[bench]]
 name = "m3_primitives"
+harness = false
+
+[[bench]]
+name = "m4_performance"
 harness = false

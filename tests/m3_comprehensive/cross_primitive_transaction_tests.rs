@@ -32,7 +32,10 @@ mod atomic_operations {
         tp.trace_store
             .record(
                 &run_id,
-                TraceType::Custom { name: "trace".into(), data: values::int(4) },
+                TraceType::Custom {
+                    name: "trace".into(),
+                    data: values::int(4),
+                },
                 vec![],
                 Value::Null,
             )
@@ -77,7 +80,10 @@ mod atomic_operations {
             .trace_store
             .record(
                 &run_id,
-                TraceType::Custom { name: "Init".into(), data: values::string("initialized counter") },
+                TraceType::Custom {
+                    name: "Init".into(),
+                    data: values::string("initialized counter"),
+                },
                 vec![],
                 Value::Null,
             )
@@ -90,7 +96,10 @@ mod atomic_operations {
             .record_child(
                 &run_id,
                 &trace_id,
-                TraceType::Custom { name: "Increment".into(), data: values::string("counter++") },
+                TraceType::Custom {
+                    name: "Increment".into(),
+                    data: values::string("counter++"),
+                },
                 vec![],
                 Value::Null,
             )
@@ -167,13 +176,18 @@ mod read_your_writes {
             .trace_store
             .record(
                 &run_id,
-                TraceType::Custom { name: "Test".into(), data: values::bool_val(true) },
+                TraceType::Custom {
+                    name: "Test".into(),
+                    data: values::bool_val(true),
+                },
                 vec![],
                 Value::Null,
             )
             .unwrap();
         let trace = tp.trace_store.get(&run_id, &trace_id).unwrap().unwrap();
-        assert!(matches!(trace.trace_type, TraceType::Custom { data, .. } if data == values::bool_val(true)));
+        assert!(
+            matches!(trace.trace_type, TraceType::Custom { data, .. } if data == values::bool_val(true))
+        );
     }
 
     #[test]
@@ -184,7 +198,10 @@ mod read_your_writes {
 
         // Write sequence
         tp.kv.put(&run_id, "step1", values::int(1)).unwrap();
-        let (seq, _) = tp.event_log.append(&run_id, "step1", values::int(1)).unwrap();
+        let (seq, _) = tp
+            .event_log
+            .append(&run_id, "step1", values::int(1))
+            .unwrap();
         tp.state_cell.init(&run_id, "step", values::int(1)).unwrap();
 
         // All immediately visible
@@ -194,7 +211,9 @@ mod read_your_writes {
 
         // Continue sequence
         tp.kv.put(&run_id, "step2", values::int(2)).unwrap();
-        tp.event_log.append(&run_id, "step2", values::int(2)).unwrap();
+        tp.event_log
+            .append(&run_id, "step2", values::int(2))
+            .unwrap();
         tp.state_cell.set(&run_id, "step", values::int(2)).unwrap();
 
         // All updates visible
@@ -233,7 +252,10 @@ mod multi_primitive_persistence {
                 .trace_store
                 .record(
                     &run_id,
-                    TraceType::Custom { name: "trace".into(), data: values::int(400) },
+                    TraceType::Custom {
+                        name: "trace".into(),
+                        data: values::int(400),
+                    },
                     vec![],
                     Value::Null,
                 )
@@ -252,7 +274,9 @@ mod multi_primitive_persistence {
             let state = prims.state_cell.read(&run_id, "cell").unwrap().unwrap();
             assert_eq!(state.value, values::int(300));
             let traces = prims.trace_store.query_by_type(&run_id, "trace").unwrap();
-            assert!(matches!(&traces[0].trace_type, TraceType::Custom { data, .. } if *data == values::int(400)));
+            assert!(
+                matches!(&traces[0].trace_type, TraceType::Custom { data, .. } if *data == values::int(400))
+            );
         }
     }
 
@@ -274,12 +298,18 @@ mod multi_primitive_persistence {
         // Session 2: StateCell and Trace
         {
             let prims = ptp.open();
-            prims.state_cell.init(&run_id, "cell", values::int(2)).unwrap();
+            prims
+                .state_cell
+                .init(&run_id, "cell", values::int(2))
+                .unwrap();
             prims
                 .trace_store
                 .record(
                     &run_id,
-                    TraceType::Custom { name: "trace1".into(), data: values::null() },
+                    TraceType::Custom {
+                        name: "trace1".into(),
+                        data: values::null(),
+                    },
                     vec![],
                     Value::Null,
                 )
@@ -320,8 +350,14 @@ mod run_scoped_transactions {
         tp.event_log.append(&run2, "event", values::null()).unwrap();
 
         // Each run has its own data
-        assert_eq!(tp.kv.get(&run1, "shared_key").unwrap(), Some(values::int(1)));
-        assert_eq!(tp.kv.get(&run2, "shared_key").unwrap(), Some(values::int(2)));
+        assert_eq!(
+            tp.kv.get(&run1, "shared_key").unwrap(),
+            Some(values::int(1))
+        );
+        assert_eq!(
+            tp.kv.get(&run2, "shared_key").unwrap(),
+            Some(values::int(2))
+        );
         assert_eq!(tp.event_log.len(&run1).unwrap(), 1);
         assert_eq!(tp.event_log.len(&run2).unwrap(), 2);
     }
@@ -368,17 +404,23 @@ mod run_status_with_primitives {
 
         // Write primitive data
         tp.kv.put(&run_id, "key", values::int(42)).unwrap();
-        tp.event_log.append(&run_id, "event", values::null()).unwrap();
+        tp.event_log
+            .append(&run_id, "event", values::null())
+            .unwrap();
 
         // Update status using the run name
-        tp.run_index.update_status(&meta.name, RunStatus::Paused).unwrap();
+        tp.run_index
+            .update_status(&meta.name, RunStatus::Paused)
+            .unwrap();
 
         // Primitive data still accessible
         assert_eq!(tp.kv.get(&run_id, "key").unwrap(), Some(values::int(42)));
         assert_eq!(tp.event_log.len(&run_id).unwrap(), 1);
 
         // Complete the run
-        tp.run_index.update_status(&meta.name, RunStatus::Active).unwrap();
+        tp.run_index
+            .update_status(&meta.name, RunStatus::Active)
+            .unwrap();
         tp.run_index.complete_run(&meta.name).unwrap();
 
         // Data still accessible after completion
@@ -392,7 +434,9 @@ mod run_status_with_primitives {
         let run_id = tp.run_id;
 
         // Write data and archive
-        tp.kv.put(&run_id, "archived_key", values::string("data")).unwrap();
+        tp.kv
+            .put(&run_id, "archived_key", values::string("data"))
+            .unwrap();
         tp.run_index.complete_run(&meta.name).unwrap();
         tp.run_index.archive_run(&meta.name).unwrap();
 

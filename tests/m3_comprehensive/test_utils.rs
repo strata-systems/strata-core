@@ -37,7 +37,8 @@ impl TestPrimitives {
     /// Create a new test environment with all primitives
     pub fn new() -> Self {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
-        let db = Arc::new(Database::open(temp_dir.path().join("db")).expect("Failed to open database"));
+        let db =
+            Arc::new(Database::open(temp_dir.path().join("db")).expect("Failed to open database"));
         let run_id = RunId::new();
 
         Self {
@@ -211,10 +212,7 @@ pub mod assert_helpers {
 
     /// Assert that exactly one of the results is Ok(true)
     pub fn assert_exactly_one_winner(results: &[Result<bool, Error>]) {
-        let winners: usize = results
-            .iter()
-            .filter(|r| matches!(r, Ok(true)))
-            .count();
+        let winners: usize = results.iter().filter(|r| matches!(r, Ok(true))).count();
         assert_eq!(
             winners, 1,
             "Expected exactly 1 winner, got {}. Results: {:?}",
@@ -236,15 +234,15 @@ pub mod invariants {
 
         // First event should have zero prev_hash
         assert_eq!(
-            events[0].prev_hash,
-            [0u8; 32],
+            events[0].prev_hash, [0u8; 32],
             "First event prev_hash should be zero"
         );
 
         // Each subsequent event's prev_hash should match previous event's hash
         for i in 1..events.len() {
             assert_eq!(
-                events[i].prev_hash, events[i - 1].hash,
+                events[i].prev_hash,
+                events[i - 1].hash,
                 "Chain broken at index {}: prev_hash doesn't match previous hash",
                 i
             );
@@ -277,12 +275,7 @@ pub mod invariants {
     }
 
     /// Assert that no data from one run is visible in another (M3.2)
-    pub fn assert_run_isolation(
-        kv: &KVStore,
-        run1: &RunId,
-        run2: &RunId,
-        key: &str,
-    ) {
+    pub fn assert_run_isolation(kv: &KVStore, run1: &RunId, run2: &RunId, key: &str) {
         let val1 = kv.get(run1, key).unwrap();
         let val2 = kv.get(run2, key).unwrap();
 

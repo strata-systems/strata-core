@@ -64,11 +64,17 @@ mod version_monotonicity {
         tp.state_cell.init(&run_id, "cell", values::int(0)).unwrap();
 
         // CAS from v1 to v2
-        let v2 = tp.state_cell.cas(&run_id, "cell", 1, values::int(1)).unwrap();
+        let v2 = tp
+            .state_cell
+            .cas(&run_id, "cell", 1, values::int(1))
+            .unwrap();
         assert_eq!(v2, 2);
 
         // CAS from v2 to v3
-        let v3 = tp.state_cell.cas(&run_id, "cell", 2, values::int(2)).unwrap();
+        let v3 = tp
+            .state_cell
+            .cas(&run_id, "cell", 2, values::int(2))
+            .unwrap();
         assert_eq!(v3, 3);
     }
 
@@ -97,12 +103,18 @@ mod version_monotonicity {
         let run_id = tp.run_id;
 
         // Create two cells
-        tp.state_cell.init(&run_id, "cell_a", values::int(0)).unwrap();
-        tp.state_cell.init(&run_id, "cell_b", values::int(0)).unwrap();
+        tp.state_cell
+            .init(&run_id, "cell_a", values::int(0))
+            .unwrap();
+        tp.state_cell
+            .init(&run_id, "cell_b", values::int(0))
+            .unwrap();
 
         // Update cell_a multiple times
         for i in 1..=5 {
-            tp.state_cell.set(&run_id, "cell_a", values::int(i)).unwrap();
+            tp.state_cell
+                .set(&run_id, "cell_a", values::int(i))
+                .unwrap();
         }
 
         // cell_b should still be at version 1
@@ -131,7 +143,10 @@ mod version_monotonicity {
         {
             let p = ptp.open();
             let state = p.state_cell.read(&run_id, "cell").unwrap().unwrap();
-            assert_eq!(state.version, version_before, "Version changed after recovery");
+            assert_eq!(
+                state.version, version_before,
+                "Version changed after recovery"
+            );
 
             // New operations should continue monotonically
             let new_ver = p.state_cell.set(&run_id, "cell", values::int(100)).unwrap();
@@ -191,13 +206,9 @@ mod cas_atomicity {
         tp.state_cell.init(&run_id, "cell", values::int(0)).unwrap();
 
         // Multiple threads try CAS from version 1
-        let results = concurrent::run_with_shared(
-            10,
-            (sc, run_id),
-            |i, (sc, run_id)| {
-                sc.cas(run_id, "cell", 1, values::int(i as i64 + 100))
-            },
-        );
+        let results = concurrent::run_with_shared(10, (sc, run_id), |i, (sc, run_id)| {
+            sc.cas(run_id, "cell", 1, values::int(i as i64 + 100))
+        });
 
         // Count winners
         let winners: usize = results.iter().filter(|r| r.is_ok()).count();
@@ -212,7 +223,9 @@ mod cas_atomicity {
         let num_threads = 10;
 
         // Initialize counter
-        tp.state_cell.init(&run_id, "counter", values::int(0)).unwrap();
+        tp.state_cell
+            .init(&run_id, "counter", values::int(0))
+            .unwrap();
 
         // Each thread tries to increment via CAS with retry
         let success_count = Arc::new(AtomicU64::new(0));
@@ -224,9 +237,16 @@ mod cas_atomicity {
                 // Retry loop
                 for _ in 0..100 {
                     let state = sc.read(run_id, "counter").unwrap().unwrap();
-                    let current = if let Value::I64(v) = state.value { v } else { panic!() };
+                    let current = if let Value::I64(v) = state.value {
+                        v
+                    } else {
+                        panic!()
+                    };
 
-                    if sc.cas(run_id, "counter", state.version, Value::I64(current + 1)).is_ok() {
+                    if sc
+                        .cas(run_id, "counter", state.version, Value::I64(current + 1))
+                        .is_ok()
+                    {
                         success_count.fetch_add(1, Ordering::Relaxed);
                         return true;
                     }
@@ -237,7 +257,11 @@ mod cas_atomicity {
 
         // Final value should equal number of successful increments
         let final_state = tp.state_cell.read(&run_id, "counter").unwrap().unwrap();
-        let final_value = if let Value::I64(v) = final_state.value { v } else { panic!() };
+        let final_value = if let Value::I64(v) = final_state.value {
+            v
+        } else {
+            panic!()
+        };
         let total_success = success_count.load(Ordering::Relaxed);
 
         assert_eq!(
@@ -307,7 +331,9 @@ mod init_uniqueness {
         let tp = TestPrimitives::new();
         let run_id = tp.run_id;
 
-        tp.state_cell.init(&run_id, "cell", values::int(42)).unwrap();
+        tp.state_cell
+            .init(&run_id, "cell", values::int(42))
+            .unwrap();
 
         // Try to init with different value
         let _ = tp.state_cell.init(&run_id, "cell", values::int(99));
@@ -329,13 +355,23 @@ mod init_uniqueness {
             tp.state_cell.set(&run_id, "cell", values::int(i)).unwrap();
         }
 
-        let version_before = tp.state_cell.read(&run_id, "cell").unwrap().unwrap().version;
+        let version_before = tp
+            .state_cell
+            .read(&run_id, "cell")
+            .unwrap()
+            .unwrap()
+            .version;
 
         // Try init again
         let _ = tp.state_cell.init(&run_id, "cell", values::int(0));
 
         // Version not reset
-        let version_after = tp.state_cell.read(&run_id, "cell").unwrap().unwrap().version;
+        let version_after = tp
+            .state_cell
+            .read(&run_id, "cell")
+            .unwrap()
+            .unwrap()
+            .version;
         assert_eq!(
             version_before, version_after,
             "init() should not reset version"
@@ -349,13 +385,9 @@ mod init_uniqueness {
         let sc = tp.state_cell.clone();
 
         // Multiple threads try to init same cell
-        let results = concurrent::run_with_shared(
-            10,
-            (sc, run_id),
-            |i, (sc, run_id)| {
-                sc.init(run_id, "contested", values::int(i as i64)).is_ok()
-            },
-        );
+        let results = concurrent::run_with_shared(10, (sc, run_id), |i, (sc, run_id)| {
+            sc.init(run_id, "contested", values::int(i as i64)).is_ok()
+        });
 
         let winners: usize = results.iter().filter(|&&won| won).count();
         assert_eq!(winners, 1, "Exactly one init() should succeed");
@@ -397,13 +429,22 @@ mod transition_speculative_execution {
         let tp = TestPrimitives::new();
         let run_id = tp.run_id;
 
-        tp.state_cell.init(&run_id, "counter", values::int(0)).unwrap();
+        tp.state_cell
+            .init(&run_id, "counter", values::int(0))
+            .unwrap();
 
         // Simple transition: increment
-        let (result, _version) = tp.state_cell.transition(&run_id, "counter", |state| {
-            let current = if let Value::I64(v) = &state.value { *v } else { 0 };
-            Ok((Value::I64(current + 1), current + 1))
-        }).unwrap();
+        let (result, _version) = tp
+            .state_cell
+            .transition(&run_id, "counter", |state| {
+                let current = if let Value::I64(v) = &state.value {
+                    *v
+                } else {
+                    0
+                };
+                Ok((Value::I64(current + 1), current + 1))
+            })
+            .unwrap();
 
         assert_eq!(result, 1);
 
@@ -416,13 +457,17 @@ mod transition_speculative_execution {
         let tp = TestPrimitives::new();
         let run_id = tp.run_id;
 
-        tp.state_cell.init(&run_id, "cell", values::int(42)).unwrap();
+        tp.state_cell
+            .init(&run_id, "cell", values::int(42))
+            .unwrap();
 
-        tp.state_cell.transition(&run_id, "cell", |state| {
-            assert_eq!(state.value, values::int(42));
-            assert_eq!(state.version, 1);
-            Ok((values::int(43), ()))
-        }).unwrap();
+        tp.state_cell
+            .transition(&run_id, "cell", |state| {
+                assert_eq!(state.value, values::int(42));
+                assert_eq!(state.version, 1);
+                Ok((values::int(43), ()))
+            })
+            .unwrap();
     }
 
     #[test]
@@ -431,7 +476,9 @@ mod transition_speculative_execution {
         let run_id = tp.run_id;
         let sc = tp.state_cell.clone();
 
-        tp.state_cell.init(&run_id, "counter", values::int(0)).unwrap();
+        tp.state_cell
+            .init(&run_id, "counter", values::int(0))
+            .unwrap();
 
         // Track call count
         let call_count = Arc::new(AtomicU64::new(0));
@@ -445,7 +492,11 @@ mod transition_speculative_execution {
                 for _ in 0..10 {
                     let _ = sc.transition(run_id, "counter", |state| {
                         cc.fetch_add(1, Ordering::Relaxed);
-                        let current = if let Value::I64(v) = &state.value { *v } else { 0 };
+                        let current = if let Value::I64(v) = &state.value {
+                            *v
+                        } else {
+                            0
+                        };
                         Ok((Value::I64(current + 1), ()))
                     });
                 }
@@ -455,7 +506,11 @@ mod transition_speculative_execution {
         // call_count >= number of successful transitions
         // (may be greater due to retries)
         let final_state = tp.state_cell.read(&run_id, "counter").unwrap().unwrap();
-        let final_value = if let Value::I64(v) = final_state.value { v } else { 0 };
+        let final_value = if let Value::I64(v) = final_state.value {
+            v
+        } else {
+            0
+        };
         let total_calls = call_count.load(Ordering::Relaxed);
 
         assert!(
@@ -474,7 +529,9 @@ mod transition_speculative_execution {
         let num_threads = 10;
         let ops_per_thread = 10;
 
-        tp.state_cell.init(&run_id, "counter", values::int(0)).unwrap();
+        tp.state_cell
+            .init(&run_id, "counter", values::int(0))
+            .unwrap();
 
         // Each thread increments multiple times
         let _ = concurrent::run_with_shared(
@@ -483,7 +540,11 @@ mod transition_speculative_execution {
             move |_, (sc, run_id)| {
                 for _ in 0..ops_per_thread {
                     let _ = sc.transition(run_id, "counter", |state| {
-                        let current = if let Value::I64(v) = &state.value { *v } else { 0 };
+                        let current = if let Value::I64(v) = &state.value {
+                            *v
+                        } else {
+                            0
+                        };
                         Ok((Value::I64(current + 1), ()))
                     });
                 }
@@ -492,7 +553,11 @@ mod transition_speculative_execution {
 
         // Final value should be exactly num_threads * ops_per_thread
         let final_state = tp.state_cell.read(&run_id, "counter").unwrap().unwrap();
-        let final_value = if let Value::I64(v) = final_state.value { v } else { 0 };
+        let final_value = if let Value::I64(v) = final_state.value {
+            v
+        } else {
+            0
+        };
 
         assert_eq!(
             final_value,
@@ -510,9 +575,10 @@ mod transition_speculative_execution {
         tp.state_cell.init(&run_id, "cell", values::int(0)).unwrap();
 
         // Transition that returns error
-        let result: Result<((), u64), Error> = tp.state_cell.transition(&run_id, "cell", |_state| {
-            Err(Error::InvalidState("intentional failure".to_string()))
-        });
+        let result: Result<((), u64), Error> =
+            tp.state_cell.transition(&run_id, "cell", |_state| {
+                Err(Error::InvalidState("intentional failure".to_string()))
+            });
 
         assert!(result.is_err());
 
@@ -528,15 +594,17 @@ mod transition_speculative_execution {
         let run_id = tp.run_id;
 
         // Use transition_or_init on non-existent cell
-        let (result, _version) = tp.state_cell.transition_or_init(
-            &run_id,
-            "new_cell",
-            values::int(0),
-            |state| {
-                let current = if let Value::I64(v) = &state.value { *v } else { 0 };
+        let (result, _version) = tp
+            .state_cell
+            .transition_or_init(&run_id, "new_cell", values::int(0), |state| {
+                let current = if let Value::I64(v) = &state.value {
+                    *v
+                } else {
+                    0
+                };
                 Ok((Value::I64(current + 1), current + 1))
-            },
-        ).unwrap();
+            })
+            .unwrap();
 
         // Should have initialized to 0, then incremented to 1
         assert_eq!(result, 1);
@@ -551,7 +619,9 @@ mod transition_speculative_execution {
         let tp = TestPrimitives::new();
         let run_id = tp.run_id;
 
-        tp.state_cell.init(&run_id, "cell", values::int(42)).unwrap();
+        tp.state_cell
+            .init(&run_id, "cell", values::int(42))
+            .unwrap();
 
         // Delete returns true for existing cell
         assert!(tp.state_cell.delete(&run_id, "cell").unwrap());

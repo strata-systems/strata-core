@@ -129,7 +129,10 @@ mod boundary_values {
         let tp = TestPrimitives::new();
         let long_key = "a".repeat(1000);
         tp.kv.put(&tp.run_id, &long_key, values::int(1)).unwrap();
-        assert_eq!(tp.kv.get(&tp.run_id, &long_key).unwrap(), Some(values::int(1)));
+        assert_eq!(
+            tp.kv.get(&tp.run_id, &long_key).unwrap(),
+            Some(values::int(1))
+        );
     }
 
     #[test]
@@ -156,7 +159,9 @@ mod boundary_values {
     fn test_kv_large_bytes_value() {
         let tp = TestPrimitives::new();
         let large_bytes = vec![0u8; 100_000];
-        tp.kv.put(&tp.run_id, "key", values::bytes(&large_bytes)).unwrap();
+        tp.kv
+            .put(&tp.run_id, "key", values::bytes(&large_bytes))
+            .unwrap();
         let result = tp.kv.get(&tp.run_id, "key").unwrap().unwrap();
         if let Value::Bytes(bytes) = result {
             assert_eq!(bytes.len(), 100_000);
@@ -171,8 +176,14 @@ mod boundary_values {
         tp.kv.put(&tp.run_id, "min", values::int(i64::MIN)).unwrap();
         tp.kv.put(&tp.run_id, "max", values::int(i64::MAX)).unwrap();
 
-        assert_eq!(tp.kv.get(&tp.run_id, "min").unwrap(), Some(values::int(i64::MIN)));
-        assert_eq!(tp.kv.get(&tp.run_id, "max").unwrap(), Some(values::int(i64::MAX)));
+        assert_eq!(
+            tp.kv.get(&tp.run_id, "min").unwrap(),
+            Some(values::int(i64::MIN))
+        );
+        assert_eq!(
+            tp.kv.get(&tp.run_id, "max").unwrap(),
+            Some(values::int(i64::MAX))
+        );
     }
 
     #[test]
@@ -180,8 +191,12 @@ mod boundary_values {
         let tp = TestPrimitives::new();
 
         // Note: NaN != NaN, so we test differently
-        tp.kv.put(&tp.run_id, "inf", values::float(f64::INFINITY)).unwrap();
-        tp.kv.put(&tp.run_id, "neg_inf", values::float(f64::NEG_INFINITY)).unwrap();
+        tp.kv
+            .put(&tp.run_id, "inf", values::float(f64::INFINITY))
+            .unwrap();
+        tp.kv
+            .put(&tp.run_id, "neg_inf", values::float(f64::NEG_INFINITY))
+            .unwrap();
         tp.kv.put(&tp.run_id, "zero", values::float(0.0)).unwrap();
 
         assert_eq!(
@@ -237,7 +252,10 @@ mod boundary_values {
     fn test_eventlog_long_event_type() {
         let tp = TestPrimitives::new();
         let long_type = "event_".to_string() + &"a".repeat(1000);
-        let (seq, _) = tp.event_log.append(&tp.run_id, &long_type, values::null()).unwrap();
+        let (seq, _) = tp
+            .event_log
+            .append(&tp.run_id, &long_type, values::null())
+            .unwrap();
         let event = tp.event_log.read(&tp.run_id, seq).unwrap().unwrap();
         assert_eq!(event.event_type, long_type);
     }
@@ -252,12 +270,18 @@ mod boundary_values {
     #[test]
     fn test_tracestore_custom_trace_type() {
         let tp = TestPrimitives::new();
-        let id = tp.trace_store.record(
-            &tp.run_id,
-            TraceType::Custom { name: "".into(), data: values::null() },
-            vec![],
-            values::null(),
-        ).unwrap();
+        let id = tp
+            .trace_store
+            .record(
+                &tp.run_id,
+                TraceType::Custom {
+                    name: "".into(),
+                    data: values::null(),
+                },
+                vec![],
+                values::null(),
+            )
+            .unwrap();
         let trace = tp.trace_store.get(&tp.run_id, &id).unwrap().unwrap();
         assert!(matches!(trace.trace_type, TraceType::Custom { name, .. } if name.is_empty()));
     }
@@ -275,14 +299,19 @@ mod unicode_and_special {
         let tp = TestPrimitives::new();
         let unicode_key = "キー_🔑_مفتاح";
         tp.kv.put(&tp.run_id, unicode_key, values::int(42)).unwrap();
-        assert_eq!(tp.kv.get(&tp.run_id, unicode_key).unwrap(), Some(values::int(42)));
+        assert_eq!(
+            tp.kv.get(&tp.run_id, unicode_key).unwrap(),
+            Some(values::int(42))
+        );
     }
 
     #[test]
     fn test_kv_unicode_value() {
         let tp = TestPrimitives::new();
         let unicode_value = "值_🎉_قيمة_価値";
-        tp.kv.put(&tp.run_id, "key", values::string(unicode_value)).unwrap();
+        tp.kv
+            .put(&tp.run_id, "key", values::string(unicode_value))
+            .unwrap();
         assert_eq!(
             tp.kv.get(&tp.run_id, "key").unwrap(),
             Some(values::string(unicode_value))
@@ -294,14 +323,19 @@ mod unicode_and_special {
         let tp = TestPrimitives::new();
         let emoji_key = "🔥💯🚀";
         tp.kv.put(&tp.run_id, emoji_key, values::int(100)).unwrap();
-        assert_eq!(tp.kv.get(&tp.run_id, emoji_key).unwrap(), Some(values::int(100)));
+        assert_eq!(
+            tp.kv.get(&tp.run_id, emoji_key).unwrap(),
+            Some(values::int(100))
+        );
     }
 
     #[test]
     fn test_kv_newlines_in_string() {
         let tp = TestPrimitives::new();
         let multiline = "line1\nline2\r\nline3";
-        tp.kv.put(&tp.run_id, "key", values::string(multiline)).unwrap();
+        tp.kv
+            .put(&tp.run_id, "key", values::string(multiline))
+            .unwrap();
         assert_eq!(
             tp.kv.get(&tp.run_id, "key").unwrap(),
             Some(values::string(multiline))
@@ -312,23 +346,36 @@ mod unicode_and_special {
     fn test_kv_null_bytes_in_key() {
         let tp = TestPrimitives::new();
         let key_with_null = "key\0with\0nulls";
-        tp.kv.put(&tp.run_id, key_with_null, values::int(1)).unwrap();
-        assert_eq!(tp.kv.get(&tp.run_id, key_with_null).unwrap(), Some(values::int(1)));
+        tp.kv
+            .put(&tp.run_id, key_with_null, values::int(1))
+            .unwrap();
+        assert_eq!(
+            tp.kv.get(&tp.run_id, key_with_null).unwrap(),
+            Some(values::int(1))
+        );
     }
 
     #[test]
     fn test_kv_binary_data() {
         let tp = TestPrimitives::new();
         let binary: Vec<u8> = (0..=255).collect();
-        tp.kv.put(&tp.run_id, "binary", values::bytes(&binary)).unwrap();
-        assert_eq!(tp.kv.get(&tp.run_id, "binary").unwrap(), Some(values::bytes(&binary)));
+        tp.kv
+            .put(&tp.run_id, "binary", values::bytes(&binary))
+            .unwrap();
+        assert_eq!(
+            tp.kv.get(&tp.run_id, "binary").unwrap(),
+            Some(values::bytes(&binary))
+        );
     }
 
     #[test]
     fn test_eventlog_unicode_event_type() {
         let tp = TestPrimitives::new();
         let unicode_type = "イベント_🎯_حدث";
-        let (seq, _) = tp.event_log.append(&tp.run_id, unicode_type, values::null()).unwrap();
+        let (seq, _) = tp
+            .event_log
+            .append(&tp.run_id, unicode_type, values::null())
+            .unwrap();
         let event = tp.event_log.read(&tp.run_id, seq).unwrap().unwrap();
         assert_eq!(event.event_type, unicode_type);
     }
@@ -337,20 +384,32 @@ mod unicode_and_special {
     fn test_statecell_unicode_name() {
         let tp = TestPrimitives::new();
         let unicode_name = "状態_📊_حالة";
-        tp.state_cell.init(&tp.run_id, unicode_name, values::int(0)).unwrap();
-        assert!(tp.state_cell.read(&tp.run_id, unicode_name).unwrap().is_some());
+        tp.state_cell
+            .init(&tp.run_id, unicode_name, values::int(0))
+            .unwrap();
+        assert!(tp
+            .state_cell
+            .read(&tp.run_id, unicode_name)
+            .unwrap()
+            .is_some());
     }
 
     #[test]
     fn test_tracestore_unicode_trace_type() {
         let tp = TestPrimitives::new();
         let unicode_type = "思考_💭_فكرة";
-        let id = tp.trace_store.record(
-            &tp.run_id,
-            TraceType::Custom { name: unicode_type.into(), data: values::null() },
-            vec![],
-            values::null(),
-        ).unwrap();
+        let id = tp
+            .trace_store
+            .record(
+                &tp.run_id,
+                TraceType::Custom {
+                    name: unicode_type.into(),
+                    data: values::null(),
+                },
+                vec![],
+                values::null(),
+            )
+            .unwrap();
         let trace = tp.trace_store.get(&tp.run_id, &id).unwrap().unwrap();
         assert!(matches!(trace.trace_type, TraceType::Custom { name, .. } if name == unicode_type));
     }
@@ -370,9 +429,10 @@ mod concurrent_edge_cases {
         let num_threads = 20;
 
         // Many threads writing to same key
-        let results = concurrent::run_with_shared(num_threads, (tp.clone(), run_id), |i, (tp, run_id)| {
-            tp.kv.put(run_id, "contended_key", values::int(i as i64))
-        });
+        let results =
+            concurrent::run_with_shared(num_threads, (tp.clone(), run_id), |i, (tp, run_id)| {
+                tp.kv.put(run_id, "contended_key", values::int(i as i64))
+            });
 
         // All writes should succeed
         for result in &results {
@@ -400,9 +460,10 @@ mod concurrent_edge_cases {
 
         // All threads try CAS with version 1
         // CAS returns Result<u64> (new version) on success, error on version mismatch
-        let results = concurrent::run_with_shared(num_threads, (tp.clone(), run_id), |i, (tp, run_id)| {
-            tp.state_cell.cas(run_id, "cell", 1, values::int(i as i64))
-        });
+        let results =
+            concurrent::run_with_shared(num_threads, (tp.clone(), run_id), |i, (tp, run_id)| {
+                tp.state_cell.cas(run_id, "cell", 1, values::int(i as i64))
+            });
 
         // Exactly one should succeed (get Ok with new version), others fail with version mismatch
         let winners: usize = results.iter().filter(|r| r.is_ok()).count();
@@ -416,13 +477,18 @@ mod concurrent_edge_cases {
         let num_threads = 10;
 
         // All threads try to init same cell
-        let results = concurrent::run_with_shared(num_threads, (tp.clone(), run_id), |i, (tp, run_id)| {
-            tp.state_cell.init(run_id, "cell", values::int(i as i64))
-        });
+        let results =
+            concurrent::run_with_shared(num_threads, (tp.clone(), run_id), |i, (tp, run_id)| {
+                tp.state_cell.init(run_id, "cell", values::int(i as i64))
+            });
 
         // Exactly one should succeed
         let successes: usize = results.iter().filter(|r| r.is_ok()).count();
-        assert_eq!(successes, 1, "Expected exactly 1 init success, got {}", successes);
+        assert_eq!(
+            successes, 1,
+            "Expected exactly 1 init success, got {}",
+            successes
+        );
     }
 
     #[test]
@@ -432,9 +498,11 @@ mod concurrent_edge_cases {
         let num_threads = 10;
 
         // All threads append events
-        let results = concurrent::run_with_shared(num_threads, (tp.clone(), run_id), |i, (tp, run_id)| {
-            tp.event_log.append(run_id, &format!("thread_{}", i), values::int(i as i64))
-        });
+        let results =
+            concurrent::run_with_shared(num_threads, (tp.clone(), run_id), |i, (tp, run_id)| {
+                tp.event_log
+                    .append(run_id, &format!("thread_{}", i), values::int(i as i64))
+            });
 
         // All should succeed
         for result in &results {
@@ -451,34 +519,50 @@ mod concurrent_edge_cases {
         let run_id = tp.run_id;
 
         // Initialize counter
-        tp.state_cell.init(&run_id, "counter", values::int(0)).unwrap();
+        tp.state_cell
+            .init(&run_id, "counter", values::int(0))
+            .unwrap();
 
         let num_threads = 20;
         let increments_per_thread = 10;
 
         // Each thread increments via transition
         // transition() takes a closure that receives &State
-        let results = concurrent::run_with_shared(num_threads, (tp.clone(), run_id), move |_, (tp, run_id)| {
-            let mut successes = 0;
-            for _ in 0..increments_per_thread {
-                let result = tp.state_cell.transition(run_id, "counter", |state| {
-                    let current = if let Value::I64(n) = &state.value { *n } else { 0 };
-                    Ok((values::int(current + 1), ()))
-                });
-                if result.is_ok() {
-                    successes += 1;
+        let results = concurrent::run_with_shared(
+            num_threads,
+            (tp.clone(), run_id),
+            move |_, (tp, run_id)| {
+                let mut successes = 0;
+                for _ in 0..increments_per_thread {
+                    let result = tp.state_cell.transition(run_id, "counter", |state| {
+                        let current = if let Value::I64(n) = &state.value {
+                            *n
+                        } else {
+                            0
+                        };
+                        Ok((values::int(current + 1), ()))
+                    });
+                    if result.is_ok() {
+                        successes += 1;
+                    }
                 }
-            }
-            successes
-        });
+                successes
+            },
+        );
 
         // All increments should succeed
         let total_successes: i32 = results.iter().sum();
-        assert_eq!(total_successes, (num_threads * increments_per_thread) as i32);
+        assert_eq!(
+            total_successes,
+            (num_threads * increments_per_thread) as i32
+        );
 
         // Final value should be total increments
         let state = tp.state_cell.read(&run_id, "counter").unwrap().unwrap();
-        assert_eq!(state.value, values::int((num_threads * increments_per_thread) as i64));
+        assert_eq!(
+            state.value,
+            values::int((num_threads * increments_per_thread) as i64)
+        );
     }
 }
 
@@ -515,11 +599,15 @@ mod delete_edge_cases {
     #[test]
     fn test_statecell_delete_then_init() {
         let tp = TestPrimitives::new();
-        tp.state_cell.init(&tp.run_id, "cell", values::int(1)).unwrap();
+        tp.state_cell
+            .init(&tp.run_id, "cell", values::int(1))
+            .unwrap();
         tp.state_cell.delete(&tp.run_id, "cell").unwrap();
 
         // Can init again after delete
-        tp.state_cell.init(&tp.run_id, "cell", values::int(2)).unwrap();
+        tp.state_cell
+            .init(&tp.run_id, "cell", values::int(2))
+            .unwrap();
         let state = tp.state_cell.read(&tp.run_id, "cell").unwrap().unwrap();
         assert_eq!(state.value, values::int(2));
         assert_eq!(state.version, 1); // Version resets after delete

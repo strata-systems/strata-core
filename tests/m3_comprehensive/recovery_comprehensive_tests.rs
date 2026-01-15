@@ -27,7 +27,10 @@ mod multi_primitive_recovery {
         {
             let prims = ptp.open();
             prims.kv.put(&run_id, "key1", values::int(100)).unwrap();
-            prims.kv.put(&run_id, "key2", values::string("hello")).unwrap();
+            prims
+                .kv
+                .put(&run_id, "key2", values::string("hello"))
+                .unwrap();
             prims
                 .event_log
                 .append(&run_id, "event1", values::int(1))
@@ -44,7 +47,10 @@ mod multi_primitive_recovery {
                 .trace_store
                 .record(
                     &run_id,
-                    TraceType::Thought { content: "thinking".into(), confidence: None },
+                    TraceType::Thought {
+                        content: "thinking".into(),
+                        confidence: None,
+                    },
                     vec![],
                     values::null(),
                 )
@@ -90,7 +96,10 @@ mod multi_primitive_recovery {
         // Session 1: Write with strict durability
         {
             let prims = ptp.open_strict();
-            prims.kv.put(&run_id, "strict_key", values::int(999)).unwrap();
+            prims
+                .kv
+                .put(&run_id, "strict_key", values::int(999))
+                .unwrap();
             prims
                 .event_log
                 .append(&run_id, "strict_event", values::null())
@@ -218,11 +227,23 @@ mod cas_version_continuity {
         let version_after_session_1;
         {
             let prims = ptp.open();
-            prims.state_cell.init(&run_id, "cell", values::int(0)).unwrap();
+            prims
+                .state_cell
+                .init(&run_id, "cell", values::int(0))
+                .unwrap();
 
-            prims.state_cell.cas(&run_id, "cell", 1, values::int(1)).unwrap();
-            prims.state_cell.cas(&run_id, "cell", 2, values::int(2)).unwrap();
-            prims.state_cell.cas(&run_id, "cell", 3, values::int(3)).unwrap();
+            prims
+                .state_cell
+                .cas(&run_id, "cell", 1, values::int(1))
+                .unwrap();
+            prims
+                .state_cell
+                .cas(&run_id, "cell", 2, values::int(2))
+                .unwrap();
+            prims
+                .state_cell
+                .cas(&run_id, "cell", 3, values::int(3))
+                .unwrap();
 
             let state = prims.state_cell.read(&run_id, "cell").unwrap().unwrap();
             version_after_session_1 = state.version;
@@ -261,7 +282,10 @@ mod cas_version_continuity {
         // Session 1: Init and transition
         {
             let prims = ptp.open();
-            prims.state_cell.init(&run_id, "counter", values::int(0)).unwrap();
+            prims
+                .state_cell
+                .init(&run_id, "counter", values::int(0))
+                .unwrap();
             prims
                 .state_cell
                 .transition(&run_id, "counter", |state| {
@@ -315,11 +339,66 @@ mod index_recovery {
         // Session 1: Record traces of various types
         {
             let prims = ptp.open();
-            prims.trace_store.record(&run_id, TraceType::Thought { content: "t1".into(), confidence: None }, vec![], values::null()).unwrap();
-            prims.trace_store.record(&run_id, TraceType::Custom { name: "Action".into(), data: values::null() }, vec![], values::null()).unwrap();
-            prims.trace_store.record(&run_id, TraceType::Thought { content: "t2".into(), confidence: None }, vec![], values::null()).unwrap();
-            prims.trace_store.record(&run_id, TraceType::Custom { name: "Observation".into(), data: values::null() }, vec![], values::null()).unwrap();
-            prims.trace_store.record(&run_id, TraceType::Thought { content: "t3".into(), confidence: None }, vec![], values::null()).unwrap();
+            prims
+                .trace_store
+                .record(
+                    &run_id,
+                    TraceType::Thought {
+                        content: "t1".into(),
+                        confidence: None,
+                    },
+                    vec![],
+                    values::null(),
+                )
+                .unwrap();
+            prims
+                .trace_store
+                .record(
+                    &run_id,
+                    TraceType::Custom {
+                        name: "Action".into(),
+                        data: values::null(),
+                    },
+                    vec![],
+                    values::null(),
+                )
+                .unwrap();
+            prims
+                .trace_store
+                .record(
+                    &run_id,
+                    TraceType::Thought {
+                        content: "t2".into(),
+                        confidence: None,
+                    },
+                    vec![],
+                    values::null(),
+                )
+                .unwrap();
+            prims
+                .trace_store
+                .record(
+                    &run_id,
+                    TraceType::Custom {
+                        name: "Observation".into(),
+                        data: values::null(),
+                    },
+                    vec![],
+                    values::null(),
+                )
+                .unwrap();
+            prims
+                .trace_store
+                .record(
+                    &run_id,
+                    TraceType::Thought {
+                        content: "t3".into(),
+                        confidence: None,
+                    },
+                    vec![],
+                    values::null(),
+                )
+                .unwrap();
         }
 
         // Session 2: Query by type
@@ -327,7 +406,10 @@ mod index_recovery {
             let prims = ptp.open();
             let thoughts = prims.trace_store.query_by_type(&run_id, "Thought").unwrap();
             let actions = prims.trace_store.query_by_type(&run_id, "Action").unwrap();
-            let observations = prims.trace_store.query_by_type(&run_id, "Observation").unwrap();
+            let observations = prims
+                .trace_store
+                .query_by_type(&run_id, "Observation")
+                .unwrap();
 
             assert_eq!(thoughts.len(), 3);
             assert_eq!(actions.len(), 1);
@@ -344,14 +426,43 @@ mod index_recovery {
         // Session 1: Create trace tree
         {
             let prims = ptp.open();
-            parent_id = prims.trace_store.record(&run_id, TraceType::Custom { name: "Parent".into(), data: values::null() }, vec![], values::null()).unwrap();
-            prims
+            parent_id = prims
                 .trace_store
-                .record_child(&run_id, &parent_id, TraceType::Custom { name: "Child1".into(), data: values::null() }, vec![], values::null())
+                .record(
+                    &run_id,
+                    TraceType::Custom {
+                        name: "Parent".into(),
+                        data: values::null(),
+                    },
+                    vec![],
+                    values::null(),
+                )
                 .unwrap();
             prims
                 .trace_store
-                .record_child(&run_id, &parent_id, TraceType::Custom { name: "Child2".into(), data: values::null() }, vec![], values::null())
+                .record_child(
+                    &run_id,
+                    &parent_id,
+                    TraceType::Custom {
+                        name: "Child1".into(),
+                        data: values::null(),
+                    },
+                    vec![],
+                    values::null(),
+                )
+                .unwrap();
+            prims
+                .trace_store
+                .record_child(
+                    &run_id,
+                    &parent_id,
+                    TraceType::Custom {
+                        name: "Child2".into(),
+                        data: values::null(),
+                    },
+                    vec![],
+                    values::null(),
+                )
                 .unwrap();
         }
 
@@ -371,10 +482,22 @@ mod index_recovery {
         // Session 1: Append events of various types
         {
             let prims = ptp.open();
-            prims.event_log.append(&run_id, "tool_call", values::null()).unwrap();
-            prims.event_log.append(&run_id, "response", values::null()).unwrap();
-            prims.event_log.append(&run_id, "tool_call", values::null()).unwrap();
-            prims.event_log.append(&run_id, "error", values::null()).unwrap();
+            prims
+                .event_log
+                .append(&run_id, "tool_call", values::null())
+                .unwrap();
+            prims
+                .event_log
+                .append(&run_id, "response", values::null())
+                .unwrap();
+            prims
+                .event_log
+                .append(&run_id, "tool_call", values::null())
+                .unwrap();
+            prims
+                .event_log
+                .append(&run_id, "error", values::null())
+                .unwrap();
         }
 
         // Session 2: Query by type
@@ -405,33 +528,51 @@ mod multiple_recovery_cycles {
         {
             let prims = ptp.open();
             prims.kv.put(&run_id, "cycle", values::int(1)).unwrap();
-            prims.event_log.append(&run_id, "cycle_1", values::null()).unwrap();
+            prims
+                .event_log
+                .append(&run_id, "cycle_1", values::null())
+                .unwrap();
         }
 
         // Cycle 2: Recover and add more
         {
             let prims = ptp.open();
-            assert_eq!(prims.kv.get(&run_id, "cycle").unwrap(), Some(values::int(1)));
+            assert_eq!(
+                prims.kv.get(&run_id, "cycle").unwrap(),
+                Some(values::int(1))
+            );
             assert_eq!(prims.event_log.len(&run_id).unwrap(), 1);
 
             prims.kv.put(&run_id, "cycle", values::int(2)).unwrap();
-            prims.event_log.append(&run_id, "cycle_2", values::null()).unwrap();
+            prims
+                .event_log
+                .append(&run_id, "cycle_2", values::null())
+                .unwrap();
         }
 
         // Cycle 3: Recover and verify all
         {
             let prims = ptp.open();
-            assert_eq!(prims.kv.get(&run_id, "cycle").unwrap(), Some(values::int(2)));
+            assert_eq!(
+                prims.kv.get(&run_id, "cycle").unwrap(),
+                Some(values::int(2))
+            );
             assert_eq!(prims.event_log.len(&run_id).unwrap(), 2);
 
             prims.kv.put(&run_id, "cycle", values::int(3)).unwrap();
-            prims.event_log.append(&run_id, "cycle_3", values::null()).unwrap();
+            prims
+                .event_log
+                .append(&run_id, "cycle_3", values::null())
+                .unwrap();
         }
 
         // Final verification
         {
             let prims = ptp.open();
-            assert_eq!(prims.kv.get(&run_id, "cycle").unwrap(), Some(values::int(3)));
+            assert_eq!(
+                prims.kv.get(&run_id, "cycle").unwrap(),
+                Some(values::int(3))
+            );
             let events = prims.event_log.read_range(&run_id, 0, 10).unwrap();
             assert_eq!(events.len(), 3);
             assert_eq!(events[0].event_type, "cycle_1");
@@ -459,14 +600,20 @@ mod multiple_recovery_cycles {
                 }
 
                 // Add data for this cycle
-                prims.kv.put(&run_id, "counter", values::int(cycle)).unwrap();
+                prims
+                    .kv
+                    .put(&run_id, "counter", values::int(cycle))
+                    .unwrap();
                 prims
                     .event_log
                     .append(&run_id, &format!("cycle_{}", cycle), values::null())
                     .unwrap();
 
                 if cycle == 1 {
-                    prims.state_cell.init(&run_id, "state", values::int(0)).unwrap();
+                    prims
+                        .state_cell
+                        .init(&run_id, "state", values::int(0))
+                        .unwrap();
                 }
                 prims
                     .state_cell
@@ -484,7 +631,10 @@ mod multiple_recovery_cycles {
         // Final verification
         {
             let prims = ptp.open();
-            assert_eq!(prims.kv.get(&run_id, "counter").unwrap(), Some(values::int(5)));
+            assert_eq!(
+                prims.kv.get(&run_id, "counter").unwrap(),
+                Some(values::int(5))
+            );
             assert_eq!(prims.event_log.len(&run_id).unwrap(), 5);
             let state = prims.state_cell.read(&run_id, "state").unwrap().unwrap();
             assert_eq!(state.value, values::int(5));
@@ -510,7 +660,10 @@ mod runindex_recovery {
             let prims = ptp.open();
             let meta = prims.run_index.create_run("test-run").unwrap();
             run_name = meta.name.clone();
-            prims.run_index.update_status(&run_name, RunStatus::Paused).unwrap();
+            prims
+                .run_index
+                .update_status(&run_name, RunStatus::Paused)
+                .unwrap();
         }
 
         // Session 2: Verify status
@@ -529,12 +682,15 @@ mod runindex_recovery {
         // Session 1: Create run with metadata (using create_run_with_options)
         {
             let prims = ptp.open();
-            let meta = prims.run_index.create_run_with_options(
-                "tagged-run",
-                None,
-                vec!["tag1".to_string(), "tag2".to_string()],
-                values::null(),
-            ).unwrap();
+            let meta = prims
+                .run_index
+                .create_run_with_options(
+                    "tagged-run",
+                    None,
+                    vec!["tag1".to_string(), "tag2".to_string()],
+                    values::null(),
+                )
+                .unwrap();
             run_name = meta.name.clone();
         }
 
@@ -561,7 +717,10 @@ mod runindex_recovery {
 
             run_names = vec![meta0.name.clone(), meta1.name.clone(), meta2.name.clone()];
 
-            prims.run_index.update_status(&run_names[1], RunStatus::Paused).unwrap();
+            prims
+                .run_index
+                .update_status(&run_names[1], RunStatus::Paused)
+                .unwrap();
             prims.run_index.complete_run(&run_names[2]).unwrap();
         }
 
@@ -620,13 +779,19 @@ mod chain_integrity_after_recovery {
         // Session 1: Start chain
         {
             let prims = ptp.open();
-            prims.event_log.append(&run_id, "first", values::null()).unwrap();
+            prims
+                .event_log
+                .append(&run_id, "first", values::null())
+                .unwrap();
         }
 
         // Session 2: Extend chain
         {
             let prims = ptp.open();
-            prims.event_log.append(&run_id, "second", values::null()).unwrap();
+            prims
+                .event_log
+                .append(&run_id, "second", values::null())
+                .unwrap();
 
             // Chain should still be valid
             let result = prims.event_log.verify_chain(&run_id).unwrap();

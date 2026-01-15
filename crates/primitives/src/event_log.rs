@@ -196,52 +196,53 @@ impl EventLog {
         let ns = self.namespace_for_run(run_id);
         let event_type_owned = event_type.to_string();
 
-        self.db.transaction_with_retry(*run_id, retry_config, |txn| {
-            // Read current metadata (or default)
-            let meta_key = Key::new_event_meta(ns.clone());
-            let meta: EventLogMeta = match txn.get(&meta_key)? {
-                Some(v) => from_stored_value(&v).unwrap_or_else(|_| EventLogMeta::default()),
-                None => EventLogMeta::default(),
-            };
+        self.db
+            .transaction_with_retry(*run_id, retry_config, |txn| {
+                // Read current metadata (or default)
+                let meta_key = Key::new_event_meta(ns.clone());
+                let meta: EventLogMeta = match txn.get(&meta_key)? {
+                    Some(v) => from_stored_value(&v).unwrap_or_else(|_| EventLogMeta::default()),
+                    None => EventLogMeta::default(),
+                };
 
-            // Compute event hash
-            let sequence = meta.next_sequence;
-            let timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as i64;
+                // Compute event hash
+                let sequence = meta.next_sequence;
+                let timestamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as i64;
 
-            let hash = compute_event_hash(
-                sequence,
-                &event_type_owned,
-                &payload,
-                timestamp,
-                &meta.head_hash,
-            );
+                let hash = compute_event_hash(
+                    sequence,
+                    &event_type_owned,
+                    &payload,
+                    timestamp,
+                    &meta.head_hash,
+                );
 
-            // Build event
-            let event = Event {
-                sequence,
-                event_type: event_type_owned.clone(),
-                payload: payload.clone(),
-                timestamp,
-                prev_hash: meta.head_hash,
-                hash,
-            };
+                // Build event
+                let event = Event {
+                    sequence,
+                    event_type: event_type_owned.clone(),
+                    payload: payload.clone(),
+                    timestamp,
+                    prev_hash: meta.head_hash,
+                    hash,
+                };
 
-            // Write event
-            let event_key = Key::new_event(ns.clone(), sequence);
-            txn.put(event_key, to_stored_value(&event))?;
+                // Write event
+                let event_key = Key::new_event(ns.clone(), sequence);
+                txn.put(event_key, to_stored_value(&event))?;
 
-            // Update metadata (CAS semantics through transaction)
-            let new_meta = EventLogMeta {
-                next_sequence: sequence + 1,
-                head_hash: hash,
-            };
-            txn.put(meta_key, to_stored_value(&new_meta))?;
+                // Update metadata (CAS semantics through transaction)
+                let new_meta = EventLogMeta {
+                    next_sequence: sequence + 1,
+                    head_hash: hash,
+                };
+                txn.put(meta_key, to_stored_value(&new_meta))?;
 
-            Ok((sequence, hash))
-        })
+                Ok((sequence, hash))
+            })
     }
 
     // ========== Read Operations (Story #176) ==========

@@ -318,7 +318,9 @@ mod archived_is_terminal {
 
         // Write some data
         tp.kv.put(&run_id, "key", values::int(42)).unwrap();
-        tp.event_log.append(&run_id, "event", values::null()).unwrap();
+        tp.event_log
+            .append(&run_id, "event", values::null())
+            .unwrap();
 
         // Archive
         tp.run_index.archive_run("test-run").unwrap();
@@ -392,7 +394,9 @@ mod cascading_delete {
 
         // Append events
         for i in 0..10 {
-            tp.event_log.append(&run_id, "event", values::int(i)).unwrap();
+            tp.event_log
+                .append(&run_id, "event", values::int(i))
+                .unwrap();
         }
         assert_eq!(tp.event_log.len(&run_id).unwrap(), 10);
 
@@ -410,8 +414,12 @@ mod cascading_delete {
         let run_id = RunId::from_string(&meta.run_id).unwrap();
 
         // Create state cells
-        tp.state_cell.init(&run_id, "cell1", values::int(1)).unwrap();
-        tp.state_cell.init(&run_id, "cell2", values::int(2)).unwrap();
+        tp.state_cell
+            .init(&run_id, "cell1", values::int(1))
+            .unwrap();
+        tp.state_cell
+            .init(&run_id, "cell2", values::int(2))
+            .unwrap();
         assert!(tp.state_cell.exists(&run_id, "cell1").unwrap());
         assert!(tp.state_cell.exists(&run_id, "cell2").unwrap());
 
@@ -431,12 +439,17 @@ mod cascading_delete {
 
         // Record traces
         for _ in 0..5 {
-            tp.trace_store.record(
-                &run_id,
-                TraceType::Thought { content: "test".into(), confidence: None },
-                vec![],
-                values::null(),
-            ).unwrap();
+            tp.trace_store
+                .record(
+                    &run_id,
+                    TraceType::Thought {
+                        content: "test".into(),
+                        confidence: None,
+                    },
+                    vec![],
+                    values::null(),
+                )
+                .unwrap();
         }
         assert_eq!(tp.trace_store.count(&run_id).unwrap(), 5);
 
@@ -455,14 +468,21 @@ mod cascading_delete {
 
         // Write to ALL 5 primitives
         tp.kv.put(&run_id, "key", values::int(1)).unwrap();
-        tp.event_log.append(&run_id, "event", values::null()).unwrap();
+        tp.event_log
+            .append(&run_id, "event", values::null())
+            .unwrap();
         tp.state_cell.init(&run_id, "cell", values::int(0)).unwrap();
-        tp.trace_store.record(
-            &run_id,
-            TraceType::Thought { content: "test".into(), confidence: None },
-            vec![],
-            values::null(),
-        ).unwrap();
+        tp.trace_store
+            .record(
+                &run_id,
+                TraceType::Thought {
+                    content: "test".into(),
+                    confidence: None,
+                },
+                vec![],
+                values::null(),
+            )
+            .unwrap();
 
         // Verify data exists
         assert!(tp.kv.get(&run_id, "key").unwrap().is_some());
@@ -493,8 +513,12 @@ mod cascading_delete {
         // Write to both
         tp.kv.put(&run_id1, "key", values::string("run1")).unwrap();
         tp.kv.put(&run_id2, "key", values::string("run2")).unwrap();
-        tp.event_log.append(&run_id1, "event", values::null()).unwrap();
-        tp.event_log.append(&run_id2, "event", values::null()).unwrap();
+        tp.event_log
+            .append(&run_id1, "event", values::null())
+            .unwrap();
+        tp.event_log
+            .append(&run_id2, "event", values::null())
+            .unwrap();
 
         // Delete run-1
         tp.run_index.delete_run("run-1").unwrap();
@@ -504,7 +528,10 @@ mod cascading_delete {
         assert_eq!(tp.event_log.len(&run_id1).unwrap(), 0);
 
         // run-2 data intact
-        assert_eq!(tp.kv.get(&run_id2, "key").unwrap(), Some(values::string("run2")));
+        assert_eq!(
+            tp.kv.get(&run_id2, "key").unwrap(),
+            Some(values::string("run2"))
+        );
         assert_eq!(tp.event_log.len(&run_id2).unwrap(), 1);
         assert!(tp.run_index.exists("run-2").unwrap());
     }
@@ -548,7 +575,11 @@ mod status_updates_transactional {
         {
             let p = ptp.open();
             let meta = p.run_index.get_run(&run_name).unwrap().unwrap();
-            assert_eq!(meta.status, RunStatus::Completed, "Status not preserved after recovery");
+            assert_eq!(
+                meta.status,
+                RunStatus::Completed,
+                "Status not preserved after recovery"
+            );
         }
     }
 
@@ -569,7 +600,10 @@ mod status_updates_transactional {
         {
             let p = ptp.open();
             let meta = p.run_index.get_run(&run_name).unwrap().unwrap();
-            assert_eq!(meta.completed_at, completed_at, "completed_at not preserved");
+            assert_eq!(
+                meta.completed_at, completed_at,
+                "completed_at not preserved"
+            );
         }
     }
 
@@ -589,7 +623,11 @@ mod status_updates_transactional {
         {
             let p = ptp.open();
             let meta = p.run_index.get_run(&run_name).unwrap().unwrap();
-            assert_eq!(meta.error, Some(error_msg.to_string()), "Error message not preserved");
+            assert_eq!(
+                meta.error,
+                Some(error_msg.to_string()),
+                "Error message not preserved"
+            );
         }
     }
 
@@ -602,7 +640,9 @@ mod status_updates_transactional {
 
         {
             let p = ptp.open_strict();
-            p.run_index.create_run_with_options(&run_name, None, tags.clone(), values::null()).unwrap();
+            p.run_index
+                .create_run_with_options(&run_name, None, tags.clone(), values::null())
+                .unwrap();
         }
 
         {
@@ -661,7 +701,11 @@ mod status_updates_transactional {
         {
             let p = ptp.open();
             let meta = p.run_index.get_run(&run_name).unwrap().unwrap();
-            assert_eq!(meta.status, RunStatus::Archived, "Final status not preserved");
+            assert_eq!(
+                meta.status,
+                RunStatus::Archived,
+                "Final status not preserved"
+            );
         }
     }
 }

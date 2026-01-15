@@ -193,10 +193,7 @@ impl BenchEnvironment {
         // Governor
         eprintln!("\n[CPU Governor]");
         eprintln!("  Current:   {}", self.governor.current);
-        eprintln!(
-            "  Available: {}",
-            self.governor.available.join(", ")
-        );
+        eprintln!("  Available: {}", self.governor.available.join(", "));
         if !self.governor.is_performance {
             eprintln!("  ⚠️  WARNING: Not in 'performance' mode!");
             eprintln!("     Run: sudo cpupower frequency-set -g performance");
@@ -208,7 +205,10 @@ impl BenchEnvironment {
         eprintln!("  Channel:   {}", self.rust.channel);
         eprintln!("  Target:    {}", self.rust.target);
         eprintln!("  Profile:   {}", self.rust.profile);
-        eprintln!("  LTO:       {}", if self.rust.lto { "enabled" } else { "disabled" });
+        eprintln!(
+            "  LTO:       {}",
+            if self.rust.lto { "enabled" } else { "disabled" }
+        );
         eprintln!("  Opt-level: {}", self.rust.opt_level);
 
         // Git
@@ -278,12 +278,17 @@ impl BenchEnvironment {
             },
             "timestamp": self.timestamp,
             "is_reference_platform": self.is_reference_platform,
-        }).to_string()
+        })
+        .to_string()
     }
 
     /// Print compact one-line summary
     pub fn print_summary(&self) {
-        let platform_marker = if self.is_reference_platform { "✓" } else { "⚠" };
+        let platform_marker = if self.is_reference_platform {
+            "✓"
+        } else {
+            "⚠"
+        };
         eprintln!(
             "{} {} | {} ({} cores) | {} | {} | {} | {}",
             platform_marker,
@@ -364,7 +369,10 @@ impl BenchEnvironment {
         md.push_str("| Property | Value |\n");
         md.push_str("|----------|-------|\n");
         md.push_str(&format!("| Total | {:.1} GB |\n", self.memory.total_gb));
-        md.push_str(&format!("| Available | {:.1} GB |\n", self.memory.available_gb));
+        md.push_str(&format!(
+            "| Available | {:.1} GB |\n",
+            self.memory.available_gb
+        ));
         md.push_str("\n");
 
         // NUMA
@@ -432,7 +440,11 @@ impl BenchEnvironment {
     pub fn write_report(&self, output_dir: &Path) -> std::io::Result<std::path::PathBuf> {
         std::fs::create_dir_all(output_dir)?;
 
-        let timestamp = self.timestamp.replace(":", "-").replace("T", "_").replace("Z", "");
+        let timestamp = self
+            .timestamp
+            .replace(":", "-")
+            .replace("T", "_")
+            .replace("Z", "");
         let filename = format!("environment_{}.md", timestamp);
         let filepath = output_dir.join(&filename);
 
@@ -447,7 +459,11 @@ impl BenchEnvironment {
     pub fn write_json(&self, output_dir: &Path) -> std::io::Result<std::path::PathBuf> {
         std::fs::create_dir_all(output_dir)?;
 
-        let timestamp = self.timestamp.replace(":", "-").replace("T", "_").replace("Z", "");
+        let timestamp = self
+            .timestamp
+            .replace(":", "-")
+            .replace("T", "_")
+            .replace("Z", "");
         let filename = format!("environment_{}.json", timestamp);
         let filepath = output_dir.join(&filename);
 
@@ -472,7 +488,11 @@ fn capture_os_info() -> OsInfo {
                 content
                     .lines()
                     .find(|l| l.starts_with("PRETTY_NAME="))
-                    .map(|l| l.trim_start_matches("PRETTY_NAME=").trim_matches('"').to_string())
+                    .map(|l| {
+                        l.trim_start_matches("PRETTY_NAME=")
+                            .trim_matches('"')
+                            .to_string()
+                    })
             })
             .unwrap_or_else(|| "Linux".to_string());
 
@@ -482,7 +502,11 @@ fn capture_os_info() -> OsInfo {
                 content
                     .lines()
                     .find(|l| l.starts_with("VERSION_ID="))
-                    .map(|l| l.trim_start_matches("VERSION_ID=").trim_matches('"').to_string())
+                    .map(|l| {
+                        l.trim_start_matches("VERSION_ID=")
+                            .trim_matches('"')
+                            .to_string()
+                    })
             })
             .unwrap_or_else(|| "unknown".to_string());
 
@@ -493,7 +517,11 @@ fn capture_os_info() -> OsInfo {
             .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
             .unwrap_or_else(|| "unknown".to_string());
 
-        OsInfo { name, version, kernel }
+        OsInfo {
+            name,
+            version,
+            kernel,
+        }
     }
 
     #[cfg(target_os = "macos")]
@@ -514,7 +542,11 @@ fn capture_os_info() -> OsInfo {
             .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
             .unwrap_or_else(|| "unknown".to_string());
 
-        OsInfo { name, version, kernel }
+        OsInfo {
+            name,
+            version,
+            kernel,
+        }
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -551,7 +583,11 @@ fn capture_cpu_info() -> CpuInfo {
             .filter_map(|l| l.split(':').nth(1))
             .map(|s| s.trim())
             .collect();
-        let cores = if core_ids.is_empty() { threads } else { core_ids.len() };
+        let cores = if core_ids.is_empty() {
+            threads
+        } else {
+            core_ids.len()
+        };
 
         // Cache info from sysfs
         let cache_l1d = read_cache_size("/sys/devices/system/cpu/cpu0/cache/index0/size");
@@ -560,12 +596,11 @@ fn capture_cpu_info() -> CpuInfo {
         let cache_l3 = read_cache_size("/sys/devices/system/cpu/cpu0/cache/index3/size");
 
         // Frequency
-        let frequency_mhz = fs::read_to_string(
-            "/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq",
-        )
-        .ok()
-        .and_then(|s| s.trim().parse::<u64>().ok())
-        .map(|khz| khz / 1000);
+        let frequency_mhz =
+            fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq")
+                .ok()
+                .and_then(|s| s.trim().parse::<u64>().ok())
+                .map(|khz| khz / 1000);
 
         CpuInfo {
             model,
@@ -606,28 +641,48 @@ fn capture_cpu_info() -> CpuInfo {
             .args(["-n", "hw.l1dcachesize"])
             .output()
             .ok()
-            .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<u64>().ok())
+            .and_then(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .trim()
+                    .parse::<u64>()
+                    .ok()
+            })
             .map(|b| format_cache_size(b));
 
         let cache_l1i = Command::new("sysctl")
             .args(["-n", "hw.l1icachesize"])
             .output()
             .ok()
-            .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<u64>().ok())
+            .and_then(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .trim()
+                    .parse::<u64>()
+                    .ok()
+            })
             .map(|b| format_cache_size(b));
 
         let cache_l2 = Command::new("sysctl")
             .args(["-n", "hw.l2cachesize"])
             .output()
             .ok()
-            .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<u64>().ok())
+            .and_then(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .trim()
+                    .parse::<u64>()
+                    .ok()
+            })
             .map(|b| format_cache_size(b));
 
         let cache_l3 = Command::new("sysctl")
             .args(["-n", "hw.l3cachesize"])
             .output()
             .ok()
-            .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<u64>().ok())
+            .and_then(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .trim()
+                    .parse::<u64>()
+                    .ok()
+            })
             .map(|b| format_cache_size(b));
 
         CpuInfo {
@@ -668,11 +723,7 @@ fn capture_memory_info() -> MemoryInfo {
             meminfo
                 .lines()
                 .find(|l| l.starts_with(prefix))
-                .and_then(|l| {
-                    l.split_whitespace()
-                        .nth(1)
-                        .and_then(|s| s.parse().ok())
-                })
+                .and_then(|l| l.split_whitespace().nth(1).and_then(|s| s.parse().ok()))
         };
 
         let total_kb = parse_kb("MemTotal:").unwrap_or(0);
@@ -690,7 +741,12 @@ fn capture_memory_info() -> MemoryInfo {
             .args(["-n", "hw.memsize"])
             .output()
             .ok()
-            .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<u64>().ok())
+            .and_then(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .trim()
+                    .parse::<u64>()
+                    .ok()
+            })
             .unwrap_or(0);
 
         // Available memory is harder to get on macOS, approximate from vm_stat
@@ -734,11 +790,7 @@ fn capture_numa_info() -> NumaInfo {
             .map(|entries| {
                 entries
                     .filter_map(|e| e.ok())
-                    .filter(|e| {
-                        e.file_name()
-                            .to_string_lossy()
-                            .starts_with("node")
-                    })
+                    .filter(|e| e.file_name().to_string_lossy().starts_with("node"))
                     .count()
             })
             .unwrap_or(1);
@@ -803,17 +855,14 @@ fn capture_numa_info() -> NumaInfo {
 fn capture_governor_info() -> GovernorInfo {
     #[cfg(target_os = "linux")]
     {
-        let current = fs::read_to_string(
-            "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor",
-        )
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|_| "unknown".to_string());
+        let current = fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|_| "unknown".to_string());
 
-        let available = fs::read_to_string(
-            "/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors",
-        )
-        .map(|s| s.split_whitespace().map(|s| s.to_string()).collect())
-        .unwrap_or_else(|_| vec!["unknown".to_string()]);
+        let available =
+            fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors")
+                .map(|s| s.split_whitespace().map(|s| s.to_string()).collect())
+                .unwrap_or_else(|_| vec!["unknown".to_string()]);
 
         let is_performance = current == "performance";
 
@@ -922,9 +971,7 @@ fn capture_git_info() -> GitInfo {
 
 #[cfg(target_os = "linux")]
 fn read_cache_size(path: &str) -> Option<String> {
-    fs::read_to_string(path)
-        .ok()
-        .map(|s| s.trim().to_string())
+    fs::read_to_string(path).ok().map(|s| s.trim().to_string())
 }
 
 fn format_cache_size(bytes: u64) -> String {
@@ -1066,9 +1113,7 @@ impl PerfResults {
     /// Calculate cache miss rate
     pub fn cache_miss_rate(&self) -> Option<f64> {
         match (self.cache_misses, self.cache_references) {
-            (Some(misses), Some(refs)) if refs > 0 => {
-                Some(misses as f64 / refs as f64 * 100.0)
-            }
+            (Some(misses), Some(refs)) if refs > 0 => Some(misses as f64 / refs as f64 * 100.0),
             _ => None,
         }
     }
@@ -1076,9 +1121,7 @@ impl PerfResults {
     /// Calculate branch miss rate
     pub fn branch_miss_rate(&self) -> Option<f64> {
         match (self.branch_misses, self.branch_instructions) {
-            (Some(misses), Some(total)) if total > 0 => {
-                Some(misses as f64 / total as f64 * 100.0)
-            }
+            (Some(misses), Some(total)) if total > 0 => Some(misses as f64 / total as f64 * 100.0),
             _ => None,
         }
     }
@@ -1086,9 +1129,7 @@ impl PerfResults {
     /// Calculate LLC miss rate
     pub fn llc_miss_rate(&self) -> Option<f64> {
         match (self.llc_load_misses, self.llc_loads) {
-            (Some(misses), Some(loads)) if loads > 0 => {
-                Some(misses as f64 / loads as f64 * 100.0)
-            }
+            (Some(misses), Some(loads)) if loads > 0 => Some(misses as f64 / loads as f64 * 100.0),
             _ => None,
         }
     }
@@ -1423,15 +1464,8 @@ impl ContentionResults {
             let baseline = sorted.iter().find(|(t, _)| *t == 1).map(|(_, ops)| *ops);
 
             for (threads, ops) in sorted {
-                let scaling = baseline.map_or("N/A".to_string(), |b| {
-                    format!("{:.2}x", ops / b)
-                });
-                md.push_str(&format!(
-                    "| {} | {:.0} | {} |\n",
-                    threads,
-                    ops,
-                    scaling
-                ));
+                let scaling = baseline.map_or("N/A".to_string(), |b| format!("{:.2}x", ops / b));
+                md.push_str(&format!("| {} | {:.0} | {} |\n", threads, ops, scaling));
             }
             md.push_str("\n");
         }
@@ -1455,7 +1489,10 @@ impl BenchmarkReport {
         let mut md = String::new();
 
         md.push_str("# M3 Benchmark Report\n\n");
-        md.push_str(&format!("**Generated:** {}\n\n", self.environment.timestamp));
+        md.push_str(&format!(
+            "**Generated:** {}\n\n",
+            self.environment.timestamp
+        ));
 
         if !self.environment.is_reference_platform {
             md.push_str("> **WARNING: NOT RUNNING ON REFERENCE PLATFORM**\n");
@@ -1466,12 +1503,23 @@ impl BenchmarkReport {
         md.push_str("## Environment Summary\n\n");
         md.push_str(&format!("- **OS:** {}\n", self.environment.os.name));
         md.push_str(&format!("- **CPU:** {}\n", self.environment.cpu.model));
-        md.push_str(&format!("- **Cores:** {} physical, {} logical\n",
-            self.environment.cpu.cores, self.environment.cpu.threads));
-        md.push_str(&format!("- **Memory:** {:.1} GB\n", self.environment.memory.total_gb));
-        md.push_str(&format!("- **Governor:** {}\n", self.environment.governor.current));
+        md.push_str(&format!(
+            "- **Cores:** {} physical, {} logical\n",
+            self.environment.cpu.cores, self.environment.cpu.threads
+        ));
+        md.push_str(&format!(
+            "- **Memory:** {:.1} GB\n",
+            self.environment.memory.total_gb
+        ));
+        md.push_str(&format!(
+            "- **Governor:** {}\n",
+            self.environment.governor.current
+        ));
         md.push_str(&format!("- **Rust:** {}\n", self.environment.rust.version));
-        md.push_str(&format!("- **Commit:** `{}`\n", self.environment.git.commit));
+        md.push_str(&format!(
+            "- **Commit:** `{}`\n",
+            self.environment.git.commit
+        ));
         md.push_str("\n---\n\n");
 
         // Facade tax
@@ -1500,7 +1548,9 @@ impl BenchmarkReport {
     pub fn write_report(&self, output_dir: &Path) -> std::io::Result<std::path::PathBuf> {
         std::fs::create_dir_all(output_dir)?;
 
-        let timestamp = self.environment.timestamp
+        let timestamp = self
+            .environment
+            .timestamp
             .replace(":", "-")
             .replace("T", "_")
             .replace("Z", "");

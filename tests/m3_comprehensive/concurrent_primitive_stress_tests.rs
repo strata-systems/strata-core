@@ -30,16 +30,24 @@ mod kvstore_stress {
         let num_threads = 100;
         let writes_per_thread = 100;
 
-        let results = concurrent::run_with_shared(num_threads, (tp.clone(), run_id), move |i, (tp, run_id)| {
-            let mut successes = 0;
-            for j in 0..writes_per_thread {
-                let key = format!("key_{}_{}", i, j);
-                if tp.kv.put(run_id, &key, values::int((i * 1000 + j) as i64)).is_ok() {
-                    successes += 1;
+        let results = concurrent::run_with_shared(
+            num_threads,
+            (tp.clone(), run_id),
+            move |i, (tp, run_id)| {
+                let mut successes = 0;
+                for j in 0..writes_per_thread {
+                    let key = format!("key_{}_{}", i, j);
+                    if tp
+                        .kv
+                        .put(run_id, &key, values::int((i * 1000 + j) as i64))
+                        .is_ok()
+                    {
+                        successes += 1;
+                    }
                 }
-            }
-            successes
-        });
+                successes
+            },
+        );
 
         // All writes should succeed
         let total: usize = results.iter().sum();
@@ -58,32 +66,42 @@ mod kvstore_stress {
 
         // Pre-populate some data
         for i in 0..100 {
-            tp.kv.put(&run_id, &format!("key_{}", i), values::int(i)).unwrap();
+            tp.kv
+                .put(&run_id, &format!("key_{}", i), values::int(i))
+                .unwrap();
         }
 
         let num_threads = 50;
         let ops_per_thread = 100;
 
         // Half threads read, half threads write
-        let results = concurrent::run_with_shared(num_threads, (tp.clone(), run_id), move |i, (tp, run_id)| {
-            let mut successes = 0;
-            for j in 0..ops_per_thread {
-                if i % 2 == 0 {
-                    // Reader
-                    let key = format!("key_{}", j % 100);
-                    if tp.kv.get(run_id, &key).is_ok() {
-                        successes += 1;
-                    }
-                } else {
-                    // Writer
-                    let key = format!("new_key_{}_{}", i, j);
-                    if tp.kv.put(run_id, &key, values::int((i * 1000 + j) as i64)).is_ok() {
-                        successes += 1;
+        let results = concurrent::run_with_shared(
+            num_threads,
+            (tp.clone(), run_id),
+            move |i, (tp, run_id)| {
+                let mut successes = 0;
+                for j in 0..ops_per_thread {
+                    if i % 2 == 0 {
+                        // Reader
+                        let key = format!("key_{}", j % 100);
+                        if tp.kv.get(run_id, &key).is_ok() {
+                            successes += 1;
+                        }
+                    } else {
+                        // Writer
+                        let key = format!("new_key_{}_{}", i, j);
+                        if tp
+                            .kv
+                            .put(run_id, &key, values::int((i * 1000 + j) as i64))
+                            .is_ok()
+                        {
+                            successes += 1;
+                        }
                     }
                 }
-            }
-            successes
-        });
+                successes
+            },
+        );
 
         let total: usize = results.iter().sum();
         assert_eq!(total, num_threads * ops_per_thread);
@@ -98,15 +116,23 @@ mod kvstore_stress {
         let writes_per_thread = 50;
 
         // All threads write to same key
-        let results = concurrent::run_with_shared(num_threads, (tp.clone(), run_id), move |i, (tp, run_id)| {
-            let mut successes = 0;
-            for j in 0..writes_per_thread {
-                if tp.kv.put(run_id, "single_key", values::int((i * 1000 + j) as i64)).is_ok() {
-                    successes += 1;
+        let results = concurrent::run_with_shared(
+            num_threads,
+            (tp.clone(), run_id),
+            move |i, (tp, run_id)| {
+                let mut successes = 0;
+                for j in 0..writes_per_thread {
+                    if tp
+                        .kv
+                        .put(run_id, "single_key", values::int((i * 1000 + j) as i64))
+                        .is_ok()
+                    {
+                        successes += 1;
+                    }
                 }
-            }
-            successes
-        });
+                successes
+            },
+        );
 
         // All should succeed (last writer wins)
         let total: usize = results.iter().sum();
@@ -132,15 +158,22 @@ mod eventlog_stress {
         let num_threads = 50;
         let appends_per_thread = 100;
 
-        let results = concurrent::run_with_shared(num_threads, (tp.clone(), run_id), move |i, (tp, run_id)| {
-            let mut sequences = Vec::new();
-            for _ in 0..appends_per_thread {
-                if let Ok((seq, _)) = tp.event_log.append(run_id, &format!("thread_{}", i), values::null()) {
-                    sequences.push(seq);
+        let results = concurrent::run_with_shared(
+            num_threads,
+            (tp.clone(), run_id),
+            move |i, (tp, run_id)| {
+                let mut sequences = Vec::new();
+                for _ in 0..appends_per_thread {
+                    if let Ok((seq, _)) =
+                        tp.event_log
+                            .append(run_id, &format!("thread_{}", i), values::null())
+                    {
+                        sequences.push(seq);
+                    }
                 }
-            }
-            sequences
-        });
+                sequences
+            },
+        );
 
         // All appends should succeed
         let total: usize = results.iter().map(|v| v.len()).sum();
@@ -176,7 +209,10 @@ mod eventlog_stress {
         assert!(result.is_valid);
 
         // Verify sequences are contiguous
-        let events = tp.event_log.read_range(&run_id, 0, num_events as u64).unwrap();
+        let events = tp
+            .event_log
+            .read_range(&run_id, 0, num_events as u64)
+            .unwrap();
         for (i, event) in events.iter().enumerate() {
             assert_eq!(event.sequence, i as u64);
         }
@@ -190,34 +226,40 @@ mod eventlog_stress {
 
         // Pre-populate some events
         for i in 0..100 {
-            tp.event_log.append(&run_id, "init", values::int(i)).unwrap();
+            tp.event_log
+                .append(&run_id, "init", values::int(i))
+                .unwrap();
         }
 
         let num_threads = 30;
         let ops_per_thread = 50;
 
-        let results = concurrent::run_with_shared(num_threads, (tp.clone(), run_id), move |i, (tp, run_id)| {
-            let mut ops = 0;
-            for _ in 0..ops_per_thread {
-                if i % 3 == 0 {
-                    // Append
-                    if tp.event_log.append(run_id, "new", values::null()).is_ok() {
-                        ops += 1;
-                    }
-                } else if i % 3 == 1 {
-                    // Read
-                    if tp.event_log.read(run_id, 0).is_ok() {
-                        ops += 1;
-                    }
-                } else {
-                    // Read range
-                    if tp.event_log.read_range(run_id, 0, 10).is_ok() {
-                        ops += 1;
+        let results = concurrent::run_with_shared(
+            num_threads,
+            (tp.clone(), run_id),
+            move |i, (tp, run_id)| {
+                let mut ops = 0;
+                for _ in 0..ops_per_thread {
+                    if i % 3 == 0 {
+                        // Append
+                        if tp.event_log.append(run_id, "new", values::null()).is_ok() {
+                            ops += 1;
+                        }
+                    } else if i % 3 == 1 {
+                        // Read
+                        if tp.event_log.read(run_id, 0).is_ok() {
+                            ops += 1;
+                        }
+                    } else {
+                        // Read range
+                        if tp.event_log.read_range(run_id, 0, 10).is_ok() {
+                            ops += 1;
+                        }
                     }
                 }
-            }
-            ops
-        });
+                ops
+            },
+        );
 
         let total: usize = results.iter().sum();
         assert_eq!(total, num_threads * ops_per_thread);
@@ -241,28 +283,34 @@ mod statecell_stress {
         let tp = Arc::new(TestPrimitives::new());
         let run_id = tp.run_id;
 
-        tp.state_cell.init(&run_id, "counter", values::int(0)).unwrap();
+        tp.state_cell
+            .init(&run_id, "counter", values::int(0))
+            .unwrap();
 
         let num_threads = 100;
         let increments_per_thread = 50;
 
         // Each thread tries to increment via transition
-        let results = concurrent::run_with_shared(num_threads, (tp.clone(), run_id), move |_, (tp, run_id)| {
-            let mut successes = 0;
-            for _ in 0..increments_per_thread {
-                let result = tp.state_cell.transition(run_id, "counter", |state| {
-                    if let Value::I64(n) = &state.value {
-                        Ok((values::int(n + 1), ()))
-                    } else {
-                        Ok((values::int(1), ()))
+        let results = concurrent::run_with_shared(
+            num_threads,
+            (tp.clone(), run_id),
+            move |_, (tp, run_id)| {
+                let mut successes = 0;
+                for _ in 0..increments_per_thread {
+                    let result = tp.state_cell.transition(run_id, "counter", |state| {
+                        if let Value::I64(n) = &state.value {
+                            Ok((values::int(n + 1), ()))
+                        } else {
+                            Ok((values::int(1), ()))
+                        }
+                    });
+                    if result.is_ok() {
+                        successes += 1;
                     }
-                });
-                if result.is_ok() {
-                    successes += 1;
                 }
-            }
-            successes
-        });
+                successes
+            },
+        );
 
         // All transitions should succeed
         let total: i32 = results.iter().sum();
@@ -270,7 +318,10 @@ mod statecell_stress {
 
         // Final value should equal total increments (no lost updates)
         let state = tp.state_cell.read(&run_id, "counter").unwrap().unwrap();
-        assert_eq!(state.value, values::int((num_threads * increments_per_thread) as i64));
+        assert_eq!(
+            state.value,
+            values::int((num_threads * increments_per_thread) as i64)
+        );
     }
 
     #[test]
@@ -290,23 +341,27 @@ mod statecell_stress {
         let num_threads = 50;
         let ops_per_thread = 100;
 
-        let results = concurrent::run_with_shared(num_threads, (tp.clone(), run_id), move |i, (tp, run_id)| {
-            let mut successes = 0;
-            for j in 0..ops_per_thread {
-                let cell_name = format!("cell_{}", (i + j) % num_cells);
-                let result = tp.state_cell.transition(run_id, &cell_name, |state| {
-                    if let Value::I64(n) = &state.value {
-                        Ok((values::int(n + 1), ()))
-                    } else {
-                        Ok((values::int(1), ()))
+        let results = concurrent::run_with_shared(
+            num_threads,
+            (tp.clone(), run_id),
+            move |i, (tp, run_id)| {
+                let mut successes = 0;
+                for j in 0..ops_per_thread {
+                    let cell_name = format!("cell_{}", (i + j) % num_cells);
+                    let result = tp.state_cell.transition(run_id, &cell_name, |state| {
+                        if let Value::I64(n) = &state.value {
+                            Ok((values::int(n + 1), ()))
+                        } else {
+                            Ok((values::int(1), ()))
+                        }
+                    });
+                    if result.is_ok() {
+                        successes += 1;
                     }
-                });
-                if result.is_ok() {
-                    successes += 1;
                 }
-            }
-            successes
-        });
+                successes
+            },
+        );
 
         let total: i32 = results.iter().sum();
         assert_eq!(total, (num_threads * ops_per_thread) as i32);
@@ -334,9 +389,9 @@ mod statecell_stress {
                 let mut version_decreases = 0;
 
                 for _ in 0..ops_per_thread {
-                    let result = tp.state_cell.transition(run_id, "cell", |_| {
-                        Ok((values::int(1), ()))
-                    });
+                    let result = tp
+                        .state_cell
+                        .transition(run_id, "cell", |_| Ok((values::int(1), ())));
 
                     if let Ok((_, new_version)) = result {
                         // Per-thread: each successful transition should return a higher version
@@ -353,7 +408,10 @@ mod statecell_stress {
 
         // No per-thread version decreases should have been observed
         let total_decreases: i32 = results.iter().sum();
-        assert_eq!(total_decreases, 0, "Per-thread version monotonicity violated!");
+        assert_eq!(
+            total_decreases, 0,
+            "Per-thread version monotonicity violated!"
+        );
 
         // Also verify final version equals number of successful transitions
         let final_state = tp.state_cell.read(&run_id, "cell").unwrap().unwrap();
@@ -379,47 +437,72 @@ mod cross_primitive_stress {
         let run_id = tp.run_id;
 
         // Initialize state cell
-        tp.state_cell.init(&run_id, "state", values::int(0)).unwrap();
+        tp.state_cell
+            .init(&run_id, "state", values::int(0))
+            .unwrap();
 
         let num_threads = 50;
         let ops_per_thread = 50;
 
-        let results = concurrent::run_with_shared(num_threads, (tp.clone(), run_id), move |i, (tp, run_id)| {
-            let mut successes = 0;
-            for j in 0..ops_per_thread {
-                // KV put
-                if tp.kv.put(run_id, &format!("key_{}_{}", i, j), values::int(1)).is_ok() {
-                    successes += 1;
-                }
-
-                // EventLog append
-                if tp.event_log.append(run_id, "op", values::int((i * 100 + j) as i64)).is_ok() {
-                    successes += 1;
-                }
-
-                // StateCell transition
-                if tp.state_cell.transition(run_id, "state", |state| {
-                    if let Value::I64(n) = &state.value {
-                        Ok((values::int(n + 1), ()))
-                    } else {
-                        Ok((values::int(1), ()))
+        let results = concurrent::run_with_shared(
+            num_threads,
+            (tp.clone(), run_id),
+            move |i, (tp, run_id)| {
+                let mut successes = 0;
+                for j in 0..ops_per_thread {
+                    // KV put
+                    if tp
+                        .kv
+                        .put(run_id, &format!("key_{}_{}", i, j), values::int(1))
+                        .is_ok()
+                    {
+                        successes += 1;
                     }
-                }).is_ok() {
-                    successes += 1;
-                }
 
-                // TraceStore record
-                if tp.trace_store.record(
-                    run_id,
-                    TraceType::Thought { content: format!("trace_{}_{}", i, j), confidence: None },
-                    vec![],
-                    values::null(),
-                ).is_ok() {
-                    successes += 1;
+                    // EventLog append
+                    if tp
+                        .event_log
+                        .append(run_id, "op", values::int((i * 100 + j) as i64))
+                        .is_ok()
+                    {
+                        successes += 1;
+                    }
+
+                    // StateCell transition
+                    if tp
+                        .state_cell
+                        .transition(run_id, "state", |state| {
+                            if let Value::I64(n) = &state.value {
+                                Ok((values::int(n + 1), ()))
+                            } else {
+                                Ok((values::int(1), ()))
+                            }
+                        })
+                        .is_ok()
+                    {
+                        successes += 1;
+                    }
+
+                    // TraceStore record
+                    if tp
+                        .trace_store
+                        .record(
+                            run_id,
+                            TraceType::Thought {
+                                content: format!("trace_{}_{}", i, j),
+                                confidence: None,
+                            },
+                            vec![],
+                            values::null(),
+                        )
+                        .is_ok()
+                    {
+                        successes += 1;
+                    }
                 }
-            }
-            successes
-        });
+                successes
+            },
+        );
 
         // All operations should succeed
         let total: i32 = results.iter().sum();
@@ -436,7 +519,10 @@ mod cross_primitive_stress {
 
         // StateCell should equal total transitions
         let state = tp.state_cell.read(&run_id, "state").unwrap().unwrap();
-        assert_eq!(state.value, values::int((num_threads * ops_per_thread) as i64));
+        assert_eq!(
+            state.value,
+            values::int((num_threads * ops_per_thread) as i64)
+        );
     }
 
     #[test]
@@ -452,7 +538,11 @@ mod cross_primitive_stress {
             for _ in 0..runs_per_thread {
                 let run = tp.new_run();
                 for j in 0..ops_per_run {
-                    if tp.kv.put(&run, &format!("key_{}", j), values::int(i as i64)).is_ok() {
+                    if tp
+                        .kv
+                        .put(&run, &format!("key_{}", j), values::int(i as i64))
+                        .is_ok()
+                    {
                         total_ops += 1;
                     }
                     if tp.event_log.append(&run, "event", values::null()).is_ok() {
@@ -464,7 +554,10 @@ mod cross_primitive_stress {
         });
 
         let total: i32 = results.iter().sum();
-        assert_eq!(total, (num_threads * runs_per_thread * ops_per_run * 2) as i32);
+        assert_eq!(
+            total,
+            (num_threads * runs_per_thread * ops_per_run * 2) as i32
+        );
     }
 }
 
@@ -511,9 +604,13 @@ mod run_lifecycle_stress {
         // Rapidly transition each run through lifecycle
         for run_name in &run_names {
             // Active -> Paused
-            tp.run_index.update_status(run_name, RunStatus::Paused).unwrap();
+            tp.run_index
+                .update_status(run_name, RunStatus::Paused)
+                .unwrap();
             // Paused -> Active
-            tp.run_index.update_status(run_name, RunStatus::Active).unwrap();
+            tp.run_index
+                .update_status(run_name, RunStatus::Active)
+                .unwrap();
             // Active -> Completed
             tp.run_index.complete_run(run_name).unwrap();
             // Completed -> Archived
@@ -540,20 +637,29 @@ mod run_lifecycle_stress {
         let num_traces = 500;
 
         for i in 0..num_kv {
-            tp.kv.put(&run_id, &format!("key_{}", i), values::int(i as i64)).unwrap();
+            tp.kv
+                .put(&run_id, &format!("key_{}", i), values::int(i as i64))
+                .unwrap();
         }
 
         for _ in 0..num_events {
-            tp.event_log.append(&run_id, "event", values::null()).unwrap();
+            tp.event_log
+                .append(&run_id, "event", values::null())
+                .unwrap();
         }
 
         for _ in 0..num_traces {
-            tp.trace_store.record(
-                &run_id,
-                TraceType::Thought { content: "stress".into(), confidence: None },
-                vec![],
-                values::null(),
-            ).unwrap();
+            tp.trace_store
+                .record(
+                    &run_id,
+                    TraceType::Thought {
+                        content: "stress".into(),
+                        confidence: None,
+                    },
+                    vec![],
+                    values::null(),
+                )
+                .unwrap();
         }
 
         // Delete the run from index

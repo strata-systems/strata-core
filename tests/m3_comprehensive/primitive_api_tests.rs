@@ -137,10 +137,7 @@ mod kvstore_api {
 
         // Null
         tp.kv.put(&tp.run_id, "null", values::null()).unwrap();
-        assert_eq!(
-            tp.kv.get(&tp.run_id, "null").unwrap(),
-            Some(values::null())
-        );
+        assert_eq!(tp.kv.get(&tp.run_id, "null").unwrap(), Some(values::null()));
 
         // Bytes
         tp.kv
@@ -305,7 +302,9 @@ mod eventlog_api {
         let tp = TestPrimitives::new();
         assert!(tp.event_log.is_empty(&tp.run_id).unwrap());
 
-        tp.event_log.append(&tp.run_id, "e", values::null()).unwrap();
+        tp.event_log
+            .append(&tp.run_id, "e", values::null())
+            .unwrap();
         assert!(!tp.event_log.is_empty(&tp.run_id).unwrap());
     }
 
@@ -352,9 +351,15 @@ mod eventlog_api {
     #[test]
     fn test_event_types() {
         let tp = TestPrimitives::new();
-        tp.event_log.append(&tp.run_id, "alpha", values::null()).unwrap();
-        tp.event_log.append(&tp.run_id, "beta", values::null()).unwrap();
-        tp.event_log.append(&tp.run_id, "alpha", values::null()).unwrap();
+        tp.event_log
+            .append(&tp.run_id, "alpha", values::null())
+            .unwrap();
+        tp.event_log
+            .append(&tp.run_id, "beta", values::null())
+            .unwrap();
+        tp.event_log
+            .append(&tp.run_id, "alpha", values::null())
+            .unwrap();
 
         let types = tp.event_log.event_types(&tp.run_id).unwrap();
         assert_eq!(types.len(), 2);
@@ -373,7 +378,8 @@ mod statecell_api {
     #[test]
     fn test_init_creates_cell() {
         let tp = TestPrimitives::new();
-        let version = tp.state_cell
+        let version = tp
+            .state_cell
             .init(&tp.run_id, "cell", values::int(0))
             .unwrap();
         assert_eq!(version, 1);
@@ -426,9 +432,7 @@ mod statecell_api {
             .init(&tp.run_id, "cell", values::int(10))
             .unwrap();
 
-        let result = tp
-            .state_cell
-            .cas(&tp.run_id, "cell", 999, values::int(20));
+        let result = tp.state_cell.cas(&tp.run_id, "cell", 999, values::int(20));
         assert!(result.is_err());
 
         // Value unchanged
@@ -443,7 +447,8 @@ mod statecell_api {
             .init(&tp.run_id, "cell", values::int(10))
             .unwrap();
 
-        let new_version = tp.state_cell
+        let new_version = tp
+            .state_cell
             .set(&tp.run_id, "cell", values::int(100))
             .unwrap();
         assert!(new_version > 1);
@@ -457,7 +462,8 @@ mod statecell_api {
         let tp = TestPrimitives::new();
 
         // set() on non-existent cell should create it
-        let version = tp.state_cell
+        let version = tp
+            .state_cell
             .set(&tp.run_id, "new_cell", values::int(42))
             .unwrap();
         assert!(version >= 1);
@@ -509,7 +515,11 @@ mod statecell_api {
         let result = tp
             .state_cell
             .transition(&tp.run_id, "counter", |state| {
-                let current = if let Value::I64(n) = &state.value { *n } else { 0 };
+                let current = if let Value::I64(n) = &state.value {
+                    *n
+                } else {
+                    0
+                };
                 Ok((values::int(current + 1), current + 1))
             })
             .unwrap();
@@ -528,7 +538,11 @@ mod statecell_api {
         let (result, _version) = tp
             .state_cell
             .transition_or_init(&tp.run_id, "counter", values::int(0), |state| {
-                let current = if let Value::I64(n) = &state.value { *n } else { 0 };
+                let current = if let Value::I64(n) = &state.value {
+                    *n
+                } else {
+                    0
+                };
                 Ok((values::int(current + 10), current + 10))
             })
             .unwrap();
@@ -554,7 +568,10 @@ mod tracestore_api {
             .trace_store
             .record(
                 &tp.run_id,
-                TraceType::Thought { content: "thinking...".into(), confidence: None },
+                TraceType::Thought {
+                    content: "thinking...".into(),
+                    confidence: None,
+                },
                 vec![],
                 Value::Null,
             )
@@ -595,7 +612,10 @@ mod tracestore_api {
             .trace_store
             .record(
                 &tp.run_id,
-                TraceType::Thought { content: "parent".into(), confidence: None },
+                TraceType::Thought {
+                    content: "parent".into(),
+                    confidence: None,
+                },
                 vec![],
                 Value::Null,
             )
@@ -607,7 +627,10 @@ mod tracestore_api {
             .record_child(
                 &tp.run_id,
                 &parent_id,
-                TraceType::Thought { content: "child".into(), confidence: None },
+                TraceType::Thought {
+                    content: "child".into(),
+                    confidence: None,
+                },
                 vec![],
                 Value::Null,
             )
@@ -628,29 +651,41 @@ mod tracestore_api {
     fn test_query_by_type() {
         let tp = TestPrimitives::new();
 
-        tp.trace_store.record(
-            &tp.run_id,
-            TraceType::Thought { content: "a".into(), confidence: None },
-            vec![],
-            Value::Null,
-        ).unwrap();
-        tp.trace_store.record(
-            &tp.run_id,
-            TraceType::ToolCall {
-                tool_name: "test".into(),
-                arguments: Value::Null,
-                result: None,
-                duration_ms: None,
-            },
-            vec![],
-            Value::Null,
-        ).unwrap();
-        tp.trace_store.record(
-            &tp.run_id,
-            TraceType::Thought { content: "b".into(), confidence: None },
-            vec![],
-            Value::Null,
-        ).unwrap();
+        tp.trace_store
+            .record(
+                &tp.run_id,
+                TraceType::Thought {
+                    content: "a".into(),
+                    confidence: None,
+                },
+                vec![],
+                Value::Null,
+            )
+            .unwrap();
+        tp.trace_store
+            .record(
+                &tp.run_id,
+                TraceType::ToolCall {
+                    tool_name: "test".into(),
+                    arguments: Value::Null,
+                    result: None,
+                    duration_ms: None,
+                },
+                vec![],
+                Value::Null,
+            )
+            .unwrap();
+        tp.trace_store
+            .record(
+                &tp.run_id,
+                TraceType::Thought {
+                    content: "b".into(),
+                    confidence: None,
+                },
+                vec![],
+                Value::Null,
+            )
+            .unwrap();
 
         let thoughts = tp.trace_store.query_by_type(&tp.run_id, "Thought").unwrap();
         assert_eq!(thoughts.len(), 2);
@@ -660,28 +695,44 @@ mod tracestore_api {
     fn test_get_children() {
         let tp = TestPrimitives::new();
 
-        let parent_id = tp.trace_store.record(
-            &tp.run_id,
-            TraceType::Thought { content: "parent".into(), confidence: None },
-            vec![],
-            Value::Null,
-        ).unwrap();
+        let parent_id = tp
+            .trace_store
+            .record(
+                &tp.run_id,
+                TraceType::Thought {
+                    content: "parent".into(),
+                    confidence: None,
+                },
+                vec![],
+                Value::Null,
+            )
+            .unwrap();
 
         // Add children
-        tp.trace_store.record_child(
-            &tp.run_id,
-            &parent_id,
-            TraceType::Thought { content: "child1".into(), confidence: None },
-            vec![],
-            Value::Null,
-        ).unwrap();
-        tp.trace_store.record_child(
-            &tp.run_id,
-            &parent_id,
-            TraceType::Thought { content: "child2".into(), confidence: None },
-            vec![],
-            Value::Null,
-        ).unwrap();
+        tp.trace_store
+            .record_child(
+                &tp.run_id,
+                &parent_id,
+                TraceType::Thought {
+                    content: "child1".into(),
+                    confidence: None,
+                },
+                vec![],
+                Value::Null,
+            )
+            .unwrap();
+        tp.trace_store
+            .record_child(
+                &tp.run_id,
+                &parent_id,
+                TraceType::Thought {
+                    content: "child2".into(),
+                    confidence: None,
+                },
+                vec![],
+                Value::Null,
+            )
+            .unwrap();
 
         let children = tp.trace_store.get_children(&tp.run_id, &parent_id).unwrap();
         assert_eq!(children.len(), 2);
@@ -692,12 +743,17 @@ mod tracestore_api {
         let tp = TestPrimitives::new();
 
         for i in 0..5 {
-            tp.trace_store.record(
-                &tp.run_id,
-                TraceType::Thought { content: format!("thought {}", i), confidence: None },
-                vec![],
-                Value::Null,
-            ).unwrap();
+            tp.trace_store
+                .record(
+                    &tp.run_id,
+                    TraceType::Thought {
+                        content: format!("thought {}", i),
+                        confidence: None,
+                    },
+                    vec![],
+                    Value::Null,
+                )
+                .unwrap();
         }
 
         let traces = tp.trace_store.list(&tp.run_id).unwrap();
@@ -711,12 +767,17 @@ mod tracestore_api {
         assert_eq!(tp.trace_store.count(&tp.run_id).unwrap(), 0);
 
         for _ in 0..3 {
-            tp.trace_store.record(
-                &tp.run_id,
-                TraceType::Thought { content: "t".into(), confidence: None },
-                vec![],
-                Value::Null,
-            ).unwrap();
+            tp.trace_store
+                .record(
+                    &tp.run_id,
+                    TraceType::Thought {
+                        content: "t".into(),
+                        confidence: None,
+                    },
+                    vec![],
+                    Value::Null,
+                )
+                .unwrap();
         }
 
         assert_eq!(tp.trace_store.count(&tp.run_id).unwrap(), 3);
@@ -727,49 +788,57 @@ mod tracestore_api {
         let tp = TestPrimitives::new();
 
         // Test different trace types
-        tp.trace_store.record(
-            &tp.run_id,
-            TraceType::ToolCall {
-                tool_name: "calculator".into(),
-                arguments: values::map(vec![("x", values::int(1))]),
-                result: Some(values::int(42)),
-                duration_ms: Some(100),
-            },
-            vec![],
-            Value::Null,
-        ).unwrap();
+        tp.trace_store
+            .record(
+                &tp.run_id,
+                TraceType::ToolCall {
+                    tool_name: "calculator".into(),
+                    arguments: values::map(vec![("x", values::int(1))]),
+                    result: Some(values::int(42)),
+                    duration_ms: Some(100),
+                },
+                vec![],
+                Value::Null,
+            )
+            .unwrap();
 
-        tp.trace_store.record(
-            &tp.run_id,
-            TraceType::Query {
-                query_type: "search".into(),
-                query: "test query".into(),
-                results_count: Some(10),
-            },
-            vec![],
-            Value::Null,
-        ).unwrap();
+        tp.trace_store
+            .record(
+                &tp.run_id,
+                TraceType::Query {
+                    query_type: "search".into(),
+                    query: "test query".into(),
+                    results_count: Some(10),
+                },
+                vec![],
+                Value::Null,
+            )
+            .unwrap();
 
-        tp.trace_store.record(
-            &tp.run_id,
-            TraceType::Error {
-                error_type: "ValidationError".into(),
-                message: "something went wrong".into(),
-                recoverable: true,
-            },
-            vec![],
-            Value::Null,
-        ).unwrap();
+        tp.trace_store
+            .record(
+                &tp.run_id,
+                TraceType::Error {
+                    error_type: "ValidationError".into(),
+                    message: "something went wrong".into(),
+                    recoverable: true,
+                },
+                vec![],
+                Value::Null,
+            )
+            .unwrap();
 
-        tp.trace_store.record(
-            &tp.run_id,
-            TraceType::Custom {
-                name: "my_event".into(),
-                data: values::map(vec![("custom", values::string("data"))]),
-            },
-            vec![],
-            Value::Null,
-        ).unwrap();
+        tp.trace_store
+            .record(
+                &tp.run_id,
+                TraceType::Custom {
+                    name: "my_event".into(),
+                    data: values::map(vec![("custom", values::string("data"))]),
+                },
+                vec![],
+                Value::Null,
+            )
+            .unwrap();
 
         assert_eq!(tp.trace_store.count(&tp.run_id).unwrap(), 4);
     }
@@ -800,12 +869,15 @@ mod runindex_api {
         tp.run_index.create_run("parent").unwrap();
 
         // Create child with options
-        let meta = tp.run_index.create_run_with_options(
-            "child",
-            Some("parent".to_string()),
-            vec!["tag1".to_string(), "tag2".to_string()],
-            values::map(vec![("key", values::int(42))]),
-        ).unwrap();
+        let meta = tp
+            .run_index
+            .create_run_with_options(
+                "child",
+                Some("parent".to_string()),
+                vec!["tag1".to_string(), "tag2".to_string()],
+                values::map(vec![("key", values::int(42))]),
+            )
+            .unwrap();
 
         assert_eq!(meta.name, "child");
         assert_eq!(meta.parent_run, Some("parent".to_string()));
@@ -873,7 +945,10 @@ mod runindex_api {
         let tp = TestPrimitives::new();
         tp.run_index.create_run("my-run").unwrap();
 
-        let meta = tp.run_index.update_status("my-run", RunStatus::Paused).unwrap();
+        let meta = tp
+            .run_index
+            .update_status("my-run", RunStatus::Paused)
+            .unwrap();
         assert_eq!(meta.status, RunStatus::Paused);
     }
 
@@ -955,18 +1030,17 @@ mod runindex_api {
     #[test]
     fn test_query_by_tag() {
         let tp = TestPrimitives::new();
-        tp.run_index.create_run_with_options(
-            "run-1",
-            None,
-            vec!["experiment".to_string()],
-            Value::Null,
-        ).unwrap();
-        tp.run_index.create_run_with_options(
-            "run-2",
-            None,
-            vec!["experiment".to_string(), "v2".to_string()],
-            Value::Null,
-        ).unwrap();
+        tp.run_index
+            .create_run_with_options("run-1", None, vec!["experiment".to_string()], Value::Null)
+            .unwrap();
+        tp.run_index
+            .create_run_with_options(
+                "run-2",
+                None,
+                vec!["experiment".to_string(), "v2".to_string()],
+                Value::Null,
+            )
+            .unwrap();
         tp.run_index.create_run("run-3").unwrap();
 
         let experiment_runs = tp.run_index.query_by_tag("experiment").unwrap();

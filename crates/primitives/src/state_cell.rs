@@ -336,34 +336,35 @@ impl StateCell {
 
         // Perform read + closure + write in a SINGLE transaction
         // This ensures atomic OCC validation at commit time
-        self.db.transaction_with_retry(*run_id, retry_config, |txn| {
-            // Read current state within the transaction
-            let current: State = match txn.get(&key)? {
-                Some(v) => from_stored_value(&v).map_err(|e| {
-                    in_mem_core::error::Error::SerializationError(e.to_string())
-                })?,
-                None => {
-                    return Err(in_mem_core::error::Error::InvalidOperation(format!(
-                        "StateCell '{}' not found",
-                        name_owned
-                    )))
-                }
-            };
+        self.db
+            .transaction_with_retry(*run_id, retry_config, |txn| {
+                // Read current state within the transaction
+                let current: State = match txn.get(&key)? {
+                    Some(v) => from_stored_value(&v).map_err(|e| {
+                        in_mem_core::error::Error::SerializationError(e.to_string())
+                    })?,
+                    None => {
+                        return Err(in_mem_core::error::Error::InvalidOperation(format!(
+                            "StateCell '{}' not found",
+                            name_owned
+                        )))
+                    }
+                };
 
-            // Compute new value (closure may be called multiple times!)
-            let (new_value, result) = f(&current)?;
+                // Compute new value (closure may be called multiple times!)
+                let (new_value, result) = f(&current)?;
 
-            // Write new state with incremented version
-            let new_version = current.version + 1;
-            let new_state = State {
-                value: new_value,
-                version: new_version,
-                updated_at: State::now(),
-            };
+                // Write new state with incremented version
+                let new_version = current.version + 1;
+                let new_state = State {
+                    value: new_value,
+                    version: new_version,
+                    updated_at: State::now(),
+                };
 
-            txn.put(key.clone(), to_stored_value(&new_state))?;
-            Ok((result, new_version))
-        })
+                txn.put(key.clone(), to_stored_value(&new_state))?;
+                Ok((result, new_version))
+            })
     }
 
     /// Apply transition or initialize if cell doesn't exist

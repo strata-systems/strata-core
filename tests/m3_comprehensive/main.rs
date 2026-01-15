@@ -43,18 +43,18 @@
 mod test_utils;
 
 // Tier 1: Core Invariants
-mod primitive_invariant_tests;
 mod eventlog_chain_tests;
-mod statecell_cas_tests;
+mod primitive_invariant_tests;
 mod runindex_lifecycle_tests;
+mod statecell_cas_tests;
 mod substrate_invariant_tests;
 
 // Tier 2: Behavioral Scenarios
-mod primitive_api_tests;
 mod cross_primitive_transaction_tests;
-mod run_isolation_comprehensive_tests;
-mod recovery_comprehensive_tests;
 mod edge_case_tests;
+mod primitive_api_tests;
+mod recovery_comprehensive_tests;
+mod run_isolation_comprehensive_tests;
 
 // Tier 3: Stress/Chaos (use #[ignore])
 mod concurrent_primitive_stress_tests;

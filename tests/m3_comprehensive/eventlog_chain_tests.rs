@@ -34,7 +34,10 @@ mod append_only {
         let run_id = tp.run_id;
 
         // Append an event
-        let (seq, hash) = tp.event_log.append(&run_id, "initial", values::int(1)).unwrap();
+        let (seq, hash) = tp
+            .event_log
+            .append(&run_id, "initial", values::int(1))
+            .unwrap();
 
         // Read it back multiple times - should always be the same
         for _ in 0..10 {
@@ -52,9 +55,15 @@ mod append_only {
         let run_id = tp.run_id;
 
         // Append same event type multiple times
-        tp.event_log.append(&run_id, "event_type", values::int(1)).unwrap();
-        tp.event_log.append(&run_id, "event_type", values::int(2)).unwrap();
-        tp.event_log.append(&run_id, "event_type", values::int(3)).unwrap();
+        tp.event_log
+            .append(&run_id, "event_type", values::int(1))
+            .unwrap();
+        tp.event_log
+            .append(&run_id, "event_type", values::int(2))
+            .unwrap();
+        tp.event_log
+            .append(&run_id, "event_type", values::int(3))
+            .unwrap();
 
         // Should have 3 separate events
         let events = tp.event_log.read_range(&run_id, 0, 100).unwrap();
@@ -72,7 +81,10 @@ mod append_only {
 
         // Append multiple events
         for i in 0..10 {
-            let (seq, _) = tp.event_log.append(&run_id, "event", values::int(i)).unwrap();
+            let (seq, _) = tp
+                .event_log
+                .append(&run_id, "event", values::int(i))
+                .unwrap();
             assert_eq!(seq, i as u64, "Sequence should be {}", i);
         }
 
@@ -88,7 +100,10 @@ mod append_only {
         let tp = TestPrimitives::new();
         let run_id = tp.run_id;
 
-        let (seq, original_hash) = tp.event_log.append(&run_id, "test", values::int(42)).unwrap();
+        let (seq, original_hash) = tp
+            .event_log
+            .append(&run_id, "test", values::int(42))
+            .unwrap();
 
         // Read multiple times, hash should never change
         for _ in 0..10 {
@@ -117,7 +132,10 @@ mod monotonic_sequences {
         let tp = TestPrimitives::new();
         let run_id = tp.run_id;
 
-        let (seq, _) = tp.event_log.append(&run_id, "first", values::null()).unwrap();
+        let (seq, _) = tp
+            .event_log
+            .append(&run_id, "first", values::null())
+            .unwrap();
         assert_eq!(seq, 0, "First sequence should be 0");
     }
 
@@ -127,7 +145,10 @@ mod monotonic_sequences {
         let run_id = tp.run_id;
 
         for expected_seq in 0..100 {
-            let (seq, _) = tp.event_log.append(&run_id, "event", values::int(expected_seq)).unwrap();
+            let (seq, _) = tp
+                .event_log
+                .append(&run_id, "event", values::int(expected_seq))
+                .unwrap();
             assert_eq!(seq, expected_seq as u64, "Sequence gap at {}", expected_seq);
         }
 
@@ -142,7 +163,10 @@ mod monotonic_sequences {
         let run_id = tp.run_id;
 
         // Successful append: seq 0
-        let (seq0, _) = tp.event_log.append(&run_id, "event", values::int(0)).unwrap();
+        let (seq0, _) = tp
+            .event_log
+            .append(&run_id, "event", values::int(0))
+            .unwrap();
         assert_eq!(seq0, 0);
 
         // Failed transaction that tries to append
@@ -154,7 +178,10 @@ mod monotonic_sequences {
         assert!(result.is_err());
 
         // Next successful append should be seq 1, not seq 2
-        let (seq1, _) = tp.event_log.append(&run_id, "event", values::int(1)).unwrap();
+        let (seq1, _) = tp
+            .event_log
+            .append(&run_id, "event", values::int(1))
+            .unwrap();
         assert_eq!(seq1, 1, "Sequence gap after failed append");
 
         // Verify contiguity
@@ -170,12 +197,17 @@ mod monotonic_sequences {
 
         // Append some events
         for _ in 0..5 {
-            tp.event_log.append(&run_id, "event", values::null()).unwrap();
+            tp.event_log
+                .append(&run_id, "event", values::null())
+                .unwrap();
         }
 
         // Even if we could theoretically "delete" (which we can't),
         // new appends should continue from 5
-        let (seq, _) = tp.event_log.append(&run_id, "event", values::null()).unwrap();
+        let (seq, _) = tp
+            .event_log
+            .append(&run_id, "event", values::null())
+            .unwrap();
         assert_eq!(seq, 5);
     }
 
@@ -215,10 +247,15 @@ mod hash_chain_integrity {
         let tp = TestPrimitives::new();
         let run_id = tp.run_id;
 
-        tp.event_log.append(&run_id, "first", values::null()).unwrap();
+        tp.event_log
+            .append(&run_id, "first", values::null())
+            .unwrap();
 
         let event = tp.event_log.read(&run_id, 0).unwrap().unwrap();
-        assert_eq!(event.prev_hash, [0u8; 32], "First event prev_hash should be zero");
+        assert_eq!(
+            event.prev_hash, [0u8; 32],
+            "First event prev_hash should be zero"
+        );
     }
 
     #[test]
@@ -228,7 +265,9 @@ mod hash_chain_integrity {
 
         // Append multiple events
         for i in 0..10 {
-            tp.event_log.append(&run_id, &format!("event_{}", i), values::int(i)).unwrap();
+            tp.event_log
+                .append(&run_id, &format!("event_{}", i), values::int(i))
+                .unwrap();
         }
 
         // Verify chain integrity
@@ -242,7 +281,9 @@ mod hash_chain_integrity {
         let run_id = tp.run_id;
 
         for i in 0..20 {
-            tp.event_log.append(&run_id, "event", values::int(i)).unwrap();
+            tp.event_log
+                .append(&run_id, "event", values::int(i))
+                .unwrap();
         }
 
         let verification = tp.event_log.verify_chain(&run_id).unwrap();
@@ -257,7 +298,9 @@ mod hash_chain_integrity {
 
         // Append events
         for i in 0..5 {
-            tp.event_log.append(&run_id, "event", values::int(i)).unwrap();
+            tp.event_log
+                .append(&run_id, "event", values::int(i))
+                .unwrap();
         }
 
         // Read chain multiple times, hashes should be consistent
@@ -265,8 +308,16 @@ mod hash_chain_integrity {
         let events2 = tp.event_log.read_range(&run_id, 0, 100).unwrap();
 
         for i in 0..5 {
-            assert_eq!(events1[i].hash, events2[i].hash, "Hash inconsistent at {}", i);
-            assert_eq!(events1[i].prev_hash, events2[i].prev_hash, "Prev hash inconsistent at {}", i);
+            assert_eq!(
+                events1[i].hash, events2[i].hash,
+                "Hash inconsistent at {}",
+                i
+            );
+            assert_eq!(
+                events1[i].prev_hash, events2[i].prev_hash,
+                "Prev hash inconsistent at {}",
+                i
+            );
         }
     }
 
@@ -279,7 +330,9 @@ mod hash_chain_integrity {
         {
             let p = ptp.open_strict();
             for i in 0..10 {
-                p.event_log.append(&run_id, "event", values::int(i)).unwrap();
+                p.event_log
+                    .append(&run_id, "event", values::int(i))
+                    .unwrap();
             }
         }
 
@@ -303,7 +356,10 @@ mod hash_chain_integrity {
         let (_, hash2) = tp.event_log.append(&run2, "event", values::int(2)).unwrap();
 
         // Hashes should differ because payloads differ
-        assert_ne!(hash1, hash2, "Different payloads should produce different hashes");
+        assert_ne!(
+            hash1, hash2,
+            "Different payloads should produce different hashes"
+        );
     }
 }
 
@@ -366,13 +422,11 @@ mod total_order_under_concurrency {
         let event_log = tp.event_log.clone();
 
         // Many concurrent appends
-        let results = concurrent::run_with_shared(
-            20,
-            (event_log, run_id),
-            |i, (log, run_id)| {
-                log.append(run_id, "event", values::int(i as i64)).ok().map(|(seq, _)| seq)
-            },
-        );
+        let results = concurrent::run_with_shared(20, (event_log, run_id), |i, (log, run_id)| {
+            log.append(run_id, "event", values::int(i as i64))
+                .ok()
+                .map(|(seq, _)| seq)
+        });
 
         let sequences: Vec<u64> = results.into_iter().flatten().collect();
 
@@ -395,11 +449,16 @@ mod total_order_under_concurrency {
 
         // Sequential appends (deterministic baseline)
         for i in 0..10 {
-            tp.event_log.append(&run_id, "event", values::int(i)).unwrap();
+            tp.event_log
+                .append(&run_id, "event", values::int(i))
+                .unwrap();
         }
 
         // Read multiple times
-        let order1: Vec<i64> = tp.event_log.read_range(&run_id, 0, 100).unwrap()
+        let order1: Vec<i64> = tp
+            .event_log
+            .read_range(&run_id, 0, 100)
+            .unwrap()
             .iter()
             .map(|e| {
                 if let in_mem_core::value::Value::I64(v) = e.payload {
@@ -410,7 +469,10 @@ mod total_order_under_concurrency {
             })
             .collect();
 
-        let order2: Vec<i64> = tp.event_log.read_range(&run_id, 0, 100).unwrap()
+        let order2: Vec<i64> = tp
+            .event_log
+            .read_range(&run_id, 0, 100)
+            .unwrap()
             .iter()
             .map(|e| {
                 if let in_mem_core::value::Value::I64(v) = e.payload {
@@ -448,7 +510,9 @@ mod metadata_consistency {
 
         // Add events one by one
         for expected in 1..=20 {
-            tp.event_log.append(&run_id, "event", values::int(expected)).unwrap();
+            tp.event_log
+                .append(&run_id, "event", values::int(expected))
+                .unwrap();
             let len = tp.event_log.len(&run_id).unwrap();
             assert_eq!(len, expected as u64, "len() mismatch at count {}", expected);
         }
@@ -469,7 +533,9 @@ mod metadata_consistency {
 
         // Add events, head should always be most recent
         for i in 0..10 {
-            tp.event_log.append(&run_id, "event", values::int(i)).unwrap();
+            tp.event_log
+                .append(&run_id, "event", values::int(i))
+                .unwrap();
 
             let head = tp.event_log.head(&run_id).unwrap().unwrap();
             assert_eq!(head.sequence, i as u64, "Head sequence mismatch");
@@ -483,7 +549,9 @@ mod metadata_consistency {
         let run_id = tp.run_id;
 
         for i in 0..10 {
-            tp.event_log.append(&run_id, "event", values::int(i)).unwrap();
+            tp.event_log
+                .append(&run_id, "event", values::int(i))
+                .unwrap();
 
             let len = tp.event_log.len(&run_id).unwrap();
             let head = tp.event_log.head(&run_id).unwrap().unwrap();
@@ -510,7 +578,9 @@ mod metadata_consistency {
         {
             let p = ptp.open_strict();
             for i in 0..expected_len {
-                p.event_log.append(&run_id, "event", values::int(i as i64)).unwrap();
+                p.event_log
+                    .append(&run_id, "event", values::int(i as i64))
+                    .unwrap();
             }
 
             // Capture metadata before close
@@ -527,7 +597,11 @@ mod metadata_consistency {
             let head = p.event_log.head(&run_id).unwrap().unwrap();
 
             assert_eq!(len, expected_len, "len() changed after recovery");
-            assert_eq!(head.sequence, expected_len - 1, "head sequence changed after recovery");
+            assert_eq!(
+                head.sequence,
+                expected_len - 1,
+                "head sequence changed after recovery"
+            );
         }
     }
 
@@ -560,7 +634,9 @@ mod metadata_consistency {
 
         // Add 20 events
         for i in 0..20 {
-            tp.event_log.append(&run_id, "event", values::int(i)).unwrap();
+            tp.event_log
+                .append(&run_id, "event", values::int(i))
+                .unwrap();
         }
 
         // read_range(start, end) reads [start, end)
@@ -582,7 +658,9 @@ mod metadata_consistency {
 
         assert!(tp.event_log.is_empty(&run_id).unwrap());
 
-        tp.event_log.append(&run_id, "event", values::null()).unwrap();
+        tp.event_log
+            .append(&run_id, "event", values::null())
+            .unwrap();
 
         assert!(!tp.event_log.is_empty(&run_id).unwrap());
     }
@@ -593,11 +671,21 @@ mod metadata_consistency {
         let run_id = tp.run_id;
 
         // Append events of different types
-        tp.event_log.append(&run_id, "type_a", values::int(1)).unwrap();
-        tp.event_log.append(&run_id, "type_b", values::int(2)).unwrap();
-        tp.event_log.append(&run_id, "type_a", values::int(3)).unwrap();
-        tp.event_log.append(&run_id, "type_c", values::int(4)).unwrap();
-        tp.event_log.append(&run_id, "type_a", values::int(5)).unwrap();
+        tp.event_log
+            .append(&run_id, "type_a", values::int(1))
+            .unwrap();
+        tp.event_log
+            .append(&run_id, "type_b", values::int(2))
+            .unwrap();
+        tp.event_log
+            .append(&run_id, "type_a", values::int(3))
+            .unwrap();
+        tp.event_log
+            .append(&run_id, "type_c", values::int(4))
+            .unwrap();
+        tp.event_log
+            .append(&run_id, "type_a", values::int(5))
+            .unwrap();
 
         // Query by type
         let type_a_events = tp.event_log.read_by_type(&run_id, "type_a").unwrap();
@@ -621,10 +709,18 @@ mod metadata_consistency {
         let tp = TestPrimitives::new();
         let run_id = tp.run_id;
 
-        tp.event_log.append(&run_id, "alpha", values::null()).unwrap();
-        tp.event_log.append(&run_id, "beta", values::null()).unwrap();
-        tp.event_log.append(&run_id, "alpha", values::null()).unwrap();
-        tp.event_log.append(&run_id, "gamma", values::null()).unwrap();
+        tp.event_log
+            .append(&run_id, "alpha", values::null())
+            .unwrap();
+        tp.event_log
+            .append(&run_id, "beta", values::null())
+            .unwrap();
+        tp.event_log
+            .append(&run_id, "alpha", values::null())
+            .unwrap();
+        tp.event_log
+            .append(&run_id, "gamma", values::null())
+            .unwrap();
 
         let types = tp.event_log.event_types(&run_id).unwrap();
         assert_eq!(types.len(), 3);

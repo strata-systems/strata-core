@@ -58,7 +58,9 @@ mod primitives_are_projections {
         tp.state_cell
             .init(&run_id, "cell_1", values::int(100))
             .unwrap();
-        tp.state_cell.set(&run_id, "cell_1", values::int(200)).unwrap();
+        tp.state_cell
+            .set(&run_id, "cell_1", values::int(200))
+            .unwrap();
 
         // Create a new StateCell facade
         let state_cell_2 = StateCell::new(tp.db.clone());
@@ -80,7 +82,10 @@ mod primitives_are_projections {
             .trace_store
             .record(
                 &run_id,
-                TraceType::Thought { content: "thinking...".into(), confidence: None },
+                TraceType::Thought {
+                    content: "thinking...".into(),
+                    confidence: None,
+                },
                 vec![],
                 values::null(),
             )
@@ -102,7 +107,9 @@ mod primitives_are_projections {
 
         // Put values
         tp.kv.put(&run_id, "key_1", values::int(42)).unwrap();
-        tp.kv.put(&run_id, "key_2", values::string("hello")).unwrap();
+        tp.kv
+            .put(&run_id, "key_2", values::string("hello"))
+            .unwrap();
 
         // Create new KVStore facade
         let kv_2 = KVStore::new(tp.db.clone());
@@ -140,7 +147,10 @@ mod primitives_are_projections {
         // First session: write data and drop everything
         {
             let prims = ptp.open();
-            prims.kv.put(&run_id, "persistent_key", values::int(999)).unwrap();
+            prims
+                .kv
+                .put(&run_id, "persistent_key", values::int(999))
+                .unwrap();
             prims
                 .event_log
                 .append(&run_id, "persistent_event", values::null())
@@ -160,7 +170,11 @@ mod primitives_are_projections {
                 Some(values::int(999))
             );
             assert_eq!(prims.event_log.len(&run_id).unwrap(), 1);
-            assert!(prims.state_cell.read(&run_id, "persistent_cell").unwrap().is_some());
+            assert!(prims
+                .state_cell
+                .read(&run_id, "persistent_cell")
+                .unwrap()
+                .is_some());
         }
     }
 }
@@ -197,7 +211,10 @@ mod cross_primitive_ordering {
         tp.trace_store
             .record(
                 &run_id,
-                TraceType::Custom { name: "trace".into(), data: values::int(4) },
+                TraceType::Custom {
+                    name: "trace".into(),
+                    data: values::int(4),
+                },
                 vec![],
                 values::null(),
             )
@@ -383,7 +400,10 @@ mod replay_metadata_contract {
             .trace_store
             .record(
                 &run_id,
-                TraceType::Thought { content: "reasoning".into(), confidence: None },
+                TraceType::Thought {
+                    content: "reasoning".into(),
+                    confidence: None,
+                },
                 vec![],
                 values::null(),
             )
@@ -403,7 +423,10 @@ mod replay_metadata_contract {
             .trace_store
             .record(
                 &run_id,
-                TraceType::Custom { name: "Action".into(), data: values::null() },
+                TraceType::Custom {
+                    name: "Action".into(),
+                    data: values::null(),
+                },
                 vec![],
                 values::null(),
             )
@@ -423,7 +446,10 @@ mod replay_metadata_contract {
             .trace_store
             .record(
                 &run_id,
-                TraceType::Thought { content: "parent".into(), confidence: None },
+                TraceType::Thought {
+                    content: "parent".into(),
+                    confidence: None,
+                },
                 vec![],
                 values::null(),
             )
@@ -433,7 +459,10 @@ mod replay_metadata_contract {
             .record_child(
                 &run_id,
                 &parent_id,
-                TraceType::Thought { content: "child".into(), confidence: None },
+                TraceType::Thought {
+                    content: "child".into(),
+                    confidence: None,
+                },
                 vec![],
                 values::null(),
             )
@@ -453,7 +482,10 @@ mod replay_metadata_contract {
             .trace_store
             .record(
                 &run_id,
-                TraceType::Thought { content: "root".into(), confidence: None },
+                TraceType::Thought {
+                    content: "root".into(),
+                    confidence: None,
+                },
                 vec![],
                 values::null(),
             )
@@ -513,7 +545,9 @@ mod no_implicit_coupling {
 
         tp.state_cell.init(&run_id, "cell", values::int(0)).unwrap();
         tp.state_cell.set(&run_id, "cell", values::int(1)).unwrap();
-        tp.state_cell.cas(&run_id, "cell", 2, values::int(2)).unwrap();
+        tp.state_cell
+            .cas(&run_id, "cell", 2, values::int(2))
+            .unwrap();
 
         // EventLog should be empty
         assert_eq!(tp.event_log.len(&run_id).unwrap(), 0);
@@ -525,9 +559,15 @@ mod no_implicit_coupling {
         let tp = TestPrimitives::new();
         let run_id = tp.run_id;
 
-        tp.event_log.append(&run_id, "event_1", values::null()).unwrap();
-        tp.event_log.append(&run_id, "event_2", values::null()).unwrap();
-        tp.event_log.append(&run_id, "event_3", values::null()).unwrap();
+        tp.event_log
+            .append(&run_id, "event_1", values::null())
+            .unwrap();
+        tp.event_log
+            .append(&run_id, "event_2", values::null())
+            .unwrap();
+        tp.event_log
+            .append(&run_id, "event_3", values::null())
+            .unwrap();
 
         // TraceStore should be empty
         assert_eq!(tp.trace_store.count(&run_id).unwrap(), 0);
@@ -539,18 +579,28 @@ mod no_implicit_coupling {
         let tp = TestPrimitives::new();
         let run_id = tp.run_id;
 
-        tp.trace_store.record(
-            &run_id,
-            TraceType::Thought { content: "t1".into(), confidence: None },
-            vec![],
-            values::null(),
-        ).unwrap();
-        tp.trace_store.record(
-            &run_id,
-            TraceType::Thought { content: "t2".into(), confidence: None },
-            vec![],
-            values::null(),
-        ).unwrap();
+        tp.trace_store
+            .record(
+                &run_id,
+                TraceType::Thought {
+                    content: "t1".into(),
+                    confidence: None,
+                },
+                vec![],
+                values::null(),
+            )
+            .unwrap();
+        tp.trace_store
+            .record(
+                &run_id,
+                TraceType::Thought {
+                    content: "t2".into(),
+                    confidence: None,
+                },
+                vec![],
+                values::null(),
+            )
+            .unwrap();
 
         // EventLog should be empty
         assert_eq!(tp.event_log.len(&run_id).unwrap(), 0);

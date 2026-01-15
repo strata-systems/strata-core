@@ -58,9 +58,7 @@ use in_mem_core::traits::Storage;
 use in_mem_core::types::{Key, Namespace, RunId};
 use in_mem_core::value::Value;
 use in_mem_engine::Database;
-use in_mem_primitives::{
-    EventLog, KVStore, RunIndex, RunStatus, StateCell, TraceStore, TraceType,
-};
+use in_mem_primitives::{EventLog, KVStore, RunIndex, RunStatus, StateCell, TraceStore, TraceType};
 use in_mem_storage::UnifiedStore;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -1576,7 +1574,13 @@ fn populate_report_from_criterion(report: &mut BenchmarkReport) {
     // Try to read estimates.json files from criterion output
     if criterion_dir.exists() {
         // Tier A0 benchmarks
-        for name in &["get_hot", "put_hot", "put_hot_prealloc", "get_versioned", "scan_prefix_100"] {
+        for name in &[
+            "get_hot",
+            "put_hot",
+            "put_hot_prealloc",
+            "get_versioned",
+            "scan_prefix_100",
+        ] {
             if let Some(ns) = read_criterion_estimate(&criterion_dir.join("core").join(name)) {
                 report.facade_tax.add_a0(name, ns);
             }
@@ -1621,16 +1625,14 @@ fn populate_report_from_criterion(report: &mut BenchmarkReport) {
         let mut contention = ContentionResults::new();
         for threads in [1, 2, 4, 8] {
             let name = format!("statecell_same_key/{}", threads);
-            if let Some(ns) =
-                read_criterion_estimate(&criterion_dir.join("contention").join(&name))
+            if let Some(ns) = read_criterion_estimate(&criterion_dir.join("contention").join(&name))
             {
                 // Convert ns to ops/sec (approximate)
                 contention.add("statecell_same_key", threads, 1_000_000_000.0 / ns);
             }
 
             let name = format!("disjoint_key/{}", threads);
-            if let Some(ns) =
-                read_criterion_estimate(&criterion_dir.join("contention").join(&name))
+            if let Some(ns) = read_criterion_estimate(&criterion_dir.join("contention").join(&name))
             {
                 contention.add("disjoint_key", threads, 1_000_000_000.0 / ns);
             }
@@ -1653,9 +1655,7 @@ fn read_criterion_estimate(bench_dir: &std::path::Path) -> Option<f64> {
     let json: serde_json::Value = serde_json::from_str(&content).ok()?;
 
     // Get the point estimate in nanoseconds
-    json.get("mean")?
-        .get("point_estimate")?
-        .as_f64()
+    json.get("mean")?.get("point_estimate")?.as_f64()
 }
 
 /// Print facade tax summary to console
