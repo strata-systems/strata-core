@@ -64,13 +64,12 @@
 mod traits;
 mod inmemory;
 mod strict;
-
-// Will be added in Story #224
-// mod buffered;
+mod buffered;
 
 pub use traits::{CommitData, Durability, DurabilityExt};
 pub use inmemory::InMemoryDurability;
 pub use strict::StrictDurability;
+pub use buffered::BufferedDurability;
 
 // Re-export DurabilityMode from durability crate for convenience
 pub use in_mem_durability::wal::DurabilityMode;
