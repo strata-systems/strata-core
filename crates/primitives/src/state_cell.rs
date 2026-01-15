@@ -31,7 +31,7 @@ use in_mem_concurrency::TransactionContext;
 use in_mem_core::error::Result;
 use in_mem_core::types::{Key, Namespace, RunId};
 use in_mem_core::value::Value;
-use in_mem_engine::Database;
+use in_mem_engine::{Database, RetryConfig};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -293,6 +293,9 @@ impl StateCell {
 
     /// Apply a transition function with automatic retry on conflict
     ///
+    /// Returns `(user_result, new_version)` tuple. The new_version is the version
+    /// number after the transition commits, useful for tracking without a separate read.
+    ///
     /// ## Purity Requirement
     ///
     /// The closure `f` MAY BE CALLED MULTIPLE TIMES due to OCC retries.
@@ -302,62 +305,80 @@ impl StateCell {
     /// - No irreversible effects (logging, metrics)
     /// - Idempotent (same input -> same output)
     ///
+    /// ## Implementation Note
+    ///
+    /// This method performs read + closure + write in a SINGLE TRANSACTION
+    /// to ensure atomic OCC validation. The entire transaction retries on
+    /// conflict, not just the CAS operation.
+    ///
     /// ## Example
     ///
     /// ```rust,ignore
-    /// sc.transition(run_id, "counter", |state| {
+    /// let (incremented, new_version) = sc.transition(run_id, "counter", |state| {
     ///     let current = state.value.as_i64().unwrap_or(0);
     ///     Ok((Value::I64(current + 1), current + 1))
     /// })?;
     /// ```
-    pub fn transition<F, T>(&self, run_id: &RunId, name: &str, f: F) -> Result<T>
+    pub fn transition<F, T>(&self, run_id: &RunId, name: &str, f: F) -> Result<(T, u64)>
     where
         F: Fn(&State) -> Result<(Value, T)>,
     {
-        const MAX_RETRIES: usize = 10;
+        // Use high retry count for contention scenarios
+        // With N concurrent threads on single key, worst case needs N retries per op
+        // 200 retries with fast backoff handles 100+ concurrent threads reliably
+        let retry_config = RetryConfig::default()
+            .with_max_retries(200)
+            .with_base_delay_ms(1)
+            .with_max_delay_ms(50);
 
-        for attempt in 0..MAX_RETRIES {
-            // Read current state
-            let current = self.read(run_id, name)?.ok_or_else(|| {
-                in_mem_core::error::Error::InvalidOperation(format!(
-                    "StateCell '{}' not found",
-                    name
-                ))
-            })?;
+        let key = self.key_for(run_id, name);
+        let name_owned = name.to_string();
+
+        // Perform read + closure + write in a SINGLE transaction
+        // This ensures atomic OCC validation at commit time
+        self.db.transaction_with_retry(*run_id, retry_config, |txn| {
+            // Read current state within the transaction
+            let current: State = match txn.get(&key)? {
+                Some(v) => from_stored_value(&v).map_err(|e| {
+                    in_mem_core::error::Error::SerializationError(e.to_string())
+                })?,
+                None => {
+                    return Err(in_mem_core::error::Error::InvalidOperation(format!(
+                        "StateCell '{}' not found",
+                        name_owned
+                    )))
+                }
+            };
 
             // Compute new value (closure may be called multiple times!)
             let (new_value, result) = f(&current)?;
 
-            // Try CAS
-            match self.cas(run_id, name, current.version, new_value) {
-                Ok(_) => return Ok(result),
-                Err(in_mem_core::error::Error::VersionMismatch { .. })
-                    if attempt < MAX_RETRIES - 1 =>
-                {
-                    // Retry on conflict
-                    continue;
-                }
-                Err(e) => return Err(e),
-            }
-        }
+            // Write new state with incremented version
+            let new_version = current.version + 1;
+            let new_state = State {
+                value: new_value,
+                version: new_version,
+                updated_at: State::now(),
+            };
 
-        Err(in_mem_core::error::Error::TransactionConflict(format!(
-            "StateCell transition failed after {} retries",
-            MAX_RETRIES
-        )))
+            txn.put(key.clone(), to_stored_value(&new_state))?;
+            Ok((result, new_version))
+        })
     }
 
     /// Apply transition or initialize if cell doesn't exist
     ///
     /// First attempts to initialize the cell with `initial` value,
     /// then applies the transition function.
+    ///
+    /// Returns `(user_result, new_version)` tuple.
     pub fn transition_or_init<F, T>(
         &self,
         run_id: &RunId,
         name: &str,
         initial: Value,
         f: F,
-    ) -> Result<T>
+    ) -> Result<(T, u64)>
     where
         F: Fn(&State) -> Result<(Value, T)>,
     {
@@ -682,7 +703,7 @@ mod tests {
 
         sc.init(&run_id, "counter", Value::I64(0)).unwrap();
 
-        let result = sc
+        let (result, new_version) = sc
             .transition(&run_id, "counter", |state| {
                 let current = match &state.value {
                     Value::I64(n) => *n,
@@ -693,6 +714,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(result, 1);
+        assert_eq!(new_version, 2);
 
         let state = sc.read(&run_id, "counter").unwrap().unwrap();
         assert_eq!(state.value, Value::I64(1));
@@ -714,7 +736,7 @@ mod tests {
         let run_id = RunId::new();
 
         // Cell doesn't exist, should init then transition
-        let result = sc
+        let (result, _version) = sc
             .transition_or_init(&run_id, "new-counter", Value::I64(0), |state| {
                 let current = match &state.value {
                     Value::I64(n) => *n,
@@ -739,7 +761,7 @@ mod tests {
         sc.init(&run_id, "counter", Value::I64(5)).unwrap();
 
         // transition_or_init should use existing value
-        let result = sc
+        let (result, _version) = sc
             .transition_or_init(&run_id, "counter", Value::I64(0), |state| {
                 let current = match &state.value {
                     Value::I64(n) => *n,
@@ -760,7 +782,7 @@ mod tests {
         sc.init(&run_id, "counter", Value::I64(0)).unwrap();
 
         for expected in 1..=5 {
-            let result = sc
+            let (result, _version) = sc
                 .transition(&run_id, "counter", |state| {
                     let current = match &state.value {
                         Value::I64(n) => *n,

@@ -400,7 +400,7 @@ mod transition_speculative_execution {
         tp.state_cell.init(&run_id, "counter", values::int(0)).unwrap();
 
         // Simple transition: increment
-        let result = tp.state_cell.transition(&run_id, "counter", |state| {
+        let (result, _version) = tp.state_cell.transition(&run_id, "counter", |state| {
             let current = if let Value::I64(v) = &state.value { *v } else { 0 };
             Ok((Value::I64(current + 1), current + 1))
         }).unwrap();
@@ -510,7 +510,7 @@ mod transition_speculative_execution {
         tp.state_cell.init(&run_id, "cell", values::int(0)).unwrap();
 
         // Transition that returns error
-        let result: Result<(), Error> = tp.state_cell.transition(&run_id, "cell", |_state| {
+        let result: Result<((), u64), Error> = tp.state_cell.transition(&run_id, "cell", |_state| {
             Err(Error::InvalidState("intentional failure".to_string()))
         });
 
@@ -528,7 +528,7 @@ mod transition_speculative_execution {
         let run_id = tp.run_id;
 
         // Use transition_or_init on non-existent cell
-        let result = tp.state_cell.transition_or_init(
+        let (result, _version) = tp.state_cell.transition_or_init(
             &run_id,
             "new_cell",
             values::int(0),

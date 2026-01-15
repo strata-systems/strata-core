@@ -514,7 +514,7 @@ mod statecell_api {
             })
             .unwrap();
 
-        assert_eq!(result, 1);
+        assert_eq!(result.0, 1);
 
         let state = tp.state_cell.read(&tp.run_id, "counter").unwrap().unwrap();
         assert_eq!(state.value, values::int(1));
@@ -525,7 +525,7 @@ mod statecell_api {
         let tp = TestPrimitives::new();
 
         // On non-existent cell, should init then transition
-        let result = tp
+        let (result, _version) = tp
             .state_cell
             .transition_or_init(&tp.run_id, "counter", values::int(0), |state| {
                 let current = if let Value::I64(n) = &state.value { *n } else { 0 };
