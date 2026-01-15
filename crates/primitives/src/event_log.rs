@@ -27,7 +27,7 @@ use in_mem_concurrency::TransactionContext;
 use in_mem_core::error::Result;
 use in_mem_core::types::{Key, Namespace, RunId};
 use in_mem_core::value::Value;
-use in_mem_engine::Database;
+use in_mem_engine::{Database, RetryConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -168,7 +168,8 @@ impl EventLog {
     /// Append a new event to the log
     ///
     /// Returns the assigned sequence number and event hash.
-    /// Serializes through CAS on metadata key - parallel appends will retry.
+    /// Serializes through CAS on metadata key - parallel appends will retry
+    /// automatically with exponential backoff.
     ///
     /// # Arguments
     /// * `run_id` - The run to append to
@@ -183,9 +184,19 @@ impl EventLog {
         event_type: &str,
         payload: Value,
     ) -> Result<(u64, [u8; 32])> {
-        self.db.transaction(*run_id, |txn| {
-            let ns = self.namespace_for_run(run_id);
+        // Use high retry count for contention scenarios
+        // EventLog appends serialize through metadata CAS, so conflicts are expected
+        // With N concurrent threads, worst case needs N retries per append
+        // 200 retries with fast backoff handles 100+ concurrent threads reliably
+        let retry_config = RetryConfig::default()
+            .with_max_retries(200)
+            .with_base_delay_ms(1)
+            .with_max_delay_ms(50);
 
+        let ns = self.namespace_for_run(run_id);
+        let event_type_owned = event_type.to_string();
+
+        self.db.transaction_with_retry(*run_id, retry_config, |txn| {
             // Read current metadata (or default)
             let meta_key = Key::new_event_meta(ns.clone());
             let meta: EventLogMeta = match txn.get(&meta_key)? {
@@ -200,13 +211,18 @@ impl EventLog {
                 .unwrap()
                 .as_millis() as i64;
 
-            let hash =
-                compute_event_hash(sequence, event_type, &payload, timestamp, &meta.head_hash);
+            let hash = compute_event_hash(
+                sequence,
+                &event_type_owned,
+                &payload,
+                timestamp,
+                &meta.head_hash,
+            );
 
             // Build event
             let event = Event {
                 sequence,
-                event_type: event_type.to_string(),
+                event_type: event_type_owned.clone(),
                 payload: payload.clone(),
                 timestamp,
                 prev_hash: meta.head_hash,

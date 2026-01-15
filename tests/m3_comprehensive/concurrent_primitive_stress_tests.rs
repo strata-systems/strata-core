@@ -317,39 +317,51 @@ mod statecell_stress {
     fn stress_statecell_version_never_decreases() {
         let tp = Arc::new(TestPrimitives::new());
         let run_id = tp.run_id;
-        let max_observed_version = Arc::new(AtomicU64::new(0));
 
         tp.state_cell.init(&run_id, "cell", values::int(0)).unwrap();
 
         let num_threads = 50;
         let ops_per_thread = 100;
 
+        // Test per-thread version monotonicity: within each thread, versions should increase
+        // Note: Global monotonicity across threads is NOT guaranteed by OCC - threads can
+        // return from transition() in different order than they committed due to scheduling
         let results = concurrent::run_with_shared(
             num_threads,
-            (tp.clone(), run_id, max_observed_version.clone()),
-            move |_, (tp, run_id, max_observed)| {
+            (tp.clone(), run_id),
+            move |_, (tp, run_id)| {
+                let mut last_version = 0u64;
                 let mut version_decreases = 0;
+
                 for _ in 0..ops_per_thread {
                     let result = tp.state_cell.transition(run_id, "cell", |_| {
                         Ok((values::int(1), ()))
                     });
 
-                    if result.is_ok() {
-                        if let Some(state) = tp.state_cell.read(run_id, "cell").unwrap() {
-                            let prev_max = max_observed.fetch_max(state.version, Ordering::SeqCst);
-                            if state.version < prev_max {
-                                version_decreases += 1;
-                            }
+                    if let Ok((_, new_version)) = result {
+                        // Per-thread: each successful transition should return a higher version
+                        // than the previous successful transition by THIS thread
+                        if new_version <= last_version {
+                            version_decreases += 1;
                         }
+                        last_version = new_version;
                     }
                 }
                 version_decreases
             },
         );
 
-        // No version decreases should have been observed
+        // No per-thread version decreases should have been observed
         let total_decreases: i32 = results.iter().sum();
-        assert_eq!(total_decreases, 0, "Version monotonicity violated!");
+        assert_eq!(total_decreases, 0, "Per-thread version monotonicity violated!");
+
+        // Also verify final version equals number of successful transitions
+        let final_state = tp.state_cell.read(&run_id, "cell").unwrap().unwrap();
+        let expected_version = (num_threads * ops_per_thread + 1) as u64; // +1 for init
+        assert_eq!(
+            final_state.version, expected_version,
+            "Final version should equal total transitions + 1"
+        );
     }
 }
 
