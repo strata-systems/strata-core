@@ -1268,6 +1268,57 @@ pub fn delete_at_path(
     }
 }
 
+// =============================================================================
+// Patch Application (Story #271)
+// =============================================================================
+
+/// Apply multiple patches to a JSON document
+///
+/// Applies each patch in order. If any patch fails, the document may be
+/// left in a partially modified state (patches are not atomic).
+///
+/// # Arguments
+///
+/// * `root` - The root JSON value to modify
+/// * `patches` - The patches to apply in order
+///
+/// # Returns
+///
+/// * `Ok(())` - All patches applied successfully
+/// * `Err(JsonPathError)` - A patch failed to apply
+///
+/// # Examples
+///
+/// ```
+/// use in_mem_core::json::{JsonValue, JsonPath, JsonPatch, apply_patches, get_at_path};
+///
+/// let mut json = JsonValue::object();
+///
+/// let patches = vec![
+///     JsonPatch::set("name", JsonValue::from("Alice")),
+///     JsonPatch::set("age", JsonValue::from(30i64)),
+///     JsonPatch::set("tags", JsonValue::array()),
+/// ];
+///
+/// apply_patches(&mut json, &patches).unwrap();
+///
+/// assert_eq!(get_at_path(&json, &"name".parse().unwrap()).unwrap().as_str(), Some("Alice"));
+/// assert_eq!(get_at_path(&json, &"age".parse().unwrap()).unwrap().as_i64(), Some(30));
+/// ```
+pub fn apply_patches(root: &mut JsonValue, patches: &[JsonPatch]) -> Result<(), JsonPathError> {
+    for patch in patches {
+        match patch {
+            JsonPatch::Set { path, value } => {
+                set_at_path(root, path, value.clone())?;
+            }
+            JsonPatch::Delete { path } => {
+                delete_at_path(root, path)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2599,5 +2650,196 @@ mod tests {
             .as_array()
             .unwrap();
         assert_eq!(arr.len(), 2);
+    }
+
+    // =========================================================================
+    // Apply Patches Tests (Story #271)
+    // =========================================================================
+
+    #[test]
+    fn test_apply_patches_empty() {
+        let mut json = JsonValue::object();
+        let patches: Vec<JsonPatch> = vec![];
+        apply_patches(&mut json, &patches).unwrap();
+        assert!(json.as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_apply_patches_single_set() {
+        let mut json = JsonValue::object();
+        let patches = vec![JsonPatch::set("name", JsonValue::from("Alice"))];
+        apply_patches(&mut json, &patches).unwrap();
+
+        assert_eq!(
+            get_at_path(&json, &"name".parse().unwrap())
+                .unwrap()
+                .as_str(),
+            Some("Alice")
+        );
+    }
+
+    #[test]
+    fn test_apply_patches_multiple_sets() {
+        let mut json = JsonValue::object();
+        let patches = vec![
+            JsonPatch::set("name", JsonValue::from("Alice")),
+            JsonPatch::set("age", JsonValue::from(30i64)),
+            JsonPatch::set("active", JsonValue::from(true)),
+        ];
+        apply_patches(&mut json, &patches).unwrap();
+
+        assert_eq!(
+            get_at_path(&json, &"name".parse().unwrap())
+                .unwrap()
+                .as_str(),
+            Some("Alice")
+        );
+        assert_eq!(
+            get_at_path(&json, &"age".parse().unwrap())
+                .unwrap()
+                .as_i64(),
+            Some(30)
+        );
+        assert_eq!(
+            get_at_path(&json, &"active".parse().unwrap())
+                .unwrap()
+                .as_bool(),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn test_apply_patches_set_and_delete() {
+        let mut json: JsonValue = r#"{"name": "Alice", "age": 30}"#.parse().unwrap();
+        let patches = vec![
+            JsonPatch::set("email", JsonValue::from("alice@example.com")),
+            JsonPatch::delete("age"),
+        ];
+        apply_patches(&mut json, &patches).unwrap();
+
+        assert!(get_at_path(&json, &"email".parse().unwrap()).is_some());
+        assert!(get_at_path(&json, &"age".parse().unwrap()).is_none());
+        assert!(get_at_path(&json, &"name".parse().unwrap()).is_some());
+    }
+
+    #[test]
+    fn test_apply_patches_nested() {
+        let mut json = JsonValue::object();
+        let patches = vec![
+            JsonPatch::set("user.profile.name", JsonValue::from("Bob")),
+            JsonPatch::set("user.profile.email", JsonValue::from("bob@example.com")),
+        ];
+        apply_patches(&mut json, &patches).unwrap();
+
+        assert_eq!(
+            get_at_path(&json, &"user.profile.name".parse().unwrap())
+                .unwrap()
+                .as_str(),
+            Some("Bob")
+        );
+        assert_eq!(
+            get_at_path(&json, &"user.profile.email".parse().unwrap())
+                .unwrap()
+                .as_str(),
+            Some("bob@example.com")
+        );
+    }
+
+    #[test]
+    fn test_apply_patches_overwrite() {
+        let mut json: JsonValue = r#"{"name": "Alice"}"#.parse().unwrap();
+        let patches = vec![
+            JsonPatch::set("name", JsonValue::from("Bob")),
+            JsonPatch::set("name", JsonValue::from("Charlie")),
+        ];
+        apply_patches(&mut json, &patches).unwrap();
+
+        // Last write wins
+        assert_eq!(
+            get_at_path(&json, &"name".parse().unwrap())
+                .unwrap()
+                .as_str(),
+            Some("Charlie")
+        );
+    }
+
+    #[test]
+    fn test_apply_patches_set_then_delete() {
+        let mut json = JsonValue::object();
+        let patches = vec![
+            JsonPatch::set("temp", JsonValue::from("value")),
+            JsonPatch::delete("temp"),
+        ];
+        apply_patches(&mut json, &patches).unwrap();
+
+        assert!(get_at_path(&json, &"temp".parse().unwrap()).is_none());
+    }
+
+    #[test]
+    fn test_apply_patches_delete_then_set() {
+        let mut json: JsonValue = r#"{"name": "Alice"}"#.parse().unwrap();
+        let patches = vec![
+            JsonPatch::delete("name"),
+            JsonPatch::set("name", JsonValue::from("Bob")),
+        ];
+        apply_patches(&mut json, &patches).unwrap();
+
+        assert_eq!(
+            get_at_path(&json, &"name".parse().unwrap())
+                .unwrap()
+                .as_str(),
+            Some("Bob")
+        );
+    }
+
+    #[test]
+    fn test_apply_patches_error_propagation() {
+        let mut json = JsonValue::from(42i64);
+        let patches = vec![JsonPatch::set("name", JsonValue::from("Alice"))];
+        let result = apply_patches(&mut json, &patches);
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            JsonPathError::TypeMismatch { .. }
+        ));
+    }
+
+    #[test]
+    fn test_apply_patches_partial_failure() {
+        let mut json = JsonValue::object();
+        let patches = vec![
+            JsonPatch::set("name", JsonValue::from("Alice")),
+            JsonPatch::set("[0]", JsonValue::from("invalid")), // type mismatch - object not array
+        ];
+        let result = apply_patches(&mut json, &patches);
+
+        // First patch should have been applied before failure
+        assert!(result.is_err());
+        assert_eq!(
+            get_at_path(&json, &"name".parse().unwrap())
+                .unwrap()
+                .as_str(),
+            Some("Alice")
+        );
+    }
+
+    #[test]
+    fn test_apply_patches_with_arrays() {
+        let mut json = JsonValue::object();
+        let patches = vec![
+            JsonPatch::set("items", JsonValue::array()),
+            JsonPatch::set("items[0]", JsonValue::from("first")),
+            JsonPatch::set("items[1]", JsonValue::from("second")),
+        ];
+        apply_patches(&mut json, &patches).unwrap();
+
+        let items = get_at_path(&json, &"items".parse().unwrap())
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].as_str(), Some("first"));
+        assert_eq!(items[1].as_str(), Some("second"));
     }
 }
