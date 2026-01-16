@@ -119,6 +119,7 @@ pub enum LimitError {
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
+#[repr(transparent)]
 pub struct JsonValue(serde_json::Value);
 
 impl JsonValue {
@@ -857,6 +858,166 @@ impl fmt::Display for JsonPatch {
             JsonPatch::Delete { path } => write!(f, "DELETE {}", path),
         }
     }
+}
+
+// =============================================================================
+// Path Operations Error
+// =============================================================================
+
+/// Error type for path operations
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum JsonPathError {
+    /// Type mismatch during path traversal
+    #[error("type mismatch: expected {expected}, found {found}")]
+    TypeMismatch {
+        /// Expected type
+        expected: &'static str,
+        /// Actual type found
+        found: &'static str,
+    },
+
+    /// Array index out of bounds
+    #[error("index out of bounds: {index} >= {len}")]
+    IndexOutOfBounds {
+        /// The requested index
+        index: usize,
+        /// The array length
+        len: usize,
+    },
+
+    /// Path not found
+    #[error("path not found")]
+    NotFound,
+}
+
+// =============================================================================
+// Path Operations (Story #268)
+// =============================================================================
+
+/// Get value at path within a JSON document
+///
+/// Traverses the document following the path segments, returning a reference
+/// to the value at the specified location.
+///
+/// # Arguments
+///
+/// * `value` - The root JSON value to traverse
+/// * `path` - The path to the desired value
+///
+/// # Returns
+///
+/// * `Some(&JsonValue)` - Reference to the value at the path
+/// * `None` - If the path doesn't exist or there's a type mismatch
+///
+/// # Examples
+///
+/// ```
+/// use in_mem_core::json::{JsonValue, JsonPath, get_at_path};
+///
+/// let json: JsonValue = serde_json::json!({
+///     "user": {
+///         "name": "Alice",
+///         "scores": [100, 95, 88]
+///     }
+/// }).into();
+///
+/// // Get nested object property
+/// let path: JsonPath = "user.name".parse().unwrap();
+/// let name = get_at_path(&json, &path).unwrap();
+/// assert_eq!(name.as_str(), Some("Alice"));
+///
+/// // Get array element
+/// let path: JsonPath = "user.scores[1]".parse().unwrap();
+/// let score = get_at_path(&json, &path).unwrap();
+/// assert_eq!(score.as_i64(), Some(95));
+///
+/// // Root path returns the entire document
+/// assert_eq!(get_at_path(&json, &JsonPath::root()), Some(&json));
+/// ```
+pub fn get_at_path<'a>(value: &'a JsonValue, path: &JsonPath) -> Option<&'a JsonValue> {
+    if path.is_root() {
+        return Some(value);
+    }
+
+    let mut current: &serde_json::Value = value.as_inner();
+
+    for segment in path.segments() {
+        match (segment, current) {
+            (PathSegment::Key(key), serde_json::Value::Object(obj)) => {
+                current = obj.get(key)?;
+            }
+            (PathSegment::Index(idx), serde_json::Value::Array(arr)) => {
+                current = arr.get(*idx)?;
+            }
+            _ => return None,
+        }
+    }
+
+    // SAFETY: This transmute is safe because:
+    // 1. JsonValue has #[repr(transparent)], guaranteeing identical memory layout to serde_json::Value
+    // 2. The returned reference's lifetime is tied to the input JsonValue reference
+    // 3. Both types have the same alignment requirements
+    Some(unsafe { &*(current as *const serde_json::Value as *const JsonValue) })
+}
+
+/// Get mutable reference to value at path within a JSON document
+///
+/// Traverses the document following the path segments, returning a mutable
+/// reference to the value at the specified location.
+///
+/// # Arguments
+///
+/// * `value` - The root JSON value to traverse
+/// * `path` - The path to the desired value
+///
+/// # Returns
+///
+/// * `Some(&mut JsonValue)` - Mutable reference to the value at the path
+/// * `None` - If the path doesn't exist or there's a type mismatch
+///
+/// # Examples
+///
+/// ```
+/// use in_mem_core::json::{JsonValue, JsonPath, get_at_path_mut};
+///
+/// let mut json: JsonValue = serde_json::json!({
+///     "user": {
+///         "name": "Alice"
+///     }
+/// }).into();
+///
+/// // Modify nested value
+/// let path: JsonPath = "user.name".parse().unwrap();
+/// if let Some(name) = get_at_path_mut(&mut json, &path) {
+///     *name = JsonValue::from("Bob");
+/// }
+///
+/// // Verify the change
+/// use in_mem_core::json::get_at_path;
+/// let name = get_at_path(&json, &path).unwrap();
+/// assert_eq!(name.as_str(), Some("Bob"));
+/// ```
+pub fn get_at_path_mut<'a>(value: &'a mut JsonValue, path: &JsonPath) -> Option<&'a mut JsonValue> {
+    if path.is_root() {
+        return Some(value);
+    }
+
+    let inner: &mut serde_json::Value = value.as_inner_mut();
+    let mut current: &mut serde_json::Value = inner;
+
+    for segment in path.segments() {
+        current = match (segment, current) {
+            (PathSegment::Key(key), serde_json::Value::Object(obj)) => obj.get_mut(key)?,
+            (PathSegment::Index(idx), serde_json::Value::Array(arr)) => arr.get_mut(*idx)?,
+            _ => return None,
+        };
+    }
+
+    // SAFETY: This transmute is safe because:
+    // 1. JsonValue has #[repr(transparent)], guaranteeing identical memory layout to serde_json::Value
+    // 2. The returned reference's lifetime is tied to the input JsonValue reference
+    // 3. Both types have the same alignment requirements
+    Some(unsafe { &mut *(current as *mut serde_json::Value as *mut JsonValue) })
 }
 
 #[cfg(test)]
@@ -1746,5 +1907,175 @@ mod tests {
         };
         let err2 = err.clone();
         assert_eq!(err, err2);
+    }
+
+    // =========================================================================
+    // Path Operations Tests (Story #268)
+    // =========================================================================
+
+    #[test]
+    fn test_get_at_path_root() {
+        let value = JsonValue::from(42i64);
+        let result = get_at_path(&value, &JsonPath::root());
+        assert_eq!(result, Some(&value));
+    }
+
+    #[test]
+    fn test_get_at_path_simple_object() {
+        let json: JsonValue = r#"{"foo": 42}"#.parse().unwrap();
+        let path: JsonPath = "foo".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().as_i64(), Some(42));
+    }
+
+    #[test]
+    fn test_get_at_path_nested_object() {
+        let json: JsonValue = r#"{"foo": {"bar": 42}}"#.parse().unwrap();
+        let path: JsonPath = "foo.bar".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().as_i64(), Some(42));
+    }
+
+    #[test]
+    fn test_get_at_path_array_index() {
+        let json: JsonValue = r#"[1, 2, 3]"#.parse().unwrap();
+        let path: JsonPath = "[1]".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().as_i64(), Some(2));
+    }
+
+    #[test]
+    fn test_get_at_path_mixed() {
+        let json: JsonValue = r#"{"items": [{"name": "Alice"}, {"name": "Bob"}]}"#
+            .parse()
+            .unwrap();
+        let path: JsonPath = "items[1].name".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().as_str(), Some("Bob"));
+    }
+
+    #[test]
+    fn test_get_at_path_missing_key() {
+        let json: JsonValue = r#"{"foo": 42}"#.parse().unwrap();
+        let path: JsonPath = "bar".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_at_path_missing_index() {
+        let json: JsonValue = r#"[1, 2, 3]"#.parse().unwrap();
+        let path: JsonPath = "[10]".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_at_path_type_mismatch_object_as_array() {
+        let json: JsonValue = r#"{"foo": 42}"#.parse().unwrap();
+        let path: JsonPath = "[0]".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_at_path_type_mismatch_array_as_object() {
+        let json: JsonValue = r#"[1, 2, 3]"#.parse().unwrap();
+        let path: JsonPath = "foo".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_at_path_type_mismatch_scalar() {
+        let json: JsonValue = JsonValue::from(42i64);
+        let path: JsonPath = "foo".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_at_path_deeply_nested() {
+        let json: JsonValue = r#"{"a": {"b": {"c": {"d": {"e": 42}}}}}"#.parse().unwrap();
+        let path: JsonPath = "a.b.c.d.e".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().as_i64(), Some(42));
+    }
+
+    #[test]
+    fn test_get_at_path_mut_root() {
+        let mut value = JsonValue::from(42i64);
+        let result = get_at_path_mut(&mut value, &JsonPath::root());
+        assert!(result.is_some());
+        *result.unwrap() = JsonValue::from(100i64);
+        assert_eq!(value.as_i64(), Some(100));
+    }
+
+    #[test]
+    fn test_get_at_path_mut_modify_nested() {
+        let mut json: JsonValue = r#"{"user": {"name": "Alice"}}"#.parse().unwrap();
+        let path: JsonPath = "user.name".parse().unwrap();
+
+        if let Some(name) = get_at_path_mut(&mut json, &path) {
+            *name = JsonValue::from("Bob");
+        }
+
+        let result = get_at_path(&json, &path);
+        assert_eq!(result.unwrap().as_str(), Some("Bob"));
+    }
+
+    #[test]
+    fn test_get_at_path_mut_modify_array_element() {
+        let mut json: JsonValue = r#"[10, 20, 30]"#.parse().unwrap();
+        let path: JsonPath = "[1]".parse().unwrap();
+
+        if let Some(elem) = get_at_path_mut(&mut json, &path) {
+            *elem = JsonValue::from(999i64);
+        }
+
+        let result = get_at_path(&json, &path);
+        assert_eq!(result.unwrap().as_i64(), Some(999));
+    }
+
+    #[test]
+    fn test_get_at_path_mut_missing() {
+        let mut json: JsonValue = r#"{"foo": 42}"#.parse().unwrap();
+        let path: JsonPath = "bar".parse().unwrap();
+        let result = get_at_path_mut(&mut json, &path);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_json_path_error_display() {
+        let err = JsonPathError::TypeMismatch {
+            expected: "object",
+            found: "array",
+        };
+        let s = format!("{}", err);
+        assert!(s.contains("object"));
+        assert!(s.contains("array"));
+
+        let err2 = JsonPathError::IndexOutOfBounds { index: 10, len: 5 };
+        let s2 = format!("{}", err2);
+        assert!(s2.contains("10"));
+        assert!(s2.contains("5"));
+
+        let err3 = JsonPathError::NotFound;
+        let s3 = format!("{}", err3);
+        assert!(s3.contains("not found"));
+    }
+
+    #[test]
+    fn test_json_path_error_equality() {
+        let err1 = JsonPathError::IndexOutOfBounds { index: 5, len: 3 };
+        let err2 = JsonPathError::IndexOutOfBounds { index: 5, len: 3 };
+        let err3 = JsonPathError::IndexOutOfBounds { index: 10, len: 3 };
+        assert_eq!(err1, err2);
+        assert_ne!(err1, err3);
     }
 }
