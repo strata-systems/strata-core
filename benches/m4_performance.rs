@@ -9,57 +9,146 @@
 //! - Strict mode: ~2ms put (baseline)
 //! - Snapshot acquisition: <500ns (red flag: >2µs)
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use in_mem_core::types::RunId;
+use in_mem_core::value::Value;
+use in_mem_core::Storage;
+use in_mem_engine::Database;
+use in_mem_primitives::KVStore;
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
-/// Placeholder benchmarks - replaced as M4 features are implemented
-fn placeholder_benchmarks(c: &mut Criterion) {
-    let mut group = c.benchmark_group("m4_placeholder");
-    group.measurement_time(Duration::from_secs(5));
+/// Latency benchmarks for each durability mode
+fn latency_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("latency");
+    group.measurement_time(Duration::from_secs(10));
 
-    // Placeholder - actual benchmarks added as features implemented
-    group.bench_function("noop", |b| {
+    // InMemory mode
+    {
+        let db = Database::builder().in_memory().open_temp().unwrap();
+        let kv = KVStore::new(Arc::new(db));
+        let run_id = RunId::new();
+
+        // Warmup
+        for i in 0..100 {
+            kv.put(&run_id, &format!("warmup{}", i), Value::I64(i as i64))
+                .unwrap();
+        }
+
+        group.bench_function(BenchmarkId::new("kvstore/put", "inmemory"), |b| {
+            let mut i = 0;
+            b.iter(|| {
+                i += 1;
+                kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+                    .unwrap();
+            });
+        });
+
+        group.bench_function(BenchmarkId::new("kvstore/get", "inmemory"), |b| {
+            b.iter(|| {
+                kv.get(&run_id, "warmup50").unwrap();
+            });
+        });
+    }
+
+    // Buffered mode
+    {
+        let db = Database::builder().buffered().open_temp().unwrap();
+        let kv = KVStore::new(Arc::new(db));
+        let run_id = RunId::new();
+
+        // Warmup
+        for i in 0..100 {
+            kv.put(&run_id, &format!("warmup{}", i), Value::I64(i as i64))
+                .unwrap();
+        }
+
+        group.bench_function(BenchmarkId::new("kvstore/put", "buffered"), |b| {
+            let mut i = 0;
+            b.iter(|| {
+                i += 1;
+                kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+                    .unwrap();
+            });
+        });
+
+        group.bench_function(BenchmarkId::new("kvstore/get", "buffered"), |b| {
+            b.iter(|| {
+                kv.get(&run_id, "warmup50").unwrap();
+            });
+        });
+    }
+
+    // Strict mode
+    {
+        let db = Database::builder().strict().open_temp().unwrap();
+        let kv = KVStore::new(Arc::new(db));
+        let run_id = RunId::new();
+
+        // Warmup (less iterations due to slow fsync)
+        for i in 0..10 {
+            kv.put(&run_id, &format!("warmup{}", i), Value::I64(i as i64))
+                .unwrap();
+        }
+
+        group.bench_function(BenchmarkId::new("kvstore/put", "strict"), |b| {
+            let mut i = 0;
+            b.iter(|| {
+                i += 1;
+                kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+                    .unwrap();
+            });
+        });
+
+        group.bench_function(BenchmarkId::new("kvstore/get", "strict"), |b| {
+            b.iter(|| {
+                kv.get(&run_id, "warmup5").unwrap();
+            });
+        });
+    }
+
+    group.finish();
+}
+
+/// Throughput benchmarks
+fn throughput_benchmarks(c: &mut Criterion) {
+    let mut group = c.benchmark_group("throughput");
+    group.measurement_time(Duration::from_secs(15));
+    group.throughput(Throughput::Elements(1000));
+
+    let db = Database::builder().in_memory().open_temp().unwrap();
+    let kv = KVStore::new(Arc::new(db));
+    let run_id = RunId::new();
+
+    group.bench_function("inmemory/1000_puts", |b| {
+        let mut batch = 0;
         b.iter(|| {
-            // Will be replaced with actual benchmarks
-            std::hint::black_box(42)
+            batch += 1;
+            for i in 0..1000 {
+                kv.put(
+                    &run_id,
+                    &format!("batch{}key{}", batch, i),
+                    Value::I64(i as i64),
+                )
+                .unwrap();
+            }
         });
     });
 
-    group.finish();
-}
+    // Warmup for gets
+    for i in 0..1000 {
+        kv.put(&run_id, &format!("getkey{}", i), Value::I64(i as i64))
+            .unwrap();
+    }
 
-/// Durability mode benchmarks - filled in by Epic 21
-fn durability_mode_benchmarks(c: &mut Criterion) {
-    let mut group = c.benchmark_group("durability_modes");
-    group.measurement_time(Duration::from_secs(5));
-
-    // Placeholder for durability mode benchmarks
-    // Filled in by Epic 21
-    //
-    // Target benchmarks:
-    // - inmemory/put: <3µs
-    // - buffered/put: <30µs
-    // - strict/put: ~2ms (baseline)
-
-    group.bench_function("placeholder", |b| b.iter(|| std::hint::black_box(0)));
-
-    group.finish();
-}
-
-/// Storage layer benchmarks - filled in by Epic 22
-fn storage_benchmarks(c: &mut Criterion) {
-    let mut group = c.benchmark_group("storage");
-    group.measurement_time(Duration::from_secs(5));
-
-    // Placeholder for sharded storage benchmarks
-    // Filled in by Epic 22
-    //
-    // Target benchmarks:
-    // - sharded_store/put: measure per-run isolation
-    // - sharded_store/get: lock-free reads
-    // - contention: disjoint runs should scale linearly
-
-    group.bench_function("placeholder", |b| b.iter(|| std::hint::black_box(0)));
+    group.bench_function("inmemory/1000_gets", |b| {
+        b.iter(|| {
+            for i in 0..1000 {
+                kv.get(&run_id, &format!("getkey{}", i)).unwrap();
+            }
+        });
+    });
 
     group.finish();
 }
@@ -69,70 +158,124 @@ fn snapshot_benchmarks(c: &mut Criterion) {
     let mut group = c.benchmark_group("snapshot");
     group.measurement_time(Duration::from_secs(5));
 
-    // Placeholder for snapshot benchmarks
-    // Critical: < 500ns target, < 2µs red flag
-    //
-    // Target benchmarks:
-    // - snapshot/acquire: <500ns
-    // - snapshot/read: measure read latency from snapshot
+    let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
 
-    group.bench_function("placeholder", |b| b.iter(|| std::hint::black_box(0)));
+    // Populate with some data
+    let kv = KVStore::new(db.clone());
+    let run_id = RunId::new();
+    for i in 0..1000 {
+        kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+            .unwrap();
+    }
+
+    group.bench_function("acquire", |b| {
+        b.iter(|| {
+            let _snapshot = db.storage().create_snapshot();
+        });
+    });
 
     group.finish();
 }
 
-/// Transaction pooling benchmarks - filled in by Epic 23
+/// Transaction pooling benchmarks
 fn transaction_pool_benchmarks(c: &mut Criterion) {
+    use in_mem_engine::TransactionPool;
+
     let mut group = c.benchmark_group("transaction_pool");
     group.measurement_time(Duration::from_secs(5));
 
-    // Placeholder for transaction pooling benchmarks
-    // Filled in by Epic 23
-    //
-    // Target benchmarks:
-    // - pool/acquire: measure context acquisition from pool
-    // - pool/reset: measure context reset (should preserve capacity)
+    // Warmup pool
+    TransactionPool::warmup(8);
 
-    group.bench_function("placeholder", |b| b.iter(|| std::hint::black_box(0)));
+    group.bench_function("acquire_release", |b| {
+        let run_id = RunId::new();
+        b.iter(|| {
+            let ctx = TransactionPool::acquire(1, run_id, None);
+            TransactionPool::release(ctx);
+        });
+    });
 
     group.finish();
 }
 
-/// Read path optimization benchmarks - filled in by Epic 24
+/// Read path optimization benchmarks
 fn read_path_benchmarks(c: &mut Criterion) {
     let mut group = c.benchmark_group("read_path");
     group.measurement_time(Duration::from_secs(5));
 
-    // Placeholder for read path benchmarks
-    // Filled in by Epic 24
-    //
-    // Target benchmarks:
-    // - kvstore/get_fast: <5µs (bypasses transaction)
-    // - kvstore/get_batch: single snapshot for multiple keys
+    let db = Database::builder().in_memory().open_temp().unwrap();
+    let kv = KVStore::new(Arc::new(db));
+    let run_id = RunId::new();
 
-    group.bench_function("placeholder", |b| b.iter(|| std::hint::black_box(0)));
+    // Populate
+    for i in 0..100 {
+        kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+            .unwrap();
+    }
+
+    group.bench_function("fast_get", |b| {
+        b.iter(|| {
+            kv.get(&run_id, "key50").unwrap();
+        });
+    });
+
+    group.bench_function("transaction_get", |b| {
+        b.iter(|| {
+            kv.get_in_transaction(&run_id, "key50").unwrap();
+        });
+    });
+
+    group.bench_function("batch_get_10", |b| {
+        let keys: Vec<&str> = (0..10).map(|i| ["key0", "key1", "key2", "key3", "key4", "key5", "key6", "key7", "key8", "key9"][i]).collect();
+        b.iter(|| {
+            kv.get_many(&run_id, &keys).unwrap();
+        });
+    });
 
     group.finish();
 }
 
 /// Facade tax benchmarks - measures overhead at each layer
 fn facade_tax_benchmarks(c: &mut Criterion) {
+    use in_mem_core::types::{Key, Namespace, TypeTag};
+
     let mut group = c.benchmark_group("facade_tax");
     group.measurement_time(Duration::from_secs(5));
 
-    // Placeholder for facade tax benchmarks
-    // Filled in by Epic 25
-    //
-    // Target benchmarks:
-    // - A0: raw HashMap operation
-    // - A1: engine layer operation
-    // - B: facade (KVStore) operation
-    //
-    // Targets:
-    // - A1/A0 < 10× (red flag: >20×)
-    // - B/A1 < 5× (red flag: >8×)
+    // A0: Raw HashMap (baseline)
+    let mut map: HashMap<String, i64> = HashMap::new();
+    group.bench_function("A0/hashmap_insert", |b| {
+        let mut i = 0;
+        b.iter(|| {
+            i += 1;
+            map.insert(format!("key{}", i), i as i64);
+        });
+    });
 
-    group.bench_function("placeholder", |b| b.iter(|| std::hint::black_box(0)));
+    // A1: Engine storage layer direct (via Storage trait)
+    let db = Database::builder().in_memory().open_temp().unwrap();
+    let run_id = RunId::new();
+    let ns = Namespace::for_run(run_id);
+
+    group.bench_function("A1/storage_put", |b| {
+        let mut i = 0;
+        b.iter(|| {
+            i += 1;
+            let key = Key::new(ns.clone(), TypeTag::KV, format!("key{}", i).into_bytes());
+            let _ = db.storage().put(key, Value::I64(i as i64), None);
+        });
+    });
+
+    // B: Facade layer (KVStore)
+    let kv = KVStore::new(Arc::new(db));
+    group.bench_function("B/kvstore_put", |b| {
+        let mut i = 0;
+        b.iter(|| {
+            i += 1;
+            kv.put(&run_id, &format!("kvkey{}", i), Value::I64(i as i64))
+                .unwrap();
+        });
+    });
 
     group.finish();
 }
@@ -142,17 +285,29 @@ fn contention_benchmarks(c: &mut Criterion) {
     let mut group = c.benchmark_group("contention");
     group.measurement_time(Duration::from_secs(10));
 
-    // Placeholder for contention scaling benchmarks
-    // Filled in by Epic 25
-    //
-    // Target benchmarks:
-    // - disjoint_runs/2_threads: ≥1.8× speedup
-    // - disjoint_runs/4_threads: ≥3.2× speedup
-    // - disjoint_runs/4_threads throughput: ≥800K ops/sec
-
     for threads in [1, 2, 4] {
         group.bench_function(BenchmarkId::new("disjoint_runs", threads), |b| {
-            b.iter(|| std::hint::black_box(threads))
+            b.iter(|| {
+                let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
+
+                let handles: Vec<_> = (0..threads)
+                    .map(|_| {
+                        let db = Arc::clone(&db);
+                        std::thread::spawn(move || {
+                            let kv = KVStore::new(db);
+                            let run_id = RunId::new(); // Different run per thread
+                            for i in 0..1000 {
+                                kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+                                    .unwrap();
+                            }
+                        })
+                    })
+                    .collect();
+
+                for h in handles {
+                    h.join().unwrap();
+                }
+            });
         });
     }
 
@@ -161,11 +316,10 @@ fn contention_benchmarks(c: &mut Criterion) {
 
 criterion_group!(
     name = m4_benchmarks;
-    config = Criterion::default().sample_size(100);
+    config = Criterion::default().sample_size(50);
     targets =
-        placeholder_benchmarks,
-        durability_mode_benchmarks,
-        storage_benchmarks,
+        latency_benchmarks,
+        throughput_benchmarks,
         snapshot_benchmarks,
         transaction_pool_benchmarks,
         read_path_benchmarks,
