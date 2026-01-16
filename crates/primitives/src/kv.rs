@@ -85,10 +85,46 @@ impl KVStore {
 
     // ========== Single-Operation API (Implicit Transactions) ==========
 
-    /// Get a value by key
+    /// Get a value by key (FAST PATH)
+    ///
+    /// Bypasses full transaction overhead:
+    /// - No transaction object allocation
+    /// - No read-set recording
+    /// - No commit validation
+    /// - No WAL append
+    ///
+    /// PRESERVES:
+    /// - Snapshot isolation (consistent view)
+    /// - Run isolation (key prefixing)
+    ///
+    /// # Performance Contract
+    /// - < 10µs (target: <5µs)
+    /// - Zero allocations (except return value clone)
+    ///
+    /// # Invariant
+    /// Observationally equivalent to transaction-based read.
+    /// Returns the same value that a read-only transaction started
+    /// at the same moment would return.
     ///
     /// Returns `None` if the key doesn't exist.
     pub fn get(&self, run_id: &RunId, key: &str) -> Result<Option<Value>> {
+        use in_mem_core::traits::SnapshotView;
+
+        // Fast path: direct snapshot read
+        let snapshot = self.db.storage().create_snapshot();
+        let storage_key = self.key_for(run_id, key);
+
+        Ok(snapshot.get(&storage_key)?.map(|vv| vv.value))
+    }
+
+    /// Get a value using full transaction (for comparison/fallback)
+    ///
+    /// Use this when you need transaction semantics, e.g.:
+    /// - Read-modify-write patterns
+    /// - When you need read-set tracking for conflict detection
+    ///
+    /// For simple reads, prefer `get()` which is faster.
+    pub fn get_in_transaction(&self, run_id: &RunId, key: &str) -> Result<Option<Value>> {
         self.db.transaction(*run_id, |txn| {
             let storage_key = self.key_for(run_id, key);
             txn.get(&storage_key)
@@ -149,9 +185,16 @@ impl KVStore {
         })
     }
 
-    /// Check if a key exists
+    /// Check if a key exists (FAST PATH)
+    ///
+    /// Uses direct snapshot read, bypassing transaction overhead.
     pub fn exists(&self, run_id: &RunId, key: &str) -> Result<bool> {
-        Ok(self.get(run_id, key)?.is_some())
+        use in_mem_core::traits::SnapshotView;
+
+        let snapshot = self.db.storage().create_snapshot();
+        let storage_key = self.key_for(run_id, key);
+
+        Ok(snapshot.get(&storage_key)?.is_some())
     }
 
     // ========== List Operations ==========
@@ -690,6 +733,101 @@ mod tests {
         assert_eq!(
             kv.get(&run_id, "array").unwrap(),
             Some(Value::Array(vec![Value::I64(1), Value::I64(2)]))
+        );
+    }
+
+    // ========== Fast Path Tests (Story #236) ==========
+
+    #[test]
+    fn test_fast_get_returns_correct_value() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        kv.put(&run_id, "key", Value::I64(42)).unwrap();
+
+        let result = kv.get(&run_id, "key").unwrap();
+        assert_eq!(result, Some(Value::I64(42)));
+    }
+
+    #[test]
+    fn test_fast_get_returns_none_for_missing() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        let result = kv.get(&run_id, "missing").unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_fast_get_equals_transaction_get() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        kv.put(&run_id, "key", Value::I64(42)).unwrap();
+
+        let fast = kv.get(&run_id, "key").unwrap();
+        let txn = kv.get_in_transaction(&run_id, "key").unwrap();
+
+        assert_eq!(fast, txn, "Fast path must equal transaction read");
+    }
+
+    #[test]
+    fn test_fast_get_observational_equivalence() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        // Write some data
+        kv.put(&run_id, "key1", Value::String("value1".into()))
+            .unwrap();
+        kv.put(&run_id, "key2", Value::I64(42)).unwrap();
+
+        // Fast path reads
+        let fast1 = kv.get(&run_id, "key1").unwrap();
+        let fast2 = kv.get(&run_id, "key2").unwrap();
+        let fast_missing = kv.get(&run_id, "missing").unwrap();
+
+        // Transaction reads
+        let txn1 = kv.get_in_transaction(&run_id, "key1").unwrap();
+        let txn2 = kv.get_in_transaction(&run_id, "key2").unwrap();
+        let txn_missing = kv.get_in_transaction(&run_id, "missing").unwrap();
+
+        // Must be identical
+        assert_eq!(fast1, txn1);
+        assert_eq!(fast2, txn2);
+        assert_eq!(fast_missing, txn_missing);
+    }
+
+    #[test]
+    fn test_fast_exists_uses_fast_path() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        assert!(!kv.exists(&run_id, "key").unwrap());
+
+        kv.put(&run_id, "key", Value::I64(42)).unwrap();
+
+        assert!(kv.exists(&run_id, "key").unwrap());
+    }
+
+    #[test]
+    fn test_fast_get_run_isolation() {
+        let (_temp, _db, kv) = setup();
+        let run1 = RunId::new();
+        let run2 = RunId::new();
+
+        kv.put(&run1, "shared-key", Value::String("run1-value".into()))
+            .unwrap();
+        kv.put(&run2, "shared-key", Value::String("run2-value".into()))
+            .unwrap();
+
+        // Fast path should respect run isolation
+        assert_eq!(
+            kv.get(&run1, "shared-key").unwrap(),
+            Some(Value::String("run1-value".into()))
+        );
+        assert_eq!(
+            kv.get(&run2, "shared-key").unwrap(),
+            Some(Value::String("run2-value".into()))
         );
     }
 }
