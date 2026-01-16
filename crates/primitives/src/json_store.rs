@@ -34,7 +34,7 @@
 //! 6. JSON API feels like other primitives
 
 use in_mem_core::error::{Error, Result};
-use in_mem_core::json::{get_at_path, JsonPath, JsonValue};
+use in_mem_core::json::{get_at_path, set_at_path, JsonPath, JsonValue};
 use in_mem_core::traits::SnapshotView;
 use in_mem_core::types::{JsonDocId, Key, Namespace, RunId};
 use in_mem_core::value::Value;
@@ -317,6 +317,56 @@ impl JsonStore {
         let snapshot = self.db.storage().create_snapshot();
         let key = self.key_for(run_id, doc_id);
         Ok(snapshot.get(&key)?.is_some())
+    }
+
+    // ========================================================================
+    // Mutations (Story #276+)
+    // ========================================================================
+
+    /// Set value at path in a document
+    ///
+    /// Uses transaction for atomic read-modify-write.
+    /// Increments document version on success.
+    ///
+    /// # Arguments
+    ///
+    /// * `run_id` - RunId for namespace isolation
+    /// * `doc_id` - Document to modify
+    /// * `path` - Path to set value at (creates intermediate objects/arrays)
+    /// * `value` - New value to set
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(version)` - New document version after modification
+    /// * `Err(InvalidOperation)` - Document doesn't exist
+    /// * `Err` - On path error or serialization error
+    pub fn set(
+        &self,
+        run_id: &RunId,
+        doc_id: &JsonDocId,
+        path: &JsonPath,
+        value: JsonValue,
+    ) -> Result<u64> {
+        let key = self.key_for(run_id, doc_id);
+
+        self.db.transaction(*run_id, |txn| {
+            // Load existing document
+            let stored = txn.get(&key)?.ok_or_else(|| {
+                Error::InvalidOperation(format!("JSON document {} not found", doc_id))
+            })?;
+            let mut doc = Self::deserialize_doc(&stored)?;
+
+            // Apply mutation
+            set_at_path(&mut doc.value, path, value)
+                .map_err(|e| Error::InvalidOperation(format!("Path error: {}", e)))?;
+            doc.touch();
+
+            // Store updated document
+            let serialized = Self::serialize_doc(&doc)?;
+            txn.put(key.clone(), serialized)?;
+
+            Ok(doc.version)
+        })
     }
 }
 
@@ -843,5 +893,186 @@ mod tests {
         // Document exists in run1 but not in run2
         assert!(store.exists(&run1, &doc_id).unwrap());
         assert!(!store.exists(&run2, &doc_id).unwrap());
+    }
+
+    // ========================================
+    // Set Tests (Story #276)
+    // ========================================
+
+    #[test]
+    fn test_set_at_root() {
+        let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
+        let store = JsonStore::new(db);
+        let run_id = RunId::new();
+        let doc_id = JsonDocId::new();
+
+        store
+            .create(&run_id, &doc_id, JsonValue::from(42i64))
+            .unwrap();
+
+        let v2 = store
+            .set(&run_id, &doc_id, &JsonPath::root(), JsonValue::from(100i64))
+            .unwrap();
+        assert_eq!(v2, 2);
+
+        let value = store.get(&run_id, &doc_id, &JsonPath::root()).unwrap();
+        assert_eq!(value.and_then(|v| v.as_i64()), Some(100));
+    }
+
+    #[test]
+    fn test_set_at_path() {
+        let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
+        let store = JsonStore::new(db);
+        let run_id = RunId::new();
+        let doc_id = JsonDocId::new();
+
+        store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
+
+        let v2 = store
+            .set(
+                &run_id,
+                &doc_id,
+                &"name".parse().unwrap(),
+                JsonValue::from("Alice"),
+            )
+            .unwrap();
+        assert_eq!(v2, 2);
+
+        let name = store
+            .get(&run_id, &doc_id, &"name".parse().unwrap())
+            .unwrap();
+        assert_eq!(
+            name.and_then(|v| v.as_str().map(String::from)),
+            Some("Alice".to_string())
+        );
+    }
+
+    #[test]
+    fn test_set_nested_path() {
+        let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
+        let store = JsonStore::new(db);
+        let run_id = RunId::new();
+        let doc_id = JsonDocId::new();
+
+        store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
+
+        // Creates intermediate objects automatically
+        let v2 = store
+            .set(
+                &run_id,
+                &doc_id,
+                &"user.profile.name".parse().unwrap(),
+                JsonValue::from("Bob"),
+            )
+            .unwrap();
+        assert_eq!(v2, 2);
+
+        let name = store
+            .get(&run_id, &doc_id, &"user.profile.name".parse().unwrap())
+            .unwrap();
+        assert_eq!(
+            name.and_then(|v| v.as_str().map(String::from)),
+            Some("Bob".to_string())
+        );
+    }
+
+    #[test]
+    fn test_set_increments_version() {
+        let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
+        let store = JsonStore::new(db);
+        let run_id = RunId::new();
+        let doc_id = JsonDocId::new();
+
+        store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
+        assert_eq!(store.get_version(&run_id, &doc_id).unwrap(), Some(1));
+
+        store
+            .set(
+                &run_id,
+                &doc_id,
+                &"a".parse().unwrap(),
+                JsonValue::from(1i64),
+            )
+            .unwrap();
+        assert_eq!(store.get_version(&run_id, &doc_id).unwrap(), Some(2));
+
+        store
+            .set(
+                &run_id,
+                &doc_id,
+                &"b".parse().unwrap(),
+                JsonValue::from(2i64),
+            )
+            .unwrap();
+        assert_eq!(store.get_version(&run_id, &doc_id).unwrap(), Some(3));
+    }
+
+    #[test]
+    fn test_set_missing_document() {
+        let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
+        let store = JsonStore::new(db);
+        let run_id = RunId::new();
+        let doc_id = JsonDocId::new();
+
+        let result = store.set(
+            &run_id,
+            &doc_id,
+            &"name".parse().unwrap(),
+            JsonValue::from("test"),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_set_overwrites_value() {
+        let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
+        let store = JsonStore::new(db);
+        let run_id = RunId::new();
+        let doc_id = JsonDocId::new();
+
+        let value: JsonValue = serde_json::json!({ "name": "Alice" }).into();
+        store.create(&run_id, &doc_id, value).unwrap();
+
+        store
+            .set(
+                &run_id,
+                &doc_id,
+                &"name".parse().unwrap(),
+                JsonValue::from("Bob"),
+            )
+            .unwrap();
+
+        let name = store
+            .get(&run_id, &doc_id, &"name".parse().unwrap())
+            .unwrap();
+        assert_eq!(
+            name.and_then(|v| v.as_str().map(String::from)),
+            Some("Bob".to_string())
+        );
+    }
+
+    #[test]
+    fn test_set_array_element() {
+        let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
+        let store = JsonStore::new(db);
+        let run_id = RunId::new();
+        let doc_id = JsonDocId::new();
+
+        let value: JsonValue = serde_json::json!({ "items": [1, 2, 3] }).into();
+        store.create(&run_id, &doc_id, value).unwrap();
+
+        store
+            .set(
+                &run_id,
+                &doc_id,
+                &"items[1]".parse().unwrap(),
+                JsonValue::from(999i64),
+            )
+            .unwrap();
+
+        let item = store
+            .get(&run_id, &doc_id, &"items[1]".parse().unwrap())
+            .unwrap();
+        assert_eq!(item.and_then(|v| v.as_i64()), Some(999));
     }
 }
