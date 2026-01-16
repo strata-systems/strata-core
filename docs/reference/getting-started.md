@@ -8,10 +8,10 @@ Add `in-mem` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-in-mem = "0.1"
+in-mem = "0.2"
 ```
 
-**Note**: Currently in development. M1 Foundation is complete but not yet published to crates.io.
+**Note**: Currently in development. M2 Transactions is complete but not yet published to crates.io.
 
 ## Quick Start
 
@@ -202,6 +202,143 @@ db.end_run(run_id)?;
 }
 ```
 
+### Transactions (M2)
+
+**in-mem** provides atomic multi-key transactions with snapshot isolation.
+
+#### Basic Transaction
+
+```rust
+use in_mem::{Database, Value};
+
+let db = Database::open("./data")?;
+let run_id = db.begin_run();
+
+// Execute atomic transaction
+let result = db.transaction(run_id, |txn| {
+    // Read within snapshot
+    let balance = txn.get(&account_key)?;
+
+    // Modify
+    let new_balance = balance.map(|v| v.as_i64().unwrap_or(0) - 100).unwrap_or(0);
+
+    // Write (buffered until commit)
+    txn.put(account_key.clone(), Value::I64(new_balance))?;
+
+    Ok(new_balance)
+})?;
+
+// Transaction committed atomically
+println!("New balance: {}", result);
+```
+
+#### Transaction with Retry
+
+For operations that may conflict with concurrent transactions:
+
+```rust
+use in_mem::{Database, RetryConfig, Value};
+
+let db = Database::open("./data")?;
+let run_id = db.begin_run();
+
+// Retry config: 3 retries with exponential backoff
+let config = RetryConfig::default();
+
+// Increment counter (may retry on conflict)
+let new_count = db.transaction_with_retry(run_id, config, |txn| {
+    let count = txn.get(&counter_key)?
+        .map(|v| v.as_i64().unwrap_or(0))
+        .unwrap_or(0);
+
+    txn.put(counter_key.clone(), Value::I64(count + 1))?;
+    Ok(count + 1)
+})?;
+```
+
+#### Transaction with Timeout
+
+For time-sensitive operations:
+
+```rust
+use in_mem::Database;
+use std::time::Duration;
+
+let db = Database::open("./data")?;
+let run_id = db.begin_run();
+
+// Abort if transaction takes longer than 5 seconds
+let result = db.transaction_with_timeout(
+    run_id,
+    Duration::from_secs(5),
+    |txn| {
+        // Perform operations...
+        txn.put(key, value)?;
+        Ok(())
+    },
+);
+
+match result {
+    Ok(()) => println!("Success"),
+    Err(e) if e.is_timeout() => println!("Transaction timed out"),
+    Err(e) => println!("Error: {}", e),
+}
+```
+
+#### Compare-and-Swap (CAS)
+
+Atomic conditional updates based on version:
+
+```rust
+use in_mem::{Database, Value};
+
+let db = Database::open("./data")?;
+let run_id = db.begin_run();
+
+// Get current value with version
+let current = db.get(run_id, &key)?;
+
+if let Some(versioned_value) = current {
+    // Update only if version matches (optimistic locking)
+    db.cas(
+        run_id,
+        key,
+        versioned_value.version,  // Expected version
+        Value::I64(new_value),    // New value
+    )?;
+}
+
+// Create-if-absent: use version 0
+db.cas(run_id, new_key, 0, Value::String("initial".to_string()))?;
+```
+
+#### Multi-Key Atomic Operations
+
+Transactions can span multiple keys:
+
+```rust
+let db = Database::open("./data")?;
+let run_id = db.begin_run();
+
+// Transfer between accounts (atomic)
+db.transaction(run_id, |txn| {
+    // Read both accounts
+    let from_balance = txn.get(&from_key)?.map(|v| v.as_i64().unwrap_or(0)).unwrap_or(0);
+    let to_balance = txn.get(&to_key)?.map(|v| v.as_i64().unwrap_or(0)).unwrap_or(0);
+
+    // Check sufficient funds
+    if from_balance < amount {
+        return Err(Error::InvalidOperation("Insufficient funds".to_string()));
+    }
+
+    // Update both (all-or-nothing)
+    txn.put(from_key.clone(), Value::I64(from_balance - amount))?;
+    txn.put(to_key.clone(), Value::I64(to_balance + amount))?;
+
+    Ok(())
+})?;
+```
+
 ## Best Practices
 
 ### 1. Use Appropriate Durability Mode
@@ -255,6 +392,53 @@ Avoid manual cleanup:
 db.put_with_ttl(run_id, b"session:xyz", data, Duration::from_secs(3600))?;
 ```
 
+### 5. Use Transactions for Multi-Key Operations
+
+Ensure atomicity with transactions:
+
+```rust
+// Bad: Non-atomic (if crash between operations, data is inconsistent)
+db.put(run_id, &key1, value1)?;
+db.put(run_id, &key2, value2)?;
+
+// Good: Atomic transaction (all-or-nothing)
+db.transaction(run_id, |txn| {
+    txn.put(key1, value1)?;
+    txn.put(key2, value2)?;
+    Ok(())
+})?;
+```
+
+### 6. Use Retry for Contended Keys
+
+When multiple agents may update the same key:
+
+```rust
+// Use transaction_with_retry for contended resources
+let config = RetryConfig::default();
+db.transaction_with_retry(run_id, config, |txn| {
+    // This will automatically retry on conflict
+    let val = txn.get(&shared_key)?;
+    txn.put(shared_key.clone(), new_val)?;
+    Ok(())
+})?;
+```
+
+### 7. Handle Conflicts Gracefully
+
+Check for conflict errors:
+
+```rust
+match db.transaction(run_id, |txn| { /* ... */ }) {
+    Ok(result) => println!("Success: {:?}", result),
+    Err(e) if e.is_conflict() => {
+        // Another transaction committed first
+        // Either retry or inform the user
+    }
+    Err(e) => return Err(e),
+}
+```
+
 ## Next Steps
 
 - [API Reference](api-reference.md) - Complete API documentation
@@ -296,5 +480,5 @@ let db = Database::open("./data")
 
 ---
 
-**Current Version**: 0.1.0 (M1 Foundation)
-**Status**: Production-ready embedded database, network layer in M7
+**Current Version**: 0.2.0 (M2 Transactions)
+**Status**: Production-ready embedded database with full transaction support
