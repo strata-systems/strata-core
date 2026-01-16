@@ -115,3 +115,7 @@ harness = false
 [[bench]]
 name = "m4_contention"
 harness = false
+
+[[bench]]
+name = "m5_performance"
+harness = false
