@@ -72,11 +72,7 @@ fn red_flag_facade_tax_a1_a0() {
     // A0: Engine storage layer direct
     let start = Instant::now();
     for i in 0..ITERATIONS {
-        let key = Key::new(
-            ns.clone(),
-            TypeTag::KV,
-            format!("a0key{}", i).into_bytes(),
-        );
+        let key = Key::new(ns.clone(), TypeTag::KV, format!("a0key{}", i).into_bytes());
         let _ = db.storage().put(key, Value::I64(i as i64), None);
     }
     let a0_elapsed = start.elapsed();
@@ -208,8 +204,7 @@ fn red_flag_disjoint_scaling() {
 
     // 4× work should take less than 4× time
     // scaling = (single_time * 4) / four_thread_time
-    let scaling =
-        (single_thread_time.as_nanos() * 4) as f64 / four_thread_time.as_nanos() as f64;
+    let scaling = (single_thread_time.as_nanos() * 4) as f64 / four_thread_time.as_nanos() as f64;
 
     println!(
         "1-thread: {:?}, 4-threads (4× work): {:?}, Scaling: {:.2}×",
@@ -308,8 +303,7 @@ fn red_flag_hot_path_allocations() {
         "RED FLAG: Pool size changed from {} to {}.\n\
          Transactions are not being properly pooled.\n\
          ACTION: Eliminate allocations.",
-        pool_size_before,
-        pool_size_after
+        pool_size_before, pool_size_after
     );
 
     println!("Hot path allocations: PASS");
@@ -346,7 +340,11 @@ fn red_flag_graceful_shutdown() {
 
     // Reopen and verify data persisted
     {
-        let db = Database::builder().path(&db_path).buffered().open().unwrap();
+        let db = Database::builder()
+            .path(&db_path)
+            .buffered()
+            .open()
+            .unwrap();
 
         // Data should be there after recovery
         // (version > 0 means writes happened, DB opened successfully means recovery worked)

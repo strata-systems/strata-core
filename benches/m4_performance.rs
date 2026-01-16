@@ -226,7 +226,13 @@ fn read_path_benchmarks(c: &mut Criterion) {
     });
 
     group.bench_function("batch_get_10", |b| {
-        let keys: Vec<&str> = (0..10).map(|i| ["key0", "key1", "key2", "key3", "key4", "key5", "key6", "key7", "key8", "key9"][i]).collect();
+        let keys: Vec<&str> = (0..10)
+            .map(|i| {
+                [
+                    "key0", "key1", "key2", "key3", "key4", "key5", "key6", "key7", "key8", "key9",
+                ][i]
+            })
+            .collect();
         b.iter(|| {
             kv.get_many(&run_id, &keys).unwrap();
         });
