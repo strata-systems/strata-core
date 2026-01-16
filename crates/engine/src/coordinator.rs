@@ -86,6 +86,15 @@ impl TransactionCoordinator {
         self.manager.allocate_version()
     }
 
+    /// Record transaction start
+    ///
+    /// Increments active count and total started count.
+    /// Used by pooled transaction API that manages context creation separately.
+    pub fn record_start(&self) {
+        self.active_count.fetch_add(1, Ordering::Relaxed);
+        self.total_started.fetch_add(1, Ordering::Relaxed);
+    }
+
     /// Record transaction commit
     ///
     /// Decrements active count and increments committed count.

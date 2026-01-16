@@ -20,6 +20,7 @@
 //! Per spec Section 4: Implicit transactions wrap M1-style operations.
 
 use crate::coordinator::{TransactionCoordinator, TransactionMetrics};
+use crate::transaction::TransactionPool;
 use in_mem_concurrency::{
     validate_transaction, RecoveryCoordinator, TransactionContext, TransactionWALWriter,
 };
@@ -532,13 +533,16 @@ impl Database {
         match result {
             Ok(value) => {
                 // Commit on success
-                self.commit_transaction(&mut txn)?;
+                let commit_result = self.commit_transaction(&mut txn);
+                self.end_transaction(txn); // Return to pool
+                commit_result?;
                 Ok(value)
             }
             Err(e) => {
                 // Abort on error (just discard, per spec no AbortTxn in WAL for user aborts)
                 let _ = txn.mark_aborted(format!("Closure error: {}", e));
                 self.coordinator.record_abort();
+                self.end_transaction(txn); // Return to pool
                 Err(e)
             }
         }
@@ -598,9 +602,13 @@ impl Database {
                 Ok(value) => {
                     // Try to commit
                     match self.commit_transaction(&mut txn) {
-                        Ok(()) => return Ok(value),
+                        Ok(()) => {
+                            self.end_transaction(txn); // Return to pool
+                            return Ok(value);
+                        }
                         Err(e) if e.is_conflict() && attempt < config.max_retries => {
                             // Conflict during commit - will retry
+                            self.end_transaction(txn); // Return to pool
                             last_error = Some(e);
                             std::thread::sleep(config.calculate_delay(attempt));
                             continue;
@@ -609,6 +617,7 @@ impl Database {
                             // Non-conflict error or max retries reached
                             let _ = txn.mark_aborted(format!("Commit error: {}", e));
                             self.coordinator.record_abort();
+                            self.end_transaction(txn); // Return to pool
                             return Err(e);
                         }
                     }
@@ -617,6 +626,7 @@ impl Database {
                     // Conflict from closure - will retry
                     let _ = txn.mark_aborted(format!("Closure conflict: {}", e));
                     self.coordinator.record_abort();
+                    self.end_transaction(txn); // Return to pool
                     last_error = Some(e);
                     std::thread::sleep(config.calculate_delay(attempt));
                     continue;
@@ -625,6 +635,7 @@ impl Database {
                     // Non-conflict error or max retries reached
                     let _ = txn.mark_aborted(format!("Closure error: {}", e));
                     self.coordinator.record_abort();
+                    self.end_transaction(txn); // Return to pool
                     return Err(e);
                 }
             }
@@ -694,6 +705,7 @@ impl Database {
                         elapsed, timeout
                     ));
                     self.coordinator.record_abort();
+                    self.end_transaction(txn); // Return to pool
                     return Err(Error::TransactionTimeout(format!(
                         "Transaction exceeded timeout of {:?} (elapsed: {:?})",
                         timeout, elapsed
@@ -701,13 +713,16 @@ impl Database {
                 }
 
                 // Commit on success
-                self.commit_transaction(&mut txn)?;
+                let commit_result = self.commit_transaction(&mut txn);
+                self.end_transaction(txn); // Return to pool
+                commit_result?;
                 Ok(value)
             }
             Err(e) => {
                 // Abort on error
                 let _ = txn.mark_aborted(format!("Closure error: {}", e));
                 self.coordinator.record_abort();
+                self.end_transaction(txn); // Return to pool
                 Err(e)
             }
         }
@@ -717,6 +732,9 @@ impl Database {
     ///
     /// Returns a TransactionContext that must be manually committed or aborted.
     /// Prefer `transaction()` closure API for automatic handling.
+    ///
+    /// Uses thread-local pool to avoid allocation overhead after warmup.
+    /// Call `end_transaction()` after commit/abort to return context to pool.
     ///
     /// # Arguments
     /// * `run_id` - RunId for namespace isolation
@@ -729,9 +747,36 @@ impl Database {
     /// let mut txn = db.begin_transaction(run_id);
     /// txn.put(key, value)?;
     /// db.commit_transaction(&mut txn)?;
+    /// db.end_transaction(txn); // Return to pool
     /// ```
     pub fn begin_transaction(&self, run_id: RunId) -> TransactionContext {
-        self.coordinator.start_transaction(run_id, &self.storage)
+        let txn_id = self.coordinator.next_txn_id();
+        let snapshot = self.storage.create_snapshot();
+        self.coordinator.record_start();
+
+        TransactionPool::acquire(txn_id, run_id, Some(Box::new(snapshot)))
+    }
+
+    /// End a transaction (return to pool)
+    ///
+    /// Returns the transaction context to the thread-local pool for reuse.
+    /// This avoids allocation overhead on subsequent transactions.
+    ///
+    /// Should be called after `commit_transaction()` or after aborting.
+    /// The closure API (`transaction()`) calls this automatically.
+    ///
+    /// # Arguments
+    /// * `ctx` - Transaction context to return to pool
+    ///
+    /// # Example
+    /// ```ignore
+    /// let mut txn = db.begin_transaction(run_id);
+    /// txn.put(key, value)?;
+    /// db.commit_transaction(&mut txn)?;
+    /// db.end_transaction(txn); // Return to pool for reuse
+    /// ```
+    pub fn end_transaction(&self, ctx: TransactionContext) {
+        TransactionPool::release(ctx);
     }
 
     /// Commit a transaction
@@ -893,9 +938,22 @@ impl Database {
         }
 
         let mut txn = self.begin_transaction(run_id);
-        let result = f(&mut txn)?;
-        self.commit_with_durability(&mut txn, durability)?;
-        Ok(result)
+
+        // Execute closure
+        match f(&mut txn) {
+            Ok(value) => {
+                let commit_result = self.commit_with_durability(&mut txn, durability);
+                self.end_transaction(txn); // Return to pool
+                commit_result?;
+                Ok(value)
+            }
+            Err(e) => {
+                let _ = txn.mark_aborted(format!("Closure error: {}", e));
+                self.coordinator.record_abort();
+                self.end_transaction(txn); // Return to pool
+                Err(e)
+            }
+        }
     }
 
     /// Commit transaction with specific durability mode
