@@ -2,14 +2,93 @@
 //!
 //! This module defines types for the JSON document storage system:
 //! - JsonValue: Newtype wrapper around serde_json::Value
-//! - JsonPath: Path into a JSON document (e.g., "user.name" or "items[0]")
+//! - JsonPath: Path into a JSON document (e.g., `user.name` or `items[0]`)
 //! - PathSegment: Individual path component (Key or Index)
+//! - JsonPatch: Patch operation (Set or Delete)
+//!
+//! # Document Size Limits
+//!
+//! M5 enforces the following limits to prevent memory issues:
+//!
+//! | Limit | Value | Constant |
+//! |-------|-------|----------|
+//! | Max document size | 16 MB | [`MAX_DOCUMENT_SIZE`] |
+//! | Max nesting depth | 100 levels | [`MAX_NESTING_DEPTH`] |
+//! | Max path length | 256 segments | [`MAX_PATH_LENGTH`] |
+//! | Max array size | 1M elements | [`MAX_ARRAY_SIZE`] |
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 use thiserror::Error;
+
+// =============================================================================
+// Document Size Limits
+// =============================================================================
+
+/// Maximum document size in bytes (16 MB)
+///
+/// Documents larger than this will be rejected to prevent memory issues.
+/// This limit is checked on create and update operations.
+pub const MAX_DOCUMENT_SIZE: usize = 16 * 1024 * 1024; // 16 MB
+
+/// Maximum nesting depth in a JSON document (100 levels)
+///
+/// Prevents stack overflow during recursive operations like serialization,
+/// deserialization, and path traversal.
+pub const MAX_NESTING_DEPTH: usize = 100;
+
+/// Maximum path length in segments (256 segments)
+///
+/// Limits the depth of paths like "a.b.c.d..." to prevent extremely deep
+/// nesting and potential performance issues.
+pub const MAX_PATH_LENGTH: usize = 256;
+
+/// Maximum array size in elements (1 million elements)
+///
+/// Prevents creation of extremely large arrays that could cause memory issues.
+pub const MAX_ARRAY_SIZE: usize = 1_000_000;
+
+/// Error type for document limit violations
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum LimitError {
+    /// Document exceeds maximum size
+    #[error("document size {size} exceeds maximum of {max} bytes")]
+    DocumentTooLarge {
+        /// Actual document size
+        size: usize,
+        /// Maximum allowed size
+        max: usize,
+    },
+
+    /// Document nesting exceeds maximum depth
+    #[error("document nesting depth {depth} exceeds maximum of {max} levels")]
+    NestingTooDeep {
+        /// Actual nesting depth
+        depth: usize,
+        /// Maximum allowed depth
+        max: usize,
+    },
+
+    /// Path exceeds maximum length
+    #[error("path length {length} exceeds maximum of {max} segments")]
+    PathTooLong {
+        /// Actual path length
+        length: usize,
+        /// Maximum allowed length
+        max: usize,
+    },
+
+    /// Array exceeds maximum size
+    #[error("array size {size} exceeds maximum of {max} elements")]
+    ArrayTooLarge {
+        /// Actual array size
+        size: usize,
+        /// Maximum allowed size
+        max: usize,
+    },
+}
 
 /// JSON value wrapper
 ///
@@ -94,6 +173,98 @@ impl JsonValue {
     /// Actual in-memory size may differ.
     pub fn size_bytes(&self) -> usize {
         self.to_json_string().len()
+    }
+
+    /// Calculate the maximum nesting depth of this JSON value
+    ///
+    /// Returns 0 for primitives (null, bool, number, string),
+    /// and counts nested objects/arrays.
+    pub fn nesting_depth(&self) -> usize {
+        fn depth_of(value: &serde_json::Value) -> usize {
+            match value {
+                serde_json::Value::Null
+                | serde_json::Value::Bool(_)
+                | serde_json::Value::Number(_)
+                | serde_json::Value::String(_) => 0,
+                serde_json::Value::Array(arr) => 1 + arr.iter().map(depth_of).max().unwrap_or(0),
+                serde_json::Value::Object(obj) => 1 + obj.values().map(depth_of).max().unwrap_or(0),
+            }
+        }
+        depth_of(&self.0)
+    }
+
+    /// Find the maximum array size in this JSON value (including nested arrays)
+    pub fn max_array_size(&self) -> usize {
+        fn max_arr_size(value: &serde_json::Value) -> usize {
+            match value {
+                serde_json::Value::Null
+                | serde_json::Value::Bool(_)
+                | serde_json::Value::Number(_)
+                | serde_json::Value::String(_) => 0,
+                serde_json::Value::Array(arr) => {
+                    let nested_max = arr.iter().map(max_arr_size).max().unwrap_or(0);
+                    arr.len().max(nested_max)
+                }
+                serde_json::Value::Object(obj) => obj.values().map(max_arr_size).max().unwrap_or(0),
+            }
+        }
+        max_arr_size(&self.0)
+    }
+
+    /// Validate document size limit
+    ///
+    /// Returns an error if the document exceeds [`MAX_DOCUMENT_SIZE`].
+    pub fn validate_size(&self) -> Result<(), LimitError> {
+        let size = self.size_bytes();
+        if size > MAX_DOCUMENT_SIZE {
+            Err(LimitError::DocumentTooLarge {
+                size,
+                max: MAX_DOCUMENT_SIZE,
+            })
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Validate document nesting depth limit
+    ///
+    /// Returns an error if the document exceeds [`MAX_NESTING_DEPTH`].
+    pub fn validate_depth(&self) -> Result<(), LimitError> {
+        let depth = self.nesting_depth();
+        if depth > MAX_NESTING_DEPTH {
+            Err(LimitError::NestingTooDeep {
+                depth,
+                max: MAX_NESTING_DEPTH,
+            })
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Validate array size limits
+    ///
+    /// Returns an error if any array in the document exceeds [`MAX_ARRAY_SIZE`].
+    pub fn validate_array_size(&self) -> Result<(), LimitError> {
+        let size = self.max_array_size();
+        if size > MAX_ARRAY_SIZE {
+            Err(LimitError::ArrayTooLarge {
+                size,
+                max: MAX_ARRAY_SIZE,
+            })
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Validate all document limits
+    ///
+    /// Checks size, nesting depth, and array sizes.
+    /// Returns the first error encountered, if any.
+    pub fn validate(&self) -> Result<(), LimitError> {
+        self.validate_size()?;
+        self.validate_depth()?;
+        self.validate_array_size()?;
+        Ok(())
     }
 }
 
@@ -413,6 +584,21 @@ impl JsonPath {
         self.is_ancestor_of(other) || self.is_descendant_of(other)
     }
 
+    /// Validate path length limit
+    ///
+    /// Returns an error if the path exceeds [`MAX_PATH_LENGTH`].
+    pub fn validate(&self) -> Result<(), LimitError> {
+        let length = self.segments.len();
+        if length > MAX_PATH_LENGTH {
+            Err(LimitError::PathTooLong {
+                length,
+                max: MAX_PATH_LENGTH,
+            })
+        } else {
+            Ok(())
+        }
+    }
+
     /// Convert to a string representation
     pub fn to_path_string(&self) -> String {
         if self.segments.is_empty() {
@@ -522,6 +708,154 @@ impl FromStr for JsonPath {
 impl fmt::Display for JsonPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_path_string())
+    }
+}
+
+// =============================================================================
+// JsonPatch
+// =============================================================================
+
+/// A patch operation on a JSON document
+///
+/// JsonPatch represents an atomic mutation to a JSON document.
+/// Patches are used for:
+/// - WAL recording (patch-based persistence)
+/// - Transaction tracking
+/// - Conflict detection
+///
+/// # Supported Operations
+///
+/// - `Set`: Set a value at a path (creates intermediate objects/arrays if needed)
+/// - `Delete`: Remove a value at a path
+///
+/// # Conflict Detection
+///
+/// Two patches conflict if their paths overlap (one is ancestor/descendant of the other).
+/// This is used for region-based conflict detection in transactions.
+///
+/// # Examples
+///
+/// ```
+/// use in_mem_core::json::{JsonPatch, JsonPath, JsonValue};
+///
+/// // Create patches
+/// let set = JsonPatch::set("user.name", JsonValue::from("Alice"));
+/// let delete = JsonPatch::delete("user.email");
+///
+/// // Check conflict
+/// let patch1 = JsonPatch::set("user", JsonValue::object());
+/// let patch2 = JsonPatch::set("user.name", JsonValue::from("Bob"));
+/// assert!(patch1.conflicts_with(&patch2)); // user is ancestor of user.name
+///
+/// // Non-conflicting patches
+/// let patch3 = JsonPatch::set("user.name", JsonValue::from("Alice"));
+/// let patch4 = JsonPatch::set("user.email", JsonValue::from("alice@example.com"));
+/// assert!(!patch3.conflicts_with(&patch4)); // Different paths
+/// ```
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum JsonPatch {
+    /// Set value at path
+    Set {
+        /// The path to set
+        path: JsonPath,
+        /// The value to set
+        value: JsonValue,
+    },
+    /// Delete value at path
+    Delete {
+        /// The path to delete
+        path: JsonPath,
+    },
+}
+
+impl JsonPatch {
+    /// Create a Set patch
+    ///
+    /// Convenience constructor that parses the path from a string.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the path string is invalid.
+    pub fn set(path: impl AsRef<str>, value: JsonValue) -> Self {
+        JsonPatch::Set {
+            path: path
+                .as_ref()
+                .parse()
+                .expect("Invalid path in JsonPatch::set"),
+            value,
+        }
+    }
+
+    /// Create a Set patch with a pre-parsed path
+    pub fn set_at(path: JsonPath, value: JsonValue) -> Self {
+        JsonPatch::Set { path, value }
+    }
+
+    /// Create a Delete patch
+    ///
+    /// Convenience constructor that parses the path from a string.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the path string is invalid.
+    pub fn delete(path: impl AsRef<str>) -> Self {
+        JsonPatch::Delete {
+            path: path
+                .as_ref()
+                .parse()
+                .expect("Invalid path in JsonPatch::delete"),
+        }
+    }
+
+    /// Create a Delete patch with a pre-parsed path
+    pub fn delete_at(path: JsonPath) -> Self {
+        JsonPatch::Delete { path }
+    }
+
+    /// Get the path affected by this patch
+    pub fn path(&self) -> &JsonPath {
+        match self {
+            JsonPatch::Set { path, .. } => path,
+            JsonPatch::Delete { path } => path,
+        }
+    }
+
+    /// Check if this patch conflicts with another
+    ///
+    /// Two patches conflict if their paths overlap (one is ancestor/descendant of the other).
+    /// This is used for region-based conflict detection.
+    ///
+    /// Note: Two Set patches to the same path also conflict, but can sometimes be
+    /// resolved by last-writer-wins semantics depending on the use case.
+    pub fn conflicts_with(&self, other: &JsonPatch) -> bool {
+        self.path().overlaps(other.path())
+    }
+
+    /// Check if this is a Set operation
+    pub fn is_set(&self) -> bool {
+        matches!(self, JsonPatch::Set { .. })
+    }
+
+    /// Check if this is a Delete operation
+    pub fn is_delete(&self) -> bool {
+        matches!(self, JsonPatch::Delete { .. })
+    }
+
+    /// Get the value if this is a Set patch
+    pub fn value(&self) -> Option<&JsonValue> {
+        match self {
+            JsonPatch::Set { value, .. } => Some(value),
+            JsonPatch::Delete { .. } => None,
+        }
+    }
+}
+
+impl fmt::Display for JsonPatch {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            JsonPatch::Set { path, value } => write!(f, "SET {} = {}", path, value),
+            JsonPatch::Delete { path } => write!(f, "DELETE {}", path),
+        }
     }
 }
 
@@ -1094,5 +1428,323 @@ mod tests {
         let segments = vec![PathSegment::Key("user".to_string()), PathSegment::Index(0)];
         let path = JsonPath::from_segments(segments.clone());
         assert_eq!(path.segments(), &segments);
+    }
+
+    // ========================================
+    // JsonPatch Tests (M5)
+    // ========================================
+
+    #[test]
+    fn test_patch_set() {
+        let patch = JsonPatch::set("user.name", JsonValue::from("Alice"));
+        assert!(patch.is_set());
+        assert!(!patch.is_delete());
+        assert_eq!(patch.path().to_path_string(), "user.name");
+        assert_eq!(patch.value().unwrap().as_str(), Some("Alice"));
+    }
+
+    #[test]
+    fn test_patch_set_at() {
+        let path = JsonPath::root().key("user").key("name");
+        let patch = JsonPatch::set_at(path.clone(), JsonValue::from("Bob"));
+        assert!(patch.is_set());
+        assert_eq!(patch.path(), &path);
+    }
+
+    #[test]
+    fn test_patch_delete() {
+        let patch = JsonPatch::delete("user.email");
+        assert!(!patch.is_set());
+        assert!(patch.is_delete());
+        assert_eq!(patch.path().to_path_string(), "user.email");
+        assert!(patch.value().is_none());
+    }
+
+    #[test]
+    fn test_patch_delete_at() {
+        let path = JsonPath::root().key("user").key("email");
+        let patch = JsonPatch::delete_at(path.clone());
+        assert!(patch.is_delete());
+        assert_eq!(patch.path(), &path);
+    }
+
+    #[test]
+    fn test_patch_conflicts_with_overlapping() {
+        let patch1 = JsonPatch::set("user", JsonValue::object());
+        let patch2 = JsonPatch::set("user.name", JsonValue::from("Alice"));
+
+        // Parent/child paths conflict
+        assert!(patch1.conflicts_with(&patch2));
+        assert!(patch2.conflicts_with(&patch1));
+    }
+
+    #[test]
+    fn test_patch_conflicts_with_same_path() {
+        let patch1 = JsonPatch::set("user.name", JsonValue::from("Alice"));
+        let patch2 = JsonPatch::set("user.name", JsonValue::from("Bob"));
+
+        // Same path conflicts
+        assert!(patch1.conflicts_with(&patch2));
+    }
+
+    #[test]
+    fn test_patch_no_conflict_different_paths() {
+        let patch1 = JsonPatch::set("user.name", JsonValue::from("Alice"));
+        let patch2 = JsonPatch::set("user.email", JsonValue::from("alice@example.com"));
+
+        // Sibling paths don't conflict
+        assert!(!patch1.conflicts_with(&patch2));
+        assert!(!patch2.conflicts_with(&patch1));
+    }
+
+    #[test]
+    fn test_patch_delete_conflicts() {
+        let set_patch = JsonPatch::set("user.profile", JsonValue::object());
+        let delete_patch = JsonPatch::delete("user");
+
+        // Delete of ancestor conflicts with set of descendant
+        assert!(set_patch.conflicts_with(&delete_patch));
+        assert!(delete_patch.conflicts_with(&set_patch));
+    }
+
+    #[test]
+    fn test_patch_display_set() {
+        let patch = JsonPatch::set("user.name", JsonValue::from("Alice"));
+        let s = format!("{}", patch);
+        assert!(s.starts_with("SET"));
+        assert!(s.contains("user.name"));
+        assert!(s.contains("Alice"));
+    }
+
+    #[test]
+    fn test_patch_display_delete() {
+        let patch = JsonPatch::delete("user.email");
+        let s = format!("{}", patch);
+        assert!(s.starts_with("DELETE"));
+        assert!(s.contains("user.email"));
+    }
+
+    #[test]
+    fn test_patch_clone() {
+        let patch1 = JsonPatch::set("user.name", JsonValue::from("Alice"));
+        let patch2 = patch1.clone();
+        assert_eq!(patch1, patch2);
+    }
+
+    #[test]
+    fn test_patch_equality() {
+        let patch1 = JsonPatch::set("user.name", JsonValue::from("Alice"));
+        let patch2 = JsonPatch::set("user.name", JsonValue::from("Alice"));
+        let patch3 = JsonPatch::set("user.name", JsonValue::from("Bob"));
+        let patch4 = JsonPatch::delete("user.name");
+
+        assert_eq!(patch1, patch2);
+        assert_ne!(patch1, patch3);
+        assert_ne!(patch1, patch4);
+    }
+
+    #[test]
+    fn test_patch_serialization() {
+        let patch = JsonPatch::set("user.name", JsonValue::from("Alice"));
+        let json = serde_json::to_string(&patch).unwrap();
+        let patch2: JsonPatch = serde_json::from_str(&json).unwrap();
+        assert_eq!(patch, patch2);
+    }
+
+    #[test]
+    fn test_patch_delete_serialization() {
+        let patch = JsonPatch::delete("user.email");
+        let json = serde_json::to_string(&patch).unwrap();
+        let patch2: JsonPatch = serde_json::from_str(&json).unwrap();
+        assert_eq!(patch, patch2);
+    }
+
+    #[test]
+    fn test_patch_root_conflicts_with_all() {
+        let root_patch = JsonPatch::set("", JsonValue::object());
+        let other_patch = JsonPatch::set("user.name", JsonValue::from("Alice"));
+
+        // Root path conflicts with all paths
+        assert!(root_patch.conflicts_with(&other_patch));
+        assert!(other_patch.conflicts_with(&root_patch));
+    }
+
+    #[test]
+    fn test_patch_with_array_index() {
+        let patch1 = JsonPatch::set("items[0].name", JsonValue::from("First"));
+        let patch2 = JsonPatch::set("items[1].name", JsonValue::from("Second"));
+
+        // Different array indices don't conflict
+        assert!(!patch1.conflicts_with(&patch2));
+
+        let patch3 = JsonPatch::set("items", JsonValue::array());
+        // Parent of array conflicts with child path
+        assert!(patch3.conflicts_with(&patch1));
+    }
+
+    // ========================================
+    // Document Size Limits Tests (M5)
+    // ========================================
+
+    #[test]
+    fn test_limit_constants() {
+        // Verify limit constants are defined with expected values
+        assert_eq!(MAX_DOCUMENT_SIZE, 16 * 1024 * 1024); // 16 MB
+        assert_eq!(MAX_NESTING_DEPTH, 100);
+        assert_eq!(MAX_PATH_LENGTH, 256);
+        assert_eq!(MAX_ARRAY_SIZE, 1_000_000);
+    }
+
+    #[test]
+    fn test_nesting_depth_primitive() {
+        assert_eq!(JsonValue::null().nesting_depth(), 0);
+        assert_eq!(JsonValue::from(true).nesting_depth(), 0);
+        assert_eq!(JsonValue::from(42i64).nesting_depth(), 0);
+        assert_eq!(JsonValue::from("hello").nesting_depth(), 0);
+    }
+
+    #[test]
+    fn test_nesting_depth_simple_object() {
+        let v = JsonValue::object();
+        assert_eq!(v.nesting_depth(), 1);
+    }
+
+    #[test]
+    fn test_nesting_depth_simple_array() {
+        let v = JsonValue::array();
+        assert_eq!(v.nesting_depth(), 1);
+    }
+
+    #[test]
+    fn test_nesting_depth_nested() {
+        let v: JsonValue = r#"{"a": {"b": {"c": 1}}}"#.parse().unwrap();
+        assert_eq!(v.nesting_depth(), 3);
+    }
+
+    #[test]
+    fn test_nesting_depth_mixed() {
+        let v: JsonValue = r#"{"arr": [{"nested": [1, 2]}]}"#.parse().unwrap();
+        assert_eq!(v.nesting_depth(), 4);
+    }
+
+    #[test]
+    fn test_max_array_size_empty() {
+        let v = JsonValue::object();
+        assert_eq!(v.max_array_size(), 0);
+    }
+
+    #[test]
+    fn test_max_array_size_simple() {
+        let v: JsonValue = r#"[1, 2, 3, 4, 5]"#.parse().unwrap();
+        assert_eq!(v.max_array_size(), 5);
+    }
+
+    #[test]
+    fn test_max_array_size_nested() {
+        let v: JsonValue = r#"{"a": [1, 2], "b": [1, 2, 3, 4, 5, 6, 7]}"#.parse().unwrap();
+        assert_eq!(v.max_array_size(), 7);
+    }
+
+    #[test]
+    fn test_validate_size_ok() {
+        let v = JsonValue::from("small document");
+        assert!(v.validate_size().is_ok());
+    }
+
+    #[test]
+    fn test_validate_depth_ok() {
+        let v: JsonValue = r#"{"a": {"b": {"c": 1}}}"#.parse().unwrap();
+        assert!(v.validate_depth().is_ok());
+    }
+
+    #[test]
+    fn test_validate_array_size_ok() {
+        let v: JsonValue = r#"[1, 2, 3]"#.parse().unwrap();
+        assert!(v.validate_array_size().is_ok());
+    }
+
+    #[test]
+    fn test_validate_all_ok() {
+        let v: JsonValue = r#"{"user": {"name": "Alice", "tags": [1, 2, 3]}}"#.parse().unwrap();
+        assert!(v.validate().is_ok());
+    }
+
+    #[test]
+    fn test_path_validate_ok() {
+        let path = JsonPath::root().key("user").key("name");
+        assert!(path.validate().is_ok());
+    }
+
+    #[test]
+    fn test_path_validate_long_path() {
+        let mut path = JsonPath::root();
+        for i in 0..300 {
+            path.push_key(format!("key{}", i));
+        }
+        let result = path.validate();
+        assert!(matches!(result, Err(LimitError::PathTooLong { .. })));
+    }
+
+    #[test]
+    fn test_limit_error_display() {
+        let err = LimitError::DocumentTooLarge {
+            size: 20_000_000,
+            max: MAX_DOCUMENT_SIZE,
+        };
+        let s = format!("{}", err);
+        assert!(s.contains("20000000"));
+        assert!(s.contains("16777216"));
+    }
+
+    #[test]
+    fn test_limit_error_nesting_display() {
+        let err = LimitError::NestingTooDeep {
+            depth: 150,
+            max: MAX_NESTING_DEPTH,
+        };
+        let s = format!("{}", err);
+        assert!(s.contains("150"));
+        assert!(s.contains("100"));
+    }
+
+    #[test]
+    fn test_limit_error_path_display() {
+        let err = LimitError::PathTooLong {
+            length: 300,
+            max: MAX_PATH_LENGTH,
+        };
+        let s = format!("{}", err);
+        assert!(s.contains("300"));
+        assert!(s.contains("256"));
+    }
+
+    #[test]
+    fn test_limit_error_array_display() {
+        let err = LimitError::ArrayTooLarge {
+            size: 2_000_000,
+            max: MAX_ARRAY_SIZE,
+        };
+        let s = format!("{}", err);
+        assert!(s.contains("2000000"));
+        assert!(s.contains("1000000"));
+    }
+
+    #[test]
+    fn test_limit_error_equality() {
+        let err1 = LimitError::DocumentTooLarge { size: 100, max: 50 };
+        let err2 = LimitError::DocumentTooLarge { size: 100, max: 50 };
+        let err3 = LimitError::DocumentTooLarge { size: 200, max: 50 };
+        assert_eq!(err1, err2);
+        assert_ne!(err1, err3);
+    }
+
+    #[test]
+    fn test_limit_error_clone() {
+        let err = LimitError::PathTooLong {
+            length: 300,
+            max: 256,
+        };
+        let err2 = err.clone();
+        assert_eq!(err, err2);
     }
 }
