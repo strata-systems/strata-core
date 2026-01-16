@@ -516,4 +516,137 @@ mod tests {
             }
         }
     }
+
+    // ========================================================================
+    // JSON Entry Encoding Tests (Story #279)
+    // ========================================================================
+
+    use in_mem_core::json::JsonPath;
+    use in_mem_core::types::JsonDocId;
+
+    #[test]
+    fn test_json_create_encode_decode() {
+        let run_id = RunId::new();
+        let doc_id = JsonDocId::new();
+
+        let entry = WALEntry::JsonCreate {
+            run_id,
+            doc_id,
+            value_bytes: vec![0x80], // msgpack empty map
+            version: 1,
+            timestamp: now(),
+        };
+
+        let encoded = encode_entry(&entry).unwrap();
+        let (decoded, consumed) = decode_entry(&encoded, 0).unwrap();
+
+        assert_eq!(entry, decoded);
+        assert_eq!(consumed, encoded.len());
+
+        // Verify type tag is 0x20
+        assert_eq!(encoded[4], TYPE_JSON_CREATE);
+    }
+
+    #[test]
+    fn test_json_set_encode_decode() {
+        let run_id = RunId::new();
+        let doc_id = JsonDocId::new();
+
+        let entry = WALEntry::JsonSet {
+            run_id,
+            doc_id,
+            path: "user.name".parse::<JsonPath>().unwrap(),
+            value_bytes: b"\xa5Alice".to_vec(),
+            version: 2,
+        };
+
+        let encoded = encode_entry(&entry).unwrap();
+        let (decoded, consumed) = decode_entry(&encoded, 0).unwrap();
+
+        assert_eq!(entry, decoded);
+        assert_eq!(consumed, encoded.len());
+
+        // Verify type tag is 0x21
+        assert_eq!(encoded[4], TYPE_JSON_SET);
+    }
+
+    #[test]
+    fn test_json_delete_encode_decode() {
+        let run_id = RunId::new();
+        let doc_id = JsonDocId::new();
+
+        let entry = WALEntry::JsonDelete {
+            run_id,
+            doc_id,
+            path: "temp.field".parse::<JsonPath>().unwrap(),
+            version: 3,
+        };
+
+        let encoded = encode_entry(&entry).unwrap();
+        let (decoded, consumed) = decode_entry(&encoded, 0).unwrap();
+
+        assert_eq!(entry, decoded);
+        assert_eq!(consumed, encoded.len());
+
+        // Verify type tag is 0x22
+        assert_eq!(encoded[4], TYPE_JSON_DELETE);
+    }
+
+    #[test]
+    fn test_json_destroy_encode_decode() {
+        let run_id = RunId::new();
+        let doc_id = JsonDocId::new();
+
+        let entry = WALEntry::JsonDestroy { run_id, doc_id };
+
+        let encoded = encode_entry(&entry).unwrap();
+        let (decoded, consumed) = decode_entry(&encoded, 0).unwrap();
+
+        assert_eq!(entry, decoded);
+        assert_eq!(consumed, encoded.len());
+
+        // Verify type tag is 0x23
+        assert_eq!(encoded[4], TYPE_JSON_DESTROY);
+    }
+
+    #[test]
+    fn test_json_entries_in_sequence() {
+        // Test that multiple JSON entries can be decoded in sequence
+        let run_id = RunId::new();
+        let doc_id = JsonDocId::new();
+
+        let entries = vec![
+            WALEntry::JsonCreate {
+                run_id,
+                doc_id,
+                value_bytes: vec![0x80],
+                version: 1,
+                timestamp: now(),
+            },
+            WALEntry::JsonSet {
+                run_id,
+                doc_id,
+                path: "name".parse().unwrap(),
+                value_bytes: b"\xa4test".to_vec(),
+                version: 2,
+            },
+            WALEntry::JsonDestroy { run_id, doc_id },
+        ];
+
+        // Encode all entries into a single buffer
+        let mut combined = Vec::new();
+        for entry in &entries {
+            combined.extend_from_slice(&encode_entry(entry).unwrap());
+        }
+
+        // Decode entries in sequence
+        let mut offset = 0;
+        for (idx, expected) in entries.iter().enumerate() {
+            let (decoded, consumed) = decode_entry(&combined[offset..], offset as u64).unwrap();
+            assert_eq!(&decoded, expected, "Entry {} mismatch", idx);
+            offset += consumed;
+        }
+
+        assert_eq!(offset, combined.len(), "Should consume entire buffer");
+    }
 }
