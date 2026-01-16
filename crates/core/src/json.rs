@@ -119,6 +119,7 @@ pub enum LimitError {
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
+#[repr(transparent)]
 pub struct JsonValue(serde_json::Value);
 
 impl JsonValue {
@@ -857,6 +858,465 @@ impl fmt::Display for JsonPatch {
             JsonPatch::Delete { path } => write!(f, "DELETE {}", path),
         }
     }
+}
+
+// =============================================================================
+// Path Operations Error
+// =============================================================================
+
+/// Error type for path operations
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum JsonPathError {
+    /// Type mismatch during path traversal
+    #[error("type mismatch: expected {expected}, found {found}")]
+    TypeMismatch {
+        /// Expected type
+        expected: &'static str,
+        /// Actual type found
+        found: &'static str,
+    },
+
+    /// Array index out of bounds
+    #[error("index out of bounds: {index} >= {len}")]
+    IndexOutOfBounds {
+        /// The requested index
+        index: usize,
+        /// The array length
+        len: usize,
+    },
+
+    /// Path not found
+    #[error("path not found")]
+    NotFound,
+}
+
+// =============================================================================
+// Path Operations (Story #268)
+// =============================================================================
+
+/// Get value at path within a JSON document
+///
+/// Traverses the document following the path segments, returning a reference
+/// to the value at the specified location.
+///
+/// # Arguments
+///
+/// * `value` - The root JSON value to traverse
+/// * `path` - The path to the desired value
+///
+/// # Returns
+///
+/// * `Some(&JsonValue)` - Reference to the value at the path
+/// * `None` - If the path doesn't exist or there's a type mismatch
+///
+/// # Examples
+///
+/// ```
+/// use in_mem_core::json::{JsonValue, JsonPath, get_at_path};
+///
+/// let json: JsonValue = serde_json::json!({
+///     "user": {
+///         "name": "Alice",
+///         "scores": [100, 95, 88]
+///     }
+/// }).into();
+///
+/// // Get nested object property
+/// let path: JsonPath = "user.name".parse().unwrap();
+/// let name = get_at_path(&json, &path).unwrap();
+/// assert_eq!(name.as_str(), Some("Alice"));
+///
+/// // Get array element
+/// let path: JsonPath = "user.scores[1]".parse().unwrap();
+/// let score = get_at_path(&json, &path).unwrap();
+/// assert_eq!(score.as_i64(), Some(95));
+///
+/// // Root path returns the entire document
+/// assert_eq!(get_at_path(&json, &JsonPath::root()), Some(&json));
+/// ```
+pub fn get_at_path<'a>(value: &'a JsonValue, path: &JsonPath) -> Option<&'a JsonValue> {
+    if path.is_root() {
+        return Some(value);
+    }
+
+    let mut current: &serde_json::Value = value.as_inner();
+
+    for segment in path.segments() {
+        match (segment, current) {
+            (PathSegment::Key(key), serde_json::Value::Object(obj)) => {
+                current = obj.get(key)?;
+            }
+            (PathSegment::Index(idx), serde_json::Value::Array(arr)) => {
+                current = arr.get(*idx)?;
+            }
+            _ => return None,
+        }
+    }
+
+    // SAFETY: This transmute is safe because:
+    // 1. JsonValue has #[repr(transparent)], guaranteeing identical memory layout to serde_json::Value
+    // 2. The returned reference's lifetime is tied to the input JsonValue reference
+    // 3. Both types have the same alignment requirements
+    Some(unsafe { &*(current as *const serde_json::Value as *const JsonValue) })
+}
+
+/// Get mutable reference to value at path within a JSON document
+///
+/// Traverses the document following the path segments, returning a mutable
+/// reference to the value at the specified location.
+///
+/// # Arguments
+///
+/// * `value` - The root JSON value to traverse
+/// * `path` - The path to the desired value
+///
+/// # Returns
+///
+/// * `Some(&mut JsonValue)` - Mutable reference to the value at the path
+/// * `None` - If the path doesn't exist or there's a type mismatch
+///
+/// # Examples
+///
+/// ```
+/// use in_mem_core::json::{JsonValue, JsonPath, get_at_path_mut};
+///
+/// let mut json: JsonValue = serde_json::json!({
+///     "user": {
+///         "name": "Alice"
+///     }
+/// }).into();
+///
+/// // Modify nested value
+/// let path: JsonPath = "user.name".parse().unwrap();
+/// if let Some(name) = get_at_path_mut(&mut json, &path) {
+///     *name = JsonValue::from("Bob");
+/// }
+///
+/// // Verify the change
+/// use in_mem_core::json::get_at_path;
+/// let name = get_at_path(&json, &path).unwrap();
+/// assert_eq!(name.as_str(), Some("Bob"));
+/// ```
+pub fn get_at_path_mut<'a>(value: &'a mut JsonValue, path: &JsonPath) -> Option<&'a mut JsonValue> {
+    if path.is_root() {
+        return Some(value);
+    }
+
+    let inner: &mut serde_json::Value = value.as_inner_mut();
+    let mut current: &mut serde_json::Value = inner;
+
+    for segment in path.segments() {
+        current = match (segment, current) {
+            (PathSegment::Key(key), serde_json::Value::Object(obj)) => obj.get_mut(key)?,
+            (PathSegment::Index(idx), serde_json::Value::Array(arr)) => arr.get_mut(*idx)?,
+            _ => return None,
+        };
+    }
+
+    // SAFETY: This transmute is safe because:
+    // 1. JsonValue has #[repr(transparent)], guaranteeing identical memory layout to serde_json::Value
+    // 2. The returned reference's lifetime is tied to the input JsonValue reference
+    // 3. Both types have the same alignment requirements
+    Some(unsafe { &mut *(current as *mut serde_json::Value as *mut JsonValue) })
+}
+
+// =============================================================================
+// Path Mutation (Story #269)
+// =============================================================================
+
+/// Set value at path within a JSON document
+///
+/// Creates intermediate objects and arrays as needed when the path doesn't exist.
+/// The type of intermediate container (object vs array) is determined by the
+/// next segment in the path.
+///
+/// # Arguments
+///
+/// * `root` - The root JSON value to modify
+/// * `path` - The path where the value should be set
+/// * `value` - The value to set at the path
+///
+/// # Returns
+///
+/// * `Ok(())` - Value was set successfully
+/// * `Err(JsonPathError)` - Type mismatch or index out of bounds
+///
+/// # Examples
+///
+/// ```
+/// use in_mem_core::json::{JsonValue, JsonPath, set_at_path, get_at_path};
+///
+/// // Set value at nested path, creating intermediate objects
+/// let mut json = JsonValue::object();
+/// let path: JsonPath = "user.profile.name".parse().unwrap();
+/// set_at_path(&mut json, &path, JsonValue::from("Alice")).unwrap();
+///
+/// // Verify the value was set
+/// assert_eq!(
+///     get_at_path(&json, &path).unwrap().as_str(),
+///     Some("Alice")
+/// );
+///
+/// // Replace root value
+/// let mut value = JsonValue::from(42);
+/// set_at_path(&mut value, &JsonPath::root(), JsonValue::from(100)).unwrap();
+/// assert_eq!(value.as_i64(), Some(100));
+/// ```
+pub fn set_at_path(
+    root: &mut JsonValue,
+    path: &JsonPath,
+    value: JsonValue,
+) -> Result<(), JsonPathError> {
+    // Handle root path - replace entire value
+    if path.is_root() {
+        *root = value;
+        return Ok(());
+    }
+
+    let segments = path.segments();
+    if segments.is_empty() {
+        *root = value;
+        return Ok(());
+    }
+
+    let inner = root.as_inner_mut();
+
+    // Navigate to parent, creating intermediate containers as needed
+    let (parent_segments, last_segment) = segments.split_at(segments.len() - 1);
+    let last_segment = &last_segment[0];
+
+    let mut current = inner;
+
+    // Navigate to parent, creating intermediates
+    for (i, segment) in parent_segments.iter().enumerate() {
+        let next_segment = &segments[i + 1];
+
+        match segment {
+            PathSegment::Key(key) => {
+                if !current.is_object() {
+                    return Err(JsonPathError::TypeMismatch {
+                        expected: "object",
+                        found: value_type_name(current),
+                    });
+                }
+                let obj = current.as_object_mut().unwrap();
+                if !obj.contains_key(key) {
+                    let new_container = match next_segment {
+                        PathSegment::Key(_) => serde_json::Value::Object(serde_json::Map::new()),
+                        PathSegment::Index(_) => serde_json::Value::Array(Vec::new()),
+                    };
+                    obj.insert(key.clone(), new_container);
+                }
+                current = obj.get_mut(key).unwrap();
+            }
+            PathSegment::Index(idx) => {
+                if !current.is_array() {
+                    return Err(JsonPathError::TypeMismatch {
+                        expected: "array",
+                        found: value_type_name(current),
+                    });
+                }
+                let arr = current.as_array_mut().unwrap();
+                if *idx >= arr.len() {
+                    return Err(JsonPathError::IndexOutOfBounds {
+                        index: *idx,
+                        len: arr.len(),
+                    });
+                }
+                current = &mut arr[*idx];
+            }
+        }
+    }
+
+    // Set the value at the last segment
+    match last_segment {
+        PathSegment::Key(key) => {
+            if !current.is_object() {
+                return Err(JsonPathError::TypeMismatch {
+                    expected: "object",
+                    found: value_type_name(current),
+                });
+            }
+            let obj = current.as_object_mut().unwrap();
+            obj.insert(key.clone(), value.into_inner());
+            Ok(())
+        }
+        PathSegment::Index(idx) => {
+            if !current.is_array() {
+                return Err(JsonPathError::TypeMismatch {
+                    expected: "array",
+                    found: value_type_name(current),
+                });
+            }
+            let arr = current.as_array_mut().unwrap();
+            if *idx < arr.len() {
+                arr[*idx] = value.into_inner();
+                Ok(())
+            } else if *idx == arr.len() {
+                arr.push(value.into_inner());
+                Ok(())
+            } else {
+                Err(JsonPathError::IndexOutOfBounds {
+                    index: *idx,
+                    len: arr.len(),
+                })
+            }
+        }
+    }
+}
+
+/// Helper to get type name for error messages
+fn value_type_name(value: &serde_json::Value) -> &'static str {
+    match value {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "boolean",
+        serde_json::Value::Number(_) => "number",
+        serde_json::Value::String(_) => "string",
+        serde_json::Value::Array(_) => "array",
+        serde_json::Value::Object(_) => "object",
+    }
+}
+
+// =============================================================================
+// Path Deletion (Story #270)
+// =============================================================================
+
+/// Delete value at path within a JSON document
+///
+/// Removes the value at the specified path. For objects, this removes the key.
+/// For arrays, this removes the element and shifts subsequent elements.
+/// Deleting the root replaces the value with null.
+///
+/// # Arguments
+///
+/// * `root` - The root JSON value to modify
+/// * `path` - The path to delete
+///
+/// # Returns
+///
+/// * `Ok(Some(value))` - The deleted value
+/// * `Ok(None)` - The path didn't exist
+/// * `Err(JsonPathError)` - Type mismatch during traversal
+///
+/// # Examples
+///
+/// ```
+/// use in_mem_core::json::{JsonValue, JsonPath, delete_at_path, get_at_path};
+///
+/// // Delete object key
+/// let mut json: JsonValue = r#"{"name": "Alice", "age": 30}"#.parse().unwrap();
+/// let deleted = delete_at_path(&mut json, &"name".parse().unwrap()).unwrap();
+/// assert_eq!(deleted.unwrap().as_str(), Some("Alice"));
+/// assert!(get_at_path(&json, &"name".parse().unwrap()).is_none());
+///
+/// // Delete array element (shifts indices)
+/// let mut arr: JsonValue = r#"[1, 2, 3]"#.parse().unwrap();
+/// delete_at_path(&mut arr, &"[1]".parse().unwrap()).unwrap();
+/// assert_eq!(arr.as_array().unwrap().len(), 2);
+/// assert_eq!(arr.as_array().unwrap()[1].as_i64(), Some(3)); // Was at index 2
+/// ```
+pub fn delete_at_path(
+    root: &mut JsonValue,
+    path: &JsonPath,
+) -> Result<Option<JsonValue>, JsonPathError> {
+    // Handle root path - replace with null
+    if path.is_root() {
+        let old = std::mem::take(root);
+        return Ok(Some(old));
+    }
+
+    let segments = path.segments();
+    if segments.is_empty() {
+        let old = std::mem::take(root);
+        return Ok(Some(old));
+    }
+
+    // Navigate to parent
+    let parent_path = path.parent().ok_or(JsonPathError::NotFound)?;
+    let parent = get_at_path_mut(root, &parent_path).ok_or(JsonPathError::NotFound)?;
+    let parent_inner = parent.as_inner_mut();
+
+    // Delete at the last segment
+    let last_segment = segments.last().unwrap();
+    match last_segment {
+        PathSegment::Key(key) => {
+            if !parent_inner.is_object() {
+                return Err(JsonPathError::TypeMismatch {
+                    expected: "object",
+                    found: value_type_name(parent_inner),
+                });
+            }
+            let obj = parent_inner.as_object_mut().unwrap();
+            let removed = obj.remove(key);
+            Ok(removed.map(JsonValue::from_value))
+        }
+        PathSegment::Index(idx) => {
+            if !parent_inner.is_array() {
+                return Err(JsonPathError::TypeMismatch {
+                    expected: "array",
+                    found: value_type_name(parent_inner),
+                });
+            }
+            let arr = parent_inner.as_array_mut().unwrap();
+            if *idx < arr.len() {
+                let removed = arr.remove(*idx);
+                Ok(Some(JsonValue::from_value(removed)))
+            } else {
+                Ok(None)
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Patch Application (Story #271)
+// =============================================================================
+
+/// Apply multiple patches to a JSON document
+///
+/// Applies each patch in order. If any patch fails, the document may be
+/// left in a partially modified state (patches are not atomic).
+///
+/// # Arguments
+///
+/// * `root` - The root JSON value to modify
+/// * `patches` - The patches to apply in order
+///
+/// # Returns
+///
+/// * `Ok(())` - All patches applied successfully
+/// * `Err(JsonPathError)` - A patch failed to apply
+///
+/// # Examples
+///
+/// ```
+/// use in_mem_core::json::{JsonValue, JsonPath, JsonPatch, apply_patches, get_at_path};
+///
+/// let mut json = JsonValue::object();
+///
+/// let patches = vec![
+///     JsonPatch::set("name", JsonValue::from("Alice")),
+///     JsonPatch::set("age", JsonValue::from(30i64)),
+///     JsonPatch::set("tags", JsonValue::array()),
+/// ];
+///
+/// apply_patches(&mut json, &patches).unwrap();
+///
+/// assert_eq!(get_at_path(&json, &"name".parse().unwrap()).unwrap().as_str(), Some("Alice"));
+/// assert_eq!(get_at_path(&json, &"age".parse().unwrap()).unwrap().as_i64(), Some(30));
+/// ```
+pub fn apply_patches(root: &mut JsonValue, patches: &[JsonPatch]) -> Result<(), JsonPathError> {
+    for patch in patches {
+        match patch {
+            JsonPatch::Set { path, value } => {
+                set_at_path(root, path, value.clone())?;
+            }
+            JsonPatch::Delete { path } => {
+                delete_at_path(root, path)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1746,5 +2206,640 @@ mod tests {
         };
         let err2 = err.clone();
         assert_eq!(err, err2);
+    }
+
+    // =========================================================================
+    // Path Operations Tests (Story #268)
+    // =========================================================================
+
+    #[test]
+    fn test_get_at_path_root() {
+        let value = JsonValue::from(42i64);
+        let result = get_at_path(&value, &JsonPath::root());
+        assert_eq!(result, Some(&value));
+    }
+
+    #[test]
+    fn test_get_at_path_simple_object() {
+        let json: JsonValue = r#"{"foo": 42}"#.parse().unwrap();
+        let path: JsonPath = "foo".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().as_i64(), Some(42));
+    }
+
+    #[test]
+    fn test_get_at_path_nested_object() {
+        let json: JsonValue = r#"{"foo": {"bar": 42}}"#.parse().unwrap();
+        let path: JsonPath = "foo.bar".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().as_i64(), Some(42));
+    }
+
+    #[test]
+    fn test_get_at_path_array_index() {
+        let json: JsonValue = r#"[1, 2, 3]"#.parse().unwrap();
+        let path: JsonPath = "[1]".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().as_i64(), Some(2));
+    }
+
+    #[test]
+    fn test_get_at_path_mixed() {
+        let json: JsonValue = r#"{"items": [{"name": "Alice"}, {"name": "Bob"}]}"#
+            .parse()
+            .unwrap();
+        let path: JsonPath = "items[1].name".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().as_str(), Some("Bob"));
+    }
+
+    #[test]
+    fn test_get_at_path_missing_key() {
+        let json: JsonValue = r#"{"foo": 42}"#.parse().unwrap();
+        let path: JsonPath = "bar".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_at_path_missing_index() {
+        let json: JsonValue = r#"[1, 2, 3]"#.parse().unwrap();
+        let path: JsonPath = "[10]".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_at_path_type_mismatch_object_as_array() {
+        let json: JsonValue = r#"{"foo": 42}"#.parse().unwrap();
+        let path: JsonPath = "[0]".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_at_path_type_mismatch_array_as_object() {
+        let json: JsonValue = r#"[1, 2, 3]"#.parse().unwrap();
+        let path: JsonPath = "foo".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_at_path_type_mismatch_scalar() {
+        let json: JsonValue = JsonValue::from(42i64);
+        let path: JsonPath = "foo".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_at_path_deeply_nested() {
+        let json: JsonValue = r#"{"a": {"b": {"c": {"d": {"e": 42}}}}}"#.parse().unwrap();
+        let path: JsonPath = "a.b.c.d.e".parse().unwrap();
+        let result = get_at_path(&json, &path);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().as_i64(), Some(42));
+    }
+
+    #[test]
+    fn test_get_at_path_mut_root() {
+        let mut value = JsonValue::from(42i64);
+        let result = get_at_path_mut(&mut value, &JsonPath::root());
+        assert!(result.is_some());
+        *result.unwrap() = JsonValue::from(100i64);
+        assert_eq!(value.as_i64(), Some(100));
+    }
+
+    #[test]
+    fn test_get_at_path_mut_modify_nested() {
+        let mut json: JsonValue = r#"{"user": {"name": "Alice"}}"#.parse().unwrap();
+        let path: JsonPath = "user.name".parse().unwrap();
+
+        if let Some(name) = get_at_path_mut(&mut json, &path) {
+            *name = JsonValue::from("Bob");
+        }
+
+        let result = get_at_path(&json, &path);
+        assert_eq!(result.unwrap().as_str(), Some("Bob"));
+    }
+
+    #[test]
+    fn test_get_at_path_mut_modify_array_element() {
+        let mut json: JsonValue = r#"[10, 20, 30]"#.parse().unwrap();
+        let path: JsonPath = "[1]".parse().unwrap();
+
+        if let Some(elem) = get_at_path_mut(&mut json, &path) {
+            *elem = JsonValue::from(999i64);
+        }
+
+        let result = get_at_path(&json, &path);
+        assert_eq!(result.unwrap().as_i64(), Some(999));
+    }
+
+    #[test]
+    fn test_get_at_path_mut_missing() {
+        let mut json: JsonValue = r#"{"foo": 42}"#.parse().unwrap();
+        let path: JsonPath = "bar".parse().unwrap();
+        let result = get_at_path_mut(&mut json, &path);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_json_path_error_display() {
+        let err = JsonPathError::TypeMismatch {
+            expected: "object",
+            found: "array",
+        };
+        let s = format!("{}", err);
+        assert!(s.contains("object"));
+        assert!(s.contains("array"));
+
+        let err2 = JsonPathError::IndexOutOfBounds { index: 10, len: 5 };
+        let s2 = format!("{}", err2);
+        assert!(s2.contains("10"));
+        assert!(s2.contains("5"));
+
+        let err3 = JsonPathError::NotFound;
+        let s3 = format!("{}", err3);
+        assert!(s3.contains("not found"));
+    }
+
+    #[test]
+    fn test_json_path_error_equality() {
+        let err1 = JsonPathError::IndexOutOfBounds { index: 5, len: 3 };
+        let err2 = JsonPathError::IndexOutOfBounds { index: 5, len: 3 };
+        let err3 = JsonPathError::IndexOutOfBounds { index: 10, len: 3 };
+        assert_eq!(err1, err2);
+        assert_ne!(err1, err3);
+    }
+
+    // =========================================================================
+    // Set at Path Tests (Story #269)
+    // =========================================================================
+
+    #[test]
+    fn test_set_at_path_root() {
+        let mut value = JsonValue::from(42i64);
+        set_at_path(&mut value, &JsonPath::root(), JsonValue::from(100i64)).unwrap();
+        assert_eq!(value.as_i64(), Some(100));
+    }
+
+    #[test]
+    fn test_set_at_path_simple_object() {
+        let mut json = JsonValue::object();
+        let path: JsonPath = "name".parse().unwrap();
+        set_at_path(&mut json, &path, JsonValue::from("Alice")).unwrap();
+
+        let result = get_at_path(&json, &path);
+        assert_eq!(result.unwrap().as_str(), Some("Alice"));
+    }
+
+    #[test]
+    fn test_set_at_path_nested_creates_intermediate() {
+        let mut json = JsonValue::object();
+        let path: JsonPath = "user.profile.name".parse().unwrap();
+        set_at_path(&mut json, &path, JsonValue::from("Bob")).unwrap();
+
+        // Verify intermediate objects were created
+        assert!(get_at_path(&json, &"user".parse().unwrap()).is_some());
+        assert!(get_at_path(&json, &"user.profile".parse().unwrap()).is_some());
+        assert_eq!(get_at_path(&json, &path).unwrap().as_str(), Some("Bob"));
+    }
+
+    #[test]
+    fn test_set_at_path_creates_array_intermediate() {
+        let mut json = JsonValue::object();
+        let path: JsonPath = "items[0]".parse().unwrap();
+
+        // First set up the array
+        set_at_path(&mut json, &"items".parse().unwrap(), JsonValue::array()).unwrap();
+
+        // Now set at index 0 (append)
+        set_at_path(&mut json, &path, JsonValue::from(42i64)).unwrap();
+
+        let result = get_at_path(&json, &path);
+        assert_eq!(result.unwrap().as_i64(), Some(42));
+    }
+
+    #[test]
+    fn test_set_at_path_overwrite_existing() {
+        let mut json: JsonValue = r#"{"name": "Alice"}"#.parse().unwrap();
+        let path: JsonPath = "name".parse().unwrap();
+        set_at_path(&mut json, &path, JsonValue::from("Bob")).unwrap();
+
+        assert_eq!(get_at_path(&json, &path).unwrap().as_str(), Some("Bob"));
+    }
+
+    #[test]
+    fn test_set_at_path_array_replace() {
+        let mut json: JsonValue = r#"[1, 2, 3]"#.parse().unwrap();
+        let path: JsonPath = "[1]".parse().unwrap();
+        set_at_path(&mut json, &path, JsonValue::from(999i64)).unwrap();
+
+        let arr = json.as_array().unwrap();
+        assert_eq!(arr.len(), 3);
+        assert_eq!(arr[1].as_i64(), Some(999));
+    }
+
+    #[test]
+    fn test_set_at_path_array_append() {
+        let mut json: JsonValue = r#"[1, 2]"#.parse().unwrap();
+        let path: JsonPath = "[2]".parse().unwrap();
+        set_at_path(&mut json, &path, JsonValue::from(3i64)).unwrap();
+
+        let arr = json.as_array().unwrap();
+        assert_eq!(arr.len(), 3);
+        assert_eq!(arr[2].as_i64(), Some(3));
+    }
+
+    #[test]
+    fn test_set_at_path_array_out_of_bounds() {
+        let mut json: JsonValue = r#"[1, 2]"#.parse().unwrap();
+        let path: JsonPath = "[10]".parse().unwrap();
+        let result = set_at_path(&mut json, &path, JsonValue::from(42i64));
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            JsonPathError::IndexOutOfBounds { .. }
+        ));
+    }
+
+    #[test]
+    fn test_set_at_path_type_mismatch_not_object() {
+        let mut json = JsonValue::from(42i64);
+        let path: JsonPath = "name".parse().unwrap();
+        let result = set_at_path(&mut json, &path, JsonValue::from("value"));
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            JsonPathError::TypeMismatch { .. }
+        ));
+    }
+
+    #[test]
+    fn test_set_at_path_type_mismatch_not_array() {
+        let mut json = JsonValue::from(42i64);
+        let path: JsonPath = "[0]".parse().unwrap();
+        let result = set_at_path(&mut json, &path, JsonValue::from("value"));
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            JsonPathError::TypeMismatch { .. }
+        ));
+    }
+
+    #[test]
+    fn test_set_at_path_deeply_nested() {
+        let mut json = JsonValue::object();
+        let path: JsonPath = "a.b.c.d.e".parse().unwrap();
+        set_at_path(&mut json, &path, JsonValue::from(42i64)).unwrap();
+
+        assert_eq!(get_at_path(&json, &path).unwrap().as_i64(), Some(42));
+    }
+
+    #[test]
+    fn test_set_at_path_mixed_path() {
+        let mut json = JsonValue::object();
+
+        // First create the structure
+        set_at_path(&mut json, &"items".parse().unwrap(), JsonValue::array()).unwrap();
+        set_at_path(&mut json, &"items[0]".parse().unwrap(), JsonValue::object()).unwrap();
+
+        // Now set nested value
+        let path: JsonPath = "items[0].name".parse().unwrap();
+        set_at_path(&mut json, &path, JsonValue::from("Item 1")).unwrap();
+
+        assert_eq!(get_at_path(&json, &path).unwrap().as_str(), Some("Item 1"));
+    }
+
+    // =========================================================================
+    // Delete at Path Tests (Story #270)
+    // =========================================================================
+
+    #[test]
+    fn test_delete_at_path_root() {
+        let mut json = JsonValue::from(42i64);
+        let deleted = delete_at_path(&mut json, &JsonPath::root()).unwrap();
+        assert_eq!(deleted.unwrap().as_i64(), Some(42));
+        assert!(json.is_null());
+    }
+
+    #[test]
+    fn test_delete_at_path_object_key() {
+        let mut json: JsonValue = r#"{"name": "Alice", "age": 30}"#.parse().unwrap();
+        let path: JsonPath = "name".parse().unwrap();
+        let deleted = delete_at_path(&mut json, &path).unwrap();
+
+        assert_eq!(deleted.unwrap().as_str(), Some("Alice"));
+        assert!(get_at_path(&json, &path).is_none());
+        // age should still exist
+        assert!(get_at_path(&json, &"age".parse().unwrap()).is_some());
+    }
+
+    #[test]
+    fn test_delete_at_path_nested_object() {
+        let mut json: JsonValue = r#"{"user": {"name": "Bob", "email": "bob@example.com"}}"#
+            .parse()
+            .unwrap();
+        let path: JsonPath = "user.name".parse().unwrap();
+        let deleted = delete_at_path(&mut json, &path).unwrap();
+
+        assert_eq!(deleted.unwrap().as_str(), Some("Bob"));
+        assert!(get_at_path(&json, &path).is_none());
+        // user.email should still exist
+        assert!(get_at_path(&json, &"user.email".parse().unwrap()).is_some());
+    }
+
+    #[test]
+    fn test_delete_at_path_array_element() {
+        let mut json: JsonValue = r#"[1, 2, 3]"#.parse().unwrap();
+        let path: JsonPath = "[1]".parse().unwrap();
+        let deleted = delete_at_path(&mut json, &path).unwrap();
+
+        assert_eq!(deleted.unwrap().as_i64(), Some(2));
+        let arr = json.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        // Verify indices shifted
+        assert_eq!(arr[0].as_i64(), Some(1));
+        assert_eq!(arr[1].as_i64(), Some(3)); // Was at index 2
+    }
+
+    #[test]
+    fn test_delete_at_path_array_first() {
+        let mut json: JsonValue = r#"["a", "b", "c"]"#.parse().unwrap();
+        let path: JsonPath = "[0]".parse().unwrap();
+        delete_at_path(&mut json, &path).unwrap();
+
+        let arr = json.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0].as_str(), Some("b"));
+        assert_eq!(arr[1].as_str(), Some("c"));
+    }
+
+    #[test]
+    fn test_delete_at_path_array_last() {
+        let mut json: JsonValue = r#"["a", "b", "c"]"#.parse().unwrap();
+        let path: JsonPath = "[2]".parse().unwrap();
+        delete_at_path(&mut json, &path).unwrap();
+
+        let arr = json.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0].as_str(), Some("a"));
+        assert_eq!(arr[1].as_str(), Some("b"));
+    }
+
+    #[test]
+    fn test_delete_at_path_missing_key() {
+        let mut json: JsonValue = r#"{"name": "Alice"}"#.parse().unwrap();
+        let path: JsonPath = "missing".parse().unwrap();
+        let deleted = delete_at_path(&mut json, &path).unwrap();
+
+        assert!(deleted.is_none());
+    }
+
+    #[test]
+    fn test_delete_at_path_missing_index() {
+        let mut json: JsonValue = r#"[1, 2]"#.parse().unwrap();
+        let path: JsonPath = "[10]".parse().unwrap();
+        let deleted = delete_at_path(&mut json, &path).unwrap();
+
+        assert!(deleted.is_none());
+    }
+
+    #[test]
+    fn test_delete_at_path_missing_parent() {
+        let mut json: JsonValue = r#"{"foo": 1}"#.parse().unwrap();
+        let path: JsonPath = "bar.baz".parse().unwrap();
+        let result = delete_at_path(&mut json, &path);
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), JsonPathError::NotFound));
+    }
+
+    #[test]
+    fn test_delete_at_path_type_mismatch() {
+        let mut json = JsonValue::from(42i64);
+        let path: JsonPath = "name".parse().unwrap();
+        let result = delete_at_path(&mut json, &path);
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            JsonPathError::TypeMismatch { .. }
+        ));
+    }
+
+    #[test]
+    fn test_delete_at_path_nested_array() {
+        let mut json: JsonValue =
+            r#"{"items": [{"id": 1}, {"id": 2}, {"id": 3}]}"#.parse().unwrap();
+        let path: JsonPath = "items[1]".parse().unwrap();
+        let deleted = delete_at_path(&mut json, &path).unwrap();
+
+        assert!(deleted.is_some());
+        let arr = get_at_path(&json, &"items".parse().unwrap())
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert_eq!(arr.len(), 2);
+    }
+
+    // =========================================================================
+    // Apply Patches Tests (Story #271)
+    // =========================================================================
+
+    #[test]
+    fn test_apply_patches_empty() {
+        let mut json = JsonValue::object();
+        let patches: Vec<JsonPatch> = vec![];
+        apply_patches(&mut json, &patches).unwrap();
+        assert!(json.as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_apply_patches_single_set() {
+        let mut json = JsonValue::object();
+        let patches = vec![JsonPatch::set("name", JsonValue::from("Alice"))];
+        apply_patches(&mut json, &patches).unwrap();
+
+        assert_eq!(
+            get_at_path(&json, &"name".parse().unwrap())
+                .unwrap()
+                .as_str(),
+            Some("Alice")
+        );
+    }
+
+    #[test]
+    fn test_apply_patches_multiple_sets() {
+        let mut json = JsonValue::object();
+        let patches = vec![
+            JsonPatch::set("name", JsonValue::from("Alice")),
+            JsonPatch::set("age", JsonValue::from(30i64)),
+            JsonPatch::set("active", JsonValue::from(true)),
+        ];
+        apply_patches(&mut json, &patches).unwrap();
+
+        assert_eq!(
+            get_at_path(&json, &"name".parse().unwrap())
+                .unwrap()
+                .as_str(),
+            Some("Alice")
+        );
+        assert_eq!(
+            get_at_path(&json, &"age".parse().unwrap())
+                .unwrap()
+                .as_i64(),
+            Some(30)
+        );
+        assert_eq!(
+            get_at_path(&json, &"active".parse().unwrap())
+                .unwrap()
+                .as_bool(),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn test_apply_patches_set_and_delete() {
+        let mut json: JsonValue = r#"{"name": "Alice", "age": 30}"#.parse().unwrap();
+        let patches = vec![
+            JsonPatch::set("email", JsonValue::from("alice@example.com")),
+            JsonPatch::delete("age"),
+        ];
+        apply_patches(&mut json, &patches).unwrap();
+
+        assert!(get_at_path(&json, &"email".parse().unwrap()).is_some());
+        assert!(get_at_path(&json, &"age".parse().unwrap()).is_none());
+        assert!(get_at_path(&json, &"name".parse().unwrap()).is_some());
+    }
+
+    #[test]
+    fn test_apply_patches_nested() {
+        let mut json = JsonValue::object();
+        let patches = vec![
+            JsonPatch::set("user.profile.name", JsonValue::from("Bob")),
+            JsonPatch::set("user.profile.email", JsonValue::from("bob@example.com")),
+        ];
+        apply_patches(&mut json, &patches).unwrap();
+
+        assert_eq!(
+            get_at_path(&json, &"user.profile.name".parse().unwrap())
+                .unwrap()
+                .as_str(),
+            Some("Bob")
+        );
+        assert_eq!(
+            get_at_path(&json, &"user.profile.email".parse().unwrap())
+                .unwrap()
+                .as_str(),
+            Some("bob@example.com")
+        );
+    }
+
+    #[test]
+    fn test_apply_patches_overwrite() {
+        let mut json: JsonValue = r#"{"name": "Alice"}"#.parse().unwrap();
+        let patches = vec![
+            JsonPatch::set("name", JsonValue::from("Bob")),
+            JsonPatch::set("name", JsonValue::from("Charlie")),
+        ];
+        apply_patches(&mut json, &patches).unwrap();
+
+        // Last write wins
+        assert_eq!(
+            get_at_path(&json, &"name".parse().unwrap())
+                .unwrap()
+                .as_str(),
+            Some("Charlie")
+        );
+    }
+
+    #[test]
+    fn test_apply_patches_set_then_delete() {
+        let mut json = JsonValue::object();
+        let patches = vec![
+            JsonPatch::set("temp", JsonValue::from("value")),
+            JsonPatch::delete("temp"),
+        ];
+        apply_patches(&mut json, &patches).unwrap();
+
+        assert!(get_at_path(&json, &"temp".parse().unwrap()).is_none());
+    }
+
+    #[test]
+    fn test_apply_patches_delete_then_set() {
+        let mut json: JsonValue = r#"{"name": "Alice"}"#.parse().unwrap();
+        let patches = vec![
+            JsonPatch::delete("name"),
+            JsonPatch::set("name", JsonValue::from("Bob")),
+        ];
+        apply_patches(&mut json, &patches).unwrap();
+
+        assert_eq!(
+            get_at_path(&json, &"name".parse().unwrap())
+                .unwrap()
+                .as_str(),
+            Some("Bob")
+        );
+    }
+
+    #[test]
+    fn test_apply_patches_error_propagation() {
+        let mut json = JsonValue::from(42i64);
+        let patches = vec![JsonPatch::set("name", JsonValue::from("Alice"))];
+        let result = apply_patches(&mut json, &patches);
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            JsonPathError::TypeMismatch { .. }
+        ));
+    }
+
+    #[test]
+    fn test_apply_patches_partial_failure() {
+        let mut json = JsonValue::object();
+        let patches = vec![
+            JsonPatch::set("name", JsonValue::from("Alice")),
+            JsonPatch::set("[0]", JsonValue::from("invalid")), // type mismatch - object not array
+        ];
+        let result = apply_patches(&mut json, &patches);
+
+        // First patch should have been applied before failure
+        assert!(result.is_err());
+        assert_eq!(
+            get_at_path(&json, &"name".parse().unwrap())
+                .unwrap()
+                .as_str(),
+            Some("Alice")
+        );
+    }
+
+    #[test]
+    fn test_apply_patches_with_arrays() {
+        let mut json = JsonValue::object();
+        let patches = vec![
+            JsonPatch::set("items", JsonValue::array()),
+            JsonPatch::set("items[0]", JsonValue::from("first")),
+            JsonPatch::set("items[1]", JsonValue::from("second")),
+        ];
+        apply_patches(&mut json, &patches).unwrap();
+
+        let items = get_at_path(&json, &"items".parse().unwrap())
+            .unwrap()
+            .as_array()
+            .unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].as_str(), Some("first"));
+        assert_eq!(items[1].as_str(), Some("second"));
     }
 }
