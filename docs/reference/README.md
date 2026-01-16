@@ -12,13 +12,13 @@ Complete reference documentation for **in-mem** - a fast, durable, embedded data
 
 ### For Developers
 
-- **[M1 Architecture Spec](../architecture/M1_ARCHITECTURE.md)** - Storage layer specification
-- **[M2 Transaction Semantics](../architecture/M2_TRANSACTION_SEMANTICS.md)** - OCC and snapshot isolation specification
+- **[M1 Architecture Spec](../architecture/M1_ARCHITECTURE.md)** - Detailed technical specification
 - **[Development Workflow](../development/DEVELOPMENT_WORKFLOW.md)** - Git workflow
 - **[TDD Methodology](../development/TDD_METHODOLOGY.md)** - Testing approach
 
 ### Project Information
 
+- **[Project Status](../milestones/PROJECT_STATUS.md)** - Current development status
 - **[Milestones](../milestones/MILESTONES.md)** - Roadmap M1-M5
 - **[GitHub Repository](https://github.com/anibjoshi/in-mem)** - Source code
 
@@ -32,8 +32,7 @@ docs/
 │   └── architecture.md     # Architecture overview
 │
 ├── architecture/           # Technical specifications
-│   ├── M1_ARCHITECTURE.md  # Storage layer spec
-│   └── M2_TRANSACTION_SEMANTICS.md  # OCC & snapshot isolation spec
+│   └── M1_ARCHITECTURE.md  # M1 detailed spec
 │
 ├── development/            # Developer guides
 │   ├── GETTING_STARTED.md  # Developer onboarding
@@ -44,7 +43,8 @@ docs/
 │   └── m1-architecture.md  # Visual diagrams
 │
 └── milestones/             # Project management
-    └── MILESTONES.md       # Roadmap
+    ├── MILESTONES.md       # Roadmap
+    └── PROJECT_STATUS.md   # Current status
 ```
 
 ## What is in-mem?
@@ -56,16 +56,14 @@ docs/
 - **Durable by Default**: Write-ahead log with configurable fsync modes
 - **Embedded Library**: Zero-copy in-process API (network layer in M7)
 
-### Current Status: M2 Transactions Complete ✅
+### Current Status: M1 Foundation Complete ✅
 
-- ✅ 630+ tests
-- ✅ OCC with snapshot isolation
-- ✅ Multi-key atomic transactions
-- ✅ Compare-and-swap (CAS) operations
-- ✅ 37K txns/s (canonical agent workload)
-- ✅ >95% success rate under contention
+- ✅ 297 tests (95.45% coverage)
+- ✅ 20,564 txns/sec recovery (10x over target)
+- ✅ Zero compiler warnings
+- ✅ Production-ready embedded database
 
-See [Milestones](../milestones/MILESTONES.md) for roadmap.
+See [Project Status](../milestones/PROJECT_STATUS.md) for details.
 
 ## Quick Start
 
@@ -78,19 +76,11 @@ let db = Database::open("./my-agent-db")?;
 // Begin a run
 let run_id = db.begin_run();
 
-// Simple operations
-db.put(run_id, &key, value)?;
-let value = db.get(run_id, &key)?;
+// Store data
+db.put(run_id, b"key", b"value")?;
 
-// Atomic transactions (M2)
-db.transaction(run_id, |txn| {
-    let val = txn.get(&key)?;
-    txn.put(key.clone(), new_value)?;
-    Ok(())
-})?;
-
-// Compare-and-swap (M2)
-db.cas(run_id, key, expected_version, new_value)?;
+// Retrieve data
+let value = db.get(run_id, b"key")?;
 
 // End run
 db.end_run(run_id)?;
@@ -110,5 +100,5 @@ See [Getting Started](getting-started.md) for full guide.
 
 ---
 
-**Version**: 0.2.0 (M2 Transactions)
-**Last Updated**: 2026-01-14
+**Version**: 0.1.0 (M1 Foundation)
+**Last Updated**: 2026-01-11
