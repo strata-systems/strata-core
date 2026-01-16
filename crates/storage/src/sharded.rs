@@ -20,6 +20,7 @@ use dashmap::DashMap;
 use in_mem_core::types::{Key, RunId};
 use in_mem_core::VersionedValue;
 use rustc_hash::FxHashMap;
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -29,24 +30,33 @@ use std::sync::Arc;
 ///
 /// Versions are stored in descending order (newest first) for efficient
 /// snapshot reads - we typically want the most recent version <= snapshot_version.
+///
+/// # Performance (M4 Fix)
+///
+/// Uses VecDeque for O(1) push_front instead of SmallVec's O(n) insert(0, ...).
+/// This is critical for workloads that repeatedly update the same key (like CAS).
 #[derive(Debug, Clone)]
 pub struct VersionChain {
     /// Versions stored newest-first for efficient MVCC reads
-    versions: smallvec::SmallVec<[VersionedValue; 2]>,
+    /// VecDeque provides O(1) push_front for new versions
+    versions: VecDeque<VersionedValue>,
 }
 
 impl VersionChain {
     /// Create a new version chain with a single version
     pub fn new(value: VersionedValue) -> Self {
-        let mut versions = smallvec::SmallVec::new();
-        versions.push(value);
+        let mut versions = VecDeque::with_capacity(4);
+        versions.push_front(value);
         Self { versions }
     }
 
     /// Add a new version (must be newer than existing versions)
+    ///
+    /// O(1) operation using VecDeque::push_front
+    #[inline]
     pub fn push(&mut self, value: VersionedValue) {
-        // Insert at front (newest first)
-        self.versions.insert(0, value);
+        // O(1) insert at front (newest first)
+        self.versions.push_front(value);
     }
 
     /// Get the version at or before the given max_version
@@ -56,8 +66,9 @@ impl VersionChain {
     }
 
     /// Get the latest version
+    #[inline]
     pub fn latest(&self) -> Option<&VersionedValue> {
-        self.versions.first()
+        self.versions.front()
     }
 
     /// Remove versions older than min_version (garbage collection)
@@ -67,15 +78,18 @@ impl VersionChain {
             return;
         }
         // Keep versions >= min_version, but always keep at least the latest
-        let mut keep_count = 1; // Always keep the latest
-        for vv in self.versions.iter().skip(1) {
-            if vv.version >= min_version {
-                keep_count += 1;
+        // Versions are newest-first, so pop from back (oldest)
+        while self.versions.len() > 1 {
+            if let Some(oldest) = self.versions.back() {
+                if oldest.version < min_version {
+                    self.versions.pop_back();
+                } else {
+                    break;
+                }
             } else {
-                break; // Versions are sorted, so we can stop here
+                break;
             }
         }
-        self.versions.truncate(keep_count);
     }
 
     /// Number of versions stored
@@ -285,6 +299,11 @@ impl ShardedStore {
     /// # Returns
     ///
     /// * `Ok(())` - Always succeeds (for API compatibility with UnifiedStore)
+    ///
+    /// # Performance (M4 Fix)
+    ///
+    /// Captures timestamp once per batch instead of per-write to avoid
+    /// repeated syscalls. All writes in a transaction share the same timestamp.
     pub fn apply_batch(
         &self,
         writes: &[(Key, in_mem_core::value::Value)],
@@ -294,12 +313,15 @@ impl ShardedStore {
         use chrono::Utc;
         use std::sync::atomic::Ordering;
 
+        // Capture timestamp once for entire batch (M4 optimization)
+        let timestamp = Utc::now().timestamp();
+
         // Apply writes
         for (key, value) in writes {
             let versioned = VersionedValue {
                 value: value.clone(),
                 version,
-                timestamp: Utc::now().timestamp(),
+                timestamp,
                 ttl: None,
             };
             self.put(key.clone(), versioned);
@@ -1036,8 +1058,8 @@ mod tests {
         // Put
         store.put(key.clone(), value);
 
-        // Get
-        let retrieved = store.get(&key);
+        // Get (Storage trait returns Result<Option<...>>)
+        let retrieved = store.get(&key).unwrap();
         assert!(retrieved.is_some());
         assert_eq!(retrieved.unwrap().value, Value::I64(42));
     }
@@ -1048,7 +1070,7 @@ mod tests {
         let run_id = RunId::new();
         let key = create_test_key(run_id, "nonexistent");
 
-        assert!(store.get(&key).is_none());
+        assert!(store.get(&key).unwrap().is_none());
     }
 
     #[test]
@@ -1061,12 +1083,12 @@ mod tests {
         let value = create_versioned_value(Value::I64(42), 1);
 
         store.put(key.clone(), value);
-        assert!(store.get(&key).is_some());
+        assert!(store.get(&key).unwrap().is_some());
 
         // Delete
         let deleted = store.delete(&key);
         assert!(deleted.is_some());
-        assert!(store.get(&key).is_none());
+        assert!(store.get(&key).unwrap().is_none());
     }
 
     #[test]
@@ -1103,7 +1125,7 @@ mod tests {
         store.put(key.clone(), create_versioned_value(Value::I64(1), 1));
         store.put(key.clone(), create_versioned_value(Value::I64(2), 2));
 
-        let retrieved = store.get(&key).unwrap();
+        let retrieved = store.get(&key).unwrap().unwrap();
         assert_eq!(retrieved.value, Value::I64(2));
         assert_eq!(retrieved.version, 2);
     }
@@ -1123,8 +1145,8 @@ mod tests {
         store.put(key2.clone(), create_versioned_value(Value::I64(2), 1));
 
         // Different runs, same key name, different values
-        assert_eq!(store.get(&key1).unwrap().value, Value::I64(1));
-        assert_eq!(store.get(&key2).unwrap().value, Value::I64(2));
+        assert_eq!(store.get(&key1).unwrap().unwrap().value, Value::I64(1));
+        assert_eq!(store.get(&key2).unwrap().unwrap().value, Value::I64(2));
         assert_eq!(store.shard_count(), 2);
     }
 
@@ -1146,12 +1168,12 @@ mod tests {
         let writes = vec![(key1.clone(), Value::I64(1)), (key2.clone(), Value::I64(2))];
         let deletes = vec![key3.clone()];
 
-        store.apply_batch(&writes, &deletes, 2);
+        store.apply_batch(&writes, &deletes, 2).unwrap();
 
-        assert_eq!(store.get(&key1).unwrap().value, Value::I64(1));
-        assert_eq!(store.get(&key1).unwrap().version, 2);
-        assert_eq!(store.get(&key2).unwrap().value, Value::I64(2));
-        assert!(store.get(&key3).is_none());
+        assert_eq!(store.get(&key1).unwrap().unwrap().value, Value::I64(1));
+        assert_eq!(store.get(&key1).unwrap().unwrap().version, 2);
+        assert_eq!(store.get(&key2).unwrap().unwrap().value, Value::I64(2));
+        assert!(store.get(&key3).unwrap().is_none());
     }
 
     #[test]
@@ -1520,15 +1542,17 @@ mod tests {
         let store = Arc::new(ShardedStore::new());
         let run_id = RunId::new();
 
-        // Put some data
+        // Put some data (version=1)
         let key = create_test_key(run_id, "test_key");
         store.put(key.clone(), create_versioned_value(Value::I64(42), 1));
+        // Update store version so snapshot can see data at version 1
+        store.set_version(1);
 
-        // Create snapshot
+        // Create snapshot (will capture version=1)
         let snapshot = store.snapshot();
 
-        // Read through snapshot
-        let value = snapshot.get(&key);
+        // Read through snapshot (SnapshotView returns Result<Option<...>>)
+        let value = snapshot.get(&key).unwrap();
         assert!(value.is_some());
         assert_eq!(value.unwrap().value, Value::I64(42));
 
