@@ -174,48 +174,50 @@
 
 ---
 
-## Milestone 6: Retrieval Surfaces (Current)
+## Milestone 6: Retrieval Surfaces ✅
 **Goal**: Add retrieval surface for fast experimentation with search and ranking across all primitives
 
 **Deliverable**: Primitive-native search hooks + composite search planner + minimal keyword search algorithm
+
+**Status**: Complete
 
 **Philosophy**: M6 is the "retrieval substrate milestone". It does not ship a world-class search engine. It ships the **surface** that enables algorithm swaps without engine rewrites.
 
 **Success Criteria**:
 
 ### Gate 1: Primitive Search APIs
-- [ ] `kv.search(&SearchRequest)` returns `SearchResponse`
-- [ ] `json.search(&SearchRequest)` returns `SearchResponse`
-- [ ] `event.search(&SearchRequest)` returns `SearchResponse`
-- [ ] `state.search(&SearchRequest)` returns `SearchResponse`
-- [ ] `trace.search(&SearchRequest)` returns `SearchResponse`
-- [ ] `run_index.search(&SearchRequest)` returns `SearchResponse`
+- [x] `kv.search(&SearchRequest)` returns `SearchResponse`
+- [x] `json.search(&SearchRequest)` returns `SearchResponse`
+- [x] `event.search(&SearchRequest)` returns `SearchResponse`
+- [x] `state.search(&SearchRequest)` returns `SearchResponse`
+- [x] `trace.search(&SearchRequest)` returns `SearchResponse`
+- [x] `run_index.search(&SearchRequest)` returns `SearchResponse`
 
 ### Gate 2: Composite Search
-- [ ] `db.hybrid.search(&SearchRequest)` orchestrates across primitives
-- [ ] RRF (Reciprocal Rank Fusion) with k_rrf=60 implemented
-- [ ] Primitive filters honored
-- [ ] Time range filters work
-- [ ] Budget enforcement (time and candidate caps)
+- [x] `db.hybrid.search(&SearchRequest)` orchestrates across primitives
+- [x] RRF (Reciprocal Rank Fusion) with k_rrf=60 implemented
+- [x] Primitive filters honored
+- [x] Time range filters work
+- [x] Budget enforcement (time and candidate caps)
 
 ### Gate 3: Core Types
-- [ ] `SearchDoc` ephemeral view with DocRef back-pointer
-- [ ] `DocRef` variants for all primitives (Kv, Json, Event, State, Trace, Run)
-- [ ] `SearchRequest` with query, k, budget, mode, filters
-- [ ] `SearchResponse` with hits, truncated flag, stats
+- [x] `SearchDoc` ephemeral view with DocRef back-pointer
+- [x] `DocRef` variants for all primitives (Kv, Json, Event, State, Trace, Run)
+- [x] `SearchRequest` with query, k, budget, mode, filters
+- [x] `SearchResponse` with hits, truncated flag, stats
 
 ### Gate 4: Indexing (Optional)
-- [ ] Inverted index per primitive (opt-in)
-- [ ] BM25-lite scoring over extracted text
-- [ ] Index updates on commit (synchronous)
-- [ ] Snapshot-consistent search results
+- [x] Inverted index per primitive (opt-in)
+- [x] BM25-lite scoring over extracted text
+- [x] Index updates on commit (synchronous)
+- [x] Snapshot-consistent search results
 
 ### Gate 5: Non-Regression
-- [ ] Zero overhead when search APIs not used
-- [ ] No extra allocations per transaction when search disabled
-- [ ] No background indexing unless opted in
+- [x] Zero overhead when search APIs not used
+- [x] No extra allocations per transaction when search disabled
+- [x] No background indexing unless opted in
 
-**Risk**: Scope creep into full search engine. M6 validates the surface only.
+**Risk**: Scope creep into full search engine. M6 validates the surface only. ✅ Mitigated
 
 **Architecture Doc**: [M6_ARCHITECTURE.md](../architecture/M6_ARCHITECTURE.md)
 
@@ -338,17 +340,17 @@ At MVP completion, the system should:
 
 ```
 Completed:
-- M1 (Foundation)        ✅
-- M2 (Transactions)      ✅
-- M3 (Primitives)        ✅
-- M4 (Performance)       ✅
-- M5 (JSON Primitive)    ✅
+- M1 (Foundation)         ✅
+- M2 (Transactions)       ✅
+- M3 (Primitives)         ✅
+- M4 (Performance)        ✅
+- M5 (JSON Primitive)     ✅
+- M6 (Retrieval Surfaces) ✅
 
 Current:
-- M6 (Retrieval Surfaces) ← YOU ARE HERE
+- M7 (Durability & Snapshots) ← YOU ARE HERE
 
 Remaining:
-- M7 (Durability & Snapshots)
 - M8 (Replay & Polish)
 ```
 
@@ -367,9 +369,9 @@ M4 (Performance) ✅
   ↓
 M5 (JSON Primitive) ✅
   ↓
-M6 (Retrieval Surfaces) ← Current
+M6 (Retrieval Surfaces) ✅
   ↓
-M7 (Durability & Snapshots)
+M7 (Durability & Snapshots) ← Current
   ↓
 M8 (Replay & Polish)
 ```
@@ -435,3 +437,4 @@ M8 (Replay & Polish)
 | 2.0 | 2026-01-15 | Inserted M4 Performance; MVP now 6 milestones |
 | 3.0 | 2026-01-16 | M4 complete; M5 JSON Primitive complete; MVP now 7 milestones (M1-M7) |
 | 4.0 | 2026-01-16 | Inserted M6 Retrieval Surfaces; Durability→M7, Replay→M8; MVP now 8 milestones (M1-M8) |
+| 5.0 | 2026-01-17 | M6 Retrieval Surfaces complete; 125 tests passing (6 stress tests ignored) |

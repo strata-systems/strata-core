@@ -87,7 +87,9 @@ tempfile = { workspace = true }
 chrono = { workspace = true }
 serde_json = { workspace = true }
 rustc-hash = { workspace = true }
+proptest = { workspace = true }
 in-mem-primitives = { path = "crates/primitives" }
+in-mem-search = { path = "crates/search" }
 
 [[bench]]
 name = "comprehensive_benchmarks"

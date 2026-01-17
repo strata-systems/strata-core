@@ -39,42 +39,54 @@ tests/
     │
     │   # Tier 2: Search Correctness
     ├── search_determinism_tests.rs       # 2.1 Same inputs = same outputs
-    ├── search_completeness_tests.rs      # 2.2 Index finds all scan results
-    ├── search_budget_tests.rs            # 2.3 Budget enforcement
-    ├── search_filter_tests.rs            # 2.4 Primitive filter correctness
+    ├── search_exhaustiveness_tests.rs    # 2.2 Exhaustiveness under various conditions
+    ├── search_filter_tests.rs            # 2.3 Primitive filter correctness
     │
-    │   # Tier 3: Scoring Accuracy
-    ├── bm25_scoring_tests.rs             # 3.1 BM25-lite correctness
-    ├── tokenizer_tests.rs                # 3.2 Tokenizer behavior
-    ├── idf_calculation_tests.rs          # 3.3 IDF calculation
+    │   # Tier 3: Budget Semantics (NOT Performance)
+    ├── budget_truncation_tests.rs        # 3.1 Budget truncates, not corrupts
+    ├── budget_ordering_tests.rs          # 3.2 Budget never changes prefix ordering
+    ├── budget_isolation_tests.rs         # 3.3 Budget never violates snapshot isolation
     │
-    │   # Tier 4: Fusion Correctness
-    ├── rrf_fusion_tests.rs               # 4.1 RRF algorithm correctness
-    ├── fusion_determinism_tests.rs       # 4.2 Fusion is deterministic
-    ├── tiebreak_tests.rs                 # 4.3 Tie-breaking is stable
-    ├── deduplication_tests.rs            # 4.4 Cross-primitive dedup
+    │   # Tier 4: Scoring Accuracy
+    ├── bm25_scoring_tests.rs             # 4.1 BM25-lite correctness
+    ├── tokenizer_tests.rs                # 4.2 Tokenizer behavior
+    ├── idf_calculation_tests.rs          # 4.3 IDF calculation
     │
-    │   # Tier 5: Index Consistency
-    ├── index_scan_equivalence.rs         # 5.1 Index matches scan
-    ├── index_update_tests.rs             # 5.2 Index tracks writes
-    ├── watermark_tests.rs                # 5.3 Watermark correctness
-    ├── stale_index_fallback_tests.rs     # 5.4 Fallback to scan
+    │   # Tier 5: Fusion Correctness
+    ├── rrf_fusion_tests.rs               # 5.1 RRF algorithm correctness
+    ├── fusion_determinism_tests.rs       # 5.2 Fusion is deterministic
+    ├── tiebreak_tests.rs                 # 5.3 Tie-breaking is stable
     │
-    │   # Tier 6: Cross-Primitive Search
-    ├── hybrid_search_tests.rs            # 6.1 Hybrid orchestration
-    ├── multi_primitive_ranking.rs        # 6.2 Cross-primitive fusion
+    │   # Tier 6: Cross-Primitive Identity
+    ├── docref_identity_policy_tests.rs   # 6.1 Identity policy across primitives
+    ├── deduplication_policy_tests.rs     # 6.2 Deduplication rules
     │
-    │   # Tier 7: Property-Based/Fuzzing
-    ├── search_fuzzing_tests.rs           # 7. Random query/data fuzzing
+    │   # Tier 7: Index Consistency
+    ├── index_scan_equivalence.rs         # 7.1 Index matches scan
+    ├── index_update_tests.rs             # 7.2 Index tracks writes
+    ├── watermark_tests.rs                # 7.3 Watermark correctness
+    ├── stale_index_fallback_tests.rs     # 7.4 Fallback to scan
     │
-    │   # Tier 8: Stress & Scale
-    ├── search_stress_tests.rs            # 8. Large datasets, many queries
+    │   # Tier 8: Cross-Primitive Search
+    ├── hybrid_search_tests.rs            # 8.1 Hybrid orchestration
+    ├── multi_primitive_ranking.rs        # 8.2 Cross-primitive fusion
     │
-    │   # Tier 9: Non-Regression
-    ├── m4_m5_regression_tests.rs         # 9. M4/M5 targets maintained
+    │   # Tier 9: Result Explainability (Future-Proofing)
+    ├── result_provenance_tests.rs        # 9.1 Which primitive contributed
+    ├── score_explanation_tests.rs        # 9.2 Which tokens matched, why this score
+    ├── rank_contribution_tests.rs        # 9.3 Which rank sources contributed
     │
-    │   # Tier 10: Spec Conformance
-    └── spec_conformance_tests.rs         # 10. Direct spec-to-test mapping
+    │   # Tier 10: Property-Based/Fuzzing
+    ├── search_fuzzing_tests.rs           # 10. Random query/data fuzzing
+    │
+    │   # Tier 11: Stress & Scale
+    ├── search_stress_tests.rs            # 11. Large datasets, many queries
+    │
+    │   # Tier 12: Non-Regression
+    ├── m4_m5_regression_tests.rs         # 12. M4/M5 targets maintained
+    │
+    │   # Tier 13: Spec Conformance
+    └── spec_conformance_tests.rs         # 13. Direct spec-to-test mapping
 ```
 
 ---
@@ -491,13 +503,25 @@ fn test_deterministic_with_equal_scores() {
     // Documents with identical scores
     // Tie-breaker produces consistent ordering
 }
+
+#[test]
+fn test_ordering_is_deterministic() {
+    // Even with budget truncation, the order of returned results
+    // must be identical across repeated calls
+}
 ```
 
-### 2.2 Search Completeness (`search_completeness_tests.rs`)
+### 2.2 Search Exhaustiveness (`search_exhaustiveness_tests.rs`)
+
+**IMPORTANT**: "Exhaustiveness" has different meanings depending on context.
+These tests formalize each definition explicitly.
 
 ```rust
+/// DEFINITION: Exhaustiveness under unlimited budget
+/// With unlimited budget, search MUST return ALL matching documents.
+/// This is the ground truth definition.
 #[test]
-fn test_index_finds_all_matching_documents() {
+fn test_exhaustive_unlimited_budget_finds_all() {
     let db = test_db();
 
     // Create 100 documents with "needle" in them
@@ -505,20 +529,106 @@ fn test_index_finds_all_matching_documents() {
         db.kv.put(&run_id, &format!("key_{}", i), &format!("haystack needle {}", i)).unwrap();
     }
 
+    let req = SearchRequest::new(run_id, "needle")
+        .with_budget(SearchBudget::unlimited()); // CRITICAL: No truncation
+
+    let response = db.kv.search(&req).unwrap();
+
+    assert_eq!(response.hits.len(), 100, "Unlimited budget must find ALL matches");
+    assert!(!response.truncated, "Unlimited budget must not truncate");
+}
+
+/// DEFINITION: Exhaustiveness with index enabled
+/// Index search with unlimited budget MUST return same documents as scan.
+#[test]
+fn test_exhaustive_index_matches_scan() {
+    let db = test_db();
+    populate_test_data(&db);
+
+    let req = SearchRequest::new(run_id, "test")
+        .with_budget(SearchBudget::unlimited());
+
+    // Scan (no index)
+    let scan_result = db.kv.search(&req).unwrap();
+
+    // Enable index
     db.enable_search_index(PrimitiveKind::Kv).unwrap();
     db.rebuild_search_index(PrimitiveKind::Kv).unwrap();
 
-    let req = SearchRequest::new(run_id, "needle")
-        .with_budget(SearchBudget::unlimited()); // No truncation
+    // Index search
+    let index_result = db.kv.search(&req).unwrap();
 
-    let response = db.kv.search(&req).unwrap();
-    assert_eq!(response.hits.len(), 100);
+    let scan_refs: HashSet<_> = scan_result.hits.iter().map(|h| &h.doc_ref).collect();
+    let index_refs: HashSet<_> = index_result.hits.iter().map(|h| &h.doc_ref).collect();
+
+    assert_eq!(scan_refs, index_refs, "Index must find exactly what scan finds");
 }
 
+/// DEFINITION: Exhaustiveness under truncation
+/// Truncation DOES NOT mean incorrect results.
+/// The returned prefix must be a valid prefix of the full result set.
 #[test]
-fn test_search_finds_partial_word_match() {
-    // Query "test" finds "testing", "tested", etc.
-    // (Or not, depending on tokenizer design - document expected behavior)
+fn test_exhaustive_truncation_returns_valid_prefix() {
+    let db = test_db();
+
+    // Create 100 documents
+    for i in 0..100 {
+        db.kv.put(&run_id, &format!("key_{}", i), "searchable").unwrap();
+    }
+
+    // Get full results first
+    let full_req = SearchRequest::new(run_id, "searchable")
+        .with_budget(SearchBudget::unlimited());
+    let full_result = db.kv.search(&full_req).unwrap();
+
+    // Get truncated results
+    let truncated_req = SearchRequest::new(run_id, "searchable")
+        .with_budget(SearchBudget::default().with_max_results(10));
+    let truncated_result = db.kv.search(&truncated_req).unwrap();
+
+    // Truncated results must be prefix of full results
+    for (i, hit) in truncated_result.hits.iter().enumerate() {
+        assert_eq!(hit.doc_ref, full_result.hits[i].doc_ref,
+            "Truncated result at position {} must match full result", i);
+    }
+}
+
+/// DEFINITION: Truncation is explicit
+/// When results are truncated, the response MUST indicate this.
+#[test]
+fn test_truncation_is_explicit() {
+    let db = test_db();
+
+    for i in 0..100 {
+        db.kv.put(&run_id, &format!("key_{}", i), "searchable").unwrap();
+    }
+
+    let req = SearchRequest::new(run_id, "searchable")
+        .with_budget(SearchBudget::default().with_max_results(10));
+
+    let response = db.kv.search(&req).unwrap();
+
+    assert!(response.truncated, "Response MUST indicate truncation occurred");
+    assert!(response.hits.len() <= 10, "Truncation must respect limit");
+}
+
+/// DEFINITION: Non-truncation is explicit
+/// When all results are returned, truncated must be false.
+#[test]
+fn test_non_truncation_is_explicit() {
+    let db = test_db();
+
+    for i in 0..5 {
+        db.kv.put(&run_id, &format!("key_{}", i), "searchable").unwrap();
+    }
+
+    let req = SearchRequest::new(run_id, "searchable")
+        .with_budget(SearchBudget::default().with_max_results(100)); // More than exist
+
+    let response = db.kv.search(&req).unwrap();
+
+    assert!(!response.truncated, "Response MUST indicate no truncation when all returned");
+    assert_eq!(response.hits.len(), 5);
 }
 
 #[test]
@@ -530,69 +640,7 @@ fn test_search_case_insensitive() {
 }
 ```
 
-### 2.3 Search Budget Enforcement (`search_budget_tests.rs`)
-
-```rust
-#[test]
-fn test_time_budget_enforced() {
-    let db = test_db();
-    populate_large_dataset(&db, 100_000);
-
-    let req = SearchRequest::new(run_id, "common")
-        .with_budget(SearchBudget::default().with_time_micros(10_000)); // 10ms
-
-    let start = Instant::now();
-    let response = db.hybrid().search(&req).unwrap();
-    let elapsed = start.elapsed();
-
-    assert!(elapsed.as_micros() < 50_000); // 50ms max (with some slack)
-    assert!(response.truncated);
-}
-
-#[test]
-fn test_candidate_budget_enforced() {
-    let db = test_db();
-    populate_large_dataset(&db, 10_000);
-
-    let req = SearchRequest::new(run_id, "common")
-        .with_budget(SearchBudget::default().with_max_candidates(100));
-
-    let response = db.hybrid().search(&req).unwrap();
-
-    assert!(response.stats.candidates_considered <= 100 * 6); // 100 per primitive
-    assert!(response.truncated);
-}
-
-#[test]
-fn test_result_limit_enforced() {
-    let db = test_db();
-    populate_test_data(&db);
-
-    let req = SearchRequest::new(run_id, "test")
-        .with_budget(SearchBudget::default().with_max_results(5));
-
-    let response = db.hybrid().search(&req).unwrap();
-    assert!(response.hits.len() <= 5);
-}
-
-#[test]
-fn test_unlimited_budget_returns_all() {
-    let db = test_db();
-
-    for i in 0..50 {
-        db.kv.put(&run_id, &format!("key_{}", i), "searchable").unwrap();
-    }
-
-    let req = SearchRequest::new(run_id, "searchable")
-        .with_budget(SearchBudget::unlimited());
-
-    let response = db.kv.search(&req).unwrap();
-    assert_eq!(response.hits.len(), 50);
-    assert!(!response.truncated);
-}
-```
-
-### 2.4 Primitive Filter (`search_filter_tests.rs`)
+### 2.3 Primitive Filter (`search_filter_tests.rs`)
 
 ```rust
 #[test]
@@ -637,9 +685,251 @@ fn test_multiple_primitives_in_filter() {
 
 ---
 
-## Tier 3: Scoring Accuracy
+## Tier 3: Budget Semantics (NOT Performance)
 
-### 3.1 BM25-Lite Scoring (`bm25_scoring_tests.rs`)
+**CRITICAL**: These are SEMANTIC tests, not performance tests.
+Budget is a resource cap, not a correctness condition.
+These tests ensure budget enforcement never corrupts results.
+
+### 3.1 Budget Truncation Semantics (`budget_truncation_tests.rs`)
+
+```rust
+/// Budget is a SOFT CAP, not a correctness condition.
+/// Truncation means "we stopped early", not "we returned wrong results".
+#[test]
+fn test_budget_truncates_not_corrupts() {
+    let db = test_db();
+
+    for i in 0..1000 {
+        db.kv.put(&run_id, &format!("key_{}", i), "searchable term").unwrap();
+    }
+
+    // Get full results
+    let full_req = SearchRequest::new(run_id, "searchable")
+        .with_budget(SearchBudget::unlimited());
+    let full_result = db.kv.search(&full_req).unwrap();
+
+    // Get truncated results
+    let truncated_req = SearchRequest::new(run_id, "searchable")
+        .with_budget(SearchBudget::default().with_max_results(10));
+    let truncated_result = db.kv.search(&truncated_req).unwrap();
+
+    // Every hit in truncated result must exist in full result
+    for hit in &truncated_result.hits {
+        assert!(full_result.hits.iter().any(|h| h.doc_ref == hit.doc_ref),
+            "Truncated result contains hit not in full result - CORRUPTION!");
+    }
+}
+
+/// Budget never introduces phantom results.
+#[test]
+fn test_budget_never_introduces_phantoms() {
+    let db = test_db();
+
+    for i in 0..100 {
+        db.kv.put(&run_id, &format!("key_{}", i), "searchable").unwrap();
+    }
+
+    let req = SearchRequest::new(run_id, "searchable")
+        .with_budget(SearchBudget::default().with_max_results(50));
+
+    let response = db.kv.search(&req).unwrap();
+
+    // Every returned doc must actually match the query
+    for hit in &response.hits {
+        let doc = db.deref_hit(&hit).unwrap();
+        assert!(doc.contains("searchable"), "Result does not match query - phantom!");
+    }
+}
+
+/// Budget never introduces duplicates.
+#[test]
+fn test_budget_never_introduces_duplicates() {
+    let db = test_db();
+
+    for i in 0..100 {
+        db.kv.put(&run_id, &format!("key_{}", i), "searchable").unwrap();
+    }
+
+    let req = SearchRequest::new(run_id, "searchable")
+        .with_budget(SearchBudget::default().with_max_results(50));
+
+    let response = db.kv.search(&req).unwrap();
+
+    let unique_refs: HashSet<_> = response.hits.iter().map(|h| &h.doc_ref).collect();
+    assert_eq!(unique_refs.len(), response.hits.len(),
+        "Budget introduced duplicate results!");
+}
+```
+
+### 3.2 Budget Ordering Semantics (`budget_ordering_tests.rs`)
+
+```rust
+/// Budget NEVER changes the ordering of returned results.
+/// The truncated result must be a PREFIX of the full result.
+#[test]
+fn test_budget_preserves_ordering() {
+    let db = test_db();
+
+    for i in 0..100 {
+        db.kv.put(&run_id, &format!("key_{}", i), &format!("searchable term {}", i)).unwrap();
+    }
+
+    // Get full results
+    let full_req = SearchRequest::new(run_id, "searchable")
+        .with_budget(SearchBudget::unlimited());
+    let full_result = db.kv.search(&full_req).unwrap();
+
+    // Get truncated results at various limits
+    for limit in [5, 10, 20, 50] {
+        let truncated_req = SearchRequest::new(run_id, "searchable")
+            .with_budget(SearchBudget::default().with_max_results(limit));
+        let truncated_result = db.kv.search(&truncated_req).unwrap();
+
+        // Truncated must be exact prefix
+        for (i, hit) in truncated_result.hits.iter().enumerate() {
+            assert_eq!(hit.doc_ref, full_result.hits[i].doc_ref,
+                "Budget changed ordering at position {}!", i);
+            assert_eq!(hit.rank, full_result.hits[i].rank,
+                "Budget changed rank at position {}!", i);
+        }
+    }
+}
+
+/// Budget never changes scores of returned results.
+#[test]
+fn test_budget_preserves_scores() {
+    let db = test_db();
+
+    for i in 0..100 {
+        db.kv.put(&run_id, &format!("key_{}", i), "searchable").unwrap();
+    }
+
+    let full_req = SearchRequest::new(run_id, "searchable")
+        .with_budget(SearchBudget::unlimited());
+    let full_result = db.kv.search(&full_req).unwrap();
+
+    let truncated_req = SearchRequest::new(run_id, "searchable")
+        .with_budget(SearchBudget::default().with_max_results(10));
+    let truncated_result = db.kv.search(&truncated_req).unwrap();
+
+    for (i, hit) in truncated_result.hits.iter().enumerate() {
+        assert!((hit.score - full_result.hits[i].score).abs() < 0.0001,
+            "Budget changed score at position {}!", i);
+    }
+}
+
+/// Different budget limits produce consistent prefixes.
+#[test]
+fn test_budget_limits_are_nested_prefixes() {
+    let db = test_db();
+
+    for i in 0..100 {
+        db.kv.put(&run_id, &format!("key_{}", i), "searchable").unwrap();
+    }
+
+    let result_10 = db.kv.search(&SearchRequest::new(run_id, "searchable")
+        .with_budget(SearchBudget::default().with_max_results(10))).unwrap();
+
+    let result_20 = db.kv.search(&SearchRequest::new(run_id, "searchable")
+        .with_budget(SearchBudget::default().with_max_results(20))).unwrap();
+
+    // result_10 must be prefix of result_20
+    for (i, hit) in result_10.hits.iter().enumerate() {
+        assert_eq!(hit.doc_ref, result_20.hits[i].doc_ref,
+            "Smaller budget not prefix of larger budget at {}!", i);
+    }
+}
+```
+
+### 3.3 Budget Isolation Semantics (`budget_isolation_tests.rs`)
+
+```rust
+/// Budget NEVER violates snapshot isolation.
+/// Even under budget pressure, we never see partial snapshots.
+#[test]
+fn test_budget_respects_snapshot_isolation() {
+    let db = test_db();
+
+    db.kv.put(&run_id, "key1", "searchable").unwrap();
+
+    let snapshot = db.snapshot();
+
+    // Write after snapshot
+    db.kv.put(&run_id, "key2", "searchable concurrent").unwrap();
+
+    // Search with budget using snapshot
+    let req = SearchRequest::new(run_id, "searchable")
+        .with_budget(SearchBudget::default().with_max_results(100));
+
+    let response = db.kv.search_with_snapshot(&req, &snapshot).unwrap();
+
+    // Should NOT see key2
+    for hit in &response.hits {
+        let key = hit.doc_ref.key();
+        assert_ne!(key, "key2", "Budget violated snapshot isolation!");
+    }
+}
+
+/// Budget under time pressure still respects snapshot.
+#[test]
+fn test_time_budget_respects_snapshot() {
+    let db = test_db();
+
+    for i in 0..10000 {
+        db.kv.put(&run_id, &format!("key_{}", i), "searchable").unwrap();
+    }
+
+    let snapshot = db.snapshot();
+
+    // Write many more after snapshot
+    for i in 10000..20000 {
+        db.kv.put(&run_id, &format!("key_{}", i), "searchable concurrent").unwrap();
+    }
+
+    // Search with tight time budget
+    let req = SearchRequest::new(run_id, "searchable")
+        .with_budget(SearchBudget::default().with_time_micros(1000)); // 1ms
+
+    let response = db.kv.search_with_snapshot(&req, &snapshot).unwrap();
+
+    // All results must be from snapshot (key < 10000)
+    for hit in &response.hits {
+        let key = hit.doc_ref.key();
+        let num: usize = key.strip_prefix("key_").unwrap().parse().unwrap();
+        assert!(num < 10000, "Time budget violated snapshot isolation!");
+    }
+}
+
+/// Budget never produces inconsistent cross-primitive views.
+#[test]
+fn test_budget_cross_primitive_consistency() {
+    let db = test_db();
+
+    db.kv.put(&run_id, "key1", "searchable").unwrap();
+    db.event.append(&run_id, "test.event", json!({"data": "searchable"})).unwrap();
+
+    let snapshot = db.snapshot();
+
+    // Concurrent writes
+    db.kv.put(&run_id, "key2", "searchable new").unwrap();
+    db.event.append(&run_id, "test.event2", json!({"data": "searchable new"})).unwrap();
+
+    let req = SearchRequest::new(run_id, "searchable")
+        .with_budget(SearchBudget::default().with_max_results(100));
+
+    let response = db.hybrid().search_with_snapshot(&req, &snapshot).unwrap();
+
+    // All results from all primitives must be from same snapshot
+    // (Can't see key2 from KV but old event from Event)
+}
+```
+
+---
+
+## Tier 4: Scoring Accuracy
+
+### 4.1 BM25-Lite Scoring (`bm25_scoring_tests.rs`)
 
 ```rust
 #[test]
@@ -692,7 +982,7 @@ fn test_bm25_title_boost() {
 }
 ```
 
-### 3.2 Tokenizer Behavior (`tokenizer_tests.rs`)
+### 4.2 Tokenizer Behavior (`tokenizer_tests.rs`)
 
 ```rust
 #[test]
@@ -732,7 +1022,7 @@ fn test_tokenize_unique_deduplicates() {
 }
 ```
 
-### 3.3 IDF Calculation (`idf_calculation_tests.rs`)
+### 4.3 IDF Calculation (`idf_calculation_tests.rs`)
 
 ```rust
 #[test]
@@ -770,9 +1060,9 @@ fn test_idf_unknown_term() {
 
 ---
 
-## Tier 4: Fusion Correctness
+## Tier 5: Fusion Correctness
 
-### 4.1 RRF Algorithm (`rrf_fusion_tests.rs`)
+### 5.1 RRF Algorithm (`rrf_fusion_tests.rs`)
 
 ```rust
 #[test]
@@ -810,7 +1100,7 @@ fn test_rrf_empty_sources() {
 }
 ```
 
-### 4.2 Fusion Determinism (`fusion_determinism_tests.rs`)
+### 5.2 Fusion Determinism (`fusion_determinism_tests.rs`)
 
 ```rust
 #[test]
@@ -836,7 +1126,7 @@ fn test_fusion_order_independent() {
 }
 ```
 
-### 4.3 Tie-Breaking (`tiebreak_tests.rs`)
+### 5.3 Tie-Breaking (`tiebreak_tests.rs`)
 
 ```rust
 #[test]
@@ -857,32 +1147,153 @@ fn test_tiebreak_stable_across_sessions() {
 }
 ```
 
-### 4.4 Deduplication (`deduplication_tests.rs`)
+---
+
+## Tier 6: Cross-Primitive Identity
+
+**CRITICAL POLICY DECISIONS**: This tier documents and tests the identity policy.
+These tests encode design decisions that MUST be explicit.
+
+### 6.1 DocRef Identity Policy (`docref_identity_policy_tests.rs`)
 
 ```rust
+/// POLICY: What does it mean for two DocRefs to be "the same entity"?
+///
+/// M6 POLICY: DocRefs are NEVER considered equal across primitives.
+/// - KV DocRef("key1") != JSON DocRef(doc_id)
+/// - Even if they store "the same" logical data
+///
+/// RATIONALE: Primitives have different semantics. KV is key-value,
+/// JSON is document-oriented. They are structurally different.
+///
+/// FUTURE: If cross-primitive identity is needed, it must be
+/// implemented via explicit linking (e.g., foreign keys), not
+/// implicit deduplication.
+
 #[test]
-fn test_cross_primitive_dedup() {
-    // Same logical entity in KV and JSON
-    // Should appear once in results (or documented otherwise)
+fn test_docrefs_from_different_primitives_are_never_equal() {
+    let kv_ref = DocRef::new(PrimitiveKind::Kv, run_id, "key1");
+    let json_ref = DocRef::new(PrimitiveKind::Json, run_id, doc_id);
+
+    // POLICY: These are NEVER equal, even if they reference "same" data
+    assert_ne!(kv_ref, json_ref);
 }
 
 #[test]
-fn test_within_primitive_no_dup() {
-    // Same document never appears twice from same primitive
+fn test_docref_equality_requires_same_primitive() {
+    let ref1 = DocRef::new(PrimitiveKind::Kv, run_id, "key1");
+    let ref2 = DocRef::new(PrimitiveKind::Kv, run_id, "key1");
+    let ref3 = DocRef::new(PrimitiveKind::Kv, run_id, "key2");
+
+    assert_eq!(ref1, ref2, "Same primitive + same key = equal");
+    assert_ne!(ref1, ref3, "Same primitive + different key = not equal");
 }
 
 #[test]
-fn test_dedup_preserves_best_score() {
-    // If same doc appears in multiple lists
-    // Keep the one with highest score
+fn test_docref_equality_requires_same_run() {
+    let run1 = RunId::new();
+    let run2 = RunId::new();
+
+    let ref1 = DocRef::new(PrimitiveKind::Kv, run1, "key1");
+    let ref2 = DocRef::new(PrimitiveKind::Kv, run2, "key1");
+
+    assert_ne!(ref1, ref2, "Different run = never equal");
+}
+```
+
+### 6.2 Deduplication Policy (`deduplication_policy_tests.rs`)
+
+```rust
+/// POLICY: When does deduplication occur?
+///
+/// M6 POLICY:
+/// 1. Within a single primitive: NEVER duplicates (guaranteed by primitive)
+/// 2. Across primitives: NO deduplication (they are different entities)
+///
+/// RATIONALE: Cross-primitive dedup would require defining what "same"
+/// means across structurally different data types. This is application
+/// logic, not search infrastructure.
+
+#[test]
+fn test_within_primitive_never_duplicates() {
+    let db = test_db();
+
+    // Same key, updated multiple times
+    db.kv.put(&run_id, "key1", "version1").unwrap();
+    db.kv.put(&run_id, "key1", "version2").unwrap();
+
+    let result = db.kv.search(&SearchRequest::new(run_id, "version")).unwrap();
+
+    // Only ONE result for key1 (latest value)
+    let key1_hits: Vec<_> = result.hits.iter()
+        .filter(|h| h.doc_ref.key() == "key1")
+        .collect();
+    assert_eq!(key1_hits.len(), 1, "Within-primitive must never duplicate");
+}
+
+#[test]
+fn test_across_primitives_no_dedup() {
+    let db = test_db();
+
+    // Store "same" data in KV and JSON
+    db.kv.put(&run_id, "user_alice", "alice data").unwrap();
+    db.json.create(&run_id, json!({"user": "alice", "data": "alice data"})).unwrap();
+
+    let result = db.hybrid().search(&SearchRequest::new(run_id, "alice")).unwrap();
+
+    // POLICY: Both appear - NO cross-primitive dedup
+    let kv_hits = result.hits.iter().filter(|h| h.doc_ref.primitive_kind() == PrimitiveKind::Kv).count();
+    let json_hits = result.hits.iter().filter(|h| h.doc_ref.primitive_kind() == PrimitiveKind::Json).count();
+
+    assert!(kv_hits >= 1, "KV result must appear");
+    assert!(json_hits >= 1, "JSON result must appear");
+    // Total >= 2 because no cross-primitive dedup
+}
+
+#[test]
+fn test_runindex_special_case() {
+    // POLICY CLARIFICATION: RunIndex references runs, not documents.
+    // A run can have data in multiple primitives.
+    // RunIndex search returns the run, not the individual primitive data.
+
+    let db = test_db();
+    let run_id = db.run_index.create_run("test run with searchable name").unwrap();
+
+    db.kv.put(&run_id, "key1", "searchable").unwrap();
+    db.json.create(&run_id, json!({"data": "searchable"})).unwrap();
+
+    // Search RunIndex returns the RUN, not KV/JSON hits
+    let run_result = db.run_index.search(&SearchRequest::new(run_id, "searchable")).unwrap();
+
+    for hit in &run_result.hits {
+        assert_eq!(hit.doc_ref.primitive_kind(), PrimitiveKind::Run);
+    }
+}
+
+/// POLICY: What happens when the same entity logically exists
+/// in multiple places?
+///
+/// ANSWER: Application layer responsibility. M6 does not deduplicate.
+#[test]
+fn test_logical_duplicates_not_hidden() {
+    let db = test_db();
+
+    // User stores same logical entity in two places (their choice)
+    db.kv.put(&run_id, "config.timeout", "30").unwrap();
+    db.json.create(&run_id, json!({"config": {"timeout": 30}})).unwrap();
+
+    let result = db.hybrid().search(&SearchRequest::new(run_id, "timeout")).unwrap();
+
+    // M6 returns BOTH - it's the application's job to resolve
+    assert!(result.hits.len() >= 2, "Logical duplicates must both appear");
 }
 ```
 
 ---
 
-## Tier 5: Index Consistency
+## Tier 7: Index Consistency
 
-### 5.1 Index-Scan Equivalence (`index_scan_equivalence.rs`)
+### 7.1 Index-Scan Equivalence (`index_scan_equivalence.rs`)
 
 ```rust
 #[test]
@@ -920,7 +1331,7 @@ fn test_index_never_returns_phantom() {
 }
 ```
 
-### 5.2 Index Update Tests (`index_update_tests.rs`)
+### 7.2 Index Update Tests (`index_update_tests.rs`)
 
 ```rust
 #[test]
@@ -962,7 +1373,7 @@ fn test_index_updated_on_update() {
 }
 ```
 
-### 5.3 Watermark Tests (`watermark_tests.rs`)
+### 7.3 Watermark Tests (`watermark_tests.rs`)
 
 ```rust
 #[test]
@@ -986,7 +1397,7 @@ fn test_watermark_detects_stale_index() {
 }
 ```
 
-### 5.4 Stale Index Fallback (`stale_index_fallback_tests.rs`)
+### 7.4 Stale Index Fallback (`stale_index_fallback_tests.rs`)
 
 ```rust
 #[test]
@@ -1011,9 +1422,9 @@ fn test_fallback_indicated_in_stats() {
 
 ---
 
-## Tier 6: Cross-Primitive Search
+## Tier 8: Cross-Primitive Search
 
-### 6.1 Hybrid Search Tests (`hybrid_search_tests.rs`)
+### 8.1 Hybrid Search Tests (`hybrid_search_tests.rs`)
 
 ```rust
 #[test]
@@ -1034,7 +1445,7 @@ fn test_hybrid_parallel_execution() {
 }
 ```
 
-### 6.2 Multi-Primitive Ranking (`multi_primitive_ranking.rs`)
+### 8.2 Multi-Primitive Ranking (`multi_primitive_ranking.rs`)
 
 ```rust
 #[test]
@@ -1051,7 +1462,132 @@ fn test_ranking_uses_fusion() {
 
 ---
 
-## Tier 7: Property-Based / Fuzzing (`search_fuzzing_tests.rs`)
+## Tier 9: Result Explainability (Future-Proofing)
+
+**NOTE**: This tier documents test scaffolding for future debugging needs.
+Not all tests may be implemented in M6, but the scaffolding enables
+debugging agent memory issues in future milestones.
+
+### 9.1 Result Provenance (`result_provenance_tests.rs`)
+
+```rust
+/// REQUIREMENT: Every SearchHit must know which primitive contributed it.
+#[test]
+fn test_hit_knows_source_primitive() {
+    let db = test_db();
+
+    db.kv.put(&run_id, "key", "searchable").unwrap();
+    db.json.create(&run_id, json!({"data": "searchable"})).unwrap();
+
+    let result = db.hybrid().search(&SearchRequest::new(run_id, "searchable")).unwrap();
+
+    for hit in &result.hits {
+        // Every hit must have primitive_kind set
+        let kind = hit.doc_ref.primitive_kind();
+        assert!(matches!(kind,
+            PrimitiveKind::Kv | PrimitiveKind::Json |
+            PrimitiveKind::Event | PrimitiveKind::State |
+            PrimitiveKind::Trace | PrimitiveKind::Run
+        ));
+    }
+}
+
+#[test]
+fn test_stats_show_primitive_contributions() {
+    // SearchStats should break down:
+    // - How many candidates from each primitive
+    // - How many hits from each primitive
+    // - Time spent in each primitive
+}
+
+#[test]
+fn test_can_filter_to_explain_primitive_contribution() {
+    // Run hybrid search
+    // Then run single-primitive search with same query
+    // Results from single-primitive should appear in hybrid results
+}
+```
+
+### 9.2 Score Explanation (`score_explanation_tests.rs`)
+
+```rust
+/// FUTURE: Score explanation for debugging ranking issues.
+/// These tests document the expected explainability interface.
+
+#[test]
+fn test_score_breakdown_available() {
+    // Each SearchHit should (optionally) provide:
+    // - Term match details (which query terms matched)
+    // - IDF contribution per term
+    // - TF contribution per term
+    // - Length normalization factor
+    // - Any boosts applied (title, recency, etc.)
+}
+
+#[test]
+fn test_can_explain_why_doc_ranked_here() {
+    let db = test_db();
+
+    db.kv.put(&run_id, "doc1", "quick brown fox").unwrap();
+    db.kv.put(&run_id, "doc2", "quick dog").unwrap();
+
+    let result = db.kv.search(&SearchRequest::new(run_id, "quick fox")).unwrap();
+
+    // Should be able to explain:
+    // doc1 ranked higher because it matched "fox" (rare term, high IDF)
+    // doc2 only matched "quick" (common term, low IDF)
+
+    // For now, just verify scores are different and doc1 is first
+    assert!(result.hits.len() >= 2);
+    assert!(result.hits[0].score >= result.hits[1].score);
+}
+
+#[test]
+fn test_token_matches_visible() {
+    // Should be able to see which tokens matched in each document
+    // Useful for debugging "why didn't this doc match?"
+}
+```
+
+### 9.3 Rank Contribution (`rank_contribution_tests.rs`)
+
+```rust
+/// FUTURE: For hybrid search, explain how fusion affected ranking.
+
+#[test]
+fn test_fusion_contribution_visible() {
+    // For each hit in hybrid results:
+    // - Which primitive lists contained this doc?
+    // - What was its rank in each list?
+    // - How did RRF combine these ranks?
+}
+
+#[test]
+fn test_can_trace_rank_through_fusion() {
+    let db = test_db();
+
+    db.kv.put(&run_id, "doc1", "searchable").unwrap();
+    db.json.create(&run_id, json!({"data": "searchable"})).unwrap();
+
+    let result = db.hybrid().search(&SearchRequest::new(run_id, "searchable")).unwrap();
+
+    // For debugging, should be able to ask:
+    // "This doc is at rank 3. Why?"
+    // "It was rank 1 in KV, rank 5 in JSON. RRF combined to rank 3."
+}
+
+#[test]
+fn test_primitive_rank_vs_final_rank() {
+    // Verify that we can compare:
+    // - Rank within each primitive
+    // - Final rank after fusion
+    // This helps debug "my doc was first in KV, why is it third in hybrid?"
+}
+```
+
+---
+
+## Tier 10: Property-Based / Fuzzing (`search_fuzzing_tests.rs`)
 
 ```rust
 use proptest::prelude::*;
@@ -1116,7 +1652,7 @@ proptest! {
 
 ---
 
-## Tier 8: Stress & Scale Tests (`search_stress_tests.rs`)
+## Tier 11: Stress & Scale Tests (`search_stress_tests.rs`)
 
 ```rust
 #[test]
@@ -1164,7 +1700,7 @@ fn test_search_deep_json_documents() {
 
 ---
 
-## Tier 9: Non-Regression Tests (`m4_m5_regression_tests.rs`)
+## Tier 12: Non-Regression Tests (`m4_m5_regression_tests.rs`)
 
 ```rust
 #[test]
@@ -1223,7 +1759,7 @@ fn test_m4_red_flags_still_pass() {
 
 ---
 
-## Tier 10: Spec Conformance Tests (`spec_conformance_tests.rs`)
+## Tier 13: Spec Conformance Tests (`spec_conformance_tests.rs`)
 
 ```rust
 // From M6_ARCHITECTURE.md
@@ -1308,15 +1844,18 @@ fn test_spec_no_overhead_when_disabled() {
 //! ## Test Tier Structure
 //!
 //! - **Tier 1: Architectural Rule Invariants** (sacred, must never break)
-//! - **Tier 2: Search Correctness** (determinism, completeness, budget)
-//! - **Tier 3: Scoring Accuracy** (BM25-lite correctness)
-//! - **Tier 4: Fusion Correctness** (RRF, determinism, tiebreak)
-//! - **Tier 5: Index Consistency** (index matches scan)
-//! - **Tier 6: Cross-Primitive** (hybrid search)
-//! - **Tier 7: Property-Based/Fuzzing** (catch edge cases)
-//! - **Tier 8: Stress/Scale** (correctness under load)
-//! - **Tier 9: Non-Regression** (M4/M5 targets maintained)
-//! - **Tier 10: Spec Conformance** (spec → test)
+//! - **Tier 2: Search Correctness** (determinism, exhaustiveness, filters)
+//! - **Tier 3: Budget Semantics** (truncation, ordering, isolation)
+//! - **Tier 4: Scoring Accuracy** (BM25-lite correctness)
+//! - **Tier 5: Fusion Correctness** (RRF, determinism, tiebreak)
+//! - **Tier 6: Cross-Primitive Identity** (DocRef policy, deduplication policy)
+//! - **Tier 7: Index Consistency** (index matches scan)
+//! - **Tier 8: Cross-Primitive Search** (hybrid orchestration)
+//! - **Tier 9: Result Explainability** (provenance, score explanation)
+//! - **Tier 10: Property-Based/Fuzzing** (catch edge cases)
+//! - **Tier 11: Stress/Scale** (correctness under load)
+//! - **Tier 12: Non-Regression** (M4/M5 targets maintained)
+//! - **Tier 13: Spec Conformance** (spec → test)
 //!
 //! ## Running Tests
 //!
@@ -1347,41 +1886,53 @@ mod algorithm_swappable_tests;
 
 // Tier 2: Search Correctness
 mod search_determinism_tests;
-mod search_completeness_tests;
-mod search_budget_tests;
+mod search_exhaustiveness_tests;
 mod search_filter_tests;
 
-// Tier 3: Scoring Accuracy
+// Tier 3: Budget Semantics (NOT Performance)
+mod budget_truncation_tests;
+mod budget_ordering_tests;
+mod budget_isolation_tests;
+
+// Tier 4: Scoring Accuracy
 mod bm25_scoring_tests;
 mod tokenizer_tests;
 mod idf_calculation_tests;
 
-// Tier 4: Fusion Correctness
+// Tier 5: Fusion Correctness
 mod rrf_fusion_tests;
 mod fusion_determinism_tests;
 mod tiebreak_tests;
-mod deduplication_tests;
 
-// Tier 5: Index Consistency
+// Tier 6: Cross-Primitive Identity
+mod docref_identity_policy_tests;
+mod deduplication_policy_tests;
+
+// Tier 7: Index Consistency
 mod index_scan_equivalence;
 mod index_update_tests;
 mod watermark_tests;
 mod stale_index_fallback_tests;
 
-// Tier 6: Cross-Primitive
+// Tier 8: Cross-Primitive Search
 mod hybrid_search_tests;
 mod multi_primitive_ranking;
 
-// Tier 7: Fuzzing
+// Tier 9: Result Explainability (Future-Proofing)
+mod result_provenance_tests;
+mod score_explanation_tests;
+mod rank_contribution_tests;
+
+// Tier 10: Property-Based/Fuzzing
 mod search_fuzzing_tests;
 
-// Tier 8: Stress (use #[ignore])
+// Tier 11: Stress & Scale (use #[ignore])
 mod search_stress_tests;
 
-// Tier 9: Non-Regression
+// Tier 12: Non-Regression
 mod m4_m5_regression_tests;
 
-// Tier 10: Spec Conformance
+// Tier 13: Spec Conformance
 mod spec_conformance_tests;
 ```
 
@@ -1482,17 +2033,20 @@ pub fn assert_latency_under(actual: Duration, target_micros: u64) {
 | Priority | Tier | Estimated Tests | Rationale |
 |----------|------|-----------------|-----------|
 | **P0** | Tier 1: Architectural Rules | ~25 | Lock in the contract |
-| **P0** | Tier 2: Search Correctness | ~15 | Core functionality |
-| **P0** | Tier 5: Index Consistency | ~10 | Index must match scan |
-| **P1** | Tier 3: Scoring Accuracy | ~15 | Ranking quality |
-| **P1** | Tier 4: Fusion Correctness | ~10 | Multi-source merging |
-| **P1** | Tier 7: Fuzzing | ~5 | Catches edge cases |
-| **P2** | Tier 6: Cross-Primitive | ~10 | Hybrid search |
-| **P2** | Tier 9: Non-Regression | ~10 | M4/M5 maintained |
-| **P2** | Tier 10: Spec Conformance | ~15 | Spec coverage |
-| **P3** | Tier 8: Stress | ~10 | Scale verification |
+| **P0** | Tier 2: Search Correctness | ~12 | Core determinism & exhaustiveness |
+| **P0** | Tier 3: Budget Semantics | ~10 | Budget never corrupts |
+| **P0** | Tier 6: Cross-Primitive Identity | ~8 | Identity policy must be explicit |
+| **P0** | Tier 7: Index Consistency | ~10 | Index must match scan |
+| **P1** | Tier 4: Scoring Accuracy | ~15 | Ranking quality |
+| **P1** | Tier 5: Fusion Correctness | ~10 | Multi-source merging |
+| **P1** | Tier 10: Fuzzing | ~5 | Catches edge cases |
+| **P2** | Tier 8: Cross-Primitive Search | ~10 | Hybrid orchestration |
+| **P2** | Tier 9: Result Explainability | ~10 | Future debugging support |
+| **P2** | Tier 12: Non-Regression | ~10 | M4/M5 maintained |
+| **P2** | Tier 13: Spec Conformance | ~15 | Spec coverage |
+| **P3** | Tier 11: Stress & Scale | ~10 | Scale verification |
 
-**Total: ~125 new tests**
+**Total: ~150 new tests**
 
 ---
 
@@ -1511,10 +2065,12 @@ tempfile = "3.10"         # Temporary directories
 
 1. **All Tier 1 tests pass** - Six architectural rules locked
 2. **Search is deterministic** - Same query always returns same results
-3. **Index matches scan** - No phantom or missing results
-4. **Fuzzing finds no violations** - 10,000+ random cases pass
-5. **M4/M5 latency targets maintained** - No regressions
-6. **Spec coverage > 95%** - Every spec statement has a test
+3. **Budget never corrupts** - Truncation preserves ordering and snapshot isolation
+4. **Identity policy explicit** - DocRefs follow documented equality semantics
+5. **Index matches scan** - No phantom or missing results
+6. **Fuzzing finds no violations** - 10,000+ random cases pass
+7. **M4/M5 latency targets maintained** - No regressions
+8. **Spec coverage > 95%** - Every spec statement has a test
 
 ---
 
@@ -1523,7 +2079,10 @@ tempfile = "3.10"         # Temporary directories
 - These tests are **separate from unit tests** - they test public API behavior
 - Tests should read like **English specifications**, not implementation details
 - **Six architectural rules are sacred** - Tier 1 tests must never fail
+- **Budget is semantic, not performance** - Tier 3 tests correctness, not speed
+- **Identity policy is a design decision** - Tier 6 documents and locks policy
 - **Index-scan equivalence is mandatory** - Index cannot return different results
+- **Explainability is future-proofing** - Tier 9 scaffolding for debugging
 - **Fuzzing is mandatory** - Property-based tests catch what humans miss
 - Run stress tests **before every release** - Find rare bugs early
 
