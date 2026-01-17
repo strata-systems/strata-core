@@ -122,3 +122,7 @@ harness = false
 [[bench]]
 name = "m5_performance"
 harness = false
+
+[[bench]]
+name = "m6_search"
+harness = false

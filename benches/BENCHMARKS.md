@@ -17,6 +17,9 @@ The prefix indicates the **primary semantic being exercised**, not which module 
 | `snapshot_*` | Snapshot semantics | Point-in-time consistent reads (M2 only) |
 | `conflict_*` | Concurrency patterns | Multi-thread contention, first-committer-wins (M2 only) |
 | `json_*` | JSON primitive operations | Create, get, set, delete, exists, version (M5 only) |
+| `search_*` | Search operations | Keyword search, hybrid search, result retrieval (M6 only) |
+| `index_*` | Index operations | Lookup, indexing, IDF computation (M6 only) |
+| `hybrid_*` | Hybrid search | Cross-primitive search, RRF fusion (M6 only) |
 
 **Why this taxonomy:**
 - `txn_*` separates "commit cost" from "snapshot read cost"
@@ -47,6 +50,7 @@ Benchmarks explicitly label their access pattern:
 |---------|-------------|---------------------|
 | `hot_key` | Single key, repeated access | Config reads, counters |
 | `hot_doc` | Single document, repeated access (M5) | JSON config reads |
+| `hot_query` | Same search query, repeated (M6) | Cached search results |
 | `uniform` | Random keys from full keyspace | Arbitrary state access |
 | `working_set_N` | Small subset (N keys/docs) | Frequently accessed subset |
 | `miss` | Key/document not found | Error path, existence checks |
@@ -71,6 +75,7 @@ benches/
   m1_storage.rs          # M1: Storage + WAL primitives
   m2_transactions.rs     # M2: OCC + Snapshot Isolation
   m5_performance.rs      # M5: JSON Primitive operations
+  m6_search.rs           # M6: Search + Retrieval Surfaces
   BENCHMARKS.md          # This file
   BENCHMARK_EXECUTION.md # Execution guide
 ```
@@ -154,6 +159,23 @@ benches/
 | `json_contention/disjoint_docs/*` | No conflicts for different docs | Parallel scaling | Partitioned state |
 | `json_contention/same_doc_different_paths/*` | Document-level conflicts | Conflict cost | Shared state |
 | `json_doc_scaling/get_rotating/*` | O(log n) lookup at scale | BTreeMap + cache | Large databases |
+
+### M6 Search Benchmarks
+
+| Benchmark | Semantic Guarantee | Regression Detection | Agent Pattern |
+|-----------|-------------------|----------------------|---------------|
+| `search_kv/hot_query` | Same query, repeated search | Search cache overhead | Repeated queries |
+| `search_kv/uniform` | Random queries across dataset | BM25 scoring cost | Varied queries |
+| `search_kv/dataset_*` | Search at different scales | O(n) scan cost | Large datasets |
+| `search_hybrid/all_primitives` | Search across all primitives | Cross-primitive overhead | Global search |
+| `search_hybrid/filtered` | Search with primitive filter | Filter efficiency | Scoped search |
+| `search_hybrid/with_budget` | Budget-constrained search | Budget enforcement | Latency-bounded |
+| `search_result_size/k_*` | Different result sizes | Result assembly cost | Top-k queries |
+| `index_lookup/term` | Single term lookup | Index overhead | Keyword lookup |
+| `index_document/small` | Index a document | Indexing cost | Write + index |
+| `index_compute_idf/*` | IDF computation | Term frequency cost | Scoring |
+| `index_scaling/*` | Lookup at different index sizes | O(log n) index lookup | Large indices |
+| `search_overhead/index_disabled` | Search without index | Baseline scan cost | No index fallback |
 
 ---
 
@@ -264,6 +286,50 @@ These targets assume:
 | 10K docs | <2µs | <5µs | >10µs |
 | 100K docs | <5µs | <10µs | >20µs |
 
+### M6: Search + Retrieval
+
+#### search_kv (by access pattern)
+
+| Access Pattern | Stretch | Acceptable | Concern |
+|---------------|---------|------------|---------|
+| hot_query (100 docs) | <50µs | <100µs | >200µs |
+| uniform (100 docs) | <100µs | <200µs | >500µs |
+| dataset_1000 | <500µs | <1ms | >2ms |
+| dataset_10000 | <2ms | <5ms | >10ms |
+
+#### search_hybrid (cross-primitive)
+
+| Scenario | Stretch | Acceptable | Concern |
+|----------|---------|------------|---------|
+| all_primitives | <200µs | <500µs | >1ms |
+| filtered | <100µs | <200µs | >500µs |
+| with_budget (50ms) | <50ms | budget-bounded | >budget |
+
+#### index_operations
+
+| Operation | Stretch | Acceptable | Concern |
+|-----------|---------|------------|---------|
+| lookup/term | <5µs | <10µs | >20µs |
+| index_document/small | <50µs | <100µs | >200µs |
+| compute_idf (1K terms) | <10µs | <20µs | >50µs |
+
+#### index_scaling/lookup
+
+| Index Size | Stretch | Acceptable | Concern |
+|------------|---------|------------|---------|
+| 1K terms | <5µs | <10µs | >20µs |
+| 10K terms | <10µs | <20µs | >50µs |
+| 100K terms | <20µs | <50µs | >100µs |
+
+#### search_result_size
+
+| Result Size (k) | Stretch | Acceptable | Concern |
+|-----------------|---------|------------|---------|
+| k=1 | <50µs | <100µs | >200µs |
+| k=10 | <100µs | <200µs | >400µs |
+| k=100 | <200µs | <500µs | >1ms |
+| k=500 | <500µs | <1ms | >2ms |
+
 ---
 
 ## Running Benchmarks
@@ -324,6 +390,30 @@ cargo bench --bench m5_performance -- "depth"
 ./scripts/bench_runner.sh --m5 --all-modes
 ```
 
+### M6 Search Benchmarks
+
+```bash
+# All M6 benchmarks
+cargo bench --bench m6_search
+
+# By category
+cargo bench --bench m6_search -- "search_kv"
+cargo bench --bench m6_search -- "search_hybrid"
+cargo bench --bench m6_search -- "search_result_size"
+cargo bench --bench m6_search -- "index_"
+cargo bench --bench m6_search -- "search_overhead"
+
+# By access pattern
+cargo bench --bench m6_search -- "hot_query"
+cargo bench --bench m6_search -- "uniform"
+cargo bench --bench m6_search -- "dataset"
+
+# Using bench_runner.sh
+./scripts/bench_runner.sh --m6
+./scripts/bench_runner.sh --m6 --filter="search_kv"
+./scripts/bench_runner.sh --m6 --filter="index_"
+```
+
 ### Comparison Mode
 
 ```bash
@@ -331,11 +421,13 @@ cargo bench --bench m5_performance -- "depth"
 cargo bench --bench m1_storage -- --save-baseline main
 cargo bench --bench m2_transactions -- --save-baseline main
 cargo bench --bench m5_performance -- --save-baseline main
+cargo bench --bench m6_search -- --save-baseline main
 
 # Compare against baseline
 cargo bench --bench m1_storage -- --baseline main
 cargo bench --bench m2_transactions -- --baseline main
 cargo bench --bench m5_performance -- --baseline main
+cargo bench --bench m6_search -- --baseline main
 ```
 
 ---
@@ -395,10 +487,10 @@ For every benchmark, verify:
    - No random number generation in `b.iter()` (LCG state mutation is fine)
 
 2. **Access pattern is explicitly labeled**
-   - `hot_key`, `uniform`, `working_set`, `miss`, or `rotating`
+   - `hot_key`, `uniform`, `working_set`, `miss`, `rotating`, or `hot_query`
 
 3. **Layer is explicitly labeled**
-   - `engine_`, `wal_`, `txn_`, `snapshot_`, or `conflict_`
+   - `engine_`, `wal_`, `txn_`, `snapshot_`, `conflict_`, `search_`, `index_`, or `hybrid_`
 
 4. **Durability mode is labeled for writes**
    - `dur_strict`, `dur_batched_*`, or `dur_async`
@@ -479,8 +571,8 @@ If benchmarks pass but invariant tests fail, the benchmarks are measuring a brok
 
 ### Checklist for New Benchmarks
 
-- [ ] Layer labeled in name (`engine_`, `wal_`, `txn_`, `snapshot_`, `conflict_`)
-- [ ] Access pattern labeled if applicable (`hot_key`, `uniform`, etc.)
+- [ ] Layer labeled in name (`engine_`, `wal_`, `txn_`, `snapshot_`, `conflict_`, `search_`, `index_`, `hybrid_`)
+- [ ] Access pattern labeled if applicable (`hot_key`, `uniform`, `hot_query`, etc.)
 - [ ] Durability mode labeled for writes (`dur_strict`, etc.)
 - [ ] All setup outside timed loop
 - [ ] Fixed seed (`BENCH_SEED`) for any randomness

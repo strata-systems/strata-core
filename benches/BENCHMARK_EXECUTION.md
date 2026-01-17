@@ -22,6 +22,9 @@ cargo test --test m1_m2_comprehensive invariant -- --nocapture
 # Run M5 comprehensive tests
 cargo test --test m5_comprehensive -- --nocapture
 
+# Run M6 comprehensive tests
+cargo test --test m6_comprehensive -- --nocapture
+
 # If any invariant test fails, STOP. Do not benchmark a broken system.
 ```
 
@@ -195,7 +198,61 @@ Record results for:
 | json_contention/disjoint_docs/4 | >80% scaling | >50% scaling | <30% scaling |
 | json_doc_scaling/get_rotating/100000 | <5µs | <10µs | >20µs |
 
-## Phase 5: Save Baseline
+## Phase 5: M6 Search Benchmarks
+
+Run M6 benchmarks (search, hybrid retrieval, indexing):
+
+```bash
+cargo bench --bench m6_search -- --noplot
+```
+
+Record results for:
+
+### search_kv (Keyword Search Performance)
+- [ ] `search_kv/dataset_100/hot_query` - Same query, repeated
+- [ ] `search_kv/dataset_100/uniform` - Random queries
+- [ ] `search_kv/dataset_1000/uniform` - 1K document search
+- [ ] `search_kv/dataset_10000/uniform` - 10K document search
+
+### search_hybrid (Cross-Primitive Search)
+- [ ] `search_hybrid/all_primitives` - Search across KV, EventLog, etc.
+- [ ] `search_hybrid/filtered` - Search with primitive filter
+- [ ] `search_hybrid/with_budget` - Budget-constrained search
+
+### search_result_size (Result Assembly)
+- [ ] `search_result_size/k_1` - Top 1 result
+- [ ] `search_result_size/k_10` - Top 10 results
+- [ ] `search_result_size/k_50` - Top 50 results
+- [ ] `search_result_size/k_100` - Top 100 results
+- [ ] `search_result_size/k_500` - Top 500 results
+
+### index_operations (Index Performance)
+- [ ] `index_lookup/term` - Single term lookup
+- [ ] `index_document/small` - Index a small document
+- [ ] `index_compute_idf/1000` - IDF for 1K terms
+
+### index_scaling (Index Scale Tests)
+- [ ] `index_scaling/lookup/1000` - Lookup in 1K term index
+- [ ] `index_scaling/lookup/10000` - Lookup in 10K term index
+- [ ] `index_scaling/lookup/100000` - Lookup in 100K term index
+
+### search_overhead (Baseline without Index)
+- [ ] `search_overhead/index_disabled` - Scan-only search
+
+### M6 Expected Ranges
+
+| Benchmark | Stretch | Acceptable | Concern |
+|-----------|---------|------------|---------|
+| search_kv/hot_query (100 docs) | <50µs | <100µs | >200µs |
+| search_kv/uniform (100 docs) | <100µs | <200µs | >500µs |
+| search_kv/dataset_10000 | <2ms | <5ms | >10ms |
+| search_hybrid/all_primitives | <200µs | <500µs | >1ms |
+| search_hybrid/with_budget | <budget | budget-bounded | >budget |
+| index_lookup/term | <5µs | <10µs | >20µs |
+| index_scaling/lookup/100000 | <20µs | <50µs | >100µs |
+| search_result_size/k_100 | <200µs | <500µs | >1ms |
+
+## Phase 6: Save Baseline
 
 If results are acceptable, save as baseline:
 
@@ -203,9 +260,10 @@ If results are acceptable, save as baseline:
 cargo bench --bench m1_storage -- --save-baseline current
 cargo bench --bench m2_transactions -- --save-baseline current
 cargo bench --bench m5_performance -- --save-baseline current
+cargo bench --bench m6_search -- --save-baseline current
 ```
 
-## Phase 6: Document Results
+## Phase 7: Document Results
 
 Create a benchmark report with this format:
 
@@ -254,6 +312,20 @@ Create a benchmark report with this format:
 | json_doc_scaling/get_rotating/100000 | Xµs | +Y% | OK/CONCERN |
 | ... | ... | ... | ... |
 
+## M6 Search Results
+
+| Benchmark | Result | vs Acceptable | Status |
+|-----------|--------|---------------|--------|
+| search_kv/hot_query | Xµs | +Y% | OK/CONCERN |
+| search_kv/uniform | Xµs | +Y% | OK/CONCERN |
+| search_kv/dataset_10000 | Xms | +Y% | OK/CONCERN |
+| search_hybrid/all_primitives | Xµs | +Y% | OK/CONCERN |
+| search_hybrid/with_budget | Xms | +Y% | OK/CONCERN |
+| index_lookup/term | Xµs | +Y% | OK/CONCERN |
+| index_scaling/lookup/100000 | Xµs | +Y% | OK/CONCERN |
+| search_result_size/k_100 | Xµs | +Y% | OK/CONCERN |
+| ... | ... | ... | ... |
+
 ## Observations
 
 - [Any unexpected results]
@@ -267,7 +339,7 @@ Create a benchmark report with this format:
 - [ ] [Optimizations to consider later]
 ```
 
-## Phase 7: Re-verify Correctness
+## Phase 8: Re-verify Correctness
 
 After benchmarking, run invariant tests again:
 
@@ -277,6 +349,9 @@ cargo test --test m1_m2_comprehensive invariant -- --nocapture
 
 # M5 comprehensive tests
 cargo test --test m5_comprehensive -- --nocapture
+
+# M6 comprehensive tests
+cargo test --test m6_comprehensive -- --nocapture
 ```
 
 If tests pass: benchmark results are valid.
@@ -341,8 +416,8 @@ Performance has regressed:
 ## Quick Commands
 
 ```bash
-# Full suite (M1, M2, and M5)
-cargo bench --bench m1_storage --bench m2_transactions --bench m5_performance -- --noplot
+# Full suite (M1, M2, M5, M6)
+cargo bench --bench m1_storage --bench m2_transactions --bench m5_performance --bench m6_search -- --noplot
 
 # Just M1
 cargo bench --bench m1_storage -- --noplot
@@ -352,6 +427,9 @@ cargo bench --bench m2_transactions -- --noplot
 
 # Just M5
 cargo bench --bench m5_performance -- --noplot
+
+# Just M6
+cargo bench --bench m6_search -- --noplot
 
 # M1/M2 by category
 cargo bench --bench m1_storage -- "engine_get"
@@ -370,12 +448,21 @@ cargo bench --bench m5_performance -- "json_delete"
 cargo bench --bench m5_performance -- "json_contention"
 cargo bench --bench m5_performance -- "json_doc_scaling"
 
+# M6 by category
+cargo bench --bench m6_search -- "search_kv"
+cargo bench --bench m6_search -- "search_hybrid"
+cargo bench --bench m6_search -- "search_result_size"
+cargo bench --bench m6_search -- "index_"
+cargo bench --bench m6_search -- "search_overhead"
+
 # By access pattern
 cargo bench --bench m1_storage -- "hot_key"
 cargo bench --bench m1_storage -- "uniform"
 cargo bench --bench m1_storage -- "dur_strict"
 cargo bench --bench m5_performance -- "hot_doc"
 cargo bench --bench m5_performance -- "uniform"
+cargo bench --bench m6_search -- "hot_query"
+cargo bench --bench m6_search -- "dataset"
 
 # The canonical agent workload benchmark
 cargo bench --bench m2_transactions -- "readN_write1"
@@ -384,19 +471,24 @@ cargo bench --bench m2_transactions -- "readN_write1"
 cargo bench --bench m1_storage -- --baseline current
 cargo bench --bench m2_transactions -- --baseline current
 cargo bench --bench m5_performance -- --baseline current
+cargo bench --bench m6_search -- --baseline current
 
 # Run with more samples (slower, more accurate)
 cargo bench --bench m1_storage -- --sample-size 200
 cargo bench --bench m5_performance -- --sample-size 200
+cargo bench --bench m6_search -- --sample-size 200
 
 # Run invariant tests
 cargo test --test m1_m2_comprehensive invariant
 cargo test --test m5_comprehensive
+cargo test --test m6_comprehensive
 
-# Using bench_runner.sh for M5
+# Using bench_runner.sh
 ./scripts/bench_runner.sh --m5
 ./scripts/bench_runner.sh --m5 --filter="json_get"
 ./scripts/bench_runner.sh --m5 --all-modes
+./scripts/bench_runner.sh --m6
+./scripts/bench_runner.sh --m6 --filter="search_kv"
 ```
 
 ---
@@ -408,12 +500,12 @@ If any benchmark shows "CONCERN" or "CRITICAL" status:
 ```markdown
 ## Benchmark Performance Issue
 
-**Benchmark**: [name, e.g., engine_get/uniform]
-**Result**: [X ops/s]
-**Expected**: [>Y ops/s (acceptable)]
+**Benchmark**: [name, e.g., engine_get/uniform or search_kv/hot_query]
+**Result**: [X ops/s or Xµs]
+**Expected**: [>Y ops/s or <Yµs (acceptable)]
 **Gap**: [Z% below acceptable]
-**Layer**: [engine/wal/txn/snapshot/conflict]
-**Access Pattern**: [hot_key/uniform/working_set/miss/rotating]
+**Layer**: [engine/wal/txn/snapshot/conflict/search/index/hybrid]
+**Access Pattern**: [hot_key/uniform/working_set/miss/rotating/hot_query/dataset]
 **Durability Mode**: [dur_strict/dur_async/N/A]
 
 ### Environment
@@ -442,9 +534,12 @@ A benchmark run is successful if:
 - [ ] All invariant tests pass before AND after benchmarking
 - [ ] All M1 benchmarks meet "acceptable" thresholds
 - [ ] All M2 benchmarks meet "acceptable" thresholds
+- [ ] All M5 benchmarks meet "acceptable" thresholds
+- [ ] All M6 benchmarks meet "acceptable" thresholds
 - [ ] No benchmark shows >20% regression from baseline (if baseline exists)
 - [ ] Results are documented with layer, access pattern, and durability mode context
 - [ ] Conflict benchmarks report commit/abort ratios
+- [ ] Search benchmarks respect budget constraints
 
 If any criterion is not met, document the gap and create issues for investigation.
 Do NOT block on performance issues - correctness comes first.
