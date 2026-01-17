@@ -9,13 +9,14 @@
 Epic-end validation ensures:
 1. All stories in the epic are complete and correct
 2. Code quality meets standards
-3. Implementation matches architecture spec (M3 or M4)
+3. Implementation matches architecture spec (M3, M4, M5, or M6)
 4. Tests are comprehensive and passing
 5. No regressions introduced
 
-**Note**: This document covers validation for M3 (Epics 13-19), M4 (Epics 20-25), and M5 (Epics 26-32).
+**Note**: This document covers validation for M3 (Epics 13-19), M4 (Epics 20-25), M5 (Epics 26-32), and M6 (Epics 33-39).
 For M4-specific validation, see [Phase 6b: M4 Performance Validation](#phase-6b-m4-performance-validation-m4-only).
 For M5-specific validation, see [Phase 6c: M5 JSON Primitive Validation](#phase-6c-m5-json-primitive-validation-m5-only).
+For M6-specific validation, see [Phase 6d: M6 Retrieval Surfaces Validation](#phase-6d-m6-retrieval-surfaces-validation-m6-only).
 
 ---
 
@@ -669,6 +670,200 @@ grep -r "0x2" crates/durability/src/wal.rs
 
 ---
 
+## Phase 6d: M6 Retrieval Surfaces Validation (M6 Only)
+
+**This phase is REQUIRED for all M6 epics (33-39).**
+
+### 6d.1 The Six Architectural Rules Verification
+
+```bash
+# Rule 1: No Data Movement (DocRef references only)
+grep -r "fn search" crates/search/src/
+# Should return SearchResponse with DocRef, not cloned data
+
+# Rule 2: Primitive Search is First-Class
+grep -r "impl Searchable for" crates/primitives/src/
+# Should find implementations for all 6 primitives
+
+# Rule 3: Composite Orchestrates, Doesn't Replace
+grep -A10 "pub fn hybrid" crates/primitives/src/
+# Should delegate to primitive search() methods
+
+# Rule 4: Snapshot-Consistent Search
+grep -r "search_with_snapshot\|SearchSnapshot" crates/search/src/
+# Should find snapshot-based search methods
+
+# Rule 5: Zero Overhead When Disabled
+grep -r "if.*index_enabled\|Option<InvertedIndex>" crates/search/src/
+# Should find conditional indexing logic
+
+# Rule 6: Algorithm Swappable (Scorer and Fuser are traits)
+grep -r "trait Scorer\|trait Fuser" crates/search/src/
+# Should find trait definitions, not hardcoded implementations
+```
+
+### 6d.2 Core Types Verification (Epic 33)
+
+```bash
+# Verify SearchRequest, SearchResponse, SearchHit exist
+~/.cargo/bin/cargo test --package in-mem-search search_types
+
+# Verify DocRef and PrimitiveKind
+~/.cargo/bin/cargo test --package in-mem-search doc_ref
+~/.cargo/bin/cargo test --package in-mem-search primitive_kind
+
+# Verify SearchBudget
+~/.cargo/bin/cargo test --package in-mem-search budget
+```
+
+### 6d.3 Primitive Search Surface Verification (Epic 34)
+
+```bash
+# Verify Searchable trait
+~/.cargo/bin/cargo test --package in-mem-search searchable
+
+# Verify search() on each primitive
+~/.cargo/bin/cargo test --package primitives kv_search
+~/.cargo/bin/cargo test --package primitives json_search
+~/.cargo/bin/cargo test --package primitives event_search
+~/.cargo/bin/cargo test --package primitives state_search
+~/.cargo/bin/cargo test --package primitives trace_search
+~/.cargo/bin/cargo test --package primitives run_search
+```
+
+### 6d.4 Scoring Infrastructure Verification (Epic 35)
+
+```bash
+# Verify Scorer trait
+~/.cargo/bin/cargo test --package in-mem-search scorer
+
+# Verify ScorerContext
+~/.cargo/bin/cargo test --package in-mem-search scorer_context
+
+# Verify BM25LiteScorer
+~/.cargo/bin/cargo test --package in-mem-search bm25
+
+# Verify Tokenizer
+~/.cargo/bin/cargo test --package in-mem-search tokenizer
+```
+
+### 6d.5 Composite Search Verification (Epic 36)
+
+```bash
+# Verify HybridSearch
+~/.cargo/bin/cargo test --package in-mem-search hybrid
+
+# Verify db.hybrid() accessor
+~/.cargo/bin/cargo test --package primitives hybrid_accessor
+
+# Verify primitive filter
+~/.cargo/bin/cargo test --package in-mem-search primitive_filter
+
+# Verify budget allocation
+~/.cargo/bin/cargo test --package in-mem-search budget_allocation
+```
+
+### 6d.6 Fusion Infrastructure Verification (Epic 37)
+
+```bash
+# Verify Fuser trait
+~/.cargo/bin/cargo test --package in-mem-search fuser
+
+# Verify RRFFuser (Reciprocal Rank Fusion)
+~/.cargo/bin/cargo test --package in-mem-search rrf
+
+# Verify tie-breaking
+~/.cargo/bin/cargo test --package in-mem-search tiebreak
+
+# Verify deduplication
+~/.cargo/bin/cargo test --package in-mem-search dedup
+```
+
+### 6d.7 Optional Indexing Verification (Epic 38)
+
+```bash
+# Verify InvertedIndex
+~/.cargo/bin/cargo test --package in-mem-search inverted_index
+
+# Verify enable/disable indexing
+~/.cargo/bin/cargo test --package in-mem-search enable_index
+~/.cargo/bin/cargo test --package in-mem-search disable_index
+
+# Verify index updates on write
+~/.cargo/bin/cargo test --package in-mem-search index_update
+
+# Verify accelerated search
+~/.cargo/bin/cargo test --package in-mem-search accelerated_search
+
+# Verify watermark tracking
+~/.cargo/bin/cargo test --package in-mem-search watermark
+```
+
+### 6d.8 Validation & Non-Regression (Epic 39)
+
+```bash
+# Run API contract tests
+~/.cargo/bin/cargo test --package in-mem-search api_contracts
+
+# Run non-regression benchmarks
+~/.cargo/bin/cargo bench --bench m6_non_regression
+
+# Run determinism tests
+~/.cargo/bin/cargo test --package in-mem-search determinism
+
+# Run snapshot consistency tests
+~/.cargo/bin/cargo test --package in-mem-search snapshot_consistency
+```
+
+### 6d.9 Performance Benchmarks
+
+```bash
+# Run M6 search benchmarks
+~/.cargo/bin/cargo bench --bench m6_non_regression
+
+# Expected results:
+# - KV get (no regression): < 5µs
+# - KV put (no regression): < 8µs
+# - JSON get (no regression): 30-50µs
+# - Search scan (1K docs, no index): < 50ms
+# - Search indexed (1K docs): < 10ms
+```
+
+### 6d.10 Non-Regression Verification
+
+```bash
+# Verify M4 performance targets are maintained
+~/.cargo/bin/cargo bench --bench m4_performance
+
+# Verify M5 performance targets are maintained
+~/.cargo/bin/cargo bench --bench m5_json_performance
+
+# Run M4 red flag tests (must still pass)
+~/.cargo/bin/cargo test --test m4_red_flags
+
+# Verify existing primitives unaffected
+~/.cargo/bin/cargo test --package primitives kv_store
+~/.cargo/bin/cargo test --package primitives json_store
+~/.cargo/bin/cargo test --package primitives event_log
+~/.cargo/bin/cargo test --package primitives state_cell
+~/.cargo/bin/cargo test --package primitives trace_store
+```
+
+### 6d.11 M6 Performance Checklist
+
+| Metric | Target | Red Flag | Actual | Status |
+|--------|--------|----------|--------|--------|
+| KV get (no regression) | < 5µs | > 10µs | ___ | [ ] |
+| KV put (no regression) | < 8µs | > 20µs | ___ | [ ] |
+| JSON get (no regression) | 30-50µs | > 100µs | ___ | [ ] |
+| JSON set (no regression) | 100-200µs | > 500µs | ___ | [ ] |
+| Search scan (1K, no index) | < 50ms | > 200ms | ___ | [ ] |
+| Search indexed (1K) | < 10ms | > 50ms | ___ | [ ] |
+| Index update overhead | < 5× write | > 10× write | ___ | [ ] |
+| Budget enforcement | Works | N/A | ___ | [ ] |
+
+---
+
 ## Phase 7: Final Sign-Off
 
 ### 7.1 Completion Checklist
@@ -686,6 +881,9 @@ grep -r "0x2" crates/durability/src/wal.rs
 | **M5 Only**: JSON primitive validation (Phase 6c) | [ ] |
 | **M5 Only**: Six architectural rules verified | [ ] |
 | **M5 Only**: Non-regression tests pass | [ ] |
+| **M6 Only**: Retrieval surfaces validation (Phase 6d) | [ ] |
+| **M6 Only**: Six architectural rules verified | [ ] |
+| **M6 Only**: Non-regression tests pass (M4/M5 targets maintained) | [ ] |
 
 ### 7.2 Sign-Off
 
@@ -842,6 +1040,51 @@ Run the complete epic-end validation for Epic <N>: <Epic Name>.
 **CRITICAL**: The six architectural rules are NON-NEGOTIABLE. Any violation is a blocking issue.
 ```
 
+### M6 Epic Validation (Epics 33-39)
+
+Use this prompt for M6 retrieval surfaces validation:
+
+```
+## Task: M6 Epic End Validation
+
+Run the complete epic-end validation for Epic <N>: <Epic Name>.
+
+**Steps**:
+1. Run Phase 1 automated checks
+2. Verify all <X> stories are complete (Phase 2)
+3. Verify spec compliance against M6_ARCHITECTURE.md (Phase 3)
+4. Perform code review checklist (Phase 4)
+5. Verify best practices (Phase 5)
+6. Run epic-specific validation (Phase 6)
+7. Run M6 retrieval surfaces validation (Phase 6d) - CRITICAL
+8. Verify ALL six architectural rules
+9. Run non-regression tests (M4 and M5 performance targets must be maintained)
+10. Provide final sign-off summary (Phase 7)
+
+**Expected Output**:
+- Pass/fail status for each phase
+- Six architectural rules verification results
+- Search performance benchmark results vs targets
+- Non-regression test results (M4/M5 targets maintained)
+- Any issues found with recommendations
+- Final sign-off or list of blockers
+
+**Reference**:
+- **M6 Architecture (AUTHORITATIVE)**: docs/architecture/M6_ARCHITECTURE.md
+- Epic prompt: docs/prompts/M6/epic-<N>-claude-prompts.md
+- M6 Prompt Header: docs/prompts/M6/M6_PROMPT_HEADER.md
+- Epic Spec: docs/milestones/M6/EPIC_<N>_*.md
+- Stories: #XXX - #XXX
+
+**CRITICAL**: The six architectural rules are NON-NEGOTIABLE:
+1. No Data Movement (DocRef references only)
+2. Primitive Search is First-Class (every primitive has .search())
+3. Composite Orchestrates, Doesn't Replace (db.hybrid() delegates)
+4. Snapshot-Consistent Search (single snapshot for all primitives)
+5. Zero Overhead When Disabled (no allocations when indexing off)
+6. Algorithm Swappable (Scorer and Fuser are traits)
+```
+
 ---
 
 ## Quick Reference: Validation Commands
@@ -951,6 +1194,57 @@ echo "Rule 6: Consistent API"
 grep -r "fn create\|fn get\|fn set" crates/primitives/src/json_store.rs
 ```
 
+### M6 Quick Validation
+
+```bash
+# One-liner for Phase 1 + M6 retrieval surfaces validation
+~/.cargo/bin/cargo build --workspace && \
+~/.cargo/bin/cargo test --workspace && \
+~/.cargo/bin/cargo clippy --workspace -- -D warnings && \
+~/.cargo/bin/cargo fmt --check && \
+~/.cargo/bin/cargo bench --bench m6_non_regression && \
+~/.cargo/bin/cargo test --test m4_red_flags && \
+echo "Phase 1 + M6 Validation: PASS"
+
+# Run all M6 search tests
+~/.cargo/bin/cargo test --package in-mem-search
+~/.cargo/bin/cargo test --package primitives search
+
+# Run M6 benchmarks
+~/.cargo/bin/cargo bench --bench m6_non_regression
+
+# Run non-regression tests
+~/.cargo/bin/cargo bench --bench m4_performance
+~/.cargo/bin/cargo bench --bench m5_json_performance
+~/.cargo/bin/cargo test --test m4_red_flags
+```
+
+### M6 Six Rules Quick Check
+
+```bash
+# Quick architectural rules verification (run after any M6 change)
+echo "Rule 1: No Data Movement (DocRef references only)"
+grep -r "fn search.*SearchResponse" crates/search/src/ && echo "PASS" || echo "FAIL"
+grep -r "SearchHit.*doc_ref" crates/search/src/ && echo "PASS: DocRef found" || echo "FAIL: No DocRef"
+
+echo "Rule 2: Primitive Search is First-Class"
+grep -r "impl Searchable for" crates/primitives/src/ | wc -l
+# Should return 6 (one per primitive)
+
+echo "Rule 3: Composite Orchestrates, Doesn't Replace"
+grep -A10 "HybridSearch" crates/search/src/ | grep -r "primitive.*search\|delegate" && echo "PASS" || echo "CHECK MANUALLY"
+
+echo "Rule 4: Snapshot-Consistent Search"
+grep -r "search_with_snapshot\|SearchSnapshot" crates/search/src/ && echo "PASS" || echo "FAIL: No snapshot search"
+
+echo "Rule 5: Zero Overhead When Disabled"
+grep -r "if.*index_enabled\|Option<InvertedIndex>\|index.is_none()" crates/search/src/ && echo "PASS" || echo "CHECK: May have overhead"
+
+echo "Rule 6: Algorithm Swappable"
+grep -r "trait Scorer" crates/search/src/ && echo "PASS: Scorer trait" || echo "FAIL: No Scorer trait"
+grep -r "trait Fuser" crates/search/src/ && echo "PASS: Fuser trait" || echo "FAIL: No Fuser trait"
+```
+
 ---
 
 ## M4 Milestone Completion Checklist
@@ -1056,6 +1350,81 @@ grep -r "fn create\|fn get\|fn set" crates/primitives/src/json_store.rs
 | **Documentation** | | |
 | | M5_ARCHITECTURE.md authoritative | [ ] |
 | | M5_IMPLEMENTATION_PLAN.md aligned | [ ] |
+| | All EPIC_*.md specs complete | [ ] |
+| | All story PRs merged | [ ] |
+| | Benchmark results documented | [ ] |
+
+---
+
+## M6 Milestone Completion Checklist
+
+**Use this checklist when completing ALL M6 epics (Epic 39 final validation):**
+
+| Category | Requirement | Status |
+|----------|-------------|--------|
+| **Core Types (Epic 33)** | | |
+| | SearchRequest with run_id, query, filters | [ ] |
+| | SearchBudget with time and candidate limits | [ ] |
+| | SearchResponse with hits and stats | [ ] |
+| | SearchHit with doc_ref, score, rank | [ ] |
+| | SearchStats with timing and counts | [ ] |
+| | DocRef references documents by primitive+id | [ ] |
+| | PrimitiveKind enum (Kv, Json, Event, State, Trace, Run) | [ ] |
+| **Primitive Search (Epic 34)** | | |
+| | Searchable trait defined | [ ] |
+| | KvStore.search() | [ ] |
+| | JsonStore.search() | [ ] |
+| | EventLog.search() | [ ] |
+| | StateCell.search() | [ ] |
+| | TraceStore.search() | [ ] |
+| | RunIndex.search() | [ ] |
+| | Text extraction for each primitive | [ ] |
+| **Scoring Infrastructure (Epic 35)** | | |
+| | Scorer trait (pluggable) | [ ] |
+| | ScorerContext with IDF and corpus stats | [ ] |
+| | BM25LiteScorer default implementation | [ ] |
+| | Tokenizer (lowercase, split on non-alphanumeric) | [ ] |
+| | Extensions field for future signals | [ ] |
+| **Composite Search (Epic 36)** | | |
+| | HybridSearch struct | [ ] |
+| | db.hybrid() accessor method | [ ] |
+| | Primitive filter (limit to subset) | [ ] |
+| | Budget allocation across primitives | [ ] |
+| | Parallel primitive orchestration | [ ] |
+| **Fusion Infrastructure (Epic 37)** | | |
+| | Fuser trait (pluggable) | [ ] |
+| | RRFFuser (Reciprocal Rank Fusion) | [ ] |
+| | Deterministic tie-breaking | [ ] |
+| | Cross-primitive deduplication | [ ] |
+| **Optional Indexing (Epic 38)** | | |
+| | InvertedIndex with PostingList | [ ] |
+| | Enable/disable per-primitive | [ ] |
+| | Automatic index updates on write | [ ] |
+| | Accelerated search when index available | [ ] |
+| | Watermark tracking for staleness | [ ] |
+| **Validation (Epic 39)** | | |
+| | API contract tests for all 6 primitives | [ ] |
+| | Non-regression benchmark suite | [ ] |
+| | Determinism tests (same inputs = same outputs) | [ ] |
+| | Snapshot consistency tests | [ ] |
+| | Index vs scan consistency | [ ] |
+| **Six Architectural Rules** | | |
+| | Rule 1: No Data Movement (DocRef only) | [ ] |
+| | Rule 2: Primitive Search First-Class | [ ] |
+| | Rule 3: Composite Orchestrates | [ ] |
+| | Rule 4: Snapshot-Consistent Search | [ ] |
+| | Rule 5: Zero Overhead When Disabled | [ ] |
+| | Rule 6: Algorithm Swappable | [ ] |
+| **Performance** | | |
+| | KV get (no regression) < 5µs | [ ] |
+| | KV put (no regression) < 8µs | [ ] |
+| | JSON get (no regression) 30-50µs | [ ] |
+| | Search scan (1K, no index) < 50ms | [ ] |
+| | Search indexed (1K) < 10ms | [ ] |
+| | Index update overhead < 5× write | [ ] |
+| | M4 red flags still pass | [ ] |
+| **Documentation** | | |
+| | M6_ARCHITECTURE.md authoritative | [ ] |
 | | All EPIC_*.md specs complete | [ ] |
 | | All story PRs merged | [ ] |
 | | Benchmark results documented | [ ] |
