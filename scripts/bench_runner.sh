@@ -1,10 +1,11 @@
 #!/bin/bash
 #
-# M3 Benchmark Runner
-# ====================
+# in-mem Benchmark Runner
+# =======================
 #
 # This script sets up the proper environment for running benchmarks and
-# generates the Redis competitiveness report.
+# generates performance reports for M1 (Storage), M2 (Transactions),
+# M3 (Primitives), and M5 (JSON) milestones.
 #
 # Reference Platform:
 #   - Linux (Ubuntu 24.04.2 LTS)
@@ -17,8 +18,12 @@
 #   ./scripts/bench_runner.sh [options]
 #
 # Options:
-#   --full          Run full benchmark suite
-#   --tier=<tier>   Run specific tier (a0, a1, b, c, d)
+#   --full          Run full benchmark suite (all milestones)
+#   --m1            Run M1 Storage benchmarks only
+#   --m2            Run M2 Transaction benchmarks only
+#   --m3            Run M3 Primitive benchmarks only
+#   --m5            Run M5 JSON benchmarks only
+#   --tier=<tier>   Run specific tier (a0, a1, b, c, d, json)
 #   --filter=<pat>  Run benchmarks matching pattern
 #   --baseline=<n>  Save/compare with baseline name
 #   --perf          Run with perf stat
@@ -32,12 +37,12 @@
 #
 # Examples:
 #   ./scripts/bench_runner.sh --full
-#   ./scripts/bench_runner.sh --tier=a1
-#   ./scripts/bench_runner.sh --filter="kvstore_" --perf
-#   ./scripts/bench_runner.sh --full --baseline=m3_launch
-#   ./scripts/bench_runner.sh --full --cores="0-7" --perf
-#   ./scripts/bench_runner.sh --full --mode=inmemory
-#   ./scripts/bench_runner.sh --full --all-modes
+#   ./scripts/bench_runner.sh --m5
+#   ./scripts/bench_runner.sh --tier=json --filter="json_get"
+#   ./scripts/bench_runner.sh --full --baseline=m5_launch
+#   ./scripts/bench_runner.sh --m5 --cores="0-7" --perf
+#   ./scripts/bench_runner.sh --m5 --mode=inmemory
+#   ./scripts/bench_runner.sh --m5 --all-modes
 #
 
 set -euo pipefail
@@ -58,6 +63,10 @@ NC='\033[0m' # No Color
 
 # Default options
 RUN_FULL=false
+RUN_M1=false
+RUN_M2=false
+RUN_M3=false
+RUN_M5=false
 TIER=""
 FILTER=""
 BASELINE=""
@@ -97,8 +106,8 @@ log_error() {
 }
 
 show_help() {
-    # Extract lines 2-37 (the help comment block)
-    sed -n '2,37p' "$0" | sed 's/^# //' | sed 's/^#//'
+    # Extract lines 2-46 (the help comment block)
+    sed -n '2,46p' "$0" | sed 's/^# //' | sed 's/^#//'
     exit 0
 }
 
@@ -292,9 +301,15 @@ print_environment() {
 # =============================================================================
 
 build_release() {
+    local bench_target="$1"
     log_info "Building in release mode with LTO..."
     cd "$PROJECT_ROOT"
-    cargo build --release --bench m3_primitives 2>&1 | tail -5
+    if [[ -n "$bench_target" ]]; then
+        cargo build --release --bench "$bench_target" 2>&1 | tail -5
+    else
+        # Build all benchmark targets
+        cargo build --release --bench m1_storage --bench m2_transactions --bench m3_primitives --bench m5_performance 2>&1 | tail -5
+    fi
     log_success "Build complete"
 }
 
@@ -305,6 +320,7 @@ run_benchmarks() {
     local use_perf="$4"
     local use_perf_record="$5"
     local durability_mode="$6"
+    local bench_target="$7"
 
     cd "$PROJECT_ROOT"
     mkdir -p "$RESULTS_DIR"
@@ -352,7 +368,7 @@ run_benchmarks() {
     fi
 
     # Main benchmark command
-    cmd+=("cargo" "bench" "--bench" "m3_primitives")
+    cmd+=("cargo" "bench" "--bench" "$bench_target")
 
     if [[ ${#criterion_args[@]} -gt 0 ]]; then
         cmd+=("--")
@@ -512,6 +528,22 @@ main() {
                 RUN_FULL=true
                 shift
                 ;;
+            --m1)
+                RUN_M1=true
+                shift
+                ;;
+            --m2)
+                RUN_M2=true
+                shift
+                ;;
+            --m3)
+                RUN_M3=true
+                shift
+                ;;
+            --m5)
+                RUN_M5=true
+                shift
+                ;;
             --tier=*)
                 TIER="${1#*=}"
                 shift
@@ -562,28 +594,48 @@ main() {
         esac
     done
 
-    # Map tier to filter
+    # Map tier to filter and benchmark target
+    local BENCH_TARGET=""
     case "$TIER" in
         a0|A0)
             FILTER="core/"
+            BENCH_TARGET="m3_primitives"
             ;;
         a1|A1)
             FILTER="engine/"
+            BENCH_TARGET="m3_primitives"
             ;;
         b|B)
             FILTER="kvstore/\|eventlog/\|statecell/\|tracestore/\|runindex/"
+            BENCH_TARGET="m3_primitives"
             ;;
         c|C)
             FILTER="tracestore/\|index_amp/"
+            BENCH_TARGET="m3_primitives"
             ;;
         d|D)
             FILTER="contention/"
+            BENCH_TARGET="m3_primitives"
+            ;;
+        json|JSON|m5|M5)
+            BENCH_TARGET="m5_performance"
             ;;
     esac
 
+    # Set benchmark target based on milestone flags
+    if [[ "$RUN_M1" == "true" ]]; then
+        BENCH_TARGET="m1_storage"
+    elif [[ "$RUN_M2" == "true" ]]; then
+        BENCH_TARGET="m2_transactions"
+    elif [[ "$RUN_M3" == "true" ]]; then
+        BENCH_TARGET="m3_primitives"
+    elif [[ "$RUN_M5" == "true" ]]; then
+        BENCH_TARGET="m5_performance"
+    fi
+
     echo ""
     echo "============================================================"
-    echo "M3 BENCHMARK RUNNER"
+    echo "IN-MEM BENCHMARK RUNNER"
     echo "============================================================"
     echo ""
 
@@ -621,11 +673,22 @@ main() {
 
     print_environment
 
+    # Determine which benchmark to run
+    local run_any=false
+    if [[ "$RUN_FULL" == "true" ]] || [[ -n "$FILTER" ]] || [[ -n "$BENCH_TARGET" ]]; then
+        run_any=true
+    fi
+
     # Build
-    build_release
+    build_release "$BENCH_TARGET"
 
     # Run benchmarks
-    if [[ "$RUN_FULL" == "true" ]] || [[ -n "$FILTER" ]]; then
+    if [[ "$run_any" == "true" ]]; then
+        # Default to m3_primitives if no specific target
+        if [[ -z "$BENCH_TARGET" ]]; then
+            BENCH_TARGET="m3_primitives"
+        fi
+
         if [[ "$ALL_MODES" == "true" ]]; then
             # Run all three durability modes
             log_info "Running benchmarks for all durability modes..."
@@ -642,7 +705,7 @@ main() {
                 local mode_timestamp=$(date +%Y%m%d_%H%M%S)
                 TIMESTAMP="$mode_timestamp"
 
-                run_benchmarks "$FILTER" "$BASELINE" "$CORES" "$USE_PERF" "$USE_PERF_RECORD" "$mode"
+                run_benchmarks "$FILTER" "$BASELINE" "$CORES" "$USE_PERF" "$USE_PERF_RECORD" "$mode" "$BENCH_TARGET"
             done
 
             # Print summary of all modes
@@ -657,18 +720,21 @@ main() {
             log_info "  $RESULTS_DIR/bench_output_*_strict.txt"
         else
             # Run with specific mode or default
-            run_benchmarks "$FILTER" "$BASELINE" "$CORES" "$USE_PERF" "$USE_PERF_RECORD" "$DURABILITY_MODE"
+            run_benchmarks "$FILTER" "$BASELINE" "$CORES" "$USE_PERF" "$USE_PERF_RECORD" "$DURABILITY_MODE" "$BENCH_TARGET"
         fi
     else
-        log_info "No benchmarks specified. Use --full or --filter=<pattern>"
+        log_info "No benchmarks specified. Use --full, --m1, --m2, --m3, --m5, or --filter=<pattern>"
         log_info "Examples:"
-        log_info "  $0 --full                    # Run all benchmarks"
-        log_info "  $0 --tier=a1                 # Run Tier A1 only"
-        log_info "  $0 --filter=\"kvstore_\"       # Run KVStore benchmarks"
-        log_info "  $0 --full --perf             # Run with perf stat"
-        log_info "  $0 --full --baseline=m3      # Save baseline 'm3'"
-        log_info "  $0 --full --mode=inmemory    # Run in InMemory mode"
-        log_info "  $0 --full --all-modes        # Run all three durability modes"
+        log_info "  $0 --full                    # Run all M3 benchmarks"
+        log_info "  $0 --m1                      # Run M1 Storage benchmarks"
+        log_info "  $0 --m2                      # Run M2 Transaction benchmarks"
+        log_info "  $0 --m5                      # Run M5 JSON benchmarks"
+        log_info "  $0 --tier=json               # Run M5 JSON benchmarks"
+        log_info "  $0 --m5 --filter=\"json_get\"  # Run json_get benchmarks"
+        log_info "  $0 --m5 --perf               # Run M5 with perf stat"
+        log_info "  $0 --m5 --baseline=m5        # Save baseline 'm5'"
+        log_info "  $0 --m5 --mode=inmemory      # Run in InMemory mode"
+        log_info "  $0 --m5 --all-modes          # Run all three durability modes"
     fi
 
     echo ""

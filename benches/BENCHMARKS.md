@@ -16,6 +16,7 @@ The prefix indicates the **primary semantic being exercised**, not which module 
 | `txn_*` | Transaction lifecycle | Begin, operations, validate, commit (M2 only) |
 | `snapshot_*` | Snapshot semantics | Point-in-time consistent reads (M2 only) |
 | `conflict_*` | Concurrency patterns | Multi-thread contention, first-committer-wins (M2 only) |
+| `json_*` | JSON primitive operations | Create, get, set, delete, exists, version (M5 only) |
 
 **Why this taxonomy:**
 - `txn_*` separates "commit cost" from "snapshot read cost"
@@ -45,9 +46,10 @@ Benchmarks explicitly label their access pattern:
 | Pattern | Description | Real Agent Use Case |
 |---------|-------------|---------------------|
 | `hot_key` | Single key, repeated access | Config reads, counters |
+| `hot_doc` | Single document, repeated access (M5) | JSON config reads |
 | `uniform` | Random keys from full keyspace | Arbitrary state access |
-| `working_set_N` | Small subset (N keys) | Frequently accessed subset |
-| `miss` | Key not found | Error path, existence checks |
+| `working_set_N` | Small subset (N keys/docs) | Frequently accessed subset |
+| `miss` | Key/document not found | Error path, existence checks |
 | `rotating` | Sequential through keyspace | Cache miss testing |
 
 **Why this matters:** Hot-key benchmarks lie about real-world performance. Uniform benchmarks reveal actual BTreeMap and memory hierarchy costs.
@@ -66,9 +68,10 @@ All "random" access patterns use a fixed seed (`BENCH_SEED = 0xDEADBEEF_CAFEBABE
 
 ```
 benches/
-  m1_storage.rs         # M1: Storage + WAL primitives
-  m2_transactions.rs    # M2: OCC + Snapshot Isolation
-  BENCHMARKS.md         # This file
+  m1_storage.rs          # M1: Storage + WAL primitives
+  m2_transactions.rs     # M2: OCC + Snapshot Isolation
+  m5_performance.rs      # M5: JSON Primitive operations
+  BENCHMARKS.md          # This file
   BENCHMARK_EXECUTION.md # Execution guide
 ```
 
@@ -122,6 +125,35 @@ benches/
 | `conflict/disjoint_keys/*` | No conflicts when keys don't overlap | Parallel scaling | Partitioned agents |
 | `conflict/same_key/*` | Conflict causes abort, not partial | Conflict resolution | Global counter |
 | `conflict/cas_one_winner` | Exactly one CAS winner | First-committer-wins | Lock acquisition |
+
+### M5 JSON Benchmarks
+
+| Benchmark | Semantic Guarantee | Regression Detection | Agent Pattern |
+|-----------|-------------------|----------------------|---------------|
+| `json_create/small/*` | Small document stored | Base creation cost | Simple state |
+| `json_create/large/*` | Large document stored | Serialization scaling | Complex state |
+| `json_create/depth_*/*` | Nested document stored | Structure overhead | Hierarchical state |
+| `json_create/keys_*/*` | Wide object stored | Field count scaling | Flat state |
+| `json_get/hot_doc` | Same document, repeated | Lock overhead | Config reads |
+| `json_get/uniform` | Random documents | BTreeMap scaling | State lookups |
+| `json_get/working_set_100` | Subset of documents | Cache behavior | Frequent state |
+| `json_get/miss` | Non-existent document | Miss path cost | Existence checks |
+| `json_get/depth/*` | Path traversal depth | Nested access cost | Deep state |
+| `json_set/hot_path/*` | Same path, repeated | Update path | Counter updates |
+| `json_set/uniform_docs/*` | Random documents | Write distribution | State updates |
+| `json_set/uniform_paths/*` | Random paths in doc | Field update cost | Multi-field |
+| `json_set/depth/*` | Deep path write | Path traversal cost | Nested updates |
+| `json_set/value_size/*` | Various value sizes | Serialization | Blob updates |
+| `json_delete/existing_key/*` | Delete removes value | Deletion cost | State cleanup |
+| `json_delete/depth/*` | Delete at depth | Path traversal | Nested cleanup |
+| `json_destroy/small/*` | Document removed | Destroy cost | State cleanup |
+| `json_destroy/large/*` | Large doc removed | Cleanup scaling | Heavy cleanup |
+| `json_exists/hit` | Fast existence check | Existence overhead | Conditional ops |
+| `json_exists/miss` | Non-existent check | Miss path | Create-if-absent |
+| `json_version/after_updates/*` | Version retrieval | History overhead | OCC checks |
+| `json_contention/disjoint_docs/*` | No conflicts for different docs | Parallel scaling | Partitioned state |
+| `json_contention/same_doc_different_paths/*` | Document-level conflicts | Conflict cost | Shared state |
+| `json_doc_scaling/get_rotating/*` | O(log n) lookup at scale | BTreeMap + cache | Large databases |
 
 ---
 
@@ -185,6 +217,53 @@ These targets assume:
 | conflict/disjoint_keys (4 threads) | >80% scaling | >50% scaling | <30% scaling |
 | conflict/same_key (4 threads) | >2K txns/s | >500 txns/s | <200 txns/s |
 
+### M5: JSON Primitive
+
+#### json_create (by document type)
+
+| Document Type | Stretch | Acceptable | Concern |
+|---------------|---------|------------|---------|
+| small (100 bytes) | >50K ops/s | >10K ops/s | <5K ops/s |
+| medium (1KB) | >30K ops/s | >5K ops/s | <2K ops/s |
+| large (10KB) | >10K ops/s | >2K ops/s | <1K ops/s |
+| depth_10 | >20K ops/s | >5K ops/s | <2K ops/s |
+| keys_100 | >10K ops/s | >2K ops/s | <1K ops/s |
+
+#### json_get (by access pattern)
+
+| Access Pattern | Stretch | Acceptable | Concern |
+|---------------|---------|------------|---------|
+| hot_doc | >200K ops/s | >50K ops/s | <20K ops/s |
+| uniform | >100K ops/s | >20K ops/s | <10K ops/s |
+| working_set_100 | >150K ops/s | >30K ops/s | <15K ops/s |
+| miss | >200K ops/s | >50K ops/s | <20K ops/s |
+| depth/10 | >50K ops/s | >10K ops/s | <5K ops/s |
+
+#### json_set (by operation type)
+
+| Operation | Stretch | Acceptable | Concern |
+|-----------|---------|------------|---------|
+| hot_path/dur_strict | >30K ops/s | >5K ops/s | <2K ops/s |
+| uniform_docs/dur_strict | >20K ops/s | >5K ops/s | <2K ops/s |
+| uniform_paths/dur_strict | >20K ops/s | >5K ops/s | <2K ops/s |
+| depth/dur_strict/10 | >15K ops/s | >3K ops/s | <1K ops/s |
+| value_size/dur_strict/1024 | >20K ops/s | >5K ops/s | <2K ops/s |
+| value_size/dur_strict/65536 | >5K ops/s | >1K ops/s | <500 ops/s |
+
+#### json_contention (concurrency)
+
+| Scenario | Stretch | Acceptable | Concern |
+|----------|---------|------------|---------|
+| disjoint_docs (4 threads) | >80% scaling | >50% scaling | <30% scaling |
+| same_doc_different_paths (4 threads) | >40% scaling | >20% scaling | <10% scaling |
+
+#### json_doc_scaling/get_rotating
+
+| Document Count | Stretch | Acceptable | Concern |
+|----------------|---------|------------|---------|
+| 10K docs | <2µs | <5µs | >10µs |
+| 100K docs | <5µs | <10µs | >20µs |
+
 ---
 
 ## Running Benchmarks
@@ -217,16 +296,46 @@ cargo bench --bench m2_transactions -- "snapshot"
 cargo bench --bench m2_transactions -- "conflict"
 ```
 
+### M5 JSON Benchmarks
+
+```bash
+# All M5 benchmarks
+cargo bench --bench m5_performance
+
+# By category
+cargo bench --bench m5_performance -- "json_create"
+cargo bench --bench m5_performance -- "json_get"
+cargo bench --bench m5_performance -- "json_set"
+cargo bench --bench m5_performance -- "json_delete"
+cargo bench --bench m5_performance -- "json_destroy"
+cargo bench --bench m5_performance -- "json_exists"
+cargo bench --bench m5_performance -- "json_version"
+cargo bench --bench m5_performance -- "json_contention"
+cargo bench --bench m5_performance -- "json_doc_scaling"
+
+# By access pattern
+cargo bench --bench m5_performance -- "hot_doc"
+cargo bench --bench m5_performance -- "uniform"
+cargo bench --bench m5_performance -- "depth"
+
+# Using bench_runner.sh
+./scripts/bench_runner.sh --m5
+./scripts/bench_runner.sh --m5 --filter="json_get"
+./scripts/bench_runner.sh --m5 --all-modes
+```
+
 ### Comparison Mode
 
 ```bash
 # Save baseline
 cargo bench --bench m1_storage -- --save-baseline main
 cargo bench --bench m2_transactions -- --save-baseline main
+cargo bench --bench m5_performance -- --save-baseline main
 
 # Compare against baseline
 cargo bench --bench m1_storage -- --baseline main
 cargo bench --bench m2_transactions -- --baseline main
+cargo bench --bench m5_performance -- --baseline main
 ```
 
 ---

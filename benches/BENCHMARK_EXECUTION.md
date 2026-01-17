@@ -16,8 +16,11 @@ Do NOT optimize during this run - just measure and record.
 Before benchmarking, ensure the system is correct:
 
 ```bash
-# Run invariant tests
+# Run invariant tests for M1/M2
 cargo test --test m1_m2_comprehensive invariant -- --nocapture
+
+# Run M5 comprehensive tests
+cargo test --test m5_comprehensive -- --nocapture
 
 # If any invariant test fails, STOP. Do not benchmark a broken system.
 ```
@@ -133,16 +136,76 @@ Record results for:
 | conflict/disjoint_keys/4 | >80% scaling | >50% scaling | <30% scaling |
 | conflict/same_key/4 | >2K txns/s | >500 txns/s | <200 txns/s |
 
-## Phase 4: Save Baseline
+## Phase 4: M5 JSON Benchmarks
+
+Run M5 benchmarks (JSON primitive operations):
+
+```bash
+cargo bench --bench m5_performance -- --noplot
+```
+
+Record results for:
+
+### json_create (Document Creation)
+- [ ] `json_create/small/dur_strict` - Small document (100 bytes)
+- [ ] `json_create/medium/dur_strict` - Medium document (1KB)
+- [ ] `json_create/large/dur_strict` - Large document (10KB)
+- [ ] `json_create/depth_1/dur_strict` - Shallow nesting
+- [ ] `json_create/depth_10/dur_strict` - Deep nesting
+- [ ] `json_create/keys_100/dur_strict` - Wide object (100 keys)
+
+### json_get (Read Performance)
+- [ ] `json_get/hot_doc` - Single document repeated access
+- [ ] `json_get/uniform` - Random documents from keyspace
+- [ ] `json_get/working_set_100` - Hot subset of 100 documents
+- [ ] `json_get/miss` - Non-existent document
+- [ ] `json_get/depth/1` - Shallow path access
+- [ ] `json_get/depth/10` - Deep path access
+
+### json_set (Write Performance)
+- [ ] `json_set/hot_path/dur_strict` - Same path repeated updates
+- [ ] `json_set/uniform_docs/dur_strict` - Updates across documents
+- [ ] `json_set/uniform_paths/dur_strict` - Updates to different paths
+- [ ] `json_set/depth/dur_strict/1` - Shallow path write
+- [ ] `json_set/depth/dur_strict/10` - Deep path write
+- [ ] `json_set/value_size/dur_strict/1024` - 1KB value
+- [ ] `json_set/value_size/dur_strict/65536` - 64KB value
+
+### json_delete (Delete Performance)
+- [ ] `json_delete/existing_key/dur_strict` - Delete existing key
+- [ ] `json_delete/depth/dur_strict/5` - Delete at depth
+
+### json_contention (Concurrency)
+- [ ] `json_contention/disjoint_docs/4` - No conflicts, 4 threads
+- [ ] `json_contention/same_doc_different_paths/4` - Document-level conflicts
+
+### json_doc_scaling (Scale Tests)
+- [ ] `json_doc_scaling/get_rotating/10000` - 10K documents
+- [ ] `json_doc_scaling/get_rotating/100000` - 100K documents
+
+### M5 Expected Ranges
+
+| Benchmark | Stretch | Acceptable | Concern |
+|-----------|---------|------------|---------|
+| json_create/small | >50K ops/s | >10K ops/s | <5K ops/s |
+| json_get/hot_doc | >100K ops/s | >20K ops/s | <10K ops/s |
+| json_get/uniform | >50K ops/s | >10K ops/s | <5K ops/s |
+| json_set/hot_path | >20K ops/s | >5K ops/s | <2K ops/s |
+| json_set/depth/10 | >10K ops/s | >2K ops/s | <1K ops/s |
+| json_contention/disjoint_docs/4 | >80% scaling | >50% scaling | <30% scaling |
+| json_doc_scaling/get_rotating/100000 | <5µs | <10µs | >20µs |
+
+## Phase 5: Save Baseline
 
 If results are acceptable, save as baseline:
 
 ```bash
 cargo bench --bench m1_storage -- --save-baseline current
 cargo bench --bench m2_transactions -- --save-baseline current
+cargo bench --bench m5_performance -- --save-baseline current
 ```
 
-## Phase 5: Document Results
+## Phase 6: Document Results
 
 Create a benchmark report with this format:
 
@@ -178,6 +241,19 @@ Create a benchmark report with this format:
 | conflict/same_key/4 | X commits, Y aborts (Z% success) | +W% | OK/CONCERN |
 | ... | ... | ... | ... |
 
+## M5 JSON Results
+
+| Benchmark | Result | vs Acceptable | Status |
+|-----------|--------|---------------|--------|
+| json_create/small | X ops/s | +Y% | OK/CONCERN |
+| json_get/hot_doc | X ops/s | +Y% | OK/CONCERN |
+| json_get/uniform | X ops/s | +Y% | OK/CONCERN |
+| json_set/hot_path | X ops/s | +Y% | OK/CONCERN |
+| json_set/depth/10 | X ops/s | +Y% | OK/CONCERN |
+| json_contention/disjoint_docs/4 | X% scaling | +Y% | OK/CONCERN |
+| json_doc_scaling/get_rotating/100000 | Xµs | +Y% | OK/CONCERN |
+| ... | ... | ... | ... |
+
 ## Observations
 
 - [Any unexpected results]
@@ -191,12 +267,16 @@ Create a benchmark report with this format:
 - [ ] [Optimizations to consider later]
 ```
 
-## Phase 6: Re-verify Correctness
+## Phase 7: Re-verify Correctness
 
 After benchmarking, run invariant tests again:
 
 ```bash
+# M1/M2 invariants
 cargo test --test m1_m2_comprehensive invariant -- --nocapture
+
+# M5 comprehensive tests
+cargo test --test m5_comprehensive -- --nocapture
 ```
 
 If tests pass: benchmark results are valid.
@@ -261,8 +341,8 @@ Performance has regressed:
 ## Quick Commands
 
 ```bash
-# Full suite (both M1 and M2)
-cargo bench --bench m1_storage --bench m2_transactions -- --noplot
+# Full suite (M1, M2, and M5)
+cargo bench --bench m1_storage --bench m2_transactions --bench m5_performance -- --noplot
 
 # Just M1
 cargo bench --bench m1_storage -- --noplot
@@ -270,7 +350,10 @@ cargo bench --bench m1_storage -- --noplot
 # Just M2
 cargo bench --bench m2_transactions -- --noplot
 
-# By category
+# Just M5
+cargo bench --bench m5_performance -- --noplot
+
+# M1/M2 by category
 cargo bench --bench m1_storage -- "engine_get"
 cargo bench --bench m1_storage -- "engine_put"
 cargo bench --bench m1_storage -- "wal_recovery"
@@ -279,10 +362,20 @@ cargo bench --bench m2_transactions -- "txn_cas"
 cargo bench --bench m2_transactions -- "snapshot"
 cargo bench --bench m2_transactions -- "conflict"
 
+# M5 by category
+cargo bench --bench m5_performance -- "json_create"
+cargo bench --bench m5_performance -- "json_get"
+cargo bench --bench m5_performance -- "json_set"
+cargo bench --bench m5_performance -- "json_delete"
+cargo bench --bench m5_performance -- "json_contention"
+cargo bench --bench m5_performance -- "json_doc_scaling"
+
 # By access pattern
 cargo bench --bench m1_storage -- "hot_key"
 cargo bench --bench m1_storage -- "uniform"
 cargo bench --bench m1_storage -- "dur_strict"
+cargo bench --bench m5_performance -- "hot_doc"
+cargo bench --bench m5_performance -- "uniform"
 
 # The canonical agent workload benchmark
 cargo bench --bench m2_transactions -- "readN_write1"
@@ -290,12 +383,20 @@ cargo bench --bench m2_transactions -- "readN_write1"
 # Compare to baseline
 cargo bench --bench m1_storage -- --baseline current
 cargo bench --bench m2_transactions -- --baseline current
+cargo bench --bench m5_performance -- --baseline current
 
 # Run with more samples (slower, more accurate)
 cargo bench --bench m1_storage -- --sample-size 200
+cargo bench --bench m5_performance -- --sample-size 200
 
 # Run invariant tests
 cargo test --test m1_m2_comprehensive invariant
+cargo test --test m5_comprehensive
+
+# Using bench_runner.sh for M5
+./scripts/bench_runner.sh --m5
+./scripts/bench_runner.sh --m5 --filter="json_get"
+./scripts/bench_runner.sh --m5 --all-modes
 ```
 
 ---
