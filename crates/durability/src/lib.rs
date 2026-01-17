@@ -7,6 +7,12 @@
 //! - Durability modes: Strict, Batched (default), Async
 //! - Snapshot creation and loading
 //! - Recovery: Replay WAL from last snapshot
+//!
+//! ## M7 Durability Enhancements
+//!
+//! - WAL entry type registry with extensible ranges
+//! - Transaction framing with commit markers
+//! - Self-validating entries with CRC32
 
 #![warn(missing_docs)]
 #![warn(clippy::all)]
@@ -15,6 +21,7 @@
 pub mod encoding; // Story #18: Entry encoding/decoding with CRC
 pub mod recovery; // Story #23: WAL replay logic
 pub mod wal; // Story #17-20: WALEntry types, File operations, Durability modes
+pub mod wal_entry_types; // M7 Story #362: WAL Entry Type Registry
 
 // Stubs for future stories
 // pub mod snapshot;   // M4
@@ -26,3 +33,4 @@ pub use recovery::{
     ReplayStats, ValidationResult, ValidationWarning,
 };
 pub use wal::{DurabilityMode, WALEntry, WAL};
+pub use wal_entry_types::{PrimitiveKind, WalEntryType, WalEntryTypeError};
