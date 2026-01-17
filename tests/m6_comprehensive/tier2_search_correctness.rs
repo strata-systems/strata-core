@@ -90,8 +90,10 @@ fn test_tier2_search_respects_run_id() {
     run_index.create_run(&run2.to_string()).unwrap();
 
     // Add shared term to both runs
-    kv.put(&run1, "key1", Value::String("shared test term".into())).unwrap();
-    kv.put(&run2, "key2", Value::String("shared test term".into())).unwrap();
+    kv.put(&run1, "key1", Value::String("shared test term".into()))
+        .unwrap();
+    kv.put(&run2, "key2", Value::String("shared test term".into()))
+        .unwrap();
 
     // Search run1 only
     let req = SearchRequest::new(run1, "shared");
@@ -115,8 +117,10 @@ fn test_tier2_run_isolation() {
     run_index.create_run(&run2.to_string()).unwrap();
 
     // Add same key with different values to different runs
-    kv.put(&run1, "key", Value::String("run1 test value".into())).unwrap();
-    kv.put(&run2, "key", Value::String("run2 test value".into())).unwrap();
+    kv.put(&run1, "key", Value::String("run1 test value".into()))
+        .unwrap();
+    kv.put(&run2, "key", Value::String("run2 test value".into()))
+        .unwrap();
 
     // Search run1
     let req1 = SearchRequest::new(run1, "test");
@@ -141,7 +145,10 @@ fn test_tier2_nonexistent_run_empty() {
     let req = SearchRequest::new(run_id, "test");
     let response = hybrid.search(&req).unwrap();
 
-    assert!(response.hits.is_empty(), "Non-existent run should return empty results");
+    assert!(
+        response.hits.is_empty(),
+        "Non-existent run should return empty results"
+    );
 }
 
 // ============================================================================
@@ -158,8 +165,7 @@ fn test_tier2_primitive_filter_works() {
     let hybrid = db.hybrid();
 
     // Search only KV primitive
-    let req = SearchRequest::new(run_id, "test")
-        .with_primitive_filter(vec![PrimitiveKind::Kv]);
+    let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveKind::Kv]);
     let response = hybrid.search(&req).unwrap();
 
     // All results should be from KV only
@@ -176,11 +182,13 @@ fn test_tier2_empty_filter_no_results() {
     let hybrid = db.hybrid();
 
     // Search with empty filter
-    let req = SearchRequest::new(run_id, "test")
-        .with_primitive_filter(vec![]);
+    let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![]);
     let response = hybrid.search(&req).unwrap();
 
-    assert!(response.hits.is_empty(), "Empty filter should produce no results");
+    assert!(
+        response.hits.is_empty(),
+        "Empty filter should produce no results"
+    );
 }
 
 // ============================================================================

@@ -45,7 +45,8 @@ fn test_transaction_framing_atomicity() {
 
     assert!(
         count == 0 || count == 3,
-        "Partial transaction visible: {}/3", count
+        "Partial transaction visible: {}/3",
+        count
     );
 }
 
@@ -58,7 +59,8 @@ fn test_uncommitted_not_visible() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "committed_data", Value::String("safe".into())).unwrap();
+    kv.put(&run_id, "committed_data", Value::String("safe".into()))
+        .unwrap();
 
     // Crash and recover
     test_db.reopen();
@@ -82,7 +84,8 @@ fn test_transaction_order_preserved() {
                 &run_id,
                 &format!("tx{}_{}", tx, i),
                 Value::I64((tx * 5 + i) as i64),
-            ).unwrap();
+            )
+            .unwrap();
         }
     }
 
@@ -93,13 +96,19 @@ fn test_transaction_order_preserved() {
     let mut found_count = 0;
     for tx in 0..10 {
         let present: Vec<_> = (0..5)
-            .filter(|i| kv.get(&run_id, &format!("tx{}_{}", tx, i)).unwrap().is_some())
+            .filter(|i| {
+                kv.get(&run_id, &format!("tx{}_{}", tx, i))
+                    .unwrap()
+                    .is_some()
+            })
             .collect();
 
         // Transaction should be atomic
         assert!(
             present.is_empty() || present.len() == 5,
-            "Transaction {} is partial: {:?}", tx, present
+            "Transaction {} is partial: {:?}",
+            tx,
+            present
         );
         found_count += present.len();
     }
@@ -135,7 +144,8 @@ fn test_large_transaction() {
 
     // Large batch
     for i in 0..500 {
-        kv.put(&run_id, &format!("large_{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("large_{}", i), Value::I64(i))
+            .unwrap();
     }
 
     test_db.reopen();

@@ -35,28 +35,28 @@ mod test_utils;
 // Tier 1: Recovery Invariants (HIGHEST PRIORITY)
 mod tier1_recovery_determinism;
 mod tier1_recovery_idempotent;
-mod tier1_recovery_prefix;
-mod tier1_recovery_no_invent;
-mod tier1_recovery_no_drop_committed;
 mod tier1_recovery_may_drop_uncommitted;
+mod tier1_recovery_no_drop_committed;
+mod tier1_recovery_no_invent;
+mod tier1_recovery_prefix;
 
 // Tier 2: Replay Invariants
+mod tier2_replay_derived_view;
+mod tier2_replay_determinism;
+mod tier2_replay_ephemeral;
+mod tier2_replay_idempotent;
 mod tier2_replay_pure_function;
 mod tier2_replay_side_effect;
-mod tier2_replay_derived_view;
-mod tier2_replay_ephemeral;
-mod tier2_replay_determinism;
-mod tier2_replay_idempotent;
 
 // Tier 3: Snapshot System
-mod tier3_snapshot_format;
-mod tier3_snapshot_crc;
 mod tier3_snapshot_atomic_write;
+mod tier3_snapshot_crc;
 mod tier3_snapshot_discovery;
+mod tier3_snapshot_format;
 
 // Tier 4: WAL System
-mod tier4_wal_entry_format;
 mod tier4_wal_crc_validation;
+mod tier4_wal_entry_format;
 mod tier4_wal_transaction_framing;
 
 // Tier 5: Crash Scenarios

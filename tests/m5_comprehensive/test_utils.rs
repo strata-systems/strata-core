@@ -384,4 +384,3 @@ pub fn collect_paths(value: &JsonValue) -> Vec<JsonPath> {
     collect(value.as_inner(), JsonPath::root(), &mut paths);
     paths
 }
-

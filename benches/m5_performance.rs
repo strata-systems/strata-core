@@ -694,8 +694,7 @@ fn json_contention_benchmarks(c: &mut Criterion) {
                 let doc_ids: Vec<JsonDocId> = (0..threads).map(|_| JsonDocId::new()).collect();
                 for doc_id in &doc_ids {
                     let json = JsonStore::new(db.clone());
-                    json.create(&run_id, doc_id, JsonValue::from(0i64))
-                        .unwrap();
+                    json.create(&run_id, doc_id, JsonValue::from(0i64)).unwrap();
                 }
 
                 b.iter(|| {
@@ -710,8 +709,13 @@ fn json_contention_benchmarks(c: &mut Criterion) {
                             std::thread::spawn(move || {
                                 let json = JsonStore::new(db);
                                 for j in 0..100 {
-                                    json.set(&run_id, &doc_id, &JsonPath::root(), JsonValue::from(j))
-                                        .unwrap();
+                                    json.set(
+                                        &run_id,
+                                        &doc_id,
+                                        &JsonPath::root(),
+                                        JsonValue::from(j),
+                                    )
+                                    .unwrap();
                                     ops.fetch_add(1, Ordering::Relaxed);
                                 }
                             })

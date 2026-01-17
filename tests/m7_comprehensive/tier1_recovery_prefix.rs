@@ -22,8 +22,12 @@ fn test_r3_committed_prefix_basic() {
     // Write several keys (each write is auto-committed in this model)
     let kv = test_db.kv();
     for i in 0..10 {
-        kv.put(&run_id, &format!("key_{}", i), Value::String(format!("value_{}", i)))
-            .unwrap();
+        kv.put(
+            &run_id,
+            &format!("key_{}", i),
+            Value::String(format!("value_{}", i)),
+        )
+        .unwrap();
     }
 
     // Simulate crash and recover
@@ -35,7 +39,8 @@ fn test_r3_committed_prefix_basic() {
         let value = kv.get(&run_id, &format!("key_{}", i)).unwrap();
         assert!(
             value.is_some(),
-            "R3 VIOLATED: Committed key_{} missing after recovery", i
+            "R3 VIOLATED: Committed key_{} missing after recovery",
+            i
         );
     }
 }
@@ -56,7 +61,8 @@ fn test_r3_all_or_nothing_logical_operation() {
     ];
 
     for (key, value) in &keys_values {
-        kv.put(&run_id, key, Value::String((*value).to_string())).unwrap();
+        kv.put(&run_id, key, Value::String((*value).to_string()))
+            .unwrap();
     }
 
     // Simulate crash
@@ -72,7 +78,9 @@ fn test_r3_all_or_nothing_logical_operation() {
     let count = existence.iter().filter(|&&x| x).count();
     assert!(
         count == 0 || count == keys_values.len(),
-        "R3 VIOLATED: Partial state visible ({}/{} keys)", count, keys_values.len()
+        "R3 VIOLATED: Partial state visible ({}/{} keys)",
+        count,
+        keys_values.len()
     );
 }
 
@@ -85,16 +93,28 @@ fn test_r3_sequential_commits_preserved() {
     let kv = test_db.kv();
 
     // Each put is a separate "transaction"
-    kv.put(&run_id, "tx1_key", Value::String("tx1_value".into())).unwrap();
-    kv.put(&run_id, "tx2_key", Value::String("tx2_value".into())).unwrap();
-    kv.put(&run_id, "tx3_key", Value::String("tx3_value".into())).unwrap();
+    kv.put(&run_id, "tx1_key", Value::String("tx1_value".into()))
+        .unwrap();
+    kv.put(&run_id, "tx2_key", Value::String("tx2_value".into()))
+        .unwrap();
+    kv.put(&run_id, "tx3_key", Value::String("tx3_value".into()))
+        .unwrap();
 
     test_db.reopen();
 
     let kv = test_db.kv();
-    assert!(kv.get(&run_id, "tx1_key").unwrap().is_some(), "R3: tx1 lost");
-    assert!(kv.get(&run_id, "tx2_key").unwrap().is_some(), "R3: tx2 lost");
-    assert!(kv.get(&run_id, "tx3_key").unwrap().is_some(), "R3: tx3 lost");
+    assert!(
+        kv.get(&run_id, "tx1_key").unwrap().is_some(),
+        "R3: tx1 lost"
+    );
+    assert!(
+        kv.get(&run_id, "tx2_key").unwrap().is_some(),
+        "R3: tx2 lost"
+    );
+    assert!(
+        kv.get(&run_id, "tx3_key").unwrap().is_some(),
+        "R3: tx3 lost"
+    );
 }
 
 /// R3: Order of commits preserved
@@ -129,7 +149,8 @@ fn test_r3_prefix_consistent_interleaved() {
     // Interleaved writes to different keys
     for i in 0..10 {
         kv.put(&run_id, &format!("a_{}", i), Value::I64(i)).unwrap();
-        kv.put(&run_id, &format!("b_{}", i), Value::I64(i * 10)).unwrap();
+        kv.put(&run_id, &format!("b_{}", i), Value::I64(i * 10))
+            .unwrap();
     }
 
     test_db.reopen();
@@ -140,11 +161,13 @@ fn test_r3_prefix_consistent_interleaved() {
     for i in 0..10 {
         assert!(
             kv.get(&run_id, &format!("a_{}", i)).unwrap().is_some(),
-            "R3: a_{} missing", i
+            "R3: a_{} missing",
+            i
         );
         assert!(
             kv.get(&run_id, &format!("b_{}", i)).unwrap().is_some(),
-            "R3: b_{} missing", i
+            "R3: b_{} missing",
+            i
         );
     }
 }
@@ -158,9 +181,11 @@ fn test_r3_delete_then_put_preserved() {
     let kv = test_db.kv();
 
     // Create, delete, recreate
-    kv.put(&run_id, "key", Value::String("original".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("original".into()))
+        .unwrap();
     kv.delete(&run_id, "key").unwrap();
-    kv.put(&run_id, "key", Value::String("recreated".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("recreated".into()))
+        .unwrap();
 
     test_db.reopen();
 
@@ -183,7 +208,8 @@ fn test_r3_no_gaps_in_sequence() {
 
     // Sequential writes
     for i in 0..100 {
-        kv.put(&run_id, &format!("seq_{:03}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("seq_{:03}", i), Value::I64(i))
+            .unwrap();
     }
 
     test_db.reopen();
@@ -204,7 +230,9 @@ fn test_r3_no_gaps_in_sequence() {
     for i in 0..=last_found {
         assert!(
             kv.get(&run_id, &format!("seq_{:03}", i)).unwrap().is_some(),
-            "R3 VIOLATED: Gap at seq_{:03} (last_found={})", i, last_found
+            "R3 VIOLATED: Gap at seq_{:03} (last_found={})",
+            i,
+            last_found
         );
     }
 }
@@ -220,8 +248,17 @@ fn test_r3_prefix_after_many_operations() {
     // Many operations
     for i in 0..500 {
         match i % 3 {
-            0 => { kv.put(&run_id, &format!("k{}", i), Value::I64(i)).unwrap(); }
-            1 => { kv.put(&run_id, &format!("k{}", i), Value::String(format!("v{}", i))).unwrap(); }
+            0 => {
+                kv.put(&run_id, &format!("k{}", i), Value::I64(i)).unwrap();
+            }
+            1 => {
+                kv.put(
+                    &run_id,
+                    &format!("k{}", i),
+                    Value::String(format!("v{}", i)),
+                )
+                .unwrap();
+            }
             2 => {
                 if i > 0 {
                     kv.delete(&run_id, &format!("k{}", i - 1)).ok();

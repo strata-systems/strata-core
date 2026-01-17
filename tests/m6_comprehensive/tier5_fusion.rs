@@ -180,12 +180,36 @@ fn test_tier5_rrf_multi_list_boost() {
     let key_only2 = make_kv_key("only2");
 
     let list1 = vec![
-        make_hit(DocRef::Kv { key: key_shared.clone() }, 0.9, 1),
-        make_hit(DocRef::Kv { key: key_only1.clone() }, 0.8, 2),
+        make_hit(
+            DocRef::Kv {
+                key: key_shared.clone(),
+            },
+            0.9,
+            1,
+        ),
+        make_hit(
+            DocRef::Kv {
+                key: key_only1.clone(),
+            },
+            0.8,
+            2,
+        ),
     ];
     let list2 = vec![
-        make_hit(DocRef::Kv { key: key_only2.clone() }, 0.9, 1),
-        make_hit(DocRef::Kv { key: key_shared.clone() }, 0.7, 2),
+        make_hit(
+            DocRef::Kv {
+                key: key_only2.clone(),
+            },
+            0.9,
+            1,
+        ),
+        make_hit(
+            DocRef::Kv {
+                key: key_shared.clone(),
+            },
+            0.7,
+            2,
+        ),
     ];
 
     let results = vec![
@@ -196,7 +220,12 @@ fn test_tier5_rrf_multi_list_boost() {
     let result = fuser.fuse(results, 10);
 
     // Shared doc should be first (appears in both lists)
-    assert_eq!(result.hits[0].doc_ref, DocRef::Kv { key: key_shared.clone() });
+    assert_eq!(
+        result.hits[0].doc_ref,
+        DocRef::Kv {
+            key: key_shared.clone()
+        }
+    );
 }
 
 /// RRFFuser respects k limit

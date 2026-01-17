@@ -38,8 +38,8 @@ pub use durability::{
 };
 pub use instrumentation::PerfTrace;
 pub use replay::{
-    diff_views, DiffEntry, DiffPrimitiveKind, RunIndex, ReadOnlyView, ReplayError, RunDiff,
-    RunError,
+    diff_views, DiffEntry, DiffPrimitiveKind, ReadOnlyView, ReplayError, RunDiff, RunError,
+    RunIndex,
 };
 pub use transaction::{TransactionPool, MAX_POOL_SIZE};
 

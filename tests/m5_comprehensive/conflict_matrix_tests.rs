@@ -24,7 +24,10 @@ fn test_conflict_matrix_siblings_no_conflict() {
     let patch_a = JsonPatch::set("a.b", JsonValue::from(1i64));
     let patch_b = JsonPatch::set("a.c", JsonValue::from(2i64));
 
-    assert!(!patch_a.conflicts_with(&patch_b), "Sibling patches should NOT conflict");
+    assert!(
+        !patch_a.conflicts_with(&patch_b),
+        "Sibling patches should NOT conflict"
+    );
 }
 
 /// Row 2: $.a.b vs $.a.b → YES conflict (same path)
@@ -38,7 +41,10 @@ fn test_conflict_matrix_same_path_conflict() {
     let patch_a = JsonPatch::set("a.b", JsonValue::from(1i64));
     let patch_b = JsonPatch::set("a.b", JsonValue::from(2i64));
 
-    assert!(patch_a.conflicts_with(&patch_b), "Same path patches should conflict");
+    assert!(
+        patch_a.conflicts_with(&patch_b),
+        "Same path patches should conflict"
+    );
 }
 
 /// Row 3: $.a vs $.a.b → YES conflict (A is ancestor of B)
@@ -47,8 +53,14 @@ fn test_conflict_matrix_ancestor_conflict() {
     let ancestor = path("a");
     let descendant = path("a.b");
 
-    assert!(ancestor.overlaps(&descendant), "Ancestor should conflict with descendant");
-    assert!(ancestor.is_ancestor_of(&descendant), "$.a is ancestor of $.a.b");
+    assert!(
+        ancestor.overlaps(&descendant),
+        "Ancestor should conflict with descendant"
+    );
+    assert!(
+        ancestor.is_ancestor_of(&descendant),
+        "$.a is ancestor of $.a.b"
+    );
 
     let patch_ancestor = JsonPatch::set("a", JsonValue::object());
     let patch_descendant = JsonPatch::set("a.b", JsonValue::from(1i64));
@@ -62,8 +74,14 @@ fn test_conflict_matrix_descendant_conflict() {
     let descendant = path("a.b");
     let ancestor = path("a");
 
-    assert!(descendant.overlaps(&ancestor), "Descendant should conflict with ancestor");
-    assert!(descendant.is_descendant_of(&ancestor), "$.a.b is descendant of $.a");
+    assert!(
+        descendant.overlaps(&ancestor),
+        "Descendant should conflict with ancestor"
+    );
+    assert!(
+        descendant.is_descendant_of(&ancestor),
+        "$.a.b is descendant of $.a"
+    );
 
     let patch_descendant = JsonPatch::set("a.b", JsonValue::from(1i64));
     let patch_ancestor = JsonPatch::set("a", JsonValue::object());
@@ -77,7 +95,10 @@ fn test_conflict_matrix_different_subtrees_no_conflict() {
     let path_x = path("x");
     let path_y = path("y");
 
-    assert!(!path_x.overlaps(&path_y), "Different subtrees should NOT conflict");
+    assert!(
+        !path_x.overlaps(&path_y),
+        "Different subtrees should NOT conflict"
+    );
 
     let patch_x = JsonPatch::set("x", JsonValue::from(1i64));
     let patch_y = JsonPatch::set("y", JsonValue::from(2i64));
@@ -91,8 +112,14 @@ fn test_conflict_matrix_root_vs_any_conflict() {
     let root = JsonPath::root();
     let any_path = path("deeply.nested.path[0].value");
 
-    assert!(root.overlaps(&any_path), "Root should conflict with any path");
-    assert!(any_path.overlaps(&root), "Any path should conflict with root");
+    assert!(
+        root.overlaps(&any_path),
+        "Root should conflict with any path"
+    );
+    assert!(
+        any_path.overlaps(&root),
+        "Any path should conflict with root"
+    );
 
     let patch_root = JsonPatch::set_at(JsonPath::root(), JsonValue::object());
     let patch_any = JsonPatch::set("deeply.nested.path[0].value", JsonValue::from(1i64));
@@ -116,8 +143,10 @@ fn test_array_mutation_conflicts_with_element_access() {
     let array_path = path("items");
     let element_path = path("items[1].price");
 
-    assert!(array_path.overlaps(&element_path),
-            "Array path should conflict with element access");
+    assert!(
+        array_path.overlaps(&element_path),
+        "Array path should conflict with element access"
+    );
 }
 
 /// Different array indices are siblings (no conflict).
@@ -127,7 +156,10 @@ fn test_array_siblings_no_conflict() {
     let idx_1 = path("items[1]");
     let idx_2 = path("items[2]");
 
-    assert!(!idx_0.overlaps(&idx_1), "Different indices should NOT conflict");
+    assert!(
+        !idx_0.overlaps(&idx_1),
+        "Different indices should NOT conflict"
+    );
     assert!(!idx_1.overlaps(&idx_2));
     assert!(!idx_0.overlaps(&idx_2));
 }
@@ -138,7 +170,10 @@ fn test_array_element_descendant_conflict() {
     let element = path("items[0]");
     let child = path("items[0].name");
 
-    assert!(element.overlaps(&child), "Element should conflict with its children");
+    assert!(
+        element.overlaps(&child),
+        "Element should conflict with its children"
+    );
 }
 
 /// Different array subtrees don't conflict.
@@ -147,7 +182,10 @@ fn test_different_array_subtrees_no_conflict() {
     let users_0 = path("users[0].name");
     let items_0 = path("items[0].name");
 
-    assert!(!users_0.overlaps(&items_0), "Different array subtrees should NOT conflict");
+    assert!(
+        !users_0.overlaps(&items_0),
+        "Different array subtrees should NOT conflict"
+    );
 }
 
 // =============================================================================
@@ -160,7 +198,10 @@ fn test_deep_ancestor_descendant_conflict() {
     let shallow = path("a");
     let deep = path("a.b.c.d.e.f.g");
 
-    assert!(shallow.overlaps(&deep), "Shallow ancestor conflicts with deep descendant");
+    assert!(
+        shallow.overlaps(&deep),
+        "Shallow ancestor conflicts with deep descendant"
+    );
     assert!(shallow.is_strict_ancestor_of(&deep));
 }
 
@@ -179,7 +220,10 @@ fn test_partial_prefix_divergence() {
     let path1 = path("users.alice.profile");
     let path2 = path("users.bob.profile");
 
-    assert!(!path1.overlaps(&path2), "Paths diverging at same depth should NOT conflict");
+    assert!(
+        !path1.overlaps(&path2),
+        "Paths diverging at same depth should NOT conflict"
+    );
 }
 
 // =============================================================================
@@ -256,31 +300,112 @@ fn test_comprehensive_conflict_matrix() {
 
     let cases = vec![
         // Same path
-        Case { path_a: "x", path_b: "x", conflicts: true, description: "same single key" },
-        Case { path_a: "a.b.c", path_b: "a.b.c", conflicts: true, description: "same nested path" },
-        Case { path_a: "arr[0]", path_b: "arr[0]", conflicts: true, description: "same array index" },
-
+        Case {
+            path_a: "x",
+            path_b: "x",
+            conflicts: true,
+            description: "same single key",
+        },
+        Case {
+            path_a: "a.b.c",
+            path_b: "a.b.c",
+            conflicts: true,
+            description: "same nested path",
+        },
+        Case {
+            path_a: "arr[0]",
+            path_b: "arr[0]",
+            conflicts: true,
+            description: "same array index",
+        },
         // Ancestor/descendant
-        Case { path_a: "a", path_b: "a.b", conflicts: true, description: "direct ancestor" },
-        Case { path_a: "a.b", path_b: "a", conflicts: true, description: "direct descendant" },
-        Case { path_a: "a", path_b: "a.b.c.d", conflicts: true, description: "deep descendant" },
-        Case { path_a: "arr", path_b: "arr[0]", conflicts: true, description: "array ancestor" },
-        Case { path_a: "arr[0]", path_b: "arr[0].x", conflicts: true, description: "element ancestor" },
-
+        Case {
+            path_a: "a",
+            path_b: "a.b",
+            conflicts: true,
+            description: "direct ancestor",
+        },
+        Case {
+            path_a: "a.b",
+            path_b: "a",
+            conflicts: true,
+            description: "direct descendant",
+        },
+        Case {
+            path_a: "a",
+            path_b: "a.b.c.d",
+            conflicts: true,
+            description: "deep descendant",
+        },
+        Case {
+            path_a: "arr",
+            path_b: "arr[0]",
+            conflicts: true,
+            description: "array ancestor",
+        },
+        Case {
+            path_a: "arr[0]",
+            path_b: "arr[0].x",
+            conflicts: true,
+            description: "element ancestor",
+        },
         // Siblings (no conflict)
-        Case { path_a: "a", path_b: "b", conflicts: false, description: "root siblings" },
-        Case { path_a: "x.a", path_b: "x.b", conflicts: false, description: "nested siblings" },
-        Case { path_a: "arr[0]", path_b: "arr[1]", conflicts: false, description: "index siblings" },
-        Case { path_a: "x.a.deep", path_b: "x.b.deep", conflicts: false, description: "deep siblings" },
-
+        Case {
+            path_a: "a",
+            path_b: "b",
+            conflicts: false,
+            description: "root siblings",
+        },
+        Case {
+            path_a: "x.a",
+            path_b: "x.b",
+            conflicts: false,
+            description: "nested siblings",
+        },
+        Case {
+            path_a: "arr[0]",
+            path_b: "arr[1]",
+            conflicts: false,
+            description: "index siblings",
+        },
+        Case {
+            path_a: "x.a.deep",
+            path_b: "x.b.deep",
+            conflicts: false,
+            description: "deep siblings",
+        },
         // Different subtrees (no conflict)
-        Case { path_a: "users.alice", path_b: "config.theme", conflicts: false, description: "different roots" },
-        Case { path_a: "a[0].x", path_b: "b[0].x", conflicts: false, description: "different array roots" },
-
+        Case {
+            path_a: "users.alice",
+            path_b: "config.theme",
+            conflicts: false,
+            description: "different roots",
+        },
+        Case {
+            path_a: "a[0].x",
+            path_b: "b[0].x",
+            conflicts: false,
+            description: "different array roots",
+        },
         // Complex mixed
-        Case { path_a: "data[0].items[1]", path_b: "data[0].items[1].value", conflicts: true, description: "nested array ancestor" },
-        Case { path_a: "data[0].items[1]", path_b: "data[0].items[2]", conflicts: false, description: "nested array siblings" },
-        Case { path_a: "data[0]", path_b: "data[0].items[1].value", conflicts: true, description: "array element deep descendant" },
+        Case {
+            path_a: "data[0].items[1]",
+            path_b: "data[0].items[1].value",
+            conflicts: true,
+            description: "nested array ancestor",
+        },
+        Case {
+            path_a: "data[0].items[1]",
+            path_b: "data[0].items[2]",
+            conflicts: false,
+            description: "nested array siblings",
+        },
+        Case {
+            path_a: "data[0]",
+            path_b: "data[0].items[1].value",
+            conflicts: true,
+            description: "array element deep descendant",
+        },
     ];
 
     for case in cases {
@@ -324,22 +449,18 @@ fn test_set_set_conflicts() {
 #[test]
 fn test_set_delete_conflicts() {
     // Overlapping
-    assert!(JsonPatch::set("a.b", JsonValue::from(1i64))
-        .conflicts_with(&JsonPatch::delete("a")));
+    assert!(JsonPatch::set("a.b", JsonValue::from(1i64)).conflicts_with(&JsonPatch::delete("a")));
 
     // Non-overlapping
-    assert!(!JsonPatch::set("a", JsonValue::from(1i64))
-        .conflicts_with(&JsonPatch::delete("b")));
+    assert!(!JsonPatch::set("a", JsonValue::from(1i64)).conflicts_with(&JsonPatch::delete("b")));
 }
 
 /// Delete-Delete conflicts.
 #[test]
 fn test_delete_delete_conflicts() {
     // Overlapping
-    assert!(JsonPatch::delete("a")
-        .conflicts_with(&JsonPatch::delete("a.b")));
+    assert!(JsonPatch::delete("a").conflicts_with(&JsonPatch::delete("a.b")));
 
     // Non-overlapping
-    assert!(!JsonPatch::delete("a")
-        .conflicts_with(&JsonPatch::delete("b")));
+    assert!(!JsonPatch::delete("a").conflicts_with(&JsonPatch::delete("b")));
 }

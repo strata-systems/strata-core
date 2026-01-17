@@ -128,10 +128,9 @@ fn test_tier4_bm25_higher_tf_higher_score() {
 fn test_tier4_idf_rare_terms_higher() {
     let ctx = ScorerContext {
         total_docs: 100,
-        doc_freqs: [
-            ("common".into(), 80),
-            ("rare".into(), 5),
-        ].into_iter().collect(),
+        doc_freqs: [("common".into(), 80), ("rare".into(), 5)]
+            .into_iter()
+            .collect(),
         avg_doc_len: 10.0,
         now_micros: 0,
         extensions: HashMap::new(),
@@ -157,7 +156,10 @@ fn test_tier4_idf_unknown_term() {
     let idf_unknown = ctx.idf("unknown");
     let idf_known = ctx.idf("known");
 
-    assert!(idf_unknown > idf_known, "Unknown terms should have higher IDF");
+    assert!(
+        idf_unknown > idf_known,
+        "Unknown terms should have higher IDF"
+    );
 }
 
 // ============================================================================
@@ -217,8 +219,8 @@ fn test_tier4_title_match_boost() {
     let scorer = BM25LiteScorer::default();
     // Both have same body content containing "test"
     let doc_no_title = SearchDoc::new("test document body".into());
-    let doc_with_title = SearchDoc::new("test document body".into())
-        .with_title("test title".into());
+    let doc_with_title =
+        SearchDoc::new("test document body".into()).with_title("test title".into());
 
     let ctx = ScorerContext {
         total_docs: 100,
@@ -235,6 +237,7 @@ fn test_tier4_title_match_boost() {
     assert!(
         score_with_title > score_no_title,
         "Title match should provide boost: with_title={} > no_title={}",
-        score_with_title, score_no_title
+        score_with_title,
+        score_no_title
     );
 }

@@ -16,7 +16,8 @@ fn test_no_temp_files_after_snapshot() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("value".into()))
+        .unwrap();
 
     let snapshot_dir = test_db.snapshot_dir();
 
@@ -43,7 +44,8 @@ fn test_partial_snapshot_ignored() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "real_key", Value::String("real_value".into())).unwrap();
+    kv.put(&run_id, "real_key", Value::String("real_value".into()))
+        .unwrap();
 
     let snapshot_dir = test_db.snapshot_dir();
     fs::create_dir_all(&snapshot_dir).ok();
@@ -71,7 +73,8 @@ fn test_healthy_after_snapshot_crash() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("value".into()))
+        .unwrap();
 
     // Simulate partial snapshot (crash during write)
     let snapshot_dir = test_db.snapshot_dir();

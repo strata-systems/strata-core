@@ -43,7 +43,16 @@ fn lcg_next(state: &mut u64) -> u64 {
 
 /// Pre-generate search queries
 fn pregenerate_queries(count: usize) -> Vec<String> {
-    let words = ["searchable", "content", "data", "test", "benchmark", "value", "important", "quick"];
+    let words = [
+        "searchable",
+        "content",
+        "data",
+        "test",
+        "benchmark",
+        "value",
+        "important",
+        "quick",
+    ];
     (0..count)
         .map(|i| words[i % words.len()].to_string())
         .collect()
@@ -69,7 +78,13 @@ fn populate_searchable_data(db: &Arc<Database>, run_id: &RunId, count: usize) {
 fn populate_events(db: &Arc<Database>, run_id: &RunId, count: usize) {
     let events = EventLog::new(db.clone());
     for i in 0..count {
-        let event_type = if i % 3 == 0 { "error" } else if i % 2 == 0 { "warning" } else { "info" };
+        let event_type = if i % 3 == 0 {
+            "error"
+        } else if i % 2 == 0 {
+            "warning"
+        } else {
+            "info"
+        };
         let payload = Value::String(format!("Event {} with searchable content", i));
         events.append(run_id, event_type, payload).unwrap();
     }

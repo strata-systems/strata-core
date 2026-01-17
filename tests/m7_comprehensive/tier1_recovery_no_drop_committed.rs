@@ -20,7 +20,12 @@ fn test_r5_committed_survives_crash_basic() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "committed_key", Value::String("committed_value".into())).unwrap();
+    kv.put(
+        &run_id,
+        "committed_key",
+        Value::String("committed_value".into()),
+    )
+    .unwrap();
 
     // Simulate crash
     test_db.reopen();
@@ -47,7 +52,12 @@ fn test_r5_committed_survives_multiple_crashes() {
 
     let kv = test_db.kv();
     for i in 0..10 {
-        kv.put(&run_id, &format!("key_{}", i), Value::String(format!("value_{}", i))).unwrap();
+        kv.put(
+            &run_id,
+            &format!("key_{}", i),
+            Value::String(format!("value_{}", i)),
+        )
+        .unwrap();
     }
 
     // Simulate 5 consecutive crashes
@@ -60,7 +70,9 @@ fn test_r5_committed_survives_multiple_crashes() {
             let value = kv.get(&run_id, &format!("key_{}", i)).unwrap();
             assert!(
                 value.is_some(),
-                "R5 VIOLATED: Committed key_{} disappeared after crash {}", i, crash_num
+                "R5 VIOLATED: Committed key_{} disappeared after crash {}",
+                i,
+                crash_num
             );
         }
     }
@@ -80,7 +92,8 @@ fn test_r5_large_committed_survives() {
             &run_id,
             &format!("key_{:04}", i),
             Value::String(format!("value_{:04}", i)),
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     test_db.reopen();
@@ -96,7 +109,8 @@ fn test_r5_large_committed_survives() {
 
     assert_eq!(
         missing, 0,
-        "R5 VIOLATED: {} committed entries disappeared", missing
+        "R5 VIOLATED: {} committed entries disappeared",
+        missing
     );
 }
 
@@ -109,7 +123,8 @@ fn test_r5_committed_value_integrity() {
     let kv = test_db.kv();
 
     // Write various value types
-    kv.put(&run_id, "str", Value::String("test_string".into())).unwrap();
+    kv.put(&run_id, "str", Value::String("test_string".into()))
+        .unwrap();
     kv.put(&run_id, "int", Value::I64(42)).unwrap();
     kv.put(&run_id, "float", Value::F64(3.14)).unwrap();
     kv.put(&run_id, "bool", Value::Bool(true)).unwrap();
@@ -156,7 +171,8 @@ fn test_r5_all_transactions_survive() {
                 &run_id,
                 &format!("batch_{}_key_{}", batch, i),
                 Value::I64((batch * 5 + i) as i64),
-            ).unwrap();
+            )
+            .unwrap();
         }
     }
 
@@ -168,10 +184,7 @@ fn test_r5_all_transactions_survive() {
         for i in 0..5 {
             let key = format!("batch_{}_key_{}", batch, i);
             let value = kv.get(&run_id, &key).unwrap();
-            assert!(
-                value.is_some(),
-                "R5 VIOLATED: {} disappeared", key
-            );
+            assert!(value.is_some(), "R5 VIOLATED: {} disappeared", key);
         }
     }
 }
@@ -185,11 +198,13 @@ fn test_r5_earlier_commits_survive_later_operations() {
     let kv = test_db.kv();
 
     // First batch - committed
-    kv.put(&run_id, "early_key", Value::String("early_value".into())).unwrap();
+    kv.put(&run_id, "early_key", Value::String("early_value".into()))
+        .unwrap();
 
     // Many more operations
     for i in 0..100 {
-        kv.put(&run_id, &format!("later_{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("later_{}", i), Value::I64(i))
+            .unwrap();
     }
 
     test_db.reopen();
@@ -213,9 +228,11 @@ fn test_r5_committed_deletes_preserved() {
     let kv = test_db.kv();
 
     // Create then delete
-    kv.put(&run_id, "to_delete", Value::String("original".into())).unwrap();
+    kv.put(&run_id, "to_delete", Value::String("original".into()))
+        .unwrap();
     kv.delete(&run_id, "to_delete").unwrap();
-    kv.put(&run_id, "kept", Value::String("kept_value".into())).unwrap();
+    kv.put(&run_id, "kept", Value::String("kept_value".into()))
+        .unwrap();
 
     test_db.reopen();
 
@@ -268,7 +285,8 @@ fn test_r5_survives_stress_cycles() {
 
     // Initial committed data
     for i in 0..50 {
-        kv.put(&run_id, &format!("stable_{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("stable_{}", i), Value::I64(i))
+            .unwrap();
     }
 
     // Stress: add more data, crash, repeat
@@ -279,7 +297,8 @@ fn test_r5_survives_stress_cycles() {
                 &run_id,
                 &format!("cycle_{}_{}", cycle, i),
                 Value::I64((cycle * 20 + i) as i64),
-            ).unwrap();
+            )
+            .unwrap();
         }
 
         test_db.reopen();
@@ -289,7 +308,9 @@ fn test_r5_survives_stress_cycles() {
         for i in 0..50 {
             assert!(
                 kv.get(&run_id, &format!("stable_{}", i)).unwrap().is_some(),
-                "R5 VIOLATED: stable_{} lost at cycle {}", i, cycle
+                "R5 VIOLATED: stable_{} lost at cycle {}",
+                i,
+                cycle
             );
         }
     }

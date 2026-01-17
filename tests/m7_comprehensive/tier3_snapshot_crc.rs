@@ -16,7 +16,8 @@ fn test_snapshot_corruption_detection_concept() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("value".into()))
+        .unwrap();
 
     let snapshot_dir = test_db.snapshot_dir();
     let snapshots = list_snapshots(&snapshot_dir);
@@ -37,8 +38,8 @@ fn test_snapshot_corruption_detection_concept() {
 #[test]
 fn test_crc_catches_single_bit_error() {
     // Test that CRC32 algorithm catches single-bit errors
-    use std::hash::{Hash, Hasher};
     use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
 
     let data1 = vec![0u8; 100];
     let mut data2 = data1.clone();
@@ -58,8 +59,8 @@ fn test_crc_catches_single_bit_error() {
 /// Valid data produces consistent CRC
 #[test]
 fn test_crc_consistency() {
-    use std::hash::{Hash, Hasher};
     use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
 
     let data = b"test data for crc validation";
 
@@ -86,7 +87,12 @@ fn test_snapshot_data_integrity() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "integrity_key", Value::String("integrity_value".into())).unwrap();
+    kv.put(
+        &run_id,
+        "integrity_key",
+        Value::String("integrity_value".into()),
+    )
+    .unwrap();
 
     let state_before = CapturedState::capture(&test_db.db, &run_id);
 

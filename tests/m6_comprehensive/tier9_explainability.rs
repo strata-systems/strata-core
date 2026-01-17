@@ -136,8 +136,14 @@ fn test_tier9_stats_per_primitive() {
     stats.add_primitive_candidates(PrimitiveKind::Kv, 100);
     stats.add_primitive_candidates(PrimitiveKind::Json, 50);
 
-    assert_eq!(stats.candidates_by_primitive.get(&PrimitiveKind::Kv), Some(&100));
-    assert_eq!(stats.candidates_by_primitive.get(&PrimitiveKind::Json), Some(&50));
+    assert_eq!(
+        stats.candidates_by_primitive.get(&PrimitiveKind::Kv),
+        Some(&100)
+    );
+    assert_eq!(
+        stats.candidates_by_primitive.get(&PrimitiveKind::Json),
+        Some(&50)
+    );
     assert_eq!(stats.candidates_considered, 150);
 }
 

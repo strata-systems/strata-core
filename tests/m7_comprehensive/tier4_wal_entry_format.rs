@@ -4,7 +4,7 @@
 
 use crate::test_utils::*;
 use in_mem_core::value::Value;
-use in_mem_durability::{WAL_FORMAT_VERSION, MAX_WAL_ENTRY_SIZE, WalEntryType};
+use in_mem_durability::{WalEntryType, MAX_WAL_ENTRY_SIZE, WAL_FORMAT_VERSION};
 
 /// WAL format version is defined
 #[test]
@@ -15,10 +15,7 @@ fn test_wal_format_version_defined() {
 /// WAL max entry size is reasonable
 #[test]
 fn test_wal_max_entry_size() {
-    assert!(
-        MAX_WAL_ENTRY_SIZE > 1024,
-        "Max entry size should be > 1KB"
-    );
+    assert!(MAX_WAL_ENTRY_SIZE > 1024, "Max entry size should be > 1KB");
     assert!(
         MAX_WAL_ENTRY_SIZE <= 64 * 1024 * 1024,
         "Max entry size should be reasonable"
@@ -42,7 +39,8 @@ fn test_wal_file_created() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("value".into()))
+        .unwrap();
 
     let wal_path = test_db.wal_path();
     // WAL may or may not exist depending on durability mode
@@ -86,7 +84,8 @@ fn test_large_value_in_wal() {
 
     // Write value close to max size
     let large_value = "x".repeat(1024 * 100); // 100KB
-    kv.put(&run_id, "large", Value::String(large_value.clone())).unwrap();
+    kv.put(&run_id, "large", Value::String(large_value.clone()))
+        .unwrap();
 
     // Should be readable
     let value = kv.get(&run_id, "large").unwrap();

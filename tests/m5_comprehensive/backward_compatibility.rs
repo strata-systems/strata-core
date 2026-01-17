@@ -49,7 +49,9 @@ fn test_crud_api_exists() {
     assert!(set_result.is_ok());
 
     // Delete at path - may fail for nonexistent paths, test with valid path
-    store.set(&run_id, &doc_id, &path("to_delete"), JsonValue::from(1i64)).unwrap();
+    store
+        .set(&run_id, &doc_id, &path("to_delete"), JsonValue::from(1i64))
+        .unwrap();
     let delete_result = store.delete_at_path(&run_id, &doc_id, &path("to_delete"));
     assert!(delete_result.is_ok());
 
@@ -252,13 +254,17 @@ fn test_jsonstore_stateless() {
     // Create with one store instance
     {
         let store1 = JsonStore::new(db.clone());
-        store1.create(&run_id, &doc_id, JsonValue::from(1i64)).unwrap();
+        store1
+            .create(&run_id, &doc_id, JsonValue::from(1i64))
+            .unwrap();
     }
 
     // Modify with another store instance
     {
         let store2 = JsonStore::new(db.clone());
-        store2.set(&run_id, &doc_id, &root(), JsonValue::from(2i64)).unwrap();
+        store2
+            .set(&run_id, &doc_id, &root(), JsonValue::from(2i64))
+            .unwrap();
     }
 
     // Read with yet another store instance
@@ -282,13 +288,31 @@ fn test_multiple_jsonstore_instances() {
     let doc_id = JsonDocId::new();
 
     // All stores work with same data
-    store1.create(&run_id, &doc_id, JsonValue::from(1i64)).unwrap();
+    store1
+        .create(&run_id, &doc_id, JsonValue::from(1i64))
+        .unwrap();
 
-    assert_eq!(store2.get(&run_id, &doc_id, &root()).unwrap().unwrap().as_i64(), Some(1));
+    assert_eq!(
+        store2
+            .get(&run_id, &doc_id, &root())
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(1)
+    );
 
-    store3.set(&run_id, &doc_id, &root(), JsonValue::from(2i64)).unwrap();
+    store3
+        .set(&run_id, &doc_id, &root(), JsonValue::from(2i64))
+        .unwrap();
 
-    assert_eq!(store1.get(&run_id, &doc_id, &root()).unwrap().unwrap().as_i64(), Some(2));
+    assert_eq!(
+        store1
+            .get(&run_id, &doc_id, &root())
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(2)
+    );
 }
 
 // =============================================================================

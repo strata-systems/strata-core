@@ -20,7 +20,8 @@ fn test_p5_replay_deterministic_100_times() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key1", Value::String("value1".into())).unwrap();
+    kv.put(&run_id, "key1", Value::String("value1".into()))
+        .unwrap();
     kv.put(&run_id, "key2", Value::I64(42)).unwrap();
     kv.put(&run_id, "key3", Value::F64(3.14)).unwrap();
 
@@ -45,7 +46,8 @@ fn test_p5_deterministic_across_restarts() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("value".into()))
+        .unwrap();
 
     let state1 = CapturedState::capture(&test_db.db, &run_id);
     let hash1 = state1.hash;
@@ -74,7 +76,8 @@ fn test_p5_deterministic_complex_ops() {
         kv.delete(&run_id, &format!("k{}", i)).unwrap();
     }
     for i in 0..25 {
-        kv.put(&run_id, &format!("k{}", i * 2), Value::I64(i * 100)).unwrap();
+        kv.put(&run_id, &format!("k{}", i * 2), Value::I64(i * 100))
+            .unwrap();
     }
 
     // Capture multiple times
@@ -97,7 +100,8 @@ fn test_p5_deterministic_value_types() {
 
     let kv = test_db.kv();
 
-    kv.put(&run_id, "string", Value::String("hello".into())).unwrap();
+    kv.put(&run_id, "string", Value::String("hello".into()))
+        .unwrap();
     kv.put(&run_id, "int", Value::I64(-999)).unwrap();
     kv.put(&run_id, "float", Value::F64(2.718281828)).unwrap();
     kv.put(&run_id, "bool_t", Value::Bool(true)).unwrap();
@@ -162,15 +166,16 @@ fn test_p5_deterministic_across_threads() {
         })
         .collect();
 
-    let hashes: Vec<u64> = handles
-        .into_iter()
-        .map(|h| h.join().unwrap())
-        .collect();
+    let hashes: Vec<u64> = handles.into_iter().map(|h| h.join().unwrap()).collect();
 
     // All thread results should be identical
     let first = hashes[0];
     for (i, hash) in hashes.iter().enumerate() {
-        assert_eq!(first, *hash, "P5 VIOLATED: Thread {} got different result", i);
+        assert_eq!(
+            first, *hash,
+            "P5 VIOLATED: Thread {} got different result",
+            i
+        );
     }
 }
 
@@ -184,7 +189,8 @@ fn test_p5_deterministic_after_churn() {
 
     // Create churn
     for i in 0..100 {
-        kv.put(&run_id, &format!("churn{}", i % 10), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("churn{}", i % 10), Value::I64(i))
+            .unwrap();
     }
 
     // Final state should be deterministic
@@ -208,7 +214,8 @@ fn test_p5_key_order_deterministic() {
 
     // Insert in specific order
     for c in ['z', 'a', 'm', 'b', 'y'] {
-        kv.put(&run_id, &c.to_string(), Value::String(c.to_string())).unwrap();
+        kv.put(&run_id, &c.to_string(), Value::String(c.to_string()))
+            .unwrap();
     }
 
     // Capture multiple times and compare key sets

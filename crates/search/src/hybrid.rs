@@ -265,10 +265,7 @@ mod tests {
         let db = test_db();
         let hybrid = HybridSearch::new(db);
         // Should compile and not panic
-        assert!(Arc::ptr_eq(
-            hybrid.kv.database(),
-            hybrid.json.database()
-        ));
+        assert!(Arc::ptr_eq(hybrid.kv.database(), hybrid.json.database()));
     }
 
     #[test]
@@ -297,8 +294,7 @@ mod tests {
             .unwrap();
 
         let hybrid = HybridSearch::new(db);
-        let req = SearchRequest::new(run_id, "test")
-            .with_primitive_filter(vec![PrimitiveKind::Kv]);
+        let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveKind::Kv]);
         let response = hybrid.search(&req).unwrap();
 
         // Should have at least one result

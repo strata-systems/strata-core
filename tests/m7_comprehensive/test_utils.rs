@@ -15,8 +15,8 @@ use std::fs::{self, OpenOptions};
 use std::hash::{Hash, Hasher};
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tempfile::TempDir;
 
 // Counter for generating unique keys
@@ -191,15 +191,12 @@ pub fn truncate_file(path: &Path, new_size: u64) {
         .write(true)
         .open(path)
         .expect("Failed to open file for truncation");
-    file.set_len(new_size)
-        .expect("Failed to truncate file");
+    file.set_len(new_size).expect("Failed to truncate file");
 }
 
 /// Get file size
 pub fn file_size(path: &Path) -> u64 {
-    fs::metadata(path)
-        .map(|m| m.len())
-        .unwrap_or(0)
+    fs::metadata(path).map(|m| m.len()).unwrap_or(0)
 }
 
 /// Create a partial WAL entry (simulating crash during write)
@@ -220,7 +217,11 @@ pub fn create_partial_wal_entry(path: &Path, entry_bytes: &[u8], fraction: f64) 
 /// Verify that two states are identical
 pub fn assert_states_equal(state1: &CapturedState, state2: &CapturedState, msg: &str) {
     assert_eq!(state1.hash, state2.hash, "{}: State hashes differ", msg);
-    assert_eq!(state1.kv_entries, state2.kv_entries, "{}: KV entries differ", msg);
+    assert_eq!(
+        state1.kv_entries, state2.kv_entries,
+        "{}: KV entries differ",
+        msg
+    );
 }
 
 /// Count the number of snapshot files in a directory
@@ -277,7 +278,8 @@ pub fn assert_db_healthy(db: &Arc<Database>, run_id: &RunId) {
         .expect("Database should be able to write");
 
     // Should be able to read back
-    let value = kv.get(run_id, &test_key)
+    let value = kv
+        .get(run_id, &test_key)
         .expect("Database should be able to read");
     assert!(value.is_some(), "Database should return written value");
 }
@@ -288,7 +290,8 @@ pub fn create_test_run(db: &Arc<Database>) -> RunId {
 
     let run_id = RunId::new();
     let run_index = PrimitiveRunIndex::new(db.clone());
-    run_index.create_run(&run_id.to_string())
+    run_index
+        .create_run(&run_id.to_string())
         .expect("Failed to create test run");
     run_id
 }
@@ -312,8 +315,7 @@ pub fn verify_keys_exist(db: &Arc<Database>, run_id: &RunId, keys: &[&str]) {
     let kv = KVStore::new(db.clone());
 
     for key in keys {
-        let value = kv.get(run_id, key)
-            .expect("Failed to read key");
+        let value = kv.get(run_id, key).expect("Failed to read key");
         assert!(value.is_some(), "Key {} should exist", key);
     }
 }
@@ -323,8 +325,7 @@ pub fn verify_keys_absent(db: &Arc<Database>, run_id: &RunId, keys: &[&str]) {
     let kv = KVStore::new(db.clone());
 
     for key in keys {
-        let value = kv.get(run_id, key)
-            .expect("Failed to read key");
+        let value = kv.get(run_id, key).expect("Failed to read key");
         assert!(value.is_none(), "Key {} should NOT exist", key);
     }
 }

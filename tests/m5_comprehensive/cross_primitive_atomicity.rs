@@ -21,14 +21,22 @@ fn test_json_kv_atomic_success() {
     let doc_id = JsonDocId::new();
 
     // Create JSON document
-    json_store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
+    json_store
+        .create(&run_id, &doc_id, JsonValue::object())
+        .unwrap();
 
     // Perform JSON operation
-    json_store.set(&run_id, &doc_id, &path("key"), JsonValue::from("value")).unwrap();
+    json_store
+        .set(&run_id, &doc_id, &path("key"), JsonValue::from("value"))
+        .unwrap();
 
     // Verify JSON operation succeeded
     assert_eq!(
-        json_store.get(&run_id, &doc_id, &path("key")).unwrap().unwrap().as_str(),
+        json_store
+            .get(&run_id, &doc_id, &path("key"))
+            .unwrap()
+            .unwrap()
+            .as_str(),
         Some("value")
     );
 }
@@ -42,17 +50,46 @@ fn test_multiple_json_operations_sequential() {
     let doc_id = JsonDocId::new();
 
     // Create
-    json_store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
+    json_store
+        .create(&run_id, &doc_id, JsonValue::object())
+        .unwrap();
 
     // Multiple sequential operations
-    json_store.set(&run_id, &doc_id, &path("a"), JsonValue::from(1i64)).unwrap();
-    json_store.set(&run_id, &doc_id, &path("b"), JsonValue::from(2i64)).unwrap();
-    json_store.set(&run_id, &doc_id, &path("c"), JsonValue::from(3i64)).unwrap();
+    json_store
+        .set(&run_id, &doc_id, &path("a"), JsonValue::from(1i64))
+        .unwrap();
+    json_store
+        .set(&run_id, &doc_id, &path("b"), JsonValue::from(2i64))
+        .unwrap();
+    json_store
+        .set(&run_id, &doc_id, &path("c"), JsonValue::from(3i64))
+        .unwrap();
 
     // All operations should be visible
-    assert_eq!(json_store.get(&run_id, &doc_id, &path("a")).unwrap().unwrap().as_i64(), Some(1));
-    assert_eq!(json_store.get(&run_id, &doc_id, &path("b")).unwrap().unwrap().as_i64(), Some(2));
-    assert_eq!(json_store.get(&run_id, &doc_id, &path("c")).unwrap().unwrap().as_i64(), Some(3));
+    assert_eq!(
+        json_store
+            .get(&run_id, &doc_id, &path("a"))
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(1)
+    );
+    assert_eq!(
+        json_store
+            .get(&run_id, &doc_id, &path("b"))
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(2)
+    );
+    assert_eq!(
+        json_store
+            .get(&run_id, &doc_id, &path("c"))
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(3)
+    );
 
     // Version reflects all operations
     assert_version(&json_store, &run_id, &doc_id, 4);
@@ -73,14 +110,34 @@ fn test_multi_document_independence() {
     let doc2 = JsonDocId::new();
 
     // Create both documents
-    json_store.create(&run_id, &doc1, JsonValue::from(1i64)).unwrap();
-    json_store.create(&run_id, &doc2, JsonValue::from(2i64)).unwrap();
+    json_store
+        .create(&run_id, &doc1, JsonValue::from(1i64))
+        .unwrap();
+    json_store
+        .create(&run_id, &doc2, JsonValue::from(2i64))
+        .unwrap();
 
     // Modify doc1, doc2 unaffected
-    json_store.set(&run_id, &doc1, &root(), JsonValue::from(100i64)).unwrap();
+    json_store
+        .set(&run_id, &doc1, &root(), JsonValue::from(100i64))
+        .unwrap();
 
-    assert_eq!(json_store.get(&run_id, &doc1, &root()).unwrap().unwrap().as_i64(), Some(100));
-    assert_eq!(json_store.get(&run_id, &doc2, &root()).unwrap().unwrap().as_i64(), Some(2));
+    assert_eq!(
+        json_store
+            .get(&run_id, &doc1, &root())
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(100)
+    );
+    assert_eq!(
+        json_store
+            .get(&run_id, &doc2, &root())
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(2)
+    );
 }
 
 /// Destroying one document doesn't affect others.
@@ -93,8 +150,12 @@ fn test_destroy_independence() {
     let doc1 = JsonDocId::new();
     let doc2 = JsonDocId::new();
 
-    json_store.create(&run_id, &doc1, JsonValue::from(1i64)).unwrap();
-    json_store.create(&run_id, &doc2, JsonValue::from(2i64)).unwrap();
+    json_store
+        .create(&run_id, &doc1, JsonValue::from(1i64))
+        .unwrap();
+    json_store
+        .create(&run_id, &doc2, JsonValue::from(2i64))
+        .unwrap();
 
     // Destroy doc1
     json_store.destroy(&run_id, &doc1).unwrap();
@@ -102,7 +163,14 @@ fn test_destroy_independence() {
     // doc1 gone, doc2 unaffected
     assert!(!json_store.exists(&run_id, &doc1).unwrap());
     assert!(json_store.exists(&run_id, &doc2).unwrap());
-    assert_eq!(json_store.get(&run_id, &doc2, &root()).unwrap().unwrap().as_i64(), Some(2));
+    assert_eq!(
+        json_store
+            .get(&run_id, &doc2, &root())
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(2)
+    );
 }
 
 // =============================================================================
@@ -117,14 +185,26 @@ fn test_immediate_visibility() {
     let run_id = RunId::new();
     let doc_id = JsonDocId::new();
 
-    json_store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
+    json_store
+        .create(&run_id, &doc_id, JsonValue::object())
+        .unwrap();
 
     for i in 0..100 {
         let key = format!("key_{}", i);
-        json_store.set(&run_id, &doc_id, &key.parse().unwrap(), JsonValue::from(i as i64)).unwrap();
+        json_store
+            .set(
+                &run_id,
+                &doc_id,
+                &key.parse().unwrap(),
+                JsonValue::from(i as i64),
+            )
+            .unwrap();
 
         // Immediately visible
-        let value = json_store.get(&run_id, &doc_id, &key.parse().unwrap()).unwrap().unwrap();
+        let value = json_store
+            .get(&run_id, &doc_id, &key.parse().unwrap())
+            .unwrap()
+            .unwrap();
         assert_eq!(value.as_i64(), Some(i as i64));
     }
 }
@@ -137,19 +217,45 @@ fn test_delete_immediate_visibility() {
     let run_id = RunId::new();
     let doc_id = JsonDocId::new();
 
-    json_store.create(&run_id, &doc_id, serde_json::json!({
-        "a": 1,
-        "b": 2,
-        "c": 3
-    }).into()).unwrap();
+    json_store
+        .create(
+            &run_id,
+            &doc_id,
+            serde_json::json!({
+                "a": 1,
+                "b": 2,
+                "c": 3
+            })
+            .into(),
+        )
+        .unwrap();
 
     // Delete and immediately verify
-    json_store.delete_at_path(&run_id, &doc_id, &path("b")).unwrap();
-    assert!(json_store.get(&run_id, &doc_id, &path("b")).unwrap().is_none());
+    json_store
+        .delete_at_path(&run_id, &doc_id, &path("b"))
+        .unwrap();
+    assert!(json_store
+        .get(&run_id, &doc_id, &path("b"))
+        .unwrap()
+        .is_none());
 
     // Other paths unaffected
-    assert_eq!(json_store.get(&run_id, &doc_id, &path("a")).unwrap().unwrap().as_i64(), Some(1));
-    assert_eq!(json_store.get(&run_id, &doc_id, &path("c")).unwrap().unwrap().as_i64(), Some(3));
+    assert_eq!(
+        json_store
+            .get(&run_id, &doc_id, &path("a"))
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(1)
+    );
+    assert_eq!(
+        json_store
+            .get(&run_id, &doc_id, &path("c"))
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(3)
+    );
 }
 
 // =============================================================================
@@ -164,19 +270,27 @@ fn test_version_atomic_increment() {
     let run_id = RunId::new();
     let doc_id = JsonDocId::new();
 
-    json_store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
+    json_store
+        .create(&run_id, &doc_id, JsonValue::object())
+        .unwrap();
     let v1 = json_store.get_version(&run_id, &doc_id).unwrap().unwrap();
     assert_eq!(v1, 1);
 
-    json_store.set(&run_id, &doc_id, &path("a"), JsonValue::from(1i64)).unwrap();
+    json_store
+        .set(&run_id, &doc_id, &path("a"), JsonValue::from(1i64))
+        .unwrap();
     let v2 = json_store.get_version(&run_id, &doc_id).unwrap().unwrap();
     assert_eq!(v2, 2);
 
-    json_store.set(&run_id, &doc_id, &path("b"), JsonValue::from(2i64)).unwrap();
+    json_store
+        .set(&run_id, &doc_id, &path("b"), JsonValue::from(2i64))
+        .unwrap();
     let v3 = json_store.get_version(&run_id, &doc_id).unwrap().unwrap();
     assert_eq!(v3, 3);
 
-    json_store.delete_at_path(&run_id, &doc_id, &path("a")).unwrap();
+    json_store
+        .delete_at_path(&run_id, &doc_id, &path("a"))
+        .unwrap();
     let v4 = json_store.get_version(&run_id, &doc_id).unwrap().unwrap();
     assert_eq!(v4, 4);
 }
@@ -189,10 +303,14 @@ fn test_version_read_consistency() {
     let run_id = RunId::new();
     let doc_id = JsonDocId::new();
 
-    json_store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
+    json_store
+        .create(&run_id, &doc_id, JsonValue::object())
+        .unwrap();
 
     for _ in 0..10 {
-        json_store.set(&run_id, &doc_id, &path("x"), JsonValue::from(1i64)).unwrap();
+        json_store
+            .set(&run_id, &doc_id, &path("x"), JsonValue::from(1i64))
+            .unwrap();
     }
 
     // Multiple reads should see same version
@@ -217,10 +335,17 @@ fn test_fast_path_reads_no_version_change() {
     let run_id = RunId::new();
     let doc_id = JsonDocId::new();
 
-    json_store.create(&run_id, &doc_id, serde_json::json!({
-        "a": 1,
-        "b": 2
-    }).into()).unwrap();
+    json_store
+        .create(
+            &run_id,
+            &doc_id,
+            serde_json::json!({
+                "a": 1,
+                "b": 2
+            })
+            .into(),
+        )
+        .unwrap();
 
     let v1 = json_store.get_version(&run_id, &doc_id).unwrap().unwrap();
 
@@ -245,17 +370,24 @@ fn test_fast_path_read_write_consistency() {
     let run_id = RunId::new();
     let doc_id = JsonDocId::new();
 
-    json_store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
+    json_store
+        .create(&run_id, &doc_id, JsonValue::object())
+        .unwrap();
 
     // Write then read pattern
     for i in 0..50 {
         let key = format!("key_{}", i);
         let value = JsonValue::from(i as i64);
 
-        json_store.set(&run_id, &doc_id, &key.parse().unwrap(), value.clone()).unwrap();
+        json_store
+            .set(&run_id, &doc_id, &key.parse().unwrap(), value.clone())
+            .unwrap();
 
         // Fast path read should see the write
-        let read_value = json_store.get(&run_id, &doc_id, &key.parse().unwrap()).unwrap().unwrap();
+        let read_value = json_store
+            .get(&run_id, &doc_id, &key.parse().unwrap())
+            .unwrap()
+            .unwrap();
         assert_eq!(read_value.as_i64(), Some(i as i64));
     }
 }
@@ -273,10 +405,17 @@ fn test_concurrent_readers_consistency() {
     let doc_id = JsonDocId::new();
 
     // Setup initial state
-    json_store.create(&run_id, &doc_id, serde_json::json!({
-        "counter": 42,
-        "name": "test"
-    }).into()).unwrap();
+    json_store
+        .create(
+            &run_id,
+            &doc_id,
+            serde_json::json!({
+                "counter": 42,
+                "name": "test"
+            })
+            .into(),
+        )
+        .unwrap();
 
     // Concurrent reads
     let store = json_store.clone();
@@ -287,7 +426,11 @@ fn test_concurrent_readers_consistency() {
         let counter = store.get(&rid, &did, &path("counter")).unwrap().unwrap();
         let name = store.get(&rid, &did, &path("name")).unwrap().unwrap();
         let version = store.get_version(&rid, &did).unwrap().unwrap();
-        (counter.as_i64(), name.as_str().map(|s| s.to_string()), version)
+        (
+            counter.as_i64(),
+            name.as_str().map(|s| s.to_string()),
+            version,
+        )
     });
 
     // All readers should see same state
@@ -309,7 +452,9 @@ fn test_concurrent_writes_different_docs() {
 
     for doc_id in &doc_ids {
         let store = JsonStore::new(db.clone());
-        store.create(&run_id, doc_id, JsonValue::from(0i64)).unwrap();
+        store
+            .create(&run_id, doc_id, JsonValue::from(0i64))
+            .unwrap();
     }
 
     // Concurrent writes to different docs
@@ -320,7 +465,9 @@ fn test_concurrent_writes_different_docs() {
         move |i| {
             let store = JsonStore::new(db.clone());
             let doc_id = &doc_ids[i];
-            store.set(&run_id, doc_id, &root(), JsonValue::from(i as i64)).unwrap();
+            store
+                .set(&run_id, doc_id, &root(), JsonValue::from(i as i64))
+                .unwrap();
             i
         }
     });

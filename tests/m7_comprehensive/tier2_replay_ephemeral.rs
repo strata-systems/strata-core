@@ -20,7 +20,8 @@ fn test_p4_view_not_persisted() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("value".into()))
+        .unwrap();
 
     // Create view (capture state)
     let state = CapturedState::capture(&test_db.db, &run_id);
@@ -45,7 +46,8 @@ fn test_p4_views_dont_accumulate() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("value".into()))
+        .unwrap();
 
     let state_before = CapturedState::capture(&test_db.db, &run_id);
     let count_before = state_before.kv_entries.len();
@@ -70,7 +72,8 @@ fn test_p4_view_scope_limited() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("value".into()))
+        .unwrap();
 
     // View in inner scope
     let original_state = CapturedState::capture(&test_db.db, &run_id);
@@ -92,7 +95,8 @@ fn test_p4_drop_does_not_affect_db() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "persistent", Value::String("data".into())).unwrap();
+    kv.put(&run_id, "persistent", Value::String("data".into()))
+        .unwrap();
 
     // Create view
     let view = CapturedState::capture(&test_db.db, &run_id);
@@ -143,7 +147,11 @@ fn test_p4_concurrent_view_lifecycle() {
 
     // Original data unchanged
     let final_state = CapturedState::capture(&db, &run_id);
-    assert_states_equal(&original_state, &final_state, "P4: Concurrent views affected state");
+    assert_states_equal(
+        &original_state,
+        &final_state,
+        "P4: Concurrent views affected state",
+    );
 }
 
 /// P4: View doesn't survive database restart
@@ -153,7 +161,8 @@ fn test_p4_view_doesnt_survive_restart() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("value".into()))
+        .unwrap();
 
     // Create view before restart
     let _view = CapturedState::capture(&test_db.db, &run_id);
@@ -178,7 +187,8 @@ fn test_p4_large_view_released() {
 
     // Create large dataset
     for i in 0..1000 {
-        kv.put(&run_id, &format!("key_{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("key_{}", i), Value::I64(i))
+            .unwrap();
     }
 
     // Create and drop large view multiple times
@@ -200,7 +210,8 @@ fn test_p4_view_is_independent_instance() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("value".into()))
+        .unwrap();
 
     // Create two views
     let view1 = CapturedState::capture(&test_db.db, &run_id);

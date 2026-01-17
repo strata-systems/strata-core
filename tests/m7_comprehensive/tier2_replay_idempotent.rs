@@ -20,7 +20,8 @@ fn test_p6_multiple_replays_identical() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("value".into()))
+        .unwrap();
 
     // Multiple sequential replays
     let mut states = Vec::new();
@@ -33,7 +34,8 @@ fn test_p6_multiple_replays_identical() {
     for (i, state) in states.iter().enumerate() {
         assert_eq!(
             first_hash, state.hash,
-            "P6 VIOLATED: Replay {} produced different view", i
+            "P6 VIOLATED: Replay {} produced different view",
+            i
         );
     }
 }
@@ -61,10 +63,7 @@ fn test_p6_concurrent_replays_safe() {
         })
         .collect();
 
-    let states: Vec<_> = handles
-        .into_iter()
-        .map(|h| h.join().unwrap())
-        .collect();
+    let states: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
 
     // All views identical
     let first_hash = states[0].hash;
@@ -82,8 +81,10 @@ fn test_p6_interleaved_replays() {
 
     let kv = test_db.kv();
 
-    kv.put(&run_id1, "key", Value::String("run1_value".into())).unwrap();
-    kv.put(&run_id2, "key", Value::String("run2_value".into())).unwrap();
+    kv.put(&run_id1, "key", Value::String("run1_value".into()))
+        .unwrap();
+    kv.put(&run_id2, "key", Value::String("run2_value".into()))
+        .unwrap();
 
     // Interleaved captures
     let state1a = CapturedState::capture(&test_db.db, &run_id1);
@@ -91,7 +92,10 @@ fn test_p6_interleaved_replays() {
     let state1b = CapturedState::capture(&test_db.db, &run_id1);
 
     // run1 views should be identical
-    assert_eq!(state1a.hash, state1b.hash, "P6 VIOLATED: Interleaved replays interfered");
+    assert_eq!(
+        state1a.hash, state1b.hash,
+        "P6 VIOLATED: Interleaved replays interfered"
+    );
 
     // run2 should be different from run1
     assert_ne!(state1a.hash, state2.hash);
@@ -126,10 +130,7 @@ fn test_p6_heavy_concurrent_load() {
         })
         .collect();
 
-    let all_hashes: Vec<Vec<u64>> = handles
-        .into_iter()
-        .map(|h| h.join().unwrap())
-        .collect();
+    let all_hashes: Vec<Vec<u64>> = handles.into_iter().map(|h| h.join().unwrap()).collect();
 
     // All hashes from all threads should be identical
     let first_hash = all_hashes[0][0];
@@ -154,7 +155,8 @@ fn test_p6_replay_doesnt_affect_subsequent() {
         let state = CapturedState::capture(&test_db.db, &run_id);
         assert!(
             state.kv_entries.contains_key("stable"),
-            "P6 VIOLATED: Replay {} lost data", i
+            "P6 VIOLATED: Replay {} lost data",
+            i
         );
     }
 
@@ -192,7 +194,11 @@ fn test_p6_any_order_replay() {
     for (i, rid) in run_ids.iter().enumerate() {
         let hash1 = forward_hashes[i];
         let hash2 = reverse_hashes[run_ids.len() - 1 - i];
-        assert_eq!(hash1, hash2, "P6 VIOLATED: Order affected result for run {}", i);
+        assert_eq!(
+            hash1, hash2,
+            "P6 VIOLATED: Order affected result for run {}",
+            i
+        );
     }
 }
 

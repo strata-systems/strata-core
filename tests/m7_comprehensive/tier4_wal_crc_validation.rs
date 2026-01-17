@@ -14,8 +14,10 @@ fn test_wal_corruption_detected() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key1", Value::String("value1".into())).unwrap();
-    kv.put(&run_id, "key2", Value::String("value2".into())).unwrap();
+    kv.put(&run_id, "key1", Value::String("value1".into()))
+        .unwrap();
+    kv.put(&run_id, "key2", Value::String("value2".into()))
+        .unwrap();
 
     let wal_path = test_db.wal_path();
 
@@ -68,7 +70,8 @@ fn test_crc_single_byte_corruption() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "important", Value::String("data".into())).unwrap();
+    kv.put(&run_id, "important", Value::String("data".into()))
+        .unwrap();
 
     let wal_path = test_db.wal_path();
 
@@ -132,11 +135,13 @@ fn test_corruption_preserves_earlier_entries() {
     let kv = test_db.kv();
 
     // Write some early data
-    kv.put(&run_id, "early", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "early", Value::String("value".into()))
+        .unwrap();
 
     // Write more data
     for i in 0..50 {
-        kv.put(&run_id, &format!("later_{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("later_{}", i), Value::I64(i))
+            .unwrap();
     }
 
     let wal_path = test_db.wal_path();

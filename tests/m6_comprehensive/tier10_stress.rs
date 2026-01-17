@@ -32,7 +32,10 @@ fn test_tier10_large_dataset() {
     let elapsed = start.elapsed();
 
     assert!(!response.hits.is_empty());
-    assert!(elapsed < Duration::from_secs(5), "Search should complete in under 5s");
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "Search should complete in under 5s"
+    );
 }
 
 /// Hybrid search works with large dataset
@@ -52,7 +55,10 @@ fn test_tier10_hybrid_large_dataset() {
     let elapsed = start.elapsed();
 
     assert!(!response.hits.is_empty());
-    assert!(elapsed < Duration::from_secs(10), "Hybrid search should complete in under 10s");
+    assert!(
+        elapsed < Duration::from_secs(10),
+        "Hybrid search should complete in under 10s"
+    );
 }
 
 // ============================================================================
@@ -274,8 +280,12 @@ fn test_tier10_unicode_query() {
     let run_index = RunIndex::new(db.clone());
     run_index.create_run(&run_id.to_string()).unwrap();
 
-    kv.put(&run_id, "unicode", Value::String("日本語 中文 한국어".into()))
-        .unwrap();
+    kv.put(
+        &run_id,
+        "unicode",
+        Value::String("日本語 中文 한국어".into()),
+    )
+    .unwrap();
 
     let req = SearchRequest::new(run_id, "日本語");
     let response = kv.search(&req).unwrap();

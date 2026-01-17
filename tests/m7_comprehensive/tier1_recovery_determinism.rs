@@ -21,9 +21,12 @@ fn test_r1_same_wal_same_state_basic() {
 
     // Write some data
     let kv = test_db.kv();
-    kv.put(&run_id, "key1", Value::String("value1".into())).unwrap();
-    kv.put(&run_id, "key2", Value::String("value2".into())).unwrap();
-    kv.put(&run_id, "key3", Value::String("value3".into())).unwrap();
+    kv.put(&run_id, "key1", Value::String("value1".into()))
+        .unwrap();
+    kv.put(&run_id, "key2", Value::String("value2".into()))
+        .unwrap();
+    kv.put(&run_id, "key3", Value::String("value3".into()))
+        .unwrap();
 
     // Capture state
     let state_before = CapturedState::capture(&test_db.db, &run_id);
@@ -46,8 +49,12 @@ fn test_r1_deterministic_across_multiple_restarts() {
     // Write initial data
     let kv = test_db.kv();
     for i in 0..10 {
-        kv.put(&run_id, &format!("key_{}", i), Value::String(format!("value_{}", i)))
-            .unwrap();
+        kv.put(
+            &run_id,
+            &format!("key_{}", i),
+            Value::String(format!("value_{}", i)),
+        )
+        .unwrap();
     }
 
     // Capture original state
@@ -60,7 +67,8 @@ fn test_r1_deterministic_across_multiple_restarts() {
 
         assert_eq!(
             original_state.hash, recovered_state.hash,
-            "R1 VIOLATED: State differs after restart #{}", restart_num
+            "R1 VIOLATED: State differs after restart #{}",
+            restart_num
         );
     }
 }
@@ -114,9 +122,18 @@ fn test_r1_deterministic_interleaved_operations() {
 
     // Verify specific values
     let kv = test_db.kv();
-    assert_eq!(kv.get(&run_id, "a").unwrap(), Some(Value::String("4".into())));
-    assert_eq!(kv.get(&run_id, "b").unwrap(), Some(Value::String("2".into())));
-    assert_eq!(kv.get(&run_id, "c").unwrap(), Some(Value::String("3".into())));
+    assert_eq!(
+        kv.get(&run_id, "a").unwrap(),
+        Some(Value::String("4".into()))
+    );
+    assert_eq!(
+        kv.get(&run_id, "b").unwrap(),
+        Some(Value::String("2".into()))
+    );
+    assert_eq!(
+        kv.get(&run_id, "c").unwrap(),
+        Some(Value::String("3".into()))
+    );
 }
 
 /// R1: Large dataset determinism
@@ -128,8 +145,12 @@ fn test_r1_deterministic_large_dataset() {
     // Write many entries
     let kv = test_db.kv();
     for i in 0..1000 {
-        kv.put(&run_id, &format!("key_{}", i), Value::String(format!("value_{}", i)))
-            .unwrap();
+        kv.put(
+            &run_id,
+            &format!("key_{}", i),
+            Value::String(format!("value_{}", i)),
+        )
+        .unwrap();
     }
 
     let state_before = CapturedState::capture(&test_db.db, &run_id);
@@ -151,7 +172,8 @@ fn test_r1_deterministic_value_types() {
     let kv = test_db.kv();
 
     // Various value types
-    kv.put(&run_id, "string", Value::String("hello".into())).unwrap();
+    kv.put(&run_id, "string", Value::String("hello".into()))
+        .unwrap();
     kv.put(&run_id, "int", Value::I64(42)).unwrap();
     kv.put(&run_id, "float", Value::F64(3.14)).unwrap();
     kv.put(&run_id, "bool", Value::Bool(true)).unwrap();
@@ -174,8 +196,12 @@ fn test_r1_replay_100_times_identical() {
     // Write data
     let kv = test_db.kv();
     for i in 0..50 {
-        kv.put(&run_id, &format!("k{}", i), Value::String(format!("v{}", i)))
-            .unwrap();
+        kv.put(
+            &run_id,
+            &format!("k{}", i),
+            Value::String(format!("v{}", i)),
+        )
+        .unwrap();
     }
 
     // Collect hashes from multiple replays
@@ -203,8 +229,12 @@ fn test_r1_deterministic_after_deletes() {
 
     // Create, then delete some keys
     for i in 0..20 {
-        kv.put(&run_id, &format!("key_{}", i), Value::String(format!("value_{}", i)))
-            .unwrap();
+        kv.put(
+            &run_id,
+            &format!("key_{}", i),
+            Value::String(format!("value_{}", i)),
+        )
+        .unwrap();
     }
 
     // Delete every other key
