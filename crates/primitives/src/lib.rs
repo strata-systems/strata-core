@@ -6,7 +6,7 @@
 //! - **StateCell**: CAS-based versioned cells for coordination
 //! - **TraceStore**: Structured reasoning traces with indexing
 //! - **RunIndex**: Run lifecycle management
-//! - **Vector**: Vector storage and similarity search (types only in this milestone)
+//! - **VectorStore**: Vector storage with similarity search and collection management
 //!
 //! ## Design Principle: Stateless Facades
 //!
@@ -61,10 +61,10 @@ pub use searchable::{build_search_response, SearchCandidate, Searchable, SimpleS
 pub use state_cell::{State, StateCell};
 pub use trace::{Trace, TraceStore, TraceTree, TraceType};
 pub use vector::{
-    BruteForceBackend, CollectionId, CollectionInfo, CollectionRecord, DistanceMetric,
-    IndexBackendFactory, JsonScalar, MetadataFilter, StorageDtype, VectorConfig, VectorConfigSerde,
-    VectorEntry, VectorError, VectorHeap, VectorId, VectorIndexBackend, VectorMatch, VectorRecord,
-    VectorResult,
+    validate_collection_name, validate_vector_key, BruteForceBackend, CollectionId, CollectionInfo,
+    CollectionRecord, DistanceMetric, IndexBackendFactory, JsonScalar, MetadataFilter,
+    StorageDtype, VectorConfig, VectorConfigSerde, VectorEntry, VectorError, VectorHeap, VectorId,
+    VectorIndexBackend, VectorMatch, VectorRecord, VectorResult, VectorStore,
 };
 
 // Re-export extension traits for convenience

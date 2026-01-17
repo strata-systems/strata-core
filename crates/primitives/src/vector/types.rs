@@ -305,6 +305,23 @@ impl CollectionId {
     }
 }
 
+// Manual Ord implementation for BTreeMap usage
+// Orders by run_id bytes, then by name
+impl Ord for CollectionId {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.run_id
+            .as_bytes()
+            .cmp(other.run_id.as_bytes())
+            .then(self.name.cmp(&other.name))
+    }
+}
+
+impl PartialOrd for CollectionId {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 // ============================================================================
 // Story #339: VectorRecord and CollectionRecord
 // ============================================================================

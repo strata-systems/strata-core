@@ -58,7 +58,7 @@ pub trait VectorIndexBackend: Send + Sync {
 ///
 /// This abstraction allows switching between BruteForce (M8) and HNSW (M9)
 /// without changing the VectorStore code.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub enum IndexBackendFactory {
     /// Brute-force O(n) search
     #[default]
