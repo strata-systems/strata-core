@@ -362,6 +362,51 @@ impl WalWriter {
         Ok(offset)
     }
 
+    /// Write a run begin marker
+    ///
+    /// Records the start of a new run for run lifecycle tracking.
+    /// Run lifecycle entries are non-transactional.
+    ///
+    /// # Arguments
+    ///
+    /// * `run_id` - Unique identifier for this run
+    /// * `timestamp_micros` - Start timestamp in microseconds since epoch
+    pub fn write_run_begin(
+        &mut self,
+        run_id: in_mem_core::types::RunId,
+        timestamp_micros: u64,
+    ) -> Result<u64, WalEntryError> {
+        let entry = crate::m7_run_lifecycle::create_run_begin_entry(run_id, timestamp_micros);
+        let offset = self.write_entry(&entry)?;
+
+        info!(run_id = %run_id, timestamp = timestamp_micros, "Run begin marker written");
+        Ok(offset)
+    }
+
+    /// Write a run end marker
+    ///
+    /// Records the end of a run for run lifecycle tracking.
+    /// Run lifecycle entries are non-transactional.
+    ///
+    /// # Arguments
+    ///
+    /// * `run_id` - Unique identifier for this run
+    /// * `timestamp_micros` - End timestamp in microseconds since epoch
+    /// * `event_count` - Total number of events recorded during the run
+    pub fn write_run_end(
+        &mut self,
+        run_id: in_mem_core::types::RunId,
+        timestamp_micros: u64,
+        event_count: u64,
+    ) -> Result<u64, WalEntryError> {
+        let entry =
+            crate::m7_run_lifecycle::create_run_end_entry(run_id, timestamp_micros, event_count);
+        let offset = self.write_entry(&entry)?;
+
+        info!(run_id = %run_id, timestamp = timestamp_micros, event_count, "Run end marker written");
+        Ok(offset)
+    }
+
     /// Write a single entry to the WAL
     ///
     /// Returns the offset where the entry was written.

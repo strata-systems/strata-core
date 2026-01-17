@@ -21,6 +21,7 @@
 // Module declarations
 pub mod encoding; // Story #18: Entry encoding/decoding with CRC
 pub mod m7_recovery; // M7 Story #298-304: Crash Recovery
+pub mod m7_run_lifecycle; // M7 Story #311-312: Run Lifecycle WAL Operations
 pub mod m7_transaction; // M7 Story #317: Cross-Primitive Transaction Grouping
 pub mod m7_wal_manager; // M7 Story #363: WAL Truncation
 pub mod m7_wal_reader; // M7 Story #364: WAL Corruption Detection
@@ -37,6 +38,11 @@ pub use encoding::{decode_entry, encode_entry};
 pub use m7_recovery::{
     CommittedTransactions, M7Recovery, M7RecoveryError, M7RecoveryOptions, M7RecoveryResult,
     SnapshotDiscovery, WalReplayResultPublic,
+};
+pub use m7_run_lifecycle::{
+    create_run_begin_entry, create_run_end_entry, now_micros as run_now_micros,
+    parse_run_begin_payload, parse_run_end_payload, RunBeginPayload, RunEndPayload,
+    RUN_BEGIN_PAYLOAD_SIZE, RUN_END_PAYLOAD_SIZE,
 };
 pub use m7_transaction::{Transaction, TxEntry};
 pub use m7_wal_manager::{WalManager, WalStats};
