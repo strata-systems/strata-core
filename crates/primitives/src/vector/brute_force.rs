@@ -71,6 +71,11 @@ impl VectorIndexBackend for BruteForceBackend {
         self.heap.upsert(id, embedding)
     }
 
+    fn insert_with_id(&mut self, id: VectorId, embedding: &[f32]) -> Result<(), VectorError> {
+        // Use heap's insert_with_id which updates next_id for monotonicity
+        self.heap.insert_with_id(id, embedding)
+    }
+
     fn delete(&mut self, id: VectorId) -> Result<bool, VectorError> {
         Ok(self.heap.delete(id))
     }
@@ -134,6 +139,18 @@ impl VectorIndexBackend for BruteForceBackend {
 
     fn contains(&self, id: VectorId) -> bool {
         self.heap.contains(id)
+    }
+
+    fn vector_ids(&self) -> Vec<VectorId> {
+        self.heap.ids().collect()
+    }
+
+    fn snapshot_state(&self) -> (u64, Vec<usize>) {
+        (self.heap.next_id_value(), self.heap.free_slots().to_vec())
+    }
+
+    fn restore_snapshot_state(&mut self, next_id: u64, free_slots: Vec<usize>) {
+        self.heap.restore_snapshot_state(next_id, free_slots);
     }
 }
 

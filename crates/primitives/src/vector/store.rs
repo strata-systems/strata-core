@@ -668,7 +668,7 @@ impl VectorStore {
     /// Get key and metadata for a VectorId by scanning KV
     ///
     /// This is O(n) in M8. M9 can add a reverse index for O(1) lookup.
-    fn get_key_and_metadata(
+    pub fn get_key_and_metadata(
         &self,
         run_id: RunId,
         collection: &str,
@@ -832,6 +832,120 @@ impl VectorStore {
         // Note: Loading vectors into backend happens in Epic 55 (recovery)
 
         Ok(())
+    }
+
+    // ========================================================================
+    // WAL Replay Methods (Epic 55 Story #358)
+    // ========================================================================
+
+    /// Replay collection creation from WAL (no WAL write)
+    ///
+    /// IMPORTANT: This method is for WAL replay during recovery.
+    /// It does NOT write to WAL - that would cause infinite loops during replay.
+    ///
+    /// Called by the global WAL replayer for committed VectorCollectionCreate entries.
+    pub fn replay_create_collection(
+        &self,
+        run_id: RunId,
+        name: &str,
+        config: VectorConfig,
+    ) -> VectorResult<()> {
+        let collection_id = CollectionId::new(run_id, name);
+
+        // Initialize backend (no KV write - KV is replayed separately)
+        let backend = self.backend_factory.create(&config);
+        self.backends
+            .write()
+            .unwrap()
+            .insert(collection_id, backend);
+
+        Ok(())
+    }
+
+    /// Replay collection deletion from WAL (no WAL write)
+    ///
+    /// IMPORTANT: This method is for WAL replay during recovery.
+    /// It does NOT write to WAL.
+    pub fn replay_delete_collection(&self, run_id: RunId, name: &str) -> VectorResult<()> {
+        let collection_id = CollectionId::new(run_id, name);
+
+        // Remove in-memory backend
+        self.backends.write().unwrap().remove(&collection_id);
+
+        Ok(())
+    }
+
+    /// Replay vector upsert from WAL (no WAL write)
+    ///
+    /// IMPORTANT: This method is for WAL replay during recovery.
+    /// It does NOT write to WAL.
+    ///
+    /// Uses insert_with_id to maintain VectorId monotonicity (Invariant T4).
+    pub fn replay_upsert(
+        &self,
+        run_id: RunId,
+        collection: &str,
+        _key: &str,
+        vector_id: VectorId,
+        embedding: &[f32],
+        _metadata: Option<serde_json::Value>,
+    ) -> VectorResult<()> {
+        let collection_id = CollectionId::new(run_id, collection);
+
+        let mut backends = self.backends.write().unwrap();
+        let backend =
+            backends
+                .get_mut(&collection_id)
+                .ok_or_else(|| VectorError::CollectionNotFound {
+                    name: collection.to_string(),
+                })?;
+
+        // Use insert_with_id to maintain VectorId monotonicity
+        backend.insert_with_id(vector_id, embedding)?;
+
+        Ok(())
+    }
+
+    /// Replay vector deletion from WAL (no WAL write)
+    ///
+    /// IMPORTANT: This method is for WAL replay during recovery.
+    /// It does NOT write to WAL.
+    pub fn replay_delete(
+        &self,
+        run_id: RunId,
+        collection: &str,
+        _key: &str,
+        vector_id: VectorId,
+    ) -> VectorResult<()> {
+        let collection_id = CollectionId::new(run_id, collection);
+
+        let mut backends = self.backends.write().unwrap();
+        if let Some(backend) = backends.get_mut(&collection_id) {
+            backend.delete(vector_id)?;
+        }
+        // Note: If collection doesn't exist, that's OK - it may have been deleted
+
+        Ok(())
+    }
+
+    /// Get access to backends (for recovery/snapshot)
+    pub fn backends(&self) -> &Arc<RwLock<BTreeMap<CollectionId, Box<dyn VectorIndexBackend>>>> {
+        &self.backends
+    }
+
+    /// Get access to the database (for snapshot operations)
+    pub fn db(&self) -> &Database {
+        &self.db
+    }
+
+    /// Get access to the backend factory (for snapshot deserialization)
+    pub fn backend_factory(&self) -> &IndexBackendFactory {
+        &self.backend_factory
+    }
+
+    /// Internal helper to create vector KV key
+    pub(crate) fn vector_key_internal(&self, run_id: RunId, collection: &str, key: &str) -> Key {
+        Key::new_vector(Namespace::for_run(run_id), collection, key)
     }
 }
 
@@ -1422,5 +1536,197 @@ mod tests {
             assert_eq!(results[1].key, "b");
             assert_eq!(results[2].key, "c");
         }
+    }
+
+    // ========================================
+    // WAL Replay Tests (Epic 55 Story #358)
+    // ========================================
+
+    #[test]
+    fn test_replay_create_collection() {
+        let (_temp, _db, store) = setup();
+        let run_id = RunId::new();
+
+        let config = VectorConfig::new(3, DistanceMetric::Cosine).unwrap();
+
+        // Replay collection creation
+        store
+            .replay_create_collection(run_id, "test", config)
+            .unwrap();
+
+        // Backend should be created
+        let collection_id = CollectionId::new(run_id, "test");
+        assert!(store.backends.read().unwrap().contains_key(&collection_id));
+    }
+
+    #[test]
+    fn test_replay_delete_collection() {
+        let (_temp, _db, store) = setup();
+        let run_id = RunId::new();
+
+        let config = VectorConfig::new(3, DistanceMetric::Cosine).unwrap();
+        store
+            .replay_create_collection(run_id, "test", config)
+            .unwrap();
+
+        let collection_id = CollectionId::new(run_id, "test");
+        assert!(store.backends.read().unwrap().contains_key(&collection_id));
+
+        // Replay deletion
+        store.replay_delete_collection(run_id, "test").unwrap();
+
+        assert!(!store.backends.read().unwrap().contains_key(&collection_id));
+    }
+
+    #[test]
+    fn test_replay_upsert() {
+        let (_temp, _db, store) = setup();
+        let run_id = RunId::new();
+
+        let config = VectorConfig::new(3, DistanceMetric::Cosine).unwrap();
+        store
+            .replay_create_collection(run_id, "test", config)
+            .unwrap();
+
+        // Replay upsert with specific VectorId
+        let vector_id = VectorId::new(42);
+        store
+            .replay_upsert(run_id, "test", "doc1", vector_id, &[1.0, 0.0, 0.0], None)
+            .unwrap();
+
+        // Verify vector exists in backend
+        let collection_id = CollectionId::new(run_id, "test");
+        let backends = store.backends.read().unwrap();
+        let backend = backends.get(&collection_id).unwrap();
+        assert!(backend.contains(vector_id));
+        assert_eq!(backend.len(), 1);
+    }
+
+    #[test]
+    fn test_replay_upsert_maintains_id_monotonicity() {
+        let (_temp, _db, store) = setup();
+        let run_id = RunId::new();
+
+        let config = VectorConfig::new(3, DistanceMetric::Cosine).unwrap();
+        store
+            .replay_create_collection(run_id, "test", config)
+            .unwrap();
+
+        // Replay upsert with high VectorId
+        let high_id = VectorId::new(1000);
+        store
+            .replay_upsert(run_id, "test", "doc", high_id, &[1.0, 0.0, 0.0], None)
+            .unwrap();
+
+        // Verify the vector exists
+        let collection_id = CollectionId::new(run_id, "test");
+        let backends = store.backends.read().unwrap();
+        let backend = backends.get(&collection_id).unwrap();
+        assert!(backend.contains(high_id));
+    }
+
+    #[test]
+    fn test_replay_delete() {
+        let (_temp, _db, store) = setup();
+        let run_id = RunId::new();
+
+        let config = VectorConfig::new(3, DistanceMetric::Cosine).unwrap();
+        store
+            .replay_create_collection(run_id, "test", config)
+            .unwrap();
+
+        // Replay upsert
+        let vector_id = VectorId::new(1);
+        store
+            .replay_upsert(run_id, "test", "doc", vector_id, &[1.0, 0.0, 0.0], None)
+            .unwrap();
+
+        let collection_id = CollectionId::new(run_id, "test");
+        {
+            let backends = store.backends.read().unwrap();
+            assert!(backends.get(&collection_id).unwrap().contains(vector_id));
+        }
+
+        // Replay deletion
+        store
+            .replay_delete(run_id, "test", "doc", vector_id)
+            .unwrap();
+
+        {
+            let backends = store.backends.read().unwrap();
+            assert!(!backends.get(&collection_id).unwrap().contains(vector_id));
+        }
+    }
+
+    #[test]
+    fn test_replay_delete_missing_collection() {
+        let (_temp, _db, store) = setup();
+        let run_id = RunId::new();
+
+        // Replay delete on non-existent collection should succeed (idempotent)
+        let result = store.replay_delete(run_id, "nonexistent", "doc", VectorId::new(1));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_replay_sequence() {
+        let (_temp, _db, store) = setup();
+        let run_id = RunId::new();
+
+        let config = VectorConfig::new(3, DistanceMetric::Cosine).unwrap();
+
+        // Replay a sequence of operations
+        store
+            .replay_create_collection(run_id, "col1", config.clone())
+            .unwrap();
+
+        store
+            .replay_upsert(
+                run_id,
+                "col1",
+                "v1",
+                VectorId::new(1),
+                &[1.0, 0.0, 0.0],
+                None,
+            )
+            .unwrap();
+
+        store
+            .replay_upsert(
+                run_id,
+                "col1",
+                "v2",
+                VectorId::new(2),
+                &[0.0, 1.0, 0.0],
+                None,
+            )
+            .unwrap();
+
+        store
+            .replay_delete(run_id, "col1", "v1", VectorId::new(1))
+            .unwrap();
+
+        // Verify final state
+        let collection_id = CollectionId::new(run_id, "col1");
+        let backends = store.backends.read().unwrap();
+        let backend = backends.get(&collection_id).unwrap();
+
+        assert!(!backend.contains(VectorId::new(1)));
+        assert!(backend.contains(VectorId::new(2)));
+        assert_eq!(backend.len(), 1);
+    }
+
+    #[test]
+    fn test_backends_accessor() {
+        let (_temp, _db, store) = setup();
+        let run_id = RunId::new();
+
+        let config = VectorConfig::new(3, DistanceMetric::Cosine).unwrap();
+        store.create_collection(run_id, "test", config).unwrap();
+
+        // Use backends accessor
+        let backends = store.backends();
+        let guard = backends.read().unwrap();
+        assert_eq!(guard.len(), 1);
     }
 }

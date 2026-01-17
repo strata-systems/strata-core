@@ -46,6 +46,7 @@ tokio = { version = "1.35", features = ["full"] }
 
 # Serialization
 rmp-serde = "1.1"
+byteorder = "1.5"
 
 # Testing
 proptest = "1.4"

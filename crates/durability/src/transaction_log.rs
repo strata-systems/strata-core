@@ -506,6 +506,13 @@ impl TxEntry {
             WalEntryType::TransactionCommit
             | WalEntryType::TransactionAbort
             | WalEntryType::SnapshotMarker => None,
+
+            // Vector entries are handled by VectorStore directly
+            // They persist via KV layer which has its own WAL entries
+            WalEntryType::VectorCollectionCreate
+            | WalEntryType::VectorCollectionDelete
+            | WalEntryType::VectorUpsert
+            | WalEntryType::VectorDelete => None,
         }
     }
 }

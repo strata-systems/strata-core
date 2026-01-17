@@ -170,6 +170,29 @@ pub enum WalEntryType {
 
     /// Run begin
     RunBegin = 0x63,
+
+    // ========================================================================
+    // Vector Primitive (0x70-0x7F) - M8
+    // ========================================================================
+    /// Vector collection creation
+    ///
+    /// Creates a new vector collection with config (dimension, metric, dtype).
+    VectorCollectionCreate = 0x70,
+
+    /// Vector collection deletion
+    ///
+    /// Deletes a collection and all its vectors.
+    VectorCollectionDelete = 0x71,
+
+    /// Vector upsert (insert or update)
+    ///
+    /// TEMPORARY M8 FORMAT: Full embedding in WAL payload.
+    /// This bloats WAL size (~3KB per 768-dim vector) but is correct.
+    /// M9 may optimize with external embedding storage or delta encoding.
+    VectorUpsert = 0x72,
+
+    /// Vector deletion
+    VectorDelete = 0x73,
 }
 
 impl WalEntryType {
@@ -224,16 +247,17 @@ impl WalEntryType {
             0x40..=0x4F => "State",
             0x50..=0x5F => "Trace",
             0x60..=0x6F => "Run",
-            0x70..=0x7F => "Vector (reserved)",
+            0x70..=0x7F => "Vector",
             _ => "Future (reserved)",
         }
     }
 
     /// Check if a byte value is in a reserved range
     ///
-    /// Returns true for 0x70-0xFF which are reserved for future use.
+    /// Returns true for 0x74-0xFF which are reserved for future use.
+    /// (0x70-0x73 are now used by Vector primitive in M8.)
     pub fn is_reserved(value: u8) -> bool {
-        value >= 0x70
+        value >= 0x74
     }
 
     /// Get human-readable description of this entry type
@@ -257,6 +281,10 @@ impl WalEntryType {
             WalEntryType::RunUpdate => "Run update",
             WalEntryType::RunEnd => "Run end",
             WalEntryType::RunBegin => "Run begin",
+            WalEntryType::VectorCollectionCreate => "Vector collection creation",
+            WalEntryType::VectorCollectionDelete => "Vector collection deletion",
+            WalEntryType::VectorUpsert => "Vector upsert",
+            WalEntryType::VectorDelete => "Vector deletion",
         }
     }
 }
@@ -320,10 +348,16 @@ impl TryFrom<u8> for WalEntryType {
             0x62 => Ok(WalEntryType::RunEnd),
             0x63 => Ok(WalEntryType::RunBegin),
 
-            // Reserved ranges
-            0x70..=0x7F => Err(WalEntryTypeError::ReservedEntryType {
+            // Vector (0x70-0x7F) - M8
+            0x70 => Ok(WalEntryType::VectorCollectionCreate),
+            0x71 => Ok(WalEntryType::VectorCollectionDelete),
+            0x72 => Ok(WalEntryType::VectorUpsert),
+            0x73 => Ok(WalEntryType::VectorDelete),
+
+            // Reserved in Vector range (unused M8 slots)
+            0x74..=0x7F => Err(WalEntryTypeError::ReservedEntryType {
                 value,
-                range: "Vector (M8)",
+                range: "Vector (M8, unused)",
             }),
             0x80..=0xFF => Err(WalEntryTypeError::ReservedEntryType {
                 value,
@@ -382,6 +416,12 @@ mod tests {
         assert_eq!(WalEntryType::RunUpdate as u8, 0x61);
         assert_eq!(WalEntryType::RunEnd as u8, 0x62);
         assert_eq!(WalEntryType::RunBegin as u8, 0x63);
+
+        // Vector (M8)
+        assert_eq!(WalEntryType::VectorCollectionCreate as u8, 0x70);
+        assert_eq!(WalEntryType::VectorCollectionDelete as u8, 0x71);
+        assert_eq!(WalEntryType::VectorUpsert as u8, 0x72);
+        assert_eq!(WalEntryType::VectorDelete as u8, 0x73);
     }
 
     #[test]
@@ -411,6 +451,14 @@ mod tests {
             WalEntryType::try_from(0x60).unwrap(),
             WalEntryType::RunCreate
         );
+        assert_eq!(
+            WalEntryType::try_from(0x70).unwrap(),
+            WalEntryType::VectorCollectionCreate
+        );
+        assert_eq!(
+            WalEntryType::try_from(0x72).unwrap(),
+            WalEntryType::VectorUpsert
+        );
     }
 
     #[test]
@@ -432,11 +480,17 @@ mod tests {
 
     #[test]
     fn test_try_from_reserved() {
-        // Vector range (M8)
-        let result = WalEntryType::try_from(0x70);
+        // Unused Vector range slots (0x74-0x7F)
+        let result = WalEntryType::try_from(0x74);
         assert!(matches!(
             result,
-            Err(WalEntryTypeError::ReservedEntryType { value: 0x70, .. })
+            Err(WalEntryTypeError::ReservedEntryType { value: 0x74, .. })
+        ));
+
+        let result = WalEntryType::try_from(0x7F);
+        assert!(matches!(
+            result,
+            Err(WalEntryTypeError::ReservedEntryType { value: 0x7F, .. })
         ));
 
         // Future range
@@ -513,6 +567,14 @@ mod tests {
             WalEntryType::RunCreate.primitive_kind(),
             Some(PrimitiveKind::Run)
         );
+        assert_eq!(
+            WalEntryType::VectorCollectionCreate.primitive_kind(),
+            Some(PrimitiveKind::Vector)
+        );
+        assert_eq!(
+            WalEntryType::VectorUpsert.primitive_kind(),
+            Some(PrimitiveKind::Vector)
+        );
     }
 
     #[test]
@@ -525,7 +587,7 @@ mod tests {
         assert_eq!(WalEntryType::range_name(0x40), "State");
         assert_eq!(WalEntryType::range_name(0x50), "Trace");
         assert_eq!(WalEntryType::range_name(0x60), "Run");
-        assert_eq!(WalEntryType::range_name(0x70), "Vector (reserved)");
+        assert_eq!(WalEntryType::range_name(0x70), "Vector");
         assert_eq!(WalEntryType::range_name(0x80), "Future (reserved)");
         assert_eq!(WalEntryType::range_name(0xFF), "Future (reserved)");
     }
@@ -535,9 +597,12 @@ mod tests {
         // Not reserved
         assert!(!WalEntryType::is_reserved(0x00));
         assert!(!WalEntryType::is_reserved(0x6F));
+        // Vector entries 0x70-0x73 are now used
+        assert!(!WalEntryType::is_reserved(0x70));
+        assert!(!WalEntryType::is_reserved(0x73));
 
-        // Reserved
-        assert!(WalEntryType::is_reserved(0x70));
+        // Reserved (unused Vector slots and future range)
+        assert!(WalEntryType::is_reserved(0x74));
         assert!(WalEntryType::is_reserved(0x7F));
         assert!(WalEntryType::is_reserved(0x80));
         assert!(WalEntryType::is_reserved(0xFF));
@@ -565,6 +630,10 @@ mod tests {
             WalEntryType::RunUpdate,
             WalEntryType::RunEnd,
             WalEntryType::RunBegin,
+            WalEntryType::VectorCollectionCreate,
+            WalEntryType::VectorCollectionDelete,
+            WalEntryType::VectorUpsert,
+            WalEntryType::VectorDelete,
         ];
 
         for entry_type in entry_types {
@@ -631,6 +700,10 @@ mod tests {
             WalEntryType::RunUpdate,
             WalEntryType::RunEnd,
             WalEntryType::RunBegin,
+            WalEntryType::VectorCollectionCreate,
+            WalEntryType::VectorCollectionDelete,
+            WalEntryType::VectorUpsert,
+            WalEntryType::VectorDelete,
         ];
 
         for entry_type in entry_types {

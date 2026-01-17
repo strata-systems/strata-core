@@ -21,6 +21,15 @@ pub trait VectorIndexBackend: Send + Sync {
     /// The VectorId is assigned externally and passed in.
     fn insert(&mut self, id: VectorId, embedding: &[f32]) -> Result<(), VectorError>;
 
+    /// Insert with specific VectorId (for WAL replay)
+    ///
+    /// Used during recovery to replay WAL entries with their original IDs.
+    /// Updates next_id if necessary to maintain monotonicity (Invariant T4).
+    ///
+    /// IMPORTANT: This method MUST ensure that future ID allocations
+    /// don't reuse IDs from replayed entries.
+    fn insert_with_id(&mut self, id: VectorId, embedding: &[f32]) -> Result<(), VectorError>;
+
     /// Delete a vector
     ///
     /// Returns true if the vector existed and was deleted.
@@ -52,6 +61,28 @@ pub trait VectorIndexBackend: Send + Sync {
 
     /// Check if a vector exists
     fn contains(&self, id: VectorId) -> bool;
+
+    // ========================================================================
+    // Snapshot Methods (Epic 55 Story #359)
+    // ========================================================================
+
+    /// Get all VectorIds in deterministic order
+    ///
+    /// Returns VectorIds sorted ascending for deterministic snapshot serialization.
+    fn vector_ids(&self) -> Vec<VectorId>;
+
+    /// Get snapshot state for serialization
+    ///
+    /// Returns (next_id, free_slots) for snapshot header.
+    /// CRITICAL: next_id and free_slots MUST be persisted to maintain
+    /// VectorId uniqueness across restarts (Invariant T4).
+    fn snapshot_state(&self) -> (u64, Vec<usize>);
+
+    /// Restore snapshot state after deserialization
+    ///
+    /// Called after all vectors have been inserted with insert_with_id()
+    /// to restore the exact next_id and free_slots from the snapshot.
+    fn restore_snapshot_state(&mut self, next_id: u64, free_slots: Vec<usize>);
 }
 
 /// Factory for creating index backends

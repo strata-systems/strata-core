@@ -19,8 +19,10 @@ pub mod collection;
 pub mod error;
 pub mod filter;
 pub mod heap;
+pub mod snapshot;
 pub mod store;
 pub mod types;
+pub mod wal;
 
 pub use backend::{IndexBackendFactory, VectorIndexBackend};
 pub use brute_force::BruteForceBackend;
@@ -28,8 +30,14 @@ pub use collection::{validate_collection_name, validate_vector_key};
 pub use error::{VectorError, VectorResult};
 pub use filter::{JsonScalar, MetadataFilter};
 pub use heap::VectorHeap;
+pub use snapshot::{CollectionSnapshotHeader, VECTOR_SNAPSHOT_VERSION};
 pub use store::VectorStore;
 pub use types::{
     CollectionId, CollectionInfo, CollectionRecord, DistanceMetric, StorageDtype, VectorConfig,
     VectorConfigSerde, VectorEntry, VectorId, VectorMatch, VectorRecord,
+};
+pub use wal::{
+    create_wal_collection_create, create_wal_collection_delete, create_wal_delete,
+    create_wal_upsert, VectorWalReplayer, WalVectorCollectionCreate, WalVectorCollectionDelete,
+    WalVectorDelete, WalVectorUpsert,
 };

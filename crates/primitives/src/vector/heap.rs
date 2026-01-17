@@ -137,6 +137,17 @@ impl VectorHeap {
         &self.free_slots
     }
 
+    /// Restore snapshot state (for recovery)
+    ///
+    /// Called after all vectors have been inserted with insert_with_id()
+    /// to restore the exact next_id and free_slots from the snapshot.
+    ///
+    /// CRITICAL: This ensures VectorId uniqueness across restarts (T4).
+    pub fn restore_snapshot_state(&mut self, next_id: u64, free_slots: Vec<usize>) {
+        self.next_id.store(next_id, Ordering::Relaxed);
+        self.free_slots = free_slots;
+    }
+
     /// Allocate a new VectorId (monotonically increasing)
     ///
     /// This NEVER returns a previously used ID, even after deletions.

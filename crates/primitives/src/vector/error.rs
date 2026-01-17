@@ -95,6 +95,14 @@ pub enum VectorError {
     /// Internal error
     #[error("Internal error: {0}")]
     Internal(String),
+
+    /// IO error (for snapshot operations)
+    #[error("IO error: {0}")]
+    Io(String),
+
+    /// Database error
+    #[error("Database error: {0}")]
+    Database(String),
 }
 
 impl VectorError {

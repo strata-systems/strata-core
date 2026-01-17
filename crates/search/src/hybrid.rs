@@ -237,6 +237,9 @@ impl HybridSearch {
             PrimitiveKind::State => self.state.search(req),
             PrimitiveKind::Trace => self.trace.search(req),
             PrimitiveKind::Run => self.run_index.search(req),
+            // Vector search requires embeddings (not text queries).
+            // Use VectorStore::search_response() directly for semantic search.
+            PrimitiveKind::Vector => Ok(SearchResponse::empty()),
         }
     }
 }
@@ -324,7 +327,7 @@ mod tests {
         // Test without filter (all primitives)
         let req_all = SearchRequest::new(run_id, "test");
         let all_primitives = hybrid.select_primitives(&req_all);
-        assert_eq!(all_primitives.len(), 6);
+        assert_eq!(all_primitives.len(), 7); // 6 original + Vector (M8)
     }
 
     #[test]
