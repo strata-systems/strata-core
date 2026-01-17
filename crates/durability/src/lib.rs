@@ -38,6 +38,7 @@ pub use m7_recovery::{
     CommittedTransactions, M7Recovery, M7RecoveryError, M7RecoveryOptions, M7RecoveryResult,
     SnapshotDiscovery, WalReplayResultPublic,
 };
+pub use m7_transaction::{Transaction, TxEntry};
 pub use m7_wal_manager::{WalManager, WalStats};
 pub use m7_wal_reader::WalReader;
 pub use m7_wal_types::{TxId, WalEntry, WalEntryError, M7_FORMAT_VERSION, MAX_WAL_ENTRY_SIZE};
@@ -54,6 +55,5 @@ pub use snapshot_types::{
     now_micros, primitive_ids, PrimitiveSection, SnapshotEnvelope, SnapshotError, SnapshotHeader,
     SnapshotInfo, SNAPSHOT_HEADER_SIZE, SNAPSHOT_MAGIC, SNAPSHOT_VERSION_1,
 };
-pub use m7_transaction::{Transaction, TxEntry};
 pub use wal::{DurabilityMode, WALEntry as LegacyWALEntry, WAL};
 pub use wal_entry_types::{PrimitiveKind, WalEntryType, WalEntryTypeError};

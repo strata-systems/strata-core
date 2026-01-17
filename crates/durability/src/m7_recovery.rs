@@ -142,10 +142,7 @@ impl M7RecoveryResult {
     /// Get human-readable summary
     pub fn summary(&self) -> String {
         let snapshot_info = match &self.snapshot_used {
-            Some(info) => format!(
-                "snapshot at offset {}",
-                info.wal_offset
-            ),
+            Some(info) => format!("snapshot at offset {}", info.wal_offset),
             None => "no snapshot (full WAL replay)".to_string(),
         };
 
@@ -265,9 +262,7 @@ impl SnapshotDiscovery {
                                 path: path.clone(),
                                 timestamp_micros: header.timestamp_micros,
                                 wal_offset: header.wal_offset,
-                                size_bytes: std::fs::metadata(path)
-                                    .map(|m| m.len())
-                                    .unwrap_or(0),
+                                size_bytes: std::fs::metadata(path).map(|m| m.len()).unwrap_or(0),
                             };
 
                             if idx > 0 {
@@ -1387,7 +1382,10 @@ mod tests {
             M7Recovery::replay_wal_committed(&wal_path, 0, &M7RecoveryOptions::default()).unwrap();
 
         // Results must be identical
-        assert_eq!(result1.transactions_recovered, result2.transactions_recovered);
+        assert_eq!(
+            result1.transactions_recovered,
+            result2.transactions_recovered
+        );
         assert_eq!(txs1.len(), txs2.len());
 
         for i in 0..txs1.len() {

@@ -336,9 +336,7 @@ impl SnapshotReader {
 
             debug!(
                 section = i,
-                primitive_type,
-                length,
-                "Parsed snapshot section"
+                primitive_type, length, "Parsed snapshot section"
             );
         }
 
@@ -560,7 +558,10 @@ mod tests {
 
         // Validation should fail
         let result = SnapshotReader::validate_checksum(&path);
-        assert!(matches!(result, Err(SnapshotError::ChecksumMismatch { .. })));
+        assert!(matches!(
+            result,
+            Err(SnapshotError::ChecksumMismatch { .. })
+        ));
     }
 
     #[test]

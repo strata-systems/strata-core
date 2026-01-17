@@ -314,7 +314,8 @@ impl Transaction {
 
     /// Add a trace record operation
     pub fn trace_record(&mut self, span: impl Into<Vec<u8>>) -> &mut Self {
-        self.entries.push(TxEntry::TraceRecord { span: span.into() });
+        self.entries
+            .push(TxEntry::TraceRecord { span: span.into() });
         self
     }
 
@@ -558,9 +559,12 @@ fn deserialize_transition(data: &[u8]) -> Option<(Vec<u8>, Vec<u8>, Vec<u8>)> {
     }
     let key = data[4..4 + key_len].to_vec();
     let from_offset = 4 + key_len;
-    let from_len =
-        u32::from_le_bytes([data[from_offset], data[from_offset + 1], data[from_offset + 2], data[from_offset + 3]])
-            as usize;
+    let from_len = u32::from_le_bytes([
+        data[from_offset],
+        data[from_offset + 1],
+        data[from_offset + 2],
+        data[from_offset + 3],
+    ]) as usize;
     if data.len() < from_offset + 4 + from_len {
         return None;
     }
