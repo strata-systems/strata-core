@@ -23,6 +23,7 @@
 //! - `Async`: Background thread handles fsync
 //! - `InMemory`: No persistence
 
+use crate::m7_transaction::Transaction;
 use crate::m7_wal_types::{TxId, WalEntry, WalEntryError};
 use crate::wal::DurabilityMode;
 use crate::wal_entry_types::WalEntryType;
@@ -257,6 +258,83 @@ impl WalWriter {
         self.commit_transaction(tx_id)?;
 
         Ok(tx_id)
+    }
+
+    /// Commit a Transaction atomically (Story #318)
+    ///
+    /// This is the primary method for atomic cross-primitive commits.
+    /// All entries in the transaction are written followed by a commit marker.
+    ///
+    /// # Atomicity Guarantee
+    ///
+    /// - If crash before commit marker: all entries discarded on recovery
+    /// - If crash after commit marker: all entries replayed on recovery
+    ///
+    /// # Arguments
+    ///
+    /// * `tx` - Transaction to commit
+    ///
+    /// # Returns
+    ///
+    /// The offset of the commit marker (for reference/logging)
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let mut tx = Transaction::new();
+    /// tx.kv_put("key1", "value1")
+    ///   .json_set("doc1", json!({}))
+    ///   .state_set("state1", "active");
+    ///
+    /// let commit_offset = writer.commit_atomic(tx)?;
+    /// ```
+    pub fn commit_atomic(&mut self, tx: Transaction) -> Result<u64, WalEntryError> {
+        if tx.is_empty() {
+            // Nothing to commit
+            return Ok(self.position());
+        }
+
+        let tx_id = tx.id();
+        let (_, wal_entries) = tx.into_wal_entries();
+
+        trace!(tx_id = %tx_id, entries = wal_entries.len(), "Writing atomic transaction");
+
+        // Write all entries
+        for entry in &wal_entries {
+            self.write_entry(entry)?;
+        }
+
+        // Write commit marker and sync
+        let commit_offset = self.commit_transaction(tx_id)?;
+
+        debug!(
+            tx_id = %tx_id,
+            entries = wal_entries.len(),
+            commit_offset,
+            "Atomic transaction committed"
+        );
+
+        Ok(commit_offset)
+    }
+
+    /// Commit a Transaction atomically without consuming it
+    ///
+    /// Same as `commit_atomic` but takes a reference.
+    pub fn commit_atomic_ref(&mut self, tx: &Transaction) -> Result<u64, WalEntryError> {
+        if tx.is_empty() {
+            return Ok(self.position());
+        }
+
+        let tx_id = tx.id();
+        let (_, wal_entries) = tx.to_wal_entries();
+
+        trace!(tx_id = %tx_id, entries = wal_entries.len(), "Writing atomic transaction (ref)");
+
+        for entry in &wal_entries {
+            self.write_entry(entry)?;
+        }
+
+        self.commit_transaction(tx_id)
     }
 
     /// Write a snapshot marker
@@ -604,5 +682,237 @@ mod tests {
         writer.abort_transaction(tx2).unwrap();
 
         assert!(writer.position() > 0);
+    }
+
+    // ========================================================================
+    // Story #318: Atomic Commit Tests
+    // ========================================================================
+
+    #[test]
+    fn test_commit_atomic_empty() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("test.wal");
+
+        let mut writer = WalWriter::open(&wal_path, DurabilityMode::Strict).unwrap();
+
+        // Empty transaction should return current position
+        let tx = Transaction::new();
+        let offset = writer.commit_atomic(tx).unwrap();
+        assert_eq!(offset, 0);
+    }
+
+    #[test]
+    fn test_commit_atomic_single_kv() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("test.wal");
+
+        let mut writer = WalWriter::open(&wal_path, DurabilityMode::Strict).unwrap();
+
+        let mut tx = Transaction::new();
+        tx.kv_put("key1", "value1");
+
+        let offset = writer.commit_atomic(tx).unwrap();
+        assert!(offset > 0);
+        assert!(writer.position() > offset);
+    }
+
+    #[test]
+    fn test_commit_atomic_cross_primitive() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("test.wal");
+
+        let mut writer = WalWriter::open(&wal_path, DurabilityMode::Strict).unwrap();
+
+        // Transaction spanning multiple primitives
+        let mut tx = Transaction::new();
+        tx.kv_put("kv_key", "kv_value")
+            .json_set("json_key", b"{}".to_vec())
+            .event_append(b"event_data".to_vec())
+            .state_set("state_key", "active")
+            .trace_record(b"span_data".to_vec());
+
+        let tx_id = tx.id();
+        let offset = writer.commit_atomic(tx).unwrap();
+
+        assert!(offset > 0);
+        assert!(writer.position() > offset);
+
+        // Verify by reading back with reader
+        use crate::m7_wal_reader::WalReader;
+        let mut reader = WalReader::open(&wal_path).unwrap();
+        let mut entries = Vec::new();
+        while let Some(entry) = reader.next_entry().unwrap() {
+            entries.push(entry);
+        }
+
+        // Should have 5 entries + 1 commit marker = 6 total
+        assert_eq!(entries.len(), 6);
+
+        // All non-commit entries should share the same tx_id
+        for entry in &entries[..5] {
+            assert_eq!(entry.tx_id, tx_id);
+        }
+
+        // Last entry should be commit marker
+        assert_eq!(entries[5].entry_type, WalEntryType::TransactionCommit);
+        assert_eq!(entries[5].tx_id, tx_id);
+    }
+
+    #[test]
+    fn test_commit_atomic_ref() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("test.wal");
+
+        let mut writer = WalWriter::open(&wal_path, DurabilityMode::Strict).unwrap();
+
+        let mut tx = Transaction::new();
+        tx.kv_put("key1", "value1").kv_put("key2", "value2");
+
+        // Use ref version - can still access transaction after
+        let offset = writer.commit_atomic_ref(&tx).unwrap();
+        assert!(offset > 0);
+
+        // Transaction should still be accessible
+        assert_eq!(tx.len(), 2);
+    }
+
+    #[test]
+    fn test_commit_atomic_multiple_transactions() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("test.wal");
+
+        let mut writer = WalWriter::open(&wal_path, DurabilityMode::Strict).unwrap();
+
+        // Commit 3 transactions
+        for i in 0..3 {
+            let mut tx = Transaction::new();
+            tx.kv_put(format!("key_{}", i), format!("value_{}", i));
+            tx.json_set(format!("doc_{}", i), b"{}".to_vec());
+            writer.commit_atomic(tx).unwrap();
+        }
+
+        // Verify all 3 transactions written
+        use crate::m7_wal_reader::WalReader;
+        let mut reader = WalReader::open(&wal_path).unwrap();
+        let mut entries = Vec::new();
+        while let Some(entry) = reader.next_entry().unwrap() {
+            entries.push(entry);
+        }
+
+        // 3 transactions * (2 entries + 1 commit marker) = 9 entries
+        assert_eq!(entries.len(), 9);
+
+        // Count commit markers
+        let commits: Vec<_> = entries
+            .iter()
+            .filter(|e| e.entry_type == WalEntryType::TransactionCommit)
+            .collect();
+        assert_eq!(commits.len(), 3);
+    }
+
+    #[test]
+    fn test_commit_atomic_large_transaction() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("test.wal");
+
+        let mut writer = WalWriter::open(&wal_path, DurabilityMode::Strict).unwrap();
+
+        // Large transaction with 100 entries
+        let mut tx = Transaction::new();
+        for i in 0..100 {
+            tx.kv_put(format!("key_{}", i), format!("value_{}", i));
+        }
+
+        let tx_id = tx.id();
+        writer.commit_atomic(tx).unwrap();
+
+        // Verify all entries have same tx_id
+        use crate::m7_wal_reader::WalReader;
+        let mut reader = WalReader::open(&wal_path).unwrap();
+        let mut entries = Vec::new();
+        while let Some(entry) = reader.next_entry().unwrap() {
+            entries.push(entry);
+        }
+
+        // 100 entries + 1 commit marker
+        assert_eq!(entries.len(), 101);
+
+        for entry in &entries {
+            assert_eq!(entry.tx_id, tx_id);
+        }
+    }
+
+    #[test]
+    fn test_commit_atomic_all_primitive_types() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("test.wal");
+
+        let mut writer = WalWriter::open(&wal_path, DurabilityMode::Strict).unwrap();
+
+        let mut tx = Transaction::new();
+
+        // KV operations
+        tx.kv_put("key1", "value1");
+        tx.kv_delete("key2");
+
+        // JSON operations
+        tx.json_create("doc1", b"{}".to_vec());
+        tx.json_set("doc2", b"{\"a\":1}".to_vec());
+        tx.json_delete("doc3");
+        tx.json_patch("doc4", b"[]".to_vec());
+
+        // Event operation
+        tx.event_append(b"event".to_vec());
+
+        // State operations
+        tx.state_init("state1", "init");
+        tx.state_set("state2", "set");
+        tx.state_transition("state3", "from", "to");
+
+        // Trace operation
+        tx.trace_record(b"span".to_vec());
+
+        // Run operations
+        tx.run_create(b"run_create".to_vec());
+        tx.run_begin(b"run_begin".to_vec());
+        tx.run_update(b"run_update".to_vec());
+        tx.run_end(b"run_end".to_vec());
+
+        let tx_id = tx.id();
+        writer.commit_atomic(tx).unwrap();
+
+        // Verify all entries
+        use crate::m7_wal_reader::WalReader;
+        let mut reader = WalReader::open(&wal_path).unwrap();
+        let mut entries = Vec::new();
+        while let Some(entry) = reader.next_entry().unwrap() {
+            entries.push(entry);
+        }
+
+        // 15 entries + 1 commit marker
+        assert_eq!(entries.len(), 16);
+
+        // Check entry types
+        assert_eq!(entries[0].entry_type, WalEntryType::KvPut);
+        assert_eq!(entries[1].entry_type, WalEntryType::KvDelete);
+        assert_eq!(entries[2].entry_type, WalEntryType::JsonCreate);
+        assert_eq!(entries[3].entry_type, WalEntryType::JsonSet);
+        assert_eq!(entries[4].entry_type, WalEntryType::JsonDelete);
+        assert_eq!(entries[5].entry_type, WalEntryType::JsonPatch);
+        assert_eq!(entries[6].entry_type, WalEntryType::EventAppend);
+        assert_eq!(entries[7].entry_type, WalEntryType::StateInit);
+        assert_eq!(entries[8].entry_type, WalEntryType::StateSet);
+        assert_eq!(entries[9].entry_type, WalEntryType::StateTransition);
+        assert_eq!(entries[10].entry_type, WalEntryType::TraceRecord);
+        assert_eq!(entries[11].entry_type, WalEntryType::RunCreate);
+        assert_eq!(entries[12].entry_type, WalEntryType::RunBegin);
+        assert_eq!(entries[13].entry_type, WalEntryType::RunUpdate);
+        assert_eq!(entries[14].entry_type, WalEntryType::RunEnd);
+        assert_eq!(entries[15].entry_type, WalEntryType::TransactionCommit);
+
+        // All share same tx_id
+        for entry in &entries {
+            assert_eq!(entry.tx_id, tx_id);
+        }
     }
 }
