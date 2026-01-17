@@ -20,6 +20,7 @@
 
 // Module declarations
 pub mod encoding; // Story #18: Entry encoding/decoding with CRC
+pub mod m7_recovery; // M7 Story #298-304: Crash Recovery
 pub mod m7_wal_manager; // M7 Story #363: WAL Truncation
 pub mod m7_wal_reader; // M7 Story #364: WAL Corruption Detection
 pub mod m7_wal_types; // M7 Story #360: WAL Entry Envelope with CRC32
@@ -32,6 +33,9 @@ pub mod wal_entry_types; // M7 Story #362: WAL Entry Type Registry
 
 // Re-export commonly used types
 pub use encoding::{decode_entry, encode_entry};
+pub use m7_recovery::{
+    M7Recovery, M7RecoveryError, M7RecoveryOptions, M7RecoveryResult, SnapshotDiscovery,
+};
 pub use m7_wal_manager::{WalManager, WalStats};
 pub use m7_wal_reader::WalReader;
 pub use m7_wal_types::{TxId, WalEntry, WalEntryError, M7_FORMAT_VERSION, MAX_WAL_ENTRY_SIZE};
