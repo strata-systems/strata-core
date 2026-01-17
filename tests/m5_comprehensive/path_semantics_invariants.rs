@@ -15,25 +15,39 @@ use crate::test_utils::*;
 /// When array structure changes, paths refer to different elements.
 #[test]
 fn test_paths_are_positional_not_identity() {
-    let (_, store, run_id, doc_id) = setup_doc(serde_json::json!({
-        "items": ["A", "B", "C"]
-    }).into());
+    let (_, store, run_id, doc_id) = setup_doc(
+        serde_json::json!({
+            "items": ["A", "B", "C"]
+        })
+        .into(),
+    );
 
     // Initial state: items[0] = "A"
-    let item0 = store.get(&run_id, &doc_id, &path("items[0]")).unwrap().unwrap();
+    let item0 = store
+        .get(&run_id, &doc_id, &path("items[0]"))
+        .unwrap()
+        .unwrap();
     assert_eq!(item0.as_str(), Some("A"));
 
     // Replace entire array with X at front
     let new_array: JsonValue = serde_json::json!(["X", "A", "B", "C"]).into();
-    store.set(&run_id, &doc_id, &path("items"), new_array).unwrap();
+    store
+        .set(&run_id, &doc_id, &path("items"), new_array)
+        .unwrap();
 
     // Now items[0] refers to "X", not "A"
     // This is fundamental to M5 semantics
-    let item0_after = store.get(&run_id, &doc_id, &path("items[0]")).unwrap().unwrap();
+    let item0_after = store
+        .get(&run_id, &doc_id, &path("items[0]"))
+        .unwrap()
+        .unwrap();
     assert_eq!(item0_after.as_str(), Some("X"));
 
     // "A" is now at items[1]
-    let item1 = store.get(&run_id, &doc_id, &path("items[1]")).unwrap().unwrap();
+    let item1 = store
+        .get(&run_id, &doc_id, &path("items[1]"))
+        .unwrap()
+        .unwrap();
     assert_eq!(item1.as_str(), Some("A"));
 }
 
@@ -103,18 +117,27 @@ fn test_read_path_semantically_invalidated_by_ancestor_mutation() {
     let (_, store, run_id, doc_id) = setup_standard_doc();
 
     // Read a deep path
-    let original = store.get(&run_id, &doc_id, &path("user.name")).unwrap().unwrap();
+    let original = store
+        .get(&run_id, &doc_id, &path("user.name"))
+        .unwrap()
+        .unwrap();
     assert_eq!(original.as_str(), Some("Alice"));
 
     // Mutate the ancestor (replace entire "user" object)
     let new_user: JsonValue = serde_json::json!({
         "name": "Bob",
         "age": 25
-    }).into();
-    store.set(&run_id, &doc_id, &path("user"), new_user).unwrap();
+    })
+    .into();
+    store
+        .set(&run_id, &doc_id, &path("user"), new_user)
+        .unwrap();
 
     // The path "user.name" now refers to different data
-    let after = store.get(&run_id, &doc_id, &path("user.name")).unwrap().unwrap();
+    let after = store
+        .get(&run_id, &doc_id, &path("user.name"))
+        .unwrap()
+        .unwrap();
     assert_eq!(after.as_str(), Some("Bob"));
 
     // The semantic invariant: ancestor mutation changes descendant meaning
@@ -127,14 +150,22 @@ fn test_sibling_writes_independent() {
     let (_, store, run_id, doc_id) = setup_standard_doc();
 
     // Read initial values
-    let name_before = store.get(&run_id, &doc_id, &path("user.name")).unwrap().unwrap();
+    let name_before = store
+        .get(&run_id, &doc_id, &path("user.name"))
+        .unwrap()
+        .unwrap();
     assert_eq!(name_before.as_str(), Some("Alice"));
 
     // Write to sibling
-    store.set(&run_id, &doc_id, &path("user.age"), JsonValue::from(99i64)).unwrap();
+    store
+        .set(&run_id, &doc_id, &path("user.age"), JsonValue::from(99i64))
+        .unwrap();
 
     // Name should be unaffected
-    let name_after = store.get(&run_id, &doc_id, &path("user.name")).unwrap().unwrap();
+    let name_after = store
+        .get(&run_id, &doc_id, &path("user.name"))
+        .unwrap()
+        .unwrap();
     assert_eq!(name_after.as_str(), Some("Alice"));
     assert_eq!(name_before, name_after);
 }
@@ -148,14 +179,24 @@ fn test_descendant_write_modifies_ancestor_subtree() {
     let version_before = store.get_version(&run_id, &doc_id).unwrap().unwrap();
 
     // Write to a deep descendant
-    store.set(&run_id, &doc_id, &path("config.settings.theme"), JsonValue::from("light")).unwrap();
+    store
+        .set(
+            &run_id,
+            &doc_id,
+            &path("config.settings.theme"),
+            JsonValue::from("light"),
+        )
+        .unwrap();
 
     // Version should increment (document changed)
     let version_after = store.get_version(&run_id, &doc_id).unwrap().unwrap();
     assert!(version_after > version_before);
 
     // The ancestor "config" now contains the modified subtree
-    let theme = store.get(&run_id, &doc_id, &path("config.settings.theme")).unwrap().unwrap();
+    let theme = store
+        .get(&run_id, &doc_id, &path("config.settings.theme"))
+        .unwrap()
+        .unwrap();
     assert_eq!(theme.as_str(), Some("light"));
 }
 
@@ -166,16 +207,22 @@ fn test_descendant_write_modifies_ancestor_subtree() {
 /// Array indices are positional - rewriting array changes what indices refer to.
 #[test]
 fn test_array_indices_are_positional() {
-    let (_, store, run_id, doc_id) = setup_doc(serde_json::json!({
-        "items": [
-            {"id": 1, "val": "first"},
-            {"id": 2, "val": "second"},
-            {"id": 3, "val": "third"}
-        ]
-    }).into());
+    let (_, store, run_id, doc_id) = setup_doc(
+        serde_json::json!({
+            "items": [
+                {"id": 1, "val": "first"},
+                {"id": 2, "val": "second"},
+                {"id": 3, "val": "third"}
+            ]
+        })
+        .into(),
+    );
 
     // items[0].id is initially 1
-    let id_at_0 = store.get(&run_id, &doc_id, &path("items[0].id")).unwrap().unwrap();
+    let id_at_0 = store
+        .get(&run_id, &doc_id, &path("items[0].id"))
+        .unwrap()
+        .unwrap();
     assert_eq!(id_at_0.as_i64(), Some(1));
 
     // Replace entire items array with reversed order
@@ -183,34 +230,54 @@ fn test_array_indices_are_positional() {
         {"id": 3, "val": "third"},
         {"id": 2, "val": "second"},
         {"id": 1, "val": "first"}
-    ]).into();
-    store.set(&run_id, &doc_id, &path("items"), reversed).unwrap();
+    ])
+    .into();
+    store
+        .set(&run_id, &doc_id, &path("items"), reversed)
+        .unwrap();
 
     // items[0].id is now 3 (position changed, same path)
-    let id_at_0_after = store.get(&run_id, &doc_id, &path("items[0].id")).unwrap().unwrap();
+    let id_at_0_after = store
+        .get(&run_id, &doc_id, &path("items[0].id"))
+        .unwrap()
+        .unwrap();
     assert_eq!(id_at_0_after.as_i64(), Some(3));
 }
 
 /// Deleting an array element shifts indices.
 #[test]
 fn test_array_delete_shifts_indices() {
-    let (_, store, run_id, doc_id) = setup_doc(serde_json::json!({
-        "items": ["a", "b", "c", "d"]
-    }).into());
+    let (_, store, run_id, doc_id) = setup_doc(
+        serde_json::json!({
+            "items": ["a", "b", "c", "d"]
+        })
+        .into(),
+    );
 
     // items[2] is "c"
-    let at_2 = store.get(&run_id, &doc_id, &path("items[2]")).unwrap().unwrap();
+    let at_2 = store
+        .get(&run_id, &doc_id, &path("items[2]"))
+        .unwrap()
+        .unwrap();
     assert_eq!(at_2.as_str(), Some("c"));
 
     // Delete items[1] ("b")
-    store.delete_at_path(&run_id, &doc_id, &path("items[1]")).unwrap();
+    store
+        .delete_at_path(&run_id, &doc_id, &path("items[1]"))
+        .unwrap();
 
     // Now items[2] is "d" (shifted down from [3])
-    let at_2_after = store.get(&run_id, &doc_id, &path("items[2]")).unwrap().unwrap();
+    let at_2_after = store
+        .get(&run_id, &doc_id, &path("items[2]"))
+        .unwrap()
+        .unwrap();
     assert_eq!(at_2_after.as_str(), Some("d"));
 
     // And items[1] is now "c" (shifted down from [2])
-    let at_1 = store.get(&run_id, &doc_id, &path("items[1]")).unwrap().unwrap();
+    let at_1 = store
+        .get(&run_id, &doc_id, &path("items[1]"))
+        .unwrap()
+        .unwrap();
     assert_eq!(at_1.as_str(), Some("c"));
 }
 
@@ -230,33 +297,107 @@ fn test_path_overlap_comprehensive() {
 
     let cases = vec![
         // Same path
-        TestCase { path_a: "a.b", path_b: "a.b", should_overlap: true, reason: "same path" },
-        TestCase { path_a: "x[0]", path_b: "x[0]", should_overlap: true, reason: "same array path" },
-
+        TestCase {
+            path_a: "a.b",
+            path_b: "a.b",
+            should_overlap: true,
+            reason: "same path",
+        },
+        TestCase {
+            path_a: "x[0]",
+            path_b: "x[0]",
+            should_overlap: true,
+            reason: "same array path",
+        },
         // Ancestor/descendant
-        TestCase { path_a: "a", path_b: "a.b", should_overlap: true, reason: "ancestor" },
-        TestCase { path_a: "a.b", path_b: "a", should_overlap: true, reason: "descendant" },
-        TestCase { path_a: "a", path_b: "a.b.c.d", should_overlap: true, reason: "deep descendant" },
-        TestCase { path_a: "x", path_b: "x[0]", should_overlap: true, reason: "array descendant" },
-        TestCase { path_a: "x[0]", path_b: "x[0].foo", should_overlap: true, reason: "array element descendant" },
-
+        TestCase {
+            path_a: "a",
+            path_b: "a.b",
+            should_overlap: true,
+            reason: "ancestor",
+        },
+        TestCase {
+            path_a: "a.b",
+            path_b: "a",
+            should_overlap: true,
+            reason: "descendant",
+        },
+        TestCase {
+            path_a: "a",
+            path_b: "a.b.c.d",
+            should_overlap: true,
+            reason: "deep descendant",
+        },
+        TestCase {
+            path_a: "x",
+            path_b: "x[0]",
+            should_overlap: true,
+            reason: "array descendant",
+        },
+        TestCase {
+            path_a: "x[0]",
+            path_b: "x[0].foo",
+            should_overlap: true,
+            reason: "array element descendant",
+        },
         // Siblings (no overlap)
-        TestCase { path_a: "a.b", path_b: "a.c", should_overlap: false, reason: "siblings" },
-        TestCase { path_a: "x[0]", path_b: "x[1]", should_overlap: false, reason: "array siblings" },
-        TestCase { path_a: "a.b.c", path_b: "a.b.d", should_overlap: false, reason: "deep siblings" },
-
+        TestCase {
+            path_a: "a.b",
+            path_b: "a.c",
+            should_overlap: false,
+            reason: "siblings",
+        },
+        TestCase {
+            path_a: "x[0]",
+            path_b: "x[1]",
+            should_overlap: false,
+            reason: "array siblings",
+        },
+        TestCase {
+            path_a: "a.b.c",
+            path_b: "a.b.d",
+            should_overlap: false,
+            reason: "deep siblings",
+        },
         // Different subtrees (no overlap)
-        TestCase { path_a: "users", path_b: "config", should_overlap: false, reason: "different roots" },
-        TestCase { path_a: "a.b.c", path_b: "x.y.z", should_overlap: false, reason: "different subtrees" },
-
+        TestCase {
+            path_a: "users",
+            path_b: "config",
+            should_overlap: false,
+            reason: "different roots",
+        },
+        TestCase {
+            path_a: "a.b.c",
+            path_b: "x.y.z",
+            should_overlap: false,
+            reason: "different subtrees",
+        },
         // Root cases
-        TestCase { path_a: "", path_b: "anything", should_overlap: true, reason: "root overlaps all" },
-        TestCase { path_a: "", path_b: "a.b.c[0].d", should_overlap: true, reason: "root overlaps deep" },
+        TestCase {
+            path_a: "",
+            path_b: "anything",
+            should_overlap: true,
+            reason: "root overlaps all",
+        },
+        TestCase {
+            path_a: "",
+            path_b: "a.b.c[0].d",
+            should_overlap: true,
+            reason: "root overlaps deep",
+        },
     ];
 
     for case in cases {
-        let a = if case.path_a.is_empty() { JsonPath::root() } else { path(case.path_a) };
-        let b = if case.path_b.is_empty() { JsonPath::root() } else { path(case.path_b) };
+        let a = if case.path_a.is_empty() {
+            JsonPath::root()
+        } else {
+            path(case.path_a)
+        };
+        let b = if case.path_b.is_empty() {
+            JsonPath::root()
+        } else {
+            path(case.path_b)
+        };
 
         let overlaps = a.overlaps(&b);
         assert_eq!(
@@ -364,7 +505,9 @@ fn test_run_isolation_same_doc_id() {
     assert_eq!(val2.as_i64(), Some(2));
 
     // Modifying one doesn't affect the other
-    store.set(&run1, &doc_id, &root(), JsonValue::from(100i64)).unwrap();
+    store
+        .set(&run1, &doc_id, &root(), JsonValue::from(100i64))
+        .unwrap();
 
     let val1_after = store.get(&run1, &doc_id, &root()).unwrap().unwrap();
     let val2_after = store.get(&run2, &doc_id, &root()).unwrap().unwrap();

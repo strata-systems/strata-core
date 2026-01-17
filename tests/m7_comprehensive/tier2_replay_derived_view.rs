@@ -32,7 +32,10 @@ fn test_p3_view_computed_on_demand() {
     let state2 = CapturedState::capture(&test_db.db, &run_id);
 
     // Views should be different (computed fresh each time)
-    assert_ne!(state1.hash, state2.hash, "P3: Views should differ after new write");
+    assert_ne!(
+        state1.hash, state2.hash,
+        "P3: Views should differ after new write"
+    );
     assert!(!state1.kv_entries.contains_key("key2"));
     assert!(state2.kv_entries.contains_key("key2"));
 }
@@ -57,7 +60,11 @@ fn test_p3_view_reflects_events() {
     assert!(state.kv_entries.contains_key("counter"));
     // Value should be 3 (last write)
     let value_str = &state.kv_entries["counter"];
-    assert!(value_str.contains("3"), "P3: View should show final value, got {}", value_str);
+    assert!(
+        value_str.contains("3"),
+        "P3: View should show final value, got {}",
+        value_str
+    );
 }
 
 /// P3: View is independent of other views
@@ -67,13 +74,15 @@ fn test_p3_views_independent() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key", Value::String("initial".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("initial".into()))
+        .unwrap();
 
     // Capture first view
     let state1 = CapturedState::capture(&test_db.db, &run_id);
 
     // Modify data
-    kv.put(&run_id, "key", Value::String("modified".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("modified".into()))
+        .unwrap();
 
     // Capture second view
     let state2 = CapturedState::capture(&test_db.db, &run_id);
@@ -91,7 +100,12 @@ fn test_p3_delete_events_reflected() {
 
     let kv = test_db.kv();
 
-    kv.put(&run_id, "to_delete", Value::String("will be deleted".into())).unwrap();
+    kv.put(
+        &run_id,
+        "to_delete",
+        Value::String("will be deleted".into()),
+    )
+    .unwrap();
     let state_before = CapturedState::capture(&test_db.db, &run_id);
     assert!(state_before.kv_entries.contains_key("to_delete"));
 
@@ -112,7 +126,8 @@ fn test_p3_view_from_all_events() {
 
     // Many events
     for i in 0..100 {
-        kv.put(&run_id, &format!("key_{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("key_{}", i), Value::I64(i))
+            .unwrap();
     }
 
     // Delete some
@@ -126,9 +141,17 @@ fn test_p3_view_from_all_events() {
     for i in 0..100 {
         let key = format!("key_{}", i);
         if i % 2 == 0 {
-            assert!(!state.kv_entries.contains_key(&key), "P3: Deleted key {} present", i);
+            assert!(
+                !state.kv_entries.contains_key(&key),
+                "P3: Deleted key {} present",
+                i
+            );
         } else {
-            assert!(state.kv_entries.contains_key(&key), "P3: Expected key {} missing", i);
+            assert!(
+                state.kv_entries.contains_key(&key),
+                "P3: Expected key {} missing",
+                i
+            );
         }
     }
 }
@@ -142,8 +165,10 @@ fn test_p3_run_isolation() {
 
     let kv = test_db.kv();
 
-    kv.put(&run_id1, "shared", Value::String("run1".into())).unwrap();
-    kv.put(&run_id2, "shared", Value::String("run2".into())).unwrap();
+    kv.put(&run_id1, "shared", Value::String("run1".into()))
+        .unwrap();
+    kv.put(&run_id2, "shared", Value::String("run2".into()))
+        .unwrap();
 
     let state1 = CapturedState::capture(&test_db.db, &run_id1);
     let state2 = CapturedState::capture(&test_db.db, &run_id2);
@@ -184,7 +209,10 @@ fn test_p3_empty_events_empty_view() {
 
     let state = CapturedState::capture(&test_db.db, &run_id);
 
-    assert!(state.kv_entries.is_empty(), "P3: Empty events should produce empty view");
+    assert!(
+        state.kv_entries.is_empty(),
+        "P3: Empty events should produce empty view"
+    );
 }
 
 /// P3: View reflects current state, not historical

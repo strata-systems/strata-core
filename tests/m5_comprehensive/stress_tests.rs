@@ -25,13 +25,23 @@ fn test_large_document_many_keys() {
     // Add 1000 keys
     for i in 0..1000 {
         let key = format!("key_{}", i);
-        store.set(&run_id, &doc_id, &key.parse().unwrap(), JsonValue::from(i as i64)).unwrap();
+        store
+            .set(
+                &run_id,
+                &doc_id,
+                &key.parse().unwrap(),
+                JsonValue::from(i as i64),
+            )
+            .unwrap();
     }
 
     // Verify all keys
     for i in 0..1000 {
         let key = format!("key_{}", i);
-        let value = store.get(&run_id, &doc_id, &key.parse().unwrap()).unwrap().unwrap();
+        let value = store
+            .get(&run_id, &doc_id, &key.parse().unwrap())
+            .unwrap()
+            .unwrap();
         assert_eq!(value.as_i64(), Some(i as i64));
     }
 
@@ -49,13 +59,23 @@ fn test_large_string_values() {
 
     for i in 0..10 {
         let key = format!("key_{}", i);
-        store.set(&run_id, &doc_id, &key.parse().unwrap(), JsonValue::from(large_string.clone())).unwrap();
+        store
+            .set(
+                &run_id,
+                &doc_id,
+                &key.parse().unwrap(),
+                JsonValue::from(large_string.clone()),
+            )
+            .unwrap();
     }
 
     // Verify
     for i in 0..10 {
         let key = format!("key_{}", i);
-        let value = store.get(&run_id, &doc_id, &key.parse().unwrap()).unwrap().unwrap();
+        let value = store
+            .get(&run_id, &doc_id, &key.parse().unwrap())
+            .unwrap()
+            .unwrap();
         assert_eq!(value.as_str().unwrap().len(), 10_000);
     }
 }
@@ -67,12 +87,35 @@ fn test_large_array() {
 
     // Build large array
     let large_array: serde_json::Value = (0..1000).map(|i| serde_json::json!(i)).collect();
-    store.set(&run_id, &doc_id, &root(), large_array.into()).unwrap();
+    store
+        .set(&run_id, &doc_id, &root(), large_array.into())
+        .unwrap();
 
     // Access various indices
-    assert_eq!(store.get(&run_id, &doc_id, &path("[0]")).unwrap().unwrap().as_i64(), Some(0));
-    assert_eq!(store.get(&run_id, &doc_id, &path("[500]")).unwrap().unwrap().as_i64(), Some(500));
-    assert_eq!(store.get(&run_id, &doc_id, &path("[999]")).unwrap().unwrap().as_i64(), Some(999));
+    assert_eq!(
+        store
+            .get(&run_id, &doc_id, &path("[0]"))
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(0)
+    );
+    assert_eq!(
+        store
+            .get(&run_id, &doc_id, &path("[500]"))
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(500)
+    );
+    assert_eq!(
+        store
+            .get(&run_id, &doc_id, &path("[999]"))
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(999)
+    );
 }
 
 // =============================================================================
@@ -95,10 +138,20 @@ fn test_deep_nesting() {
     }
 
     // Set value at deep path
-    store.set(&run_id, &doc_id, &path_str.parse().unwrap(), JsonValue::from("deep")).unwrap();
+    store
+        .set(
+            &run_id,
+            &doc_id,
+            &path_str.parse().unwrap(),
+            JsonValue::from("deep"),
+        )
+        .unwrap();
 
     // Read back
-    let value = store.get(&run_id, &doc_id, &path_str.parse().unwrap()).unwrap().unwrap();
+    let value = store
+        .get(&run_id, &doc_id, &path_str.parse().unwrap())
+        .unwrap()
+        .unwrap();
     assert_eq!(value.as_str(), Some("deep"));
 }
 
@@ -115,7 +168,10 @@ fn test_deep_array_nesting() {
 
     // Build path to innermost value
     let path_str = "[0]".repeat(20);
-    let inner = store.get(&run_id, &doc_id, &path_str.parse().unwrap()).unwrap().unwrap();
+    let inner = store
+        .get(&run_id, &doc_id, &path_str.parse().unwrap())
+        .unwrap()
+        .unwrap();
     assert_eq!(inner.as_i64(), Some(42));
 }
 
@@ -135,13 +191,22 @@ fn test_many_documents() {
 
     // Create all documents
     for (i, doc_id) in doc_ids.iter().enumerate() {
-        store.create(&run_id, doc_id, JsonValue::from(i as i64)).unwrap();
+        store
+            .create(&run_id, doc_id, JsonValue::from(i as i64))
+            .unwrap();
     }
 
     // Verify all documents
     for (i, doc_id) in doc_ids.iter().enumerate() {
         assert!(store.exists(&run_id, doc_id).unwrap());
-        assert_eq!(store.get(&run_id, doc_id, &root()).unwrap().unwrap().as_i64(), Some(i as i64));
+        assert_eq!(
+            store
+                .get(&run_id, doc_id, &root())
+                .unwrap()
+                .unwrap()
+                .as_i64(),
+            Some(i as i64)
+        );
     }
 }
 
@@ -167,7 +232,14 @@ fn test_many_documents_many_operations() {
         for (doc_idx, doc_id) in doc_ids.iter().enumerate() {
             let key = format!("key_{}", op);
             let value = doc_idx * 1000 + op;
-            store.set(&run_id, doc_id, &key.parse().unwrap(), JsonValue::from(value as i64)).unwrap();
+            store
+                .set(
+                    &run_id,
+                    doc_id,
+                    &key.parse().unwrap(),
+                    JsonValue::from(value as i64),
+                )
+                .unwrap();
         }
     }
 
@@ -176,7 +248,10 @@ fn test_many_documents_many_operations() {
         for op in 0..ops_per_doc {
             let key = format!("key_{}", op);
             let expected = doc_idx * 1000 + op;
-            let actual = store.get(&run_id, doc_id, &key.parse().unwrap()).unwrap().unwrap();
+            let actual = store
+                .get(&run_id, doc_id, &key.parse().unwrap())
+                .unwrap()
+                .unwrap();
             assert_eq!(actual.as_i64(), Some(expected as i64));
         }
     }
@@ -195,10 +270,17 @@ fn test_concurrent_readers_stress() {
     let doc_id = JsonDocId::new();
 
     // Setup document with data
-    store.create(&run_id, &doc_id, serde_json::json!({
-        "counter": 42,
-        "data": "test"
-    }).into()).unwrap();
+    store
+        .create(
+            &run_id,
+            &doc_id,
+            serde_json::json!({
+                "counter": 42,
+                "data": "test"
+            })
+            .into(),
+        )
+        .unwrap();
 
     // Spawn many concurrent readers
     let results = run_concurrent_n(50, {
@@ -232,26 +314,32 @@ fn test_concurrent_writers_different_docs_stress() {
     let doc_ids: Vec<JsonDocId> = (0..20).map(|_| JsonDocId::new()).collect();
     for doc_id in &doc_ids {
         let store = JsonStore::new(db.clone());
-        store.create(&run_id, doc_id, JsonValue::from(0i64)).unwrap();
+        store
+            .create(&run_id, doc_id, JsonValue::from(0i64))
+            .unwrap();
     }
 
     // Concurrent writes
     let write_count = Arc::new(AtomicU64::new(0));
 
-    let handles: Vec<_> = (0..20).map(|i| {
-        let db = db.clone();
-        let run_id = run_id.clone();
-        let doc_id = doc_ids[i].clone();
-        let count = write_count.clone();
+    let handles: Vec<_> = (0..20)
+        .map(|i| {
+            let db = db.clone();
+            let run_id = run_id.clone();
+            let doc_id = doc_ids[i].clone();
+            let count = write_count.clone();
 
-        std::thread::spawn(move || {
-            let store = JsonStore::new(db);
-            for j in 0..50 {
-                store.set(&run_id, &doc_id, &root(), JsonValue::from(j as i64)).unwrap();
-                count.fetch_add(1, Ordering::Relaxed);
-            }
+            std::thread::spawn(move || {
+                let store = JsonStore::new(db);
+                for j in 0..50 {
+                    store
+                        .set(&run_id, &doc_id, &root(), JsonValue::from(j as i64))
+                        .unwrap();
+                    count.fetch_add(1, Ordering::Relaxed);
+                }
+            })
         })
-    }).collect();
+        .collect();
 
     for h in handles {
         h.join().unwrap();
@@ -278,7 +366,9 @@ fn test_mixed_read_write_stress() {
     // Create document
     {
         let store = JsonStore::new(db.clone());
-        store.create(&run_id, &doc_id, JsonValue::from(0i64)).unwrap();
+        store
+            .create(&run_id, &doc_id, JsonValue::from(0i64))
+            .unwrap();
     }
 
     let read_count = Arc::new(AtomicU64::new(0));
@@ -341,13 +431,23 @@ fn test_write_throughput() {
 
     for i in 0..iterations {
         let key = format!("key_{}", i % 100); // Reuse keys
-        store.set(&run_id, &doc_id, &key.parse().unwrap(), JsonValue::from(i as i64)).unwrap();
+        store
+            .set(
+                &run_id,
+                &doc_id,
+                &key.parse().unwrap(),
+                JsonValue::from(i as i64),
+            )
+            .unwrap();
     }
 
     let elapsed = start.elapsed();
     let ops_per_sec = iterations as f64 / elapsed.as_secs_f64();
 
-    println!("Write throughput: {:.0} ops/sec ({} ops in {:?})", ops_per_sec, iterations, elapsed);
+    println!(
+        "Write throughput: {:.0} ops/sec ({} ops in {:?})",
+        ops_per_sec, iterations, elapsed
+    );
     assert!(ops_per_sec > 100.0, "Write throughput too low");
 }
 
@@ -360,7 +460,14 @@ fn test_read_throughput() {
     // Setup some data
     for i in 0..100 {
         let key = format!("key_{}", i);
-        store.set(&run_id, &doc_id, &key.parse().unwrap(), JsonValue::from(i as i64)).unwrap();
+        store
+            .set(
+                &run_id,
+                &doc_id,
+                &key.parse().unwrap(),
+                JsonValue::from(i as i64),
+            )
+            .unwrap();
     }
 
     let iterations = 100_000;
@@ -374,7 +481,10 @@ fn test_read_throughput() {
     let elapsed = start.elapsed();
     let ops_per_sec = iterations as f64 / elapsed.as_secs_f64();
 
-    println!("Read throughput: {:.0} ops/sec ({} ops in {:?})", ops_per_sec, iterations, elapsed);
+    println!(
+        "Read throughput: {:.0} ops/sec ({} ops in {:?})",
+        ops_per_sec, iterations, elapsed
+    );
     assert!(ops_per_sec > 1000.0, "Read throughput too low");
 }
 
@@ -395,7 +505,9 @@ fn test_create_destroy_cycle_stress() {
 
         // Create
         for doc_id in &doc_ids {
-            store.create(&run_id, doc_id, JsonValue::from(cycle as i64)).unwrap();
+            store
+                .create(&run_id, doc_id, JsonValue::from(cycle as i64))
+                .unwrap();
         }
 
         // Destroy

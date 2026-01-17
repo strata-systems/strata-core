@@ -78,8 +78,7 @@ fn test_tier8_hybrid_respects_filter() {
     populate_test_data(&db, &run_id);
 
     let hybrid = db.hybrid();
-    let req = SearchRequest::new(run_id, "test")
-        .with_primitive_filter(vec![PrimitiveKind::Kv]);
+    let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveKind::Kv]);
     let response = hybrid.search(&req).unwrap();
 
     for hit in &response.hits {
@@ -95,8 +94,7 @@ fn test_tier8_hybrid_empty_filter() {
     populate_test_data(&db, &run_id);
 
     let hybrid = db.hybrid();
-    let req = SearchRequest::new(run_id, "test")
-        .with_primitive_filter(vec![]);
+    let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![]);
     let response = hybrid.search(&req).unwrap();
 
     assert!(response.hits.is_empty());
@@ -134,8 +132,7 @@ fn test_tier8_hybrid_custom_fuser() {
     let run_id = test_run_id();
     populate_test_data(&db, &run_id);
 
-    let hybrid = HybridSearch::new(db.clone())
-        .with_fuser(Arc::new(RRFFuser::default()));
+    let hybrid = HybridSearch::new(db.clone()).with_fuser(Arc::new(RRFFuser::default()));
 
     let req = SearchRequest::new(run_id, "test");
     let response = hybrid.search(&req).unwrap();
@@ -150,8 +147,7 @@ fn test_tier8_hybrid_rrf_valid() {
     let run_id = test_run_id();
     populate_test_data(&db, &run_id);
 
-    let hybrid = HybridSearch::new(db.clone())
-        .with_fuser(Arc::new(RRFFuser::default()));
+    let hybrid = HybridSearch::new(db.clone()).with_fuser(Arc::new(RRFFuser::default()));
 
     let req = SearchRequest::new(run_id, "test").with_k(5);
     let response = hybrid.search(&req).unwrap();

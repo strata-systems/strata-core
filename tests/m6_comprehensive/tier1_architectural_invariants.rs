@@ -8,7 +8,7 @@ use in_mem_core::search_types::{PrimitiveKind, SearchRequest, SearchResponse};
 use in_mem_core::types::RunId;
 use in_mem_core::value::Value;
 use in_mem_primitives::{KVStore, RunIndex};
-use in_mem_search::{DatabaseSearchExt, HybridSearch, RRFFuser, Scorer, BM25LiteScorer, Fuser};
+use in_mem_search::{BM25LiteScorer, DatabaseSearchExt, Fuser, HybridSearch, RRFFuser, Scorer};
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -44,7 +44,10 @@ fn test_tier1_rule1_docref_size_bounded() {
     use in_mem_core::search_types::DocRef;
 
     // DocRef should be reasonably small
-    assert!(std::mem::size_of::<DocRef>() < 256, "DocRef should be small");
+    assert!(
+        std::mem::size_of::<DocRef>() < 256,
+        "DocRef should be small"
+    );
 }
 
 // ============================================================================
@@ -123,8 +126,7 @@ fn test_tier1_rule3_hybrid_respects_filter() {
     populate_test_data(&db, &run_id);
 
     let hybrid = db.hybrid();
-    let req = SearchRequest::new(run_id, "test")
-        .with_primitive_filter(vec![PrimitiveKind::Kv]);
+    let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveKind::Kv]);
     let response = hybrid.search(&req).unwrap();
 
     // All results should be from KV only
@@ -145,14 +147,16 @@ fn test_tier1_rule4_snapshot_consistent() {
     let run_index = RunIndex::new(db.clone());
 
     run_index.create_run(&run_id.to_string()).unwrap();
-    kv.put(&run_id, "initial", Value::String("searchable term".into())).unwrap();
+    kv.put(&run_id, "initial", Value::String("searchable term".into()))
+        .unwrap();
 
     // Start search
     let req = SearchRequest::new(run_id, "searchable");
     let response1 = kv.search(&req).unwrap();
 
     // Add more data
-    kv.put(&run_id, "new", Value::String("searchable new".into())).unwrap();
+    kv.put(&run_id, "new", Value::String("searchable new".into()))
+        .unwrap();
 
     // New search should see new data
     let response2 = kv.search(&req).unwrap();
@@ -178,14 +182,16 @@ fn test_tier1_rule5_index_disabled_by_default() {
 /// No index overhead when disabled
 #[test]
 fn test_tier1_rule5_no_overhead_when_disabled() {
-    use in_mem_search::InvertedIndex;
-    use in_mem_core::types::{Namespace, Key};
     use in_mem_core::search_types::DocRef;
+    use in_mem_core::types::{Key, Namespace};
+    use in_mem_search::InvertedIndex;
 
     let index = InvertedIndex::new();
     let run_id = RunId::new();
     let ns = Namespace::for_run(run_id);
-    let doc_ref = DocRef::Kv { key: Key::new_kv(ns, "test") };
+    let doc_ref = DocRef::Kv {
+        key: Key::new_kv(ns, "test"),
+    };
 
     // Adding documents when disabled should be a no-op
     index.index_document(&doc_ref, "test content", None);
@@ -224,8 +230,7 @@ fn test_tier1_rule6_can_swap_fuser() {
     populate_test_data(&db, &run_id);
 
     // Use custom fuser
-    let hybrid = HybridSearch::new(db.clone())
-        .with_fuser(Arc::new(RRFFuser::default()));
+    let hybrid = HybridSearch::new(db.clone()).with_fuser(Arc::new(RRFFuser::default()));
 
     let req = SearchRequest::new(run_id, "test");
     let response = hybrid.search(&req).unwrap();

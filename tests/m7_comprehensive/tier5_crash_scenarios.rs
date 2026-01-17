@@ -15,7 +15,8 @@ fn test_crash_during_wal_write() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "before_crash", Value::String("safe".into())).unwrap();
+    kv.put(&run_id, "before_crash", Value::String("safe".into()))
+        .unwrap();
 
     let wal_path = test_db.wal_path();
 
@@ -64,7 +65,8 @@ fn test_crash_during_batch() {
 
     // Batch of writes
     for i in 0..100 {
-        kv.put(&run_id, &format!("batch_{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("batch_{}", i), Value::I64(i))
+            .unwrap();
     }
 
     // Crash
@@ -86,7 +88,8 @@ fn test_crash_during_batch() {
     for i in 0..found {
         assert!(
             kv.get(&run_id, &format!("batch_{}", i)).unwrap().is_some(),
-            "Gap in prefix at {}", i
+            "Gap in prefix at {}",
+            i
         );
     }
 }
@@ -98,7 +101,8 @@ fn test_multiple_crashes() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "survivor", Value::String("immortal".into())).unwrap();
+    kv.put(&run_id, "survivor", Value::String("immortal".into()))
+        .unwrap();
 
     // Multiple crashes
     for crash_num in 0..5 {
@@ -107,10 +111,7 @@ fn test_multiple_crashes() {
         // Data should survive
         let kv = test_db.kv();
         let value = kv.get(&run_id, "survivor").unwrap();
-        assert!(
-            value.is_some(),
-            "Data lost after crash {}", crash_num
-        );
+        assert!(value.is_some(), "Data lost after crash {}", crash_num);
     }
 }
 
@@ -151,9 +152,11 @@ fn test_crash_after_delete() {
     let kv = test_db.kv();
 
     // Create then delete
-    kv.put(&run_id, "to_delete", Value::String("temp".into())).unwrap();
+    kv.put(&run_id, "to_delete", Value::String("temp".into()))
+        .unwrap();
     kv.delete(&run_id, "to_delete").unwrap();
-    kv.put(&run_id, "keeper", Value::String("keep".into())).unwrap();
+    kv.put(&run_id, "keeper", Value::String("keep".into()))
+        .unwrap();
 
     // Crash
     test_db.reopen();
@@ -214,7 +217,8 @@ fn test_recovery_sequence() {
 
     // Write significant data
     for i in 0..200 {
-        kv.put(&run_id, &format!("seq_{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("seq_{}", i), Value::I64(i))
+            .unwrap();
     }
 
     let state_before = CapturedState::capture(&test_db.db, &run_id);

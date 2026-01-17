@@ -21,7 +21,8 @@ fn test_p1_replay_returns_view() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("value".into()))
+        .unwrap();
 
     // This test verifies the conceptual model:
     // replay_run(run_id) -> ReadOnlyView
@@ -39,15 +40,20 @@ fn test_p1_same_inputs_same_output() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key1", Value::String("value1".into())).unwrap();
-    kv.put(&run_id, "key2", Value::String("value2".into())).unwrap();
+    kv.put(&run_id, "key1", Value::String("value1".into()))
+        .unwrap();
+    kv.put(&run_id, "key2", Value::String("value2".into()))
+        .unwrap();
 
     // Capture state multiple times
     let state1 = CapturedState::capture(&test_db.db, &run_id);
     let state2 = CapturedState::capture(&test_db.db, &run_id);
 
     // Must be identical
-    assert_eq!(state1.hash, state2.hash, "P1 VIOLATED: Same inputs different outputs");
+    assert_eq!(
+        state1.hash, state2.hash,
+        "P1 VIOLATED: Same inputs different outputs"
+    );
     assert_eq!(state1.kv_entries, state2.kv_entries);
 }
 
@@ -61,15 +67,20 @@ fn test_p1_different_runs_different_views() {
     let kv = test_db.kv();
 
     // Write different data to different runs
-    kv.put(&run_id1, "key", Value::String("run1_value".into())).unwrap();
-    kv.put(&run_id2, "key", Value::String("run2_value".into())).unwrap();
+    kv.put(&run_id1, "key", Value::String("run1_value".into()))
+        .unwrap();
+    kv.put(&run_id2, "key", Value::String("run2_value".into()))
+        .unwrap();
 
     // Capture states
     let state1 = CapturedState::capture(&test_db.db, &run_id1);
     let state2 = CapturedState::capture(&test_db.db, &run_id2);
 
     // States should differ
-    assert_ne!(state1.hash, state2.hash, "P1: Different runs should have different views");
+    assert_ne!(
+        state1.hash, state2.hash,
+        "P1: Different runs should have different views"
+    );
 }
 
 /// P1: Function is consistent over multiple calls
@@ -93,7 +104,11 @@ fn test_p1_consistent_over_calls() {
     // All should be identical
     let first = hashes[0];
     for (i, hash) in hashes.iter().enumerate() {
-        assert_eq!(first, *hash, "P1 VIOLATED: Call {} returned different result", i);
+        assert_eq!(
+            first, *hash,
+            "P1 VIOLATED: Call {} returned different result",
+            i
+        );
     }
 }
 
@@ -107,7 +122,10 @@ fn test_p1_empty_run_empty_view() {
 
     let state = CapturedState::capture(&test_db.db, &run_id);
 
-    assert!(state.kv_entries.is_empty(), "P1: Empty run should produce empty view");
+    assert!(
+        state.kv_entries.is_empty(),
+        "P1: Empty run should produce empty view"
+    );
 }
 
 /// P1: View contains exactly what was written
@@ -118,14 +136,11 @@ fn test_p1_view_contains_written_data() {
 
     let kv = test_db.kv();
 
-    let expected = vec![
-        ("alpha", "A"),
-        ("beta", "B"),
-        ("gamma", "C"),
-    ];
+    let expected = vec![("alpha", "A"), ("beta", "B"), ("gamma", "C")];
 
     for (key, value) in &expected {
-        kv.put(&run_id, key, Value::String((*value).to_string())).unwrap();
+        kv.put(&run_id, key, Value::String((*value).to_string()))
+            .unwrap();
     }
 
     let state = CapturedState::capture(&test_db.db, &run_id);
@@ -134,7 +149,8 @@ fn test_p1_view_contains_written_data() {
     for (key, _) in &expected {
         assert!(
             state.kv_entries.contains_key(*key),
-            "P1: View missing key {}", key
+            "P1: View missing key {}",
+            key
         );
     }
 }
@@ -149,8 +165,10 @@ fn test_p1_run_id_matters() {
     let kv = test_db.kv();
 
     // Same key, different runs
-    kv.put(&run_id1, "shared_key", Value::String("run1".into())).unwrap();
-    kv.put(&run_id2, "shared_key", Value::String("run2".into())).unwrap();
+    kv.put(&run_id1, "shared_key", Value::String("run1".into()))
+        .unwrap();
+    kv.put(&run_id2, "shared_key", Value::String("run2".into()))
+        .unwrap();
 
     let state1 = CapturedState::capture(&test_db.db, &run_id1);
     let state2 = CapturedState::capture(&test_db.db, &run_id2);

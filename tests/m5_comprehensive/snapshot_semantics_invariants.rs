@@ -19,7 +19,9 @@ fn test_read_your_writes_same_sequence() {
     let (_, store, run_id, doc_id) = setup_doc(JsonValue::object());
 
     // Write
-    store.set(&run_id, &doc_id, &path("x"), JsonValue::from(42i64)).unwrap();
+    store
+        .set(&run_id, &doc_id, &path("x"), JsonValue::from(42i64))
+        .unwrap();
 
     // Read immediately after
     let val = store.get(&run_id, &doc_id, &path("x")).unwrap().unwrap();
@@ -32,10 +34,20 @@ fn test_sequential_writes_visible() {
     let (_, store, run_id, doc_id) = setup_doc(JsonValue::object());
 
     for i in 1..=10 {
-        store.set(&run_id, &doc_id, &path("counter"), JsonValue::from(i as i64)).unwrap();
+        store
+            .set(
+                &run_id,
+                &doc_id,
+                &path("counter"),
+                JsonValue::from(i as i64),
+            )
+            .unwrap();
 
         // Each write is immediately visible
-        let val = store.get(&run_id, &doc_id, &path("counter")).unwrap().unwrap();
+        let val = store
+            .get(&run_id, &doc_id, &path("counter"))
+            .unwrap()
+            .unwrap();
         assert_eq!(val.as_i64(), Some(i as i64));
     }
 }
@@ -46,13 +58,24 @@ fn test_read_overlapping_path_sees_write() {
     let (_, store, run_id, doc_id) = setup_doc(JsonValue::object());
 
     // Write entire object
-    store.set(&run_id, &doc_id, &path("user"), serde_json::json!({
-        "name": "Alice",
-        "age": 30
-    }).into()).unwrap();
+    store
+        .set(
+            &run_id,
+            &doc_id,
+            &path("user"),
+            serde_json::json!({
+                "name": "Alice",
+                "age": 30
+            })
+            .into(),
+        )
+        .unwrap();
 
     // Read descendant path
-    let name = store.get(&run_id, &doc_id, &path("user.name")).unwrap().unwrap();
+    let name = store
+        .get(&run_id, &doc_id, &path("user.name"))
+        .unwrap()
+        .unwrap();
     assert_eq!(name.as_str(), Some("Alice"));
 
     // Read ancestor sees the whole object
@@ -74,14 +97,18 @@ fn test_fast_path_reads_current_state() {
     let doc_id = JsonDocId::new();
 
     // Create document
-    store.create(&run_id, &doc_id, JsonValue::from(1i64)).unwrap();
+    store
+        .create(&run_id, &doc_id, JsonValue::from(1i64))
+        .unwrap();
 
     // Fast path read
     let val = store.get(&run_id, &doc_id, &root()).unwrap().unwrap();
     assert_eq!(val.as_i64(), Some(1));
 
     // Update
-    store.set(&run_id, &doc_id, &root(), JsonValue::from(2i64)).unwrap();
+    store
+        .set(&run_id, &doc_id, &root(), JsonValue::from(2i64))
+        .unwrap();
 
     // Fast path read sees new value
     let val = store.get(&run_id, &doc_id, &root()).unwrap().unwrap();
@@ -96,7 +123,9 @@ fn test_concurrent_reads_safe() {
     let run_id = RunId::new();
     let doc_id = JsonDocId::new();
 
-    store.create(&run_id, &doc_id, JsonValue::from(42i64)).unwrap();
+    store
+        .create(&run_id, &doc_id, JsonValue::from(42i64))
+        .unwrap();
 
     // Spawn multiple readers
     let handles: Vec<_> = (0..10)
@@ -132,14 +161,18 @@ fn test_no_stale_reads() {
     let doc_id = JsonDocId::new();
 
     // Create with initial value
-    store.create(&run_id, &doc_id, JsonValue::from("v1")).unwrap();
+    store
+        .create(&run_id, &doc_id, JsonValue::from("v1"))
+        .unwrap();
 
     // Read
     let r1 = store.get(&run_id, &doc_id, &root()).unwrap().unwrap();
     assert_eq!(r1.as_str(), Some("v1"));
 
     // Update
-    store.set(&run_id, &doc_id, &root(), JsonValue::from("v2")).unwrap();
+    store
+        .set(&run_id, &doc_id, &root(), JsonValue::from("v2"))
+        .unwrap();
 
     // Read again - must see v2, not v1
     let r2 = store.get(&run_id, &doc_id, &root()).unwrap().unwrap();
@@ -194,10 +227,14 @@ fn test_version_visibility() {
 
     assert_version(&store, &run_id, &doc_id, 1);
 
-    store.set(&run_id, &doc_id, &path("x"), JsonValue::from(1i64)).unwrap();
+    store
+        .set(&run_id, &doc_id, &path("x"), JsonValue::from(1i64))
+        .unwrap();
     assert_version(&store, &run_id, &doc_id, 2);
 
-    store.set(&run_id, &doc_id, &path("y"), JsonValue::from(2i64)).unwrap();
+    store
+        .set(&run_id, &doc_id, &path("y"), JsonValue::from(2i64))
+        .unwrap();
     assert_version(&store, &run_id, &doc_id, 3);
 }
 
@@ -243,18 +280,36 @@ fn test_destroy_then_recreate() {
     let doc_id = JsonDocId::new();
 
     // Create
-    store.create(&run_id, &doc_id, JsonValue::from(1i64)).unwrap();
-    assert_eq!(store.get(&run_id, &doc_id, &root()).unwrap().unwrap().as_i64(), Some(1));
+    store
+        .create(&run_id, &doc_id, JsonValue::from(1i64))
+        .unwrap();
+    assert_eq!(
+        store
+            .get(&run_id, &doc_id, &root())
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(1)
+    );
 
     // Destroy
     store.destroy(&run_id, &doc_id).unwrap();
     assert!(!store.exists(&run_id, &doc_id).unwrap());
 
     // Recreate with different value
-    store.create(&run_id, &doc_id, JsonValue::from(2i64)).unwrap();
+    store
+        .create(&run_id, &doc_id, JsonValue::from(2i64))
+        .unwrap();
 
     // New value visible, version reset
-    assert_eq!(store.get(&run_id, &doc_id, &root()).unwrap().unwrap().as_i64(), Some(2));
+    assert_eq!(
+        store
+            .get(&run_id, &doc_id, &root())
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(2)
+    );
     assert_version(&store, &run_id, &doc_id, 1);
 }
 
@@ -274,11 +329,20 @@ fn test_create_immediately_visible() {
     assert!(!store.exists(&run_id, &doc_id).unwrap());
 
     // Create
-    store.create(&run_id, &doc_id, JsonValue::from(42i64)).unwrap();
+    store
+        .create(&run_id, &doc_id, JsonValue::from(42i64))
+        .unwrap();
 
     // Immediately visible
     assert!(store.exists(&run_id, &doc_id).unwrap());
-    assert_eq!(store.get(&run_id, &doc_id, &root()).unwrap().unwrap().as_i64(), Some(42));
+    assert_eq!(
+        store
+            .get(&run_id, &doc_id, &root())
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(42)
+    );
 }
 
 /// Duplicate create fails.
@@ -290,14 +354,23 @@ fn test_duplicate_create_fails() {
     let doc_id = JsonDocId::new();
 
     // First create succeeds
-    store.create(&run_id, &doc_id, JsonValue::from(1i64)).unwrap();
+    store
+        .create(&run_id, &doc_id, JsonValue::from(1i64))
+        .unwrap();
 
     // Second create fails
     let result = store.create(&run_id, &doc_id, JsonValue::from(2i64));
     assert!(result.is_err());
 
     // Original value preserved
-    assert_eq!(store.get(&run_id, &doc_id, &root()).unwrap().unwrap().as_i64(), Some(1));
+    assert_eq!(
+        store
+            .get(&run_id, &doc_id, &root())
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(1)
+    );
 }
 
 // =============================================================================
@@ -314,7 +387,9 @@ fn test_concurrent_writes_serialized() {
     let doc_id = JsonDocId::new();
 
     // Create document with initial value at the path
-    store.create(&run_id, &doc_id, serde_json::json!({"value": 0}).into()).unwrap();
+    store
+        .create(&run_id, &doc_id, serde_json::json!({"value": 0}).into())
+        .unwrap();
 
     let num_writers = 10;
     let writes_per_thread = 10;
@@ -332,7 +407,15 @@ fn test_concurrent_writes_serialized() {
             thread::spawn(move || {
                 for i in 0..writes_per_thread {
                     let value = writer_id * 1000 + i;
-                    if store.set(&run_id, &doc_id, &path("value"), JsonValue::from(value as i64)).is_ok() {
+                    if store
+                        .set(
+                            &run_id,
+                            &doc_id,
+                            &path("value"),
+                            JsonValue::from(value as i64),
+                        )
+                        .is_ok()
+                    {
                         success_count.fetch_add(1, Ordering::Relaxed);
                     }
                 }
@@ -372,7 +455,9 @@ fn test_concurrent_writes_different_docs_independent() {
     let doc_ids: Vec<_> = (0..num_docs)
         .map(|i| {
             let doc_id = JsonDocId::new();
-            store.create(&run_id, &doc_id, JsonValue::from(0i64)).unwrap();
+            store
+                .create(&run_id, &doc_id, JsonValue::from(0i64))
+                .unwrap();
             (doc_id, i)
         })
         .collect();
@@ -387,7 +472,9 @@ fn test_concurrent_writes_different_docs_independent() {
 
             thread::spawn(move || {
                 for _ in 0..writes_per_doc {
-                    store.set(&run_id, &doc_id, &root(), JsonValue::from(expected as i64)).unwrap();
+                    store
+                        .set(&run_id, &doc_id, &root(), JsonValue::from(expected as i64))
+                        .unwrap();
                 }
             })
         })

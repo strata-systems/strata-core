@@ -40,12 +40,8 @@ pub fn populate_test_data(db: &Arc<Database>, run_id: &RunId) {
         Value::String("this is test content".into()),
     )
     .unwrap();
-    kv.put(
-        run_id,
-        "another",
-        Value::String("more test values".into()),
-    )
-    .unwrap();
+    kv.put(run_id, "another", Value::String("more test values".into()))
+        .unwrap();
 }
 
 /// Populate larger dataset for stress testing

@@ -210,7 +210,8 @@ fn test_run_persists_across_restart() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "run_data", Value::String("important".into())).unwrap();
+    kv.put(&run_id, "run_data", Value::String("important".into()))
+        .unwrap();
 
     test_db.reopen();
 

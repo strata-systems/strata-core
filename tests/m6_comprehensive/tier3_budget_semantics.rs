@@ -72,7 +72,10 @@ fn test_tier3_truncation_sets_flag() {
 
     // With 100 documents and budget of 5, should truncate
     if response.hits.len() < 100 {
-        assert!(response.truncated, "Should set truncated flag when budget exceeded");
+        assert!(
+            response.truncated,
+            "Should set truncated flag when budget exceeded"
+        );
     }
 }
 
@@ -90,11 +93,19 @@ fn test_tier3_budget_preserves_prefix_ordering() {
     let kv = KVStore::new(db.clone());
 
     // Get results with different budgets
-    let budget_10 = SearchBudget::default().with_candidates(10).with_per_primitive(10);
-    let budget_50 = SearchBudget::default().with_candidates(50).with_per_primitive(50);
+    let budget_10 = SearchBudget::default()
+        .with_candidates(10)
+        .with_per_primitive(10);
+    let budget_50 = SearchBudget::default()
+        .with_candidates(50)
+        .with_per_primitive(50);
 
-    let req_10 = SearchRequest::new(run_id, "searchable").with_budget(budget_10).with_k(50);
-    let req_50 = SearchRequest::new(run_id, "searchable").with_budget(budget_50).with_k(50);
+    let req_10 = SearchRequest::new(run_id, "searchable")
+        .with_budget(budget_10)
+        .with_k(50);
+    let req_50 = SearchRequest::new(run_id, "searchable")
+        .with_budget(budget_50)
+        .with_k(50);
 
     let r10 = kv.search(&req_10).unwrap();
     let r50 = kv.search(&req_50).unwrap();
@@ -104,8 +115,7 @@ fn test_tier3_budget_preserves_prefix_ordering() {
     if !r10.hits.is_empty() && !r50.hits.is_empty() {
         // First result should match
         assert_eq!(
-            r10.hits[0].doc_ref,
-            r50.hits[0].doc_ref,
+            r10.hits[0].doc_ref, r50.hits[0].doc_ref,
             "First result should be same regardless of budget"
         );
     }
@@ -120,8 +130,12 @@ fn test_tier3_scores_decreasing_with_budget() {
 
     let kv = KVStore::new(db.clone());
 
-    let budget = SearchBudget::default().with_candidates(20).with_per_primitive(20);
-    let req = SearchRequest::new(run_id, "searchable").with_budget(budget).with_k(50);
+    let budget = SearchBudget::default()
+        .with_candidates(20)
+        .with_per_primitive(20);
+    let req = SearchRequest::new(run_id, "searchable")
+        .with_budget(budget)
+        .with_k(50);
 
     let response = kv.search(&req).unwrap();
 
@@ -141,8 +155,12 @@ fn test_tier3_budget_no_duplicates() {
 
     let hybrid = db.hybrid();
 
-    let budget = SearchBudget::default().with_candidates(30).with_per_primitive(30);
-    let req = SearchRequest::new(run_id, "searchable").with_budget(budget).with_k(50);
+    let budget = SearchBudget::default()
+        .with_candidates(30)
+        .with_per_primitive(30);
+    let req = SearchRequest::new(run_id, "searchable")
+        .with_budget(budget)
+        .with_k(50);
 
     let response = hybrid.search(&req).unwrap();
 
@@ -166,8 +184,12 @@ fn test_tier3_budget_respects_run_isolation() {
 
     let kv = KVStore::new(db.clone());
 
-    let budget = SearchBudget::default().with_candidates(15).with_per_primitive(15);
-    let req1 = SearchRequest::new(run1, "searchable").with_budget(budget).with_k(50);
+    let budget = SearchBudget::default()
+        .with_candidates(15)
+        .with_per_primitive(15);
+    let req1 = SearchRequest::new(run1, "searchable")
+        .with_budget(budget)
+        .with_k(50);
 
     let response = kv.search(&req1).unwrap();
 

@@ -22,7 +22,8 @@ fn stress_large_wal_recovery() {
 
     // Write large amount of data
     for i in 0..10_000 {
-        kv.put(&run_id, &format!("key_{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("key_{}", i), Value::I64(i))
+            .unwrap();
     }
 
     let start = Instant::now();
@@ -77,7 +78,8 @@ fn stress_concurrent_reads() {
 
     // Populate data
     for i in 0..1000 {
-        kv.put(&run_id, &format!("key_{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("key_{}", i), Value::I64(i))
+            .unwrap();
     }
 
     let db = test_db.db.clone();
@@ -117,7 +119,10 @@ fn stress_many_small_writes() {
     let write_time = start.elapsed();
 
     println!("100K writes took: {:?}", write_time);
-    println!("Rate: {:.0} writes/sec", 100_000.0 / write_time.as_secs_f64());
+    println!(
+        "Rate: {:.0} writes/sec",
+        100_000.0 / write_time.as_secs_f64()
+    );
 }
 
 /// Large values stress
@@ -132,8 +137,12 @@ fn stress_large_values() {
     let large_value = "x".repeat(1_000_000); // 1MB
 
     for i in 0..100 {
-        kv.put(&run_id, &format!("large_{}", i), Value::String(large_value.clone()))
-            .unwrap();
+        kv.put(
+            &run_id,
+            &format!("large_{}", i),
+            Value::String(large_value.clone()),
+        )
+        .unwrap();
     }
 
     // Verify
@@ -172,7 +181,8 @@ fn stress_mixed_operations() {
     for i in 0..10_000 {
         match i % 3 {
             0 => {
-                kv.put(&run_id, &format!("k{}", i % 1000), Value::I64(i)).unwrap();
+                kv.put(&run_id, &format!("k{}", i % 1000), Value::I64(i))
+                    .unwrap();
             }
             1 => {
                 let _ = kv.get(&run_id, &format!("k{}", i % 1000));
@@ -199,7 +209,8 @@ fn stress_sustained_load() {
     let mut count = 0;
 
     while start.elapsed() < duration {
-        kv.put(&run_id, &format!("k{}", count), Value::I64(count as i64)).unwrap();
+        kv.put(&run_id, &format!("k{}", count), Value::I64(count as i64))
+            .unwrap();
         count += 1;
     }
 
@@ -218,7 +229,8 @@ fn stress_recovery_after_churn() {
 
     // Create lots of churn
     for i in 0..10_000 {
-        kv.put(&run_id, &format!("churn_{}", i % 100), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("churn_{}", i % 100), Value::I64(i))
+            .unwrap();
     }
 
     let state_before = CapturedState::capture(&test_db.db, &run_id);

@@ -4,7 +4,7 @@
 
 use crate::test_utils::*;
 use in_mem_core::value::Value;
-use in_mem_durability::{SNAPSHOT_MAGIC, SNAPSHOT_VERSION_1, SNAPSHOT_HEADER_SIZE};
+use in_mem_durability::{SNAPSHOT_HEADER_SIZE, SNAPSHOT_MAGIC, SNAPSHOT_VERSION_1};
 use std::fs::File;
 use std::io::Read;
 
@@ -15,7 +15,8 @@ fn test_snapshot_magic_number() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("value".into()))
+        .unwrap();
 
     // Create snapshot if the feature is available
     // Note: This test validates the format spec, actual snapshot creation
@@ -28,10 +29,7 @@ fn test_snapshot_magic_number() {
             let mut magic = [0u8; 10];
             file.read_exact(&mut magic).unwrap();
 
-            assert_eq!(
-                &magic, SNAPSHOT_MAGIC,
-                "Snapshot magic number incorrect"
-            );
+            assert_eq!(&magic, SNAPSHOT_MAGIC, "Snapshot magic number incorrect");
         }
     }
 }
@@ -93,7 +91,8 @@ fn test_large_data_snapshot_concept() {
     // Write substantial data
     for i in 0..500 {
         let large_value = format!("{:0>1000}", i);
-        kv.put(&run_id, &format!("key_{}", i), Value::String(large_value)).unwrap();
+        kv.put(&run_id, &format!("key_{}", i), Value::String(large_value))
+            .unwrap();
     }
 
     let state = CapturedState::capture(&test_db.db, &run_id);

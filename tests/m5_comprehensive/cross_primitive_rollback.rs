@@ -22,7 +22,9 @@ fn test_failed_op_no_side_effects() {
     let nonexistent_doc = JsonDocId::new();
 
     // Create one document
-    json_store.create(&run_id, &existing_doc, JsonValue::from(42i64)).unwrap();
+    json_store
+        .create(&run_id, &existing_doc, JsonValue::from(42i64))
+        .unwrap();
 
     // Try to set on non-existent document (should fail)
     let result = json_store.set(&run_id, &nonexistent_doc, &root(), JsonValue::from(1i64));
@@ -30,7 +32,11 @@ fn test_failed_op_no_side_effects() {
 
     // Existing document unaffected
     assert_eq!(
-        json_store.get(&run_id, &existing_doc, &root()).unwrap().unwrap().as_i64(),
+        json_store
+            .get(&run_id, &existing_doc, &root())
+            .unwrap()
+            .unwrap()
+            .as_i64(),
         Some(42)
     );
     assert_version(&json_store, &run_id, &existing_doc, 1);
@@ -45,7 +51,9 @@ fn test_duplicate_create_fails_cleanly() {
     let doc_id = JsonDocId::new();
 
     // First create succeeds
-    json_store.create(&run_id, &doc_id, JsonValue::from(1i64)).unwrap();
+    json_store
+        .create(&run_id, &doc_id, JsonValue::from(1i64))
+        .unwrap();
 
     // Second create fails
     let result = json_store.create(&run_id, &doc_id, JsonValue::from(2i64));
@@ -53,7 +61,11 @@ fn test_duplicate_create_fails_cleanly() {
 
     // Original value preserved
     assert_eq!(
-        json_store.get(&run_id, &doc_id, &root()).unwrap().unwrap().as_i64(),
+        json_store
+            .get(&run_id, &doc_id, &root())
+            .unwrap()
+            .unwrap()
+            .as_i64(),
         Some(1)
     );
     assert_version(&json_store, &run_id, &doc_id, 1);
@@ -85,14 +97,23 @@ fn test_delete_nonexistent_path_idempotent() {
     let run_id = RunId::new();
     let doc_id = JsonDocId::new();
 
-    json_store.create(&run_id, &doc_id, serde_json::json!({
-        "a": 1
-    }).into()).unwrap();
+    json_store
+        .create(
+            &run_id,
+            &doc_id,
+            serde_json::json!({
+                "a": 1
+            })
+            .into(),
+        )
+        .unwrap();
 
     let v1 = json_store.get_version(&run_id, &doc_id).unwrap().unwrap();
 
     // Delete non-existent path (idempotent operation)
-    json_store.delete_at_path(&run_id, &doc_id, &path("nonexistent")).unwrap();
+    json_store
+        .delete_at_path(&run_id, &doc_id, &path("nonexistent"))
+        .unwrap();
 
     // Version still increments (operation was recorded)
     let v2 = json_store.get_version(&run_id, &doc_id).unwrap().unwrap();
@@ -100,7 +121,11 @@ fn test_delete_nonexistent_path_idempotent() {
 
     // Existing data unaffected
     assert_eq!(
-        json_store.get(&run_id, &doc_id, &path("a")).unwrap().unwrap().as_i64(),
+        json_store
+            .get(&run_id, &doc_id, &path("a"))
+            .unwrap()
+            .unwrap()
+            .as_i64(),
         Some(1)
     );
 }
@@ -118,11 +143,18 @@ fn test_state_valid_after_invalid_ops() {
     let doc_id = JsonDocId::new();
 
     // Create document with nested structure
-    json_store.create(&run_id, &doc_id, serde_json::json!({
-        "data": {
-            "value": 100
-        }
-    }).into()).unwrap();
+    json_store
+        .create(
+            &run_id,
+            &doc_id,
+            serde_json::json!({
+                "data": {
+                    "value": 100
+                }
+            })
+            .into(),
+        )
+        .unwrap();
 
     // Try some operations that might fail
     // (e.g., setting on a path where parent isn't an object)
@@ -130,7 +162,11 @@ fn test_state_valid_after_invalid_ops() {
 
     // After any errors, original state should be valid
     assert_eq!(
-        json_store.get(&run_id, &doc_id, &path("data.value")).unwrap().unwrap().as_i64(),
+        json_store
+            .get(&run_id, &doc_id, &path("data.value"))
+            .unwrap()
+            .unwrap()
+            .as_i64(),
         Some(100)
     );
 }
@@ -145,7 +181,9 @@ fn test_multiple_failures_no_accumulation() {
     let existing_doc = JsonDocId::new();
     let nonexistent = JsonDocId::new();
 
-    json_store.create(&run_id, &existing_doc, JsonValue::from(42i64)).unwrap();
+    json_store
+        .create(&run_id, &existing_doc, JsonValue::from(42i64))
+        .unwrap();
 
     // Multiple failed operations
     for _ in 0..10 {
@@ -156,7 +194,11 @@ fn test_multiple_failures_no_accumulation() {
 
     // Existing document still intact
     assert_eq!(
-        json_store.get(&run_id, &existing_doc, &root()).unwrap().unwrap().as_i64(),
+        json_store
+            .get(&run_id, &existing_doc, &root())
+            .unwrap()
+            .unwrap()
+            .as_i64(),
         Some(42)
     );
     assert_version(&json_store, &run_id, &existing_doc, 1);
@@ -174,7 +216,9 @@ fn test_version_unchanged_on_failure() {
     let run_id = RunId::new();
     let doc_id = JsonDocId::new();
 
-    json_store.create(&run_id, &doc_id, JsonValue::from(1i64)).unwrap();
+    json_store
+        .create(&run_id, &doc_id, JsonValue::from(1i64))
+        .unwrap();
     let v1 = json_store.get_version(&run_id, &doc_id).unwrap().unwrap();
 
     // Failed operation (duplicate create)
@@ -199,7 +243,9 @@ fn test_run_isolation_on_error() {
     let doc_id = JsonDocId::new();
 
     // Create in run1
-    json_store.create(&run1, &doc_id, JsonValue::from(100i64)).unwrap();
+    json_store
+        .create(&run1, &doc_id, JsonValue::from(100i64))
+        .unwrap();
 
     // Try operations in run2 on non-existent doc (in run2's context)
     let result = json_store.set(&run2, &doc_id, &root(), JsonValue::from(200i64));
@@ -207,7 +253,11 @@ fn test_run_isolation_on_error() {
 
     // run1's document unaffected
     assert_eq!(
-        json_store.get(&run1, &doc_id, &root()).unwrap().unwrap().as_i64(),
+        json_store
+            .get(&run1, &doc_id, &root())
+            .unwrap()
+            .unwrap()
+            .as_i64(),
         Some(100)
     );
 
@@ -226,8 +276,12 @@ fn test_destroy_run_isolation() {
     let doc_id = JsonDocId::new();
 
     // Create same doc_id in both runs
-    json_store.create(&run1, &doc_id, JsonValue::from(1i64)).unwrap();
-    json_store.create(&run2, &doc_id, JsonValue::from(2i64)).unwrap();
+    json_store
+        .create(&run1, &doc_id, JsonValue::from(1i64))
+        .unwrap();
+    json_store
+        .create(&run2, &doc_id, JsonValue::from(2i64))
+        .unwrap();
 
     // Destroy in run1
     json_store.destroy(&run1, &doc_id).unwrap();
@@ -238,7 +292,11 @@ fn test_destroy_run_isolation() {
     // run2 doc unaffected
     assert!(json_store.exists(&run2, &doc_id).unwrap());
     assert_eq!(
-        json_store.get(&run2, &doc_id, &root()).unwrap().unwrap().as_i64(),
+        json_store
+            .get(&run2, &doc_id, &root())
+            .unwrap()
+            .unwrap()
+            .as_i64(),
         Some(2)
     );
 }
@@ -255,19 +313,48 @@ fn test_operations_continue_after_failure() {
     let run_id = RunId::new();
     let doc_id = JsonDocId::new();
 
-    json_store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
-    json_store.set(&run_id, &doc_id, &path("a"), JsonValue::from(1i64)).unwrap();
+    json_store
+        .create(&run_id, &doc_id, JsonValue::object())
+        .unwrap();
+    json_store
+        .set(&run_id, &doc_id, &path("a"), JsonValue::from(1i64))
+        .unwrap();
 
     // Cause some failure (duplicate create)
     let _ = json_store.create(&run_id, &doc_id, JsonValue::from(0i64));
 
     // Can still continue with valid operations
-    json_store.set(&run_id, &doc_id, &path("b"), JsonValue::from(2i64)).unwrap();
-    json_store.set(&run_id, &doc_id, &path("c"), JsonValue::from(3i64)).unwrap();
+    json_store
+        .set(&run_id, &doc_id, &path("b"), JsonValue::from(2i64))
+        .unwrap();
+    json_store
+        .set(&run_id, &doc_id, &path("c"), JsonValue::from(3i64))
+        .unwrap();
 
-    assert_eq!(json_store.get(&run_id, &doc_id, &path("a")).unwrap().unwrap().as_i64(), Some(1));
-    assert_eq!(json_store.get(&run_id, &doc_id, &path("b")).unwrap().unwrap().as_i64(), Some(2));
-    assert_eq!(json_store.get(&run_id, &doc_id, &path("c")).unwrap().unwrap().as_i64(), Some(3));
+    assert_eq!(
+        json_store
+            .get(&run_id, &doc_id, &path("a"))
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(1)
+    );
+    assert_eq!(
+        json_store
+            .get(&run_id, &doc_id, &path("b"))
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(2)
+    );
+    assert_eq!(
+        json_store
+            .get(&run_id, &doc_id, &path("c"))
+            .unwrap()
+            .unwrap()
+            .as_i64(),
+        Some(3)
+    );
 }
 
 /// Can recreate document after destroy.
@@ -279,18 +366,28 @@ fn test_recreate_after_destroy() {
     let doc_id = JsonDocId::new();
 
     // Create, modify, destroy
-    json_store.create(&run_id, &doc_id, JsonValue::from(1i64)).unwrap();
-    json_store.set(&run_id, &doc_id, &root(), JsonValue::from(100i64)).unwrap();
+    json_store
+        .create(&run_id, &doc_id, JsonValue::from(1i64))
+        .unwrap();
+    json_store
+        .set(&run_id, &doc_id, &root(), JsonValue::from(100i64))
+        .unwrap();
     json_store.destroy(&run_id, &doc_id).unwrap();
 
     assert!(!json_store.exists(&run_id, &doc_id).unwrap());
 
     // Recreate
-    json_store.create(&run_id, &doc_id, JsonValue::from(2i64)).unwrap();
+    json_store
+        .create(&run_id, &doc_id, JsonValue::from(2i64))
+        .unwrap();
 
     assert!(json_store.exists(&run_id, &doc_id).unwrap());
     assert_eq!(
-        json_store.get(&run_id, &doc_id, &root()).unwrap().unwrap().as_i64(),
+        json_store
+            .get(&run_id, &doc_id, &root())
+            .unwrap()
+            .unwrap()
+            .as_i64(),
         Some(2)
     );
 
@@ -312,7 +409,9 @@ fn test_concurrent_error_handling() {
     // Create the document first
     {
         let store = JsonStore::new(db.clone());
-        store.create(&run_id, &doc_id, JsonValue::from(0i64)).unwrap();
+        store
+            .create(&run_id, &doc_id, JsonValue::from(0i64))
+            .unwrap();
     }
 
     // Concurrent attempts to create same document (only first succeeds, rest error)
@@ -323,7 +422,9 @@ fn test_concurrent_error_handling() {
         let doc_id = doc_id.clone();
         move |_| {
             let store = JsonStore::new(db.clone());
-            store.create(&run_id, &doc_id, JsonValue::from(1i64)).is_err()
+            store
+                .create(&run_id, &doc_id, JsonValue::from(1i64))
+                .is_err()
         }
     });
 
@@ -335,7 +436,11 @@ fn test_concurrent_error_handling() {
     // Original document intact
     let store = JsonStore::new(db.clone());
     assert_eq!(
-        store.get(&run_id, &doc_id, &root()).unwrap().unwrap().as_i64(),
+        store
+            .get(&run_id, &doc_id, &root())
+            .unwrap()
+            .unwrap()
+            .as_i64(),
         Some(0)
     );
 }

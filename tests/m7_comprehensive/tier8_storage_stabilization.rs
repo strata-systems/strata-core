@@ -5,7 +5,7 @@
 use crate::test_utils::*;
 use in_mem_core::types::RunId;
 use in_mem_core::value::Value;
-use in_mem_durability::{WalEntryType, PrimitiveKind};
+use in_mem_durability::{PrimitiveKind, WalEntryType};
 
 /// WalEntryType registry is complete
 #[test]
@@ -55,7 +55,8 @@ fn test_primitive_kind_enumeration() {
             assert!(
                 end_i < start_j || end_j < start_i,
                 "Primitive kinds {:?} and {:?} have overlapping ranges",
-                kinds[i], kinds[j]
+                kinds[i],
+                kinds[j]
             );
         }
     }
@@ -70,7 +71,8 @@ fn test_kv_primitive_operations() {
     let kv = test_db.kv();
 
     // Put
-    kv.put(&run_id, "key", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("value".into()))
+        .unwrap();
 
     // Get
     let value = kv.get(&run_id, "key").unwrap();
@@ -110,8 +112,12 @@ fn test_storage_value_types() {
     let kv = test_db.kv();
 
     // String
-    kv.put(&run_id, "str", Value::String("hello".into())).unwrap();
-    assert_eq!(kv.get(&run_id, "str").unwrap(), Some(Value::String("hello".into())));
+    kv.put(&run_id, "str", Value::String("hello".into()))
+        .unwrap();
+    assert_eq!(
+        kv.get(&run_id, "str").unwrap(),
+        Some(Value::String("hello".into()))
+    );
 
     // Int
     kv.put(&run_id, "int", Value::I64(-42)).unwrap();
@@ -142,7 +148,8 @@ fn test_storage_large_values() {
 
     // Large string
     let large = "x".repeat(100_000);
-    kv.put(&run_id, "large", Value::String(large.clone())).unwrap();
+    kv.put(&run_id, "large", Value::String(large.clone()))
+        .unwrap();
 
     if let Some(Value::String(s)) = kv.get(&run_id, "large").unwrap() {
         assert_eq!(s.len(), large.len());
@@ -159,7 +166,8 @@ fn test_storage_many_keys() {
 
     // Write many keys
     for i in 0..1000 {
-        kv.put(&run_id, &format!("key_{:04}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("key_{:04}", i), Value::I64(i))
+            .unwrap();
     }
 
     // All should be readable
@@ -179,8 +187,10 @@ fn test_storage_run_isolation() {
     let kv = test_db.kv();
 
     // Write to different runs
-    kv.put(&run_id1, "shared_key", Value::String("run1".into())).unwrap();
-    kv.put(&run_id2, "shared_key", Value::String("run2".into())).unwrap();
+    kv.put(&run_id1, "shared_key", Value::String("run1".into()))
+        .unwrap();
+    kv.put(&run_id2, "shared_key", Value::String("run2".into()))
+        .unwrap();
 
     // Reads are isolated
     assert_eq!(

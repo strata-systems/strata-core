@@ -16,9 +16,16 @@ fn test_multi_key_atomic_commit() {
     let kv = test_db.kv();
 
     // Write multiple related keys
-    kv.put(&run_id, "user.name", Value::String("Alice".into())).unwrap();
-    kv.put(&run_id, "user.email", Value::String("alice@example.com".into())).unwrap();
-    kv.put(&run_id, "user.role", Value::String("admin".into())).unwrap();
+    kv.put(&run_id, "user.name", Value::String("Alice".into()))
+        .unwrap();
+    kv.put(
+        &run_id,
+        "user.email",
+        Value::String("alice@example.com".into()),
+    )
+    .unwrap();
+    kv.put(&run_id, "user.role", Value::String("admin".into()))
+        .unwrap();
 
     test_db.reopen();
 
@@ -35,7 +42,8 @@ fn test_multi_key_atomic_commit() {
 
     assert!(
         count == 0 || count == 3,
-        "Partial user data visible: {}/3 fields", count
+        "Partial user data visible: {}/3 fields",
+        count
     );
 }
 
@@ -79,10 +87,14 @@ fn test_interleaved_operations() {
     let kv = test_db.kv();
 
     // Interleaved writes to different runs
-    kv.put(&run_id1, "key", Value::String("run1_v1".into())).unwrap();
-    kv.put(&run_id2, "key", Value::String("run2_v1".into())).unwrap();
-    kv.put(&run_id1, "key", Value::String("run1_v2".into())).unwrap();
-    kv.put(&run_id2, "key", Value::String("run2_v2".into())).unwrap();
+    kv.put(&run_id1, "key", Value::String("run1_v1".into()))
+        .unwrap();
+    kv.put(&run_id2, "key", Value::String("run2_v1".into()))
+        .unwrap();
+    kv.put(&run_id1, "key", Value::String("run1_v2".into()))
+        .unwrap();
+    kv.put(&run_id2, "key", Value::String("run2_v2".into()))
+        .unwrap();
 
     test_db.reopen();
 
@@ -107,7 +119,8 @@ fn test_large_atomic_batch() {
 
     // Large batch of related data
     for i in 0..100 {
-        kv.put(&run_id, &format!("item_{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("item_{}", i), Value::I64(i))
+            .unwrap();
     }
 
     test_db.reopen();
@@ -122,7 +135,8 @@ fn test_large_atomic_batch() {
     // Should be all or none (atomic batch)
     assert!(
         present == 0 || present == 100,
-        "Partial batch visible: {}/100", present
+        "Partial batch visible: {}/100",
+        present
     );
 }
 
@@ -136,10 +150,12 @@ fn test_cross_run_isolation() {
     let kv = test_db.kv();
 
     // Write to run1
-    kv.put(&run_id1, "isolated", Value::String("run1_data".into())).unwrap();
+    kv.put(&run_id1, "isolated", Value::String("run1_data".into()))
+        .unwrap();
 
     // Write to run2
-    kv.put(&run_id2, "isolated", Value::String("run2_data".into())).unwrap();
+    kv.put(&run_id2, "isolated", Value::String("run2_data".into()))
+        .unwrap();
 
     test_db.reopen();
 
@@ -206,7 +222,8 @@ fn test_single_operation_atomic() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "single", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "single", Value::String("value".into()))
+        .unwrap();
 
     test_db.reopen();
 

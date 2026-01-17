@@ -20,7 +20,8 @@ fn test_p2_capture_does_not_modify() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("value".into()))
+        .unwrap();
 
     let state_before = CapturedState::capture(&test_db.db, &run_id);
 
@@ -31,7 +32,11 @@ fn test_p2_capture_does_not_modify() {
 
     let state_after = CapturedState::capture(&test_db.db, &run_id);
 
-    assert_states_equal(&state_before, &state_after, "P2 VIOLATED: Capture modified state");
+    assert_states_equal(
+        &state_before,
+        &state_after,
+        "P2 VIOLATED: Capture modified state",
+    );
 }
 
 /// P2: Reading doesn't affect subsequent writes
@@ -80,7 +85,8 @@ fn test_p2_multiple_captures_identical() {
     for (i, state) in states.iter().enumerate() {
         assert_eq!(
             first_hash, state.hash,
-            "P2 VIOLATED: Capture {} returned different state", i
+            "P2 VIOLATED: Capture {} returned different state",
+            i
         );
     }
 }
@@ -92,7 +98,8 @@ fn test_p2_capture_creates_no_files() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("value".into()))
+        .unwrap();
 
     // Count files before
     let files_before = count_files_in_dir(test_db.db_path());
@@ -110,7 +117,8 @@ fn test_p2_capture_creates_no_files() {
     let diff = files_after.saturating_sub(files_before);
     assert!(
         diff <= 1, // Allow for 1 file difference due to timing
-        "P2 VIOLATED: Capture created {} new files", diff
+        "P2 VIOLATED: Capture created {} new files",
+        diff
     );
 }
 
@@ -121,7 +129,8 @@ fn test_p2_reads_idempotent() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key", Value::String("value".into())).unwrap();
+    kv.put(&run_id, "key", Value::String("value".into()))
+        .unwrap();
 
     // Read same key many times
     let mut values = Vec::new();
@@ -132,7 +141,11 @@ fn test_p2_reads_idempotent() {
     // All reads should return same value
     let first = &values[0];
     for (i, value) in values.iter().enumerate() {
-        assert_eq!(first, value, "P2 VIOLATED: Read {} returned different value", i);
+        assert_eq!(
+            first, value,
+            "P2 VIOLATED: Read {} returned different value",
+            i
+        );
     }
 }
 
@@ -189,7 +202,8 @@ fn test_p2_concurrent_reads_safe() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "shared", Value::String("shared_value".into())).unwrap();
+    kv.put(&run_id, "shared", Value::String("shared_value".into()))
+        .unwrap();
 
     let db = test_db.db.clone();
     let run_id_copy = run_id;

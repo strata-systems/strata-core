@@ -28,13 +28,28 @@ fn test_document_recovery_basic() {
         let store = JsonStore::new(db);
 
         store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
-        store.set(&run_id, &doc_id, &path("name"), JsonValue::from("Alice")).unwrap();
-        store.set(&run_id, &doc_id, &path("age"), JsonValue::from(30i64)).unwrap();
-        store.set(&run_id, &doc_id, &path("settings.theme"), JsonValue::from("dark")).unwrap();
+        store
+            .set(&run_id, &doc_id, &path("name"), JsonValue::from("Alice"))
+            .unwrap();
+        store
+            .set(&run_id, &doc_id, &path("age"), JsonValue::from(30i64))
+            .unwrap();
+        store
+            .set(
+                &run_id,
+                &doc_id,
+                &path("settings.theme"),
+                JsonValue::from("dark"),
+            )
+            .unwrap();
 
         // Verify before close
         assert_eq!(
-            store.get(&run_id, &doc_id, &path("name")).unwrap().unwrap().as_str(),
+            store
+                .get(&run_id, &doc_id, &path("name"))
+                .unwrap()
+                .unwrap()
+                .as_str(),
             Some("Alice")
         );
     }
@@ -46,15 +61,27 @@ fn test_document_recovery_basic() {
 
         assert!(store.exists(&run_id, &doc_id).unwrap());
         assert_eq!(
-            store.get(&run_id, &doc_id, &path("name")).unwrap().unwrap().as_str(),
+            store
+                .get(&run_id, &doc_id, &path("name"))
+                .unwrap()
+                .unwrap()
+                .as_str(),
             Some("Alice")
         );
         assert_eq!(
-            store.get(&run_id, &doc_id, &path("age")).unwrap().unwrap().as_i64(),
+            store
+                .get(&run_id, &doc_id, &path("age"))
+                .unwrap()
+                .unwrap()
+                .as_i64(),
             Some(30)
         );
         assert_eq!(
-            store.get(&run_id, &doc_id, &path("settings.theme")).unwrap().unwrap().as_str(),
+            store
+                .get(&run_id, &doc_id, &path("settings.theme"))
+                .unwrap()
+                .unwrap()
+                .as_str(),
             Some("dark")
         );
     }
@@ -77,7 +104,14 @@ fn test_version_recovery() {
 
         store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
         for i in 0..10 {
-            store.set(&run_id, &doc_id, &path(&format!("key{}", i)), JsonValue::from(i as i64)).unwrap();
+            store
+                .set(
+                    &run_id,
+                    &doc_id,
+                    &path(&format!("key{}", i)),
+                    JsonValue::from(i as i64),
+                )
+                .unwrap();
         }
 
         expected_version = store.get_version(&run_id, &doc_id).unwrap().unwrap();
@@ -108,7 +142,9 @@ fn test_deleted_document_stays_deleted() {
         let db = create_persistent_db(&db_path);
         let store = JsonStore::new(db);
 
-        store.create(&run_id, &doc_id, JsonValue::from(42i64)).unwrap();
+        store
+            .create(&run_id, &doc_id, JsonValue::from(42i64))
+            .unwrap();
         assert!(store.exists(&run_id, &doc_id).unwrap());
 
         store.destroy(&run_id, &doc_id).unwrap();
@@ -143,7 +179,9 @@ fn test_multi_document_recovery() {
         let store = JsonStore::new(db);
 
         for (i, doc_id) in doc_ids.iter().enumerate() {
-            store.create(&run_id, doc_id, JsonValue::from(i as i64)).unwrap();
+            store
+                .create(&run_id, doc_id, JsonValue::from(i as i64))
+                .unwrap();
         }
     }
 
@@ -155,7 +193,11 @@ fn test_multi_document_recovery() {
         for (i, doc_id) in doc_ids.iter().enumerate() {
             assert!(store.exists(&run_id, doc_id).unwrap());
             assert_eq!(
-                store.get(&run_id, doc_id, &root()).unwrap().unwrap().as_i64(),
+                store
+                    .get(&run_id, doc_id, &root())
+                    .unwrap()
+                    .unwrap()
+                    .as_i64(),
                 Some(i as i64)
             );
         }
@@ -180,12 +222,22 @@ fn test_interleaved_operations_recovery() {
         store.create(&run_id, &doc1, JsonValue::object()).unwrap();
         store.create(&run_id, &doc2, JsonValue::object()).unwrap();
 
-        store.set(&run_id, &doc1, &path("a"), JsonValue::from(1i64)).unwrap();
-        store.set(&run_id, &doc2, &path("x"), JsonValue::from(10i64)).unwrap();
-        store.set(&run_id, &doc1, &path("b"), JsonValue::from(2i64)).unwrap();
-        store.set(&run_id, &doc2, &path("y"), JsonValue::from(20i64)).unwrap();
+        store
+            .set(&run_id, &doc1, &path("a"), JsonValue::from(1i64))
+            .unwrap();
+        store
+            .set(&run_id, &doc2, &path("x"), JsonValue::from(10i64))
+            .unwrap();
+        store
+            .set(&run_id, &doc1, &path("b"), JsonValue::from(2i64))
+            .unwrap();
+        store
+            .set(&run_id, &doc2, &path("y"), JsonValue::from(20i64))
+            .unwrap();
         store.delete_at_path(&run_id, &doc1, &path("a")).unwrap();
-        store.set(&run_id, &doc2, &path("z"), JsonValue::from(30i64)).unwrap();
+        store
+            .set(&run_id, &doc2, &path("z"), JsonValue::from(30i64))
+            .unwrap();
     }
 
     // Phase 2: Verify interleaved operations recovered correctly
@@ -195,12 +247,40 @@ fn test_interleaved_operations_recovery() {
 
         // doc1: a deleted, b = 2
         assert!(store.get(&run_id, &doc1, &path("a")).unwrap().is_none());
-        assert_eq!(store.get(&run_id, &doc1, &path("b")).unwrap().unwrap().as_i64(), Some(2));
+        assert_eq!(
+            store
+                .get(&run_id, &doc1, &path("b"))
+                .unwrap()
+                .unwrap()
+                .as_i64(),
+            Some(2)
+        );
 
         // doc2: x = 10, y = 20, z = 30
-        assert_eq!(store.get(&run_id, &doc2, &path("x")).unwrap().unwrap().as_i64(), Some(10));
-        assert_eq!(store.get(&run_id, &doc2, &path("y")).unwrap().unwrap().as_i64(), Some(20));
-        assert_eq!(store.get(&run_id, &doc2, &path("z")).unwrap().unwrap().as_i64(), Some(30));
+        assert_eq!(
+            store
+                .get(&run_id, &doc2, &path("x"))
+                .unwrap()
+                .unwrap()
+                .as_i64(),
+            Some(10)
+        );
+        assert_eq!(
+            store
+                .get(&run_id, &doc2, &path("y"))
+                .unwrap()
+                .unwrap()
+                .as_i64(),
+            Some(20)
+        );
+        assert_eq!(
+            store
+                .get(&run_id, &doc2, &path("z"))
+                .unwrap()
+                .unwrap()
+                .as_i64(),
+            Some(30)
+        );
     }
 }
 
@@ -223,11 +303,19 @@ fn test_cross_run_recovery() {
         let db = create_persistent_db(&db_path);
         let store = JsonStore::new(db);
 
-        store.create(&run1, &doc_id, JsonValue::from(100i64)).unwrap();
-        store.create(&run2, &doc_id, JsonValue::from(200i64)).unwrap();
+        store
+            .create(&run1, &doc_id, JsonValue::from(100i64))
+            .unwrap();
+        store
+            .create(&run2, &doc_id, JsonValue::from(200i64))
+            .unwrap();
 
-        store.set(&run1, &doc_id, &root(), JsonValue::from(111i64)).unwrap();
-        store.set(&run2, &doc_id, &root(), JsonValue::from(222i64)).unwrap();
+        store
+            .set(&run1, &doc_id, &root(), JsonValue::from(111i64))
+            .unwrap();
+        store
+            .set(&run2, &doc_id, &root(), JsonValue::from(222i64))
+            .unwrap();
     }
 
     // Phase 2: Verify run isolation preserved after recovery
@@ -235,8 +323,22 @@ fn test_cross_run_recovery() {
         let db = create_persistent_db(&db_path);
         let store = JsonStore::new(db);
 
-        assert_eq!(store.get(&run1, &doc_id, &root()).unwrap().unwrap().as_i64(), Some(111));
-        assert_eq!(store.get(&run2, &doc_id, &root()).unwrap().unwrap().as_i64(), Some(222));
+        assert_eq!(
+            store
+                .get(&run1, &doc_id, &root())
+                .unwrap()
+                .unwrap()
+                .as_i64(),
+            Some(111)
+        );
+        assert_eq!(
+            store
+                .get(&run2, &doc_id, &root())
+                .unwrap()
+                .unwrap()
+                .as_i64(),
+            Some(222)
+        );
     }
 }
 
@@ -275,18 +377,35 @@ fn test_complex_structure_recovery() {
             "version": 1,
             "created": "2024-01-01"
         }
-    }).into();
+    })
+    .into();
 
     // Phase 1: Create complex document
     {
         let db = create_persistent_db(&db_path);
         let store = JsonStore::new(db);
 
-        store.create(&run_id, &doc_id, complex_value.clone()).unwrap();
+        store
+            .create(&run_id, &doc_id, complex_value.clone())
+            .unwrap();
 
         // Modify nested value
-        store.set(&run_id, &doc_id, &path("users[0].age"), JsonValue::from(31i64)).unwrap();
-        store.set(&run_id, &doc_id, &path("metadata.version"), JsonValue::from(2i64)).unwrap();
+        store
+            .set(
+                &run_id,
+                &doc_id,
+                &path("users[0].age"),
+                JsonValue::from(31i64),
+            )
+            .unwrap();
+        store
+            .set(
+                &run_id,
+                &doc_id,
+                &path("metadata.version"),
+                JsonValue::from(2i64),
+            )
+            .unwrap();
     }
 
     // Phase 2: Verify complex structure recovered
@@ -295,19 +414,35 @@ fn test_complex_structure_recovery() {
         let store = JsonStore::new(db);
 
         assert_eq!(
-            store.get(&run_id, &doc_id, &path("users[0].name")).unwrap().unwrap().as_str(),
+            store
+                .get(&run_id, &doc_id, &path("users[0].name"))
+                .unwrap()
+                .unwrap()
+                .as_str(),
             Some("Alice")
         );
         assert_eq!(
-            store.get(&run_id, &doc_id, &path("users[0].age")).unwrap().unwrap().as_i64(),
+            store
+                .get(&run_id, &doc_id, &path("users[0].age"))
+                .unwrap()
+                .unwrap()
+                .as_i64(),
             Some(31) // Modified value
         );
         assert_eq!(
-            store.get(&run_id, &doc_id, &path("users[1].name")).unwrap().unwrap().as_str(),
+            store
+                .get(&run_id, &doc_id, &path("users[1].name"))
+                .unwrap()
+                .unwrap()
+                .as_str(),
             Some("Bob")
         );
         assert_eq!(
-            store.get(&run_id, &doc_id, &path("metadata.version")).unwrap().unwrap().as_i64(),
+            store
+                .get(&run_id, &doc_id, &path("metadata.version"))
+                .unwrap()
+                .unwrap()
+                .as_i64(),
             Some(2) // Modified value
         );
     }
@@ -330,28 +465,41 @@ fn test_multiple_recovery_cycles() {
     {
         let db = create_persistent_db(&db_path);
         let store = JsonStore::new(db);
-        store.create(&run_id, &doc_id, JsonValue::from(1i64)).unwrap();
+        store
+            .create(&run_id, &doc_id, JsonValue::from(1i64))
+            .unwrap();
     }
 
     // Cycle 2: Modify
     {
         let db = create_persistent_db(&db_path);
         let store = JsonStore::new(db);
-        store.set(&run_id, &doc_id, &root(), JsonValue::from(2i64)).unwrap();
+        store
+            .set(&run_id, &doc_id, &root(), JsonValue::from(2i64))
+            .unwrap();
     }
 
     // Cycle 3: Modify again
     {
         let db = create_persistent_db(&db_path);
         let store = JsonStore::new(db);
-        store.set(&run_id, &doc_id, &root(), JsonValue::from(3i64)).unwrap();
+        store
+            .set(&run_id, &doc_id, &root(), JsonValue::from(3i64))
+            .unwrap();
     }
 
     // Cycle 4: Verify
     {
         let db = create_persistent_db(&db_path);
         let store = JsonStore::new(db);
-        assert_eq!(store.get(&run_id, &doc_id, &root()).unwrap().unwrap().as_i64(), Some(3));
+        assert_eq!(
+            store
+                .get(&run_id, &doc_id, &root())
+                .unwrap()
+                .unwrap()
+                .as_i64(),
+            Some(3)
+        );
         assert_eq!(store.get_version(&run_id, &doc_id).unwrap().unwrap(), 3);
     }
 }
@@ -371,8 +519,12 @@ fn test_operations_after_recovery() {
         let store = JsonStore::new(db);
 
         store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
-        store.set(&run_id, &doc_id, &path("a"), JsonValue::from(1i64)).unwrap();
-        store.set(&run_id, &doc_id, &path("b"), JsonValue::from(2i64)).unwrap();
+        store
+            .set(&run_id, &doc_id, &path("a"), JsonValue::from(1i64))
+            .unwrap();
+        store
+            .set(&run_id, &doc_id, &path("b"), JsonValue::from(2i64))
+            .unwrap();
     }
 
     // Phase 2: Continue operations after recovery
@@ -381,7 +533,9 @@ fn test_operations_after_recovery() {
         let store = JsonStore::new(db);
 
         // Can continue modifying
-        store.set(&run_id, &doc_id, &path("c"), JsonValue::from(3i64)).unwrap();
+        store
+            .set(&run_id, &doc_id, &path("c"), JsonValue::from(3i64))
+            .unwrap();
         store.delete_at_path(&run_id, &doc_id, &path("a")).unwrap();
 
         // Version continues from where it left off
@@ -394,7 +548,21 @@ fn test_operations_after_recovery() {
         let store = JsonStore::new(db);
 
         assert!(store.get(&run_id, &doc_id, &path("a")).unwrap().is_none());
-        assert_eq!(store.get(&run_id, &doc_id, &path("b")).unwrap().unwrap().as_i64(), Some(2));
-        assert_eq!(store.get(&run_id, &doc_id, &path("c")).unwrap().unwrap().as_i64(), Some(3));
+        assert_eq!(
+            store
+                .get(&run_id, &doc_id, &path("b"))
+                .unwrap()
+                .unwrap()
+                .as_i64(),
+            Some(2)
+        );
+        assert_eq!(
+            store
+                .get(&run_id, &doc_id, &path("c"))
+                .unwrap()
+                .unwrap()
+                .as_i64(),
+            Some(3)
+        );
     }
 }

@@ -21,8 +21,10 @@ fn test_r2_replay_idempotent_basic() {
 
     // Write data
     let kv = test_db.kv();
-    kv.put(&run_id, "key1", Value::String("value1".into())).unwrap();
-    kv.put(&run_id, "key2", Value::String("value2".into())).unwrap();
+    kv.put(&run_id, "key1", Value::String("value1".into()))
+        .unwrap();
+    kv.put(&run_id, "key2", Value::String("value2".into()))
+        .unwrap();
 
     // First recovery
     test_db.reopen();
@@ -47,8 +49,12 @@ fn test_r2_multiple_recovery_cycles() {
     // Populate test data
     let kv = test_db.kv();
     for i in 0..50 {
-        kv.put(&run_id, &format!("key_{}", i), Value::String(format!("value_{}", i)))
-            .unwrap();
+        kv.put(
+            &run_id,
+            &format!("key_{}", i),
+            Value::String(format!("value_{}", i)),
+        )
+        .unwrap();
     }
 
     let original_state = CapturedState::capture(&test_db.db, &run_id);
@@ -60,7 +66,8 @@ fn test_r2_multiple_recovery_cycles() {
 
         assert_eq!(
             original_state.hash, recovered_state.hash,
-            "R2 VIOLATED: Recovery cycle {} changed state", cycle
+            "R2 VIOLATED: Recovery cycle {} changed state",
+            cycle
         );
     }
 }
@@ -125,7 +132,8 @@ fn test_r2_recovery_never_accumulates_state() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "only_key", Value::String("only_value".into())).unwrap();
+    kv.put(&run_id, "only_key", Value::String("only_value".into()))
+        .unwrap();
 
     // Count keys before
     let state_before = CapturedState::capture(&test_db.db, &run_id);
@@ -163,7 +171,10 @@ fn test_r2_idempotent_empty_database() {
     let state_after = CapturedState::capture(&test_db.db, &run_id);
 
     // Empty database should remain empty
-    assert!(state_after.kv_entries.is_empty(), "R2: Empty db should stay empty");
+    assert!(
+        state_after.kv_entries.is_empty(),
+        "R2: Empty db should stay empty"
+    );
     assert_eq!(state_before.hash, state_after.hash);
 }
 
@@ -194,12 +205,13 @@ fn test_r2_idempotent_large_dataset() {
         assert_eq!(
             original_state.kv_entries.len(),
             recovered_state.kv_entries.len(),
-            "R2 VIOLATED: Entry count changed on cycle {}", cycle
+            "R2 VIOLATED: Entry count changed on cycle {}",
+            cycle
         );
         assert_eq!(
-            original_state.hash,
-            recovered_state.hash,
-            "R2 VIOLATED: Hash changed on cycle {}", cycle
+            original_state.hash, recovered_state.hash,
+            "R2 VIOLATED: Hash changed on cycle {}",
+            cycle
         );
     }
 }
@@ -211,7 +223,8 @@ fn test_r2_no_drift_over_many_cycles() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "stable_key", Value::String("stable_value".into())).unwrap();
+    kv.put(&run_id, "stable_key", Value::String("stable_value".into()))
+        .unwrap();
 
     // Record hashes over many cycles
     let mut hashes = Vec::new();
@@ -226,7 +239,8 @@ fn test_r2_no_drift_over_many_cycles() {
     for (i, hash) in hashes.iter().enumerate() {
         assert_eq!(
             first_hash, *hash,
-            "R2 VIOLATED: State drifted at cycle {}", i
+            "R2 VIOLATED: State drifted at cycle {}",
+            i
         );
     }
 }

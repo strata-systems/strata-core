@@ -51,18 +51,18 @@
 mod test_utils;
 
 // Tier 1: Semantic Invariants
-mod path_semantics_invariants;
-mod patch_semantics_invariants;
-mod snapshot_semantics_invariants;
 mod conflict_matrix_tests;
+mod patch_semantics_invariants;
+mod path_semantics_invariants;
+mod snapshot_semantics_invariants;
 
 // Tier 2: Fuzzing (requires proptest feature)
 #[cfg(feature = "proptest")]
 mod conflict_detection_fuzzing;
 
 // Tier 3: WAL & Recovery
-mod wal_replay_tests;
 mod crash_recovery_tests;
+mod wal_replay_tests;
 
 // Tier 4: Cross-Primitive
 mod cross_primitive_atomicity;

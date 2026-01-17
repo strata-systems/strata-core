@@ -21,9 +21,7 @@ fn test_r4_no_phantom_keys_basic() {
     let run_id = test_db.run_id;
 
     // Write specific keys
-    let written_keys: HashSet<String> = (0..100)
-        .map(|i| format!("key_{}", i))
-        .collect();
+    let written_keys: HashSet<String> = (0..100).map(|i| format!("key_{}", i)).collect();
 
     let kv = test_db.kv();
     for key in &written_keys {
@@ -42,7 +40,8 @@ fn test_r4_no_phantom_keys_basic() {
         // Only keys that start with our prefix should exist
         assert!(
             key.starts_with("key_") || key.starts_with("health_check_"),
-            "R4 VIOLATED: Phantom key appeared: {}", key
+            "R4 VIOLATED: Phantom key appeared: {}",
+            key
         );
     }
 }
@@ -55,7 +54,8 @@ fn test_r4_no_phantom_values() {
 
     let original_value = "original_value_12345";
     let kv = test_db.kv();
-    kv.put(&run_id, "key", Value::String(original_value.into())).unwrap();
+    kv.put(&run_id, "key", Value::String(original_value.into()))
+        .unwrap();
 
     test_db.reopen();
 
@@ -64,7 +64,8 @@ fn test_r4_no_phantom_values() {
         if let Value::String(s) = value {
             assert_eq!(
                 s, original_value,
-                "R4 VIOLATED: Value changed to phantom: {}", s
+                "R4 VIOLATED: Value changed to phantom: {}",
+                s
             );
         } else {
             panic!("R4 VIOLATED: Value type changed");
@@ -122,7 +123,8 @@ fn test_r4_value_integrity_preserved() {
         assert_eq!(
             actual.as_ref(),
             Some(expected),
-            "R4 VIOLATED: Value for {} changed", key
+            "R4 VIOLATED: Value for {} changed",
+            key
         );
     }
 }
@@ -136,7 +138,12 @@ fn test_r4_deleted_keys_stay_deleted() {
     let kv = test_db.kv();
 
     // Create then delete
-    kv.put(&run_id, "to_delete", Value::String("will be deleted".into())).unwrap();
+    kv.put(
+        &run_id,
+        "to_delete",
+        Value::String("will be deleted".into()),
+    )
+    .unwrap();
     kv.delete(&run_id, "to_delete").unwrap();
 
     test_db.reopen();
@@ -159,16 +166,15 @@ fn test_r4_only_final_keys_exist() {
 
     // Complex sequence
     for i in 0..50 {
-        kv.put(&run_id, &format!("key_{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("key_{}", i), Value::I64(i))
+            .unwrap();
     }
     for i in 0..25 {
         kv.delete(&run_id, &format!("key_{}", i)).unwrap();
     }
 
     // Track what should exist
-    let expected_keys: HashSet<String> = (25..50)
-        .map(|i| format!("key_{}", i))
-        .collect();
+    let expected_keys: HashSet<String> = (25..50).map(|i| format!("key_{}", i)).collect();
 
     test_db.reopen();
 
@@ -179,7 +185,8 @@ fn test_r4_only_final_keys_exist() {
         if key.starts_with("key_") {
             assert!(
                 expected_keys.contains(key),
-                "R4 VIOLATED: Phantom or deleted key found: {}", key
+                "R4 VIOLATED: Phantom or deleted key found: {}",
+                key
             );
         }
     }
@@ -195,7 +202,8 @@ fn test_r4_no_wrong_prefix_keys() {
 
     // Write keys with specific prefix
     for i in 0..20 {
-        kv.put(&run_id, &format!("user_{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("user_{}", i), Value::I64(i))
+            .unwrap();
     }
 
     test_db.reopen();
@@ -205,10 +213,7 @@ fn test_r4_no_wrong_prefix_keys() {
     // All keys should have known prefixes
     for key in state.kv_entries.keys() {
         let valid_prefix = key.starts_with("user_") || key.starts_with("health_check_");
-        assert!(
-            valid_prefix,
-            "R4 VIOLATED: Key with wrong prefix: {}", key
-        );
+        assert!(valid_prefix, "R4 VIOLATED: Key with wrong prefix: {}", key);
     }
 }
 
@@ -222,14 +227,16 @@ fn test_r4_large_values_preserved() {
 
     // Create large value
     let large_value: String = (0..10000).map(|i| format!("{:04}", i % 10000)).collect();
-    kv.put(&run_id, "large", Value::String(large_value.clone())).unwrap();
+    kv.put(&run_id, "large", Value::String(large_value.clone()))
+        .unwrap();
 
     test_db.reopen();
 
     let kv = test_db.kv();
     if let Some(Value::String(recovered)) = kv.get(&run_id, "large").unwrap() {
         assert_eq!(
-            recovered.len(), large_value.len(),
+            recovered.len(),
+            large_value.len(),
             "R4 VIOLATED: Large value length changed"
         );
         assert_eq!(
@@ -251,8 +258,10 @@ fn test_r4_no_cross_run_contamination() {
     let kv = test_db.kv();
 
     // Write to different runs
-    kv.put(&run_id1, "key", Value::String("run1_value".into())).unwrap();
-    kv.put(&run_id2, "key", Value::String("run2_value".into())).unwrap();
+    kv.put(&run_id1, "key", Value::String("run1_value".into()))
+        .unwrap();
+    kv.put(&run_id2, "key", Value::String("run2_value".into()))
+        .unwrap();
 
     test_db.reopen();
 

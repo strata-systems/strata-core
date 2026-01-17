@@ -23,8 +23,8 @@
 //! let (tx_id, entries) = tx.into_wal_entries();
 //! ```
 
-use crate::wal_types::{TxId, WalEntry};
 use crate::wal_entry_types::WalEntryType;
+use crate::wal_types::{TxId, WalEntry};
 
 /// A transaction that can span multiple primitives
 ///

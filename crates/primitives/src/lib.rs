@@ -1,11 +1,12 @@
 //! Primitives layer for in-mem
 //!
-//! Provides five high-level primitives as stateless facades over the Database engine:
+//! Provides high-level primitives as stateless facades over the Database engine:
 //! - **KVStore**: General-purpose key-value storage
 //! - **EventLog**: Immutable append-only event stream with causal hash chaining
 //! - **StateCell**: CAS-based versioned cells for coordination
 //! - **TraceStore**: Structured reasoning traces with indexing
 //! - **RunIndex**: Run lifecycle management
+//! - **Vector**: Vector storage and similarity search (types only in this milestone)
 //!
 //! ## Design Principle: Stateless Facades
 //!
@@ -49,6 +50,7 @@ pub mod run_index;
 pub mod searchable;
 pub mod state_cell;
 pub mod trace;
+pub mod vector;
 
 // Re-exports - primitives are exported as they're implemented
 pub use event_log::{ChainVerification, Event, EventLog};
@@ -58,6 +60,10 @@ pub use run_index::{RunIndex, RunMetadata, RunStatus};
 pub use searchable::{build_search_response, SearchCandidate, Searchable, SimpleScorer};
 pub use state_cell::{State, StateCell};
 pub use trace::{Trace, TraceStore, TraceTree, TraceType};
+pub use vector::{
+    CollectionId, CollectionInfo, DistanceMetric, JsonScalar, MetadataFilter, StorageDtype,
+    VectorConfig, VectorEntry, VectorError, VectorId, VectorMatch, VectorResult,
+};
 
 // Re-export extension traits for convenience
 pub use extensions::*;
