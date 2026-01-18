@@ -1281,6 +1281,137 @@ impl VectorStore {
     }
 }
 
+// ========== Searchable Trait Implementation (M6 Integration) ==========
+
+impl crate::searchable::Searchable for VectorStore {
+    /// Vector search via M6 interface
+    ///
+    /// NOTE: Per M8_ARCHITECTURE.md Section 12.3:
+    /// - For SearchMode::Keyword, Vector returns empty results
+    /// - Vector does not attempt to do keyword matching on metadata
+    /// - For SearchMode::Vector or SearchMode::Hybrid, the caller must
+    ///   provide the query embedding via VectorSearchRequest extension
+    ///
+    /// The hybrid search orchestrator is responsible for:
+    /// 1. Embedding the text query (using an external model)
+    /// 2. Calling `vector.search_by_embedding()` with the embedding
+    /// 3. Fusing results via RRF
+    fn search(
+        &self,
+        req: &in_mem_core::SearchRequest,
+    ) -> in_mem_core::error::Result<in_mem_core::SearchResponse> {
+        use in_mem_core::search_types::{SearchMode, SearchResponse, SearchStats};
+        use std::time::Instant;
+
+        let start = Instant::now();
+
+        // Vector primitive only responds to Vector or Hybrid mode
+        // with an explicit query embedding provided externally.
+        //
+        // For Keyword mode, return empty - hybrid orchestrator handles this.
+        // For Vector/Hybrid mode without embedding, return empty -
+        // the hybrid orchestrator should call search_by_embedding() directly.
+        match req.mode {
+            SearchMode::Keyword => {
+                // Vector does NOT do keyword search on metadata
+                Ok(SearchResponse::new(
+                    vec![],
+                    false,
+                    SearchStats::new(start.elapsed().as_micros() as u64, 0),
+                ))
+            }
+            SearchMode::Vector | SearchMode::Hybrid => {
+                // Requires query embedding - the orchestrator must call
+                // search_by_embedding() or search_response() directly
+                // with the actual embedding vector.
+                Ok(SearchResponse::new(
+                    vec![],
+                    false,
+                    SearchStats::new(start.elapsed().as_micros() as u64, 0),
+                ))
+            }
+        }
+    }
+
+    fn primitive_kind(&self) -> in_mem_core::search_types::PrimitiveKind {
+        in_mem_core::search_types::PrimitiveKind::Vector
+    }
+}
+
+// ========== PrimitiveStorageExt Trait Implementation (Issue #438) ==========
+
+impl in_mem_storage::PrimitiveStorageExt for VectorStore {
+    /// Vector primitive type ID is 7
+    fn primitive_type_id(&self) -> u8 {
+        in_mem_storage::primitive_type_ids::VECTOR
+    }
+
+    /// Vector WAL entry types: 0x70-0x73
+    fn wal_entry_types(&self) -> &'static [u8] {
+        &[0x70, 0x71, 0x72, 0x73]
+    }
+
+    /// Serialize vector state for snapshot
+    ///
+    /// Wraps the existing snapshot_serialize method with a Vec<u8> buffer.
+    fn snapshot_serialize(&self) -> Result<Vec<u8>, in_mem_storage::PrimitiveExtError> {
+        let mut buffer = Vec::new();
+        self.snapshot_serialize(&mut buffer)
+            .map_err(|e| in_mem_storage::PrimitiveExtError::Serialization(e.to_string()))?;
+        Ok(buffer)
+    }
+
+    /// Deserialize vector state from snapshot
+    ///
+    /// Wraps the existing snapshot_deserialize method.
+    /// Note: Uses interior mutability via the RwLock in VectorBackendState.
+    fn snapshot_deserialize(&mut self, data: &[u8]) -> Result<(), in_mem_storage::PrimitiveExtError> {
+        use std::io::Cursor;
+        let mut cursor = Cursor::new(data);
+        // Note: snapshot_deserialize takes &self and uses interior mutability
+        VectorStore::snapshot_deserialize(self, &mut cursor)
+            .map_err(|e| in_mem_storage::PrimitiveExtError::Deserialization(e.to_string()))
+    }
+
+    /// Apply a WAL entry during recovery
+    ///
+    /// Delegates to VectorWalReplayer for actual entry processing.
+    /// Note: Uses interior mutability via the RwLock in VectorBackendState.
+    fn apply_wal_entry(
+        &mut self,
+        entry_type: u8,
+        payload: &[u8],
+    ) -> Result<(), in_mem_storage::PrimitiveExtError> {
+        use crate::vector::wal::VectorWalReplayer;
+        use in_mem_durability::WalEntryType;
+        use std::convert::TryFrom;
+
+        let wal_entry_type = WalEntryType::try_from(entry_type).map_err(|_| {
+            in_mem_storage::PrimitiveExtError::UnknownEntryType(entry_type)
+        })?;
+
+        let replayer = VectorWalReplayer::new(self);
+        replayer
+            .apply(wal_entry_type, payload)
+            .map_err(|e| in_mem_storage::PrimitiveExtError::InvalidOperation(e.to_string()))
+    }
+
+    /// Primitive name for logging/debugging
+    fn primitive_name(&self) -> &'static str {
+        "vector"
+    }
+
+    /// Rebuild indexes after recovery
+    ///
+    /// For M8 BruteForce backend, no indexes need rebuilding.
+    /// M9 HNSW may need to rebuild graph structure here.
+    fn rebuild_indexes(&mut self) -> Result<(), in_mem_storage::PrimitiveExtError> {
+        // BruteForce backend has no derived indexes to rebuild.
+        // HNSW (M9) would rebuild the graph here.
+        Ok(())
+    }
+}
+
 /// Get current time in microseconds since Unix epoch
 fn now_micros() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};

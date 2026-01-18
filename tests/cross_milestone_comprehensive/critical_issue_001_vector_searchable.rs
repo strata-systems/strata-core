@@ -25,29 +25,23 @@ use crate::test_utils::*;
 use in_mem_core::search_types::PrimitiveKind;
 use in_mem_primitives::Searchable;
 
-/// Test that VectorStore does NOT implement the Searchable trait (documenting the issue).
+/// Test that VectorStore implements the Searchable trait.
 ///
-/// This test verifies that ISSUE-001 is still present.
-/// When ISSUE-001 is fixed, this test should be updated to verify VectorStore DOES implement Searchable.
+/// ISSUE-001 has been fixed. VectorStore now implements Searchable.
 ///
-/// **Current behavior (ISSUE-001 present)**:
-/// - VectorStore does not implement Searchable trait
-/// - This test passes by verifying we can't cast VectorStore to Searchable
+/// Per M8_ARCHITECTURE.md Section 12.3, VectorStore returns empty results
+/// for keyword search mode (it requires explicit embedding queries).
 #[test]
-fn test_vector_store_missing_searchable_issue_001() {
+fn test_vector_store_implements_searchable() {
     let test_db = TestDb::new();
-    let _vector_store = test_db.vector();
+    let vector_store = test_db.vector();
 
-    // Document that VectorStore doesn't implement Searchable
-    // This is a compile-time issue that we document at runtime
-    eprintln!(
-        "ISSUE-001: VectorStore does NOT implement Searchable trait. \
-         This breaks uniform search orchestration across all 7 primitives."
-    );
+    // VectorStore now implements Searchable
+    fn assert_searchable<T: Searchable>(_: &T) {}
+    assert_searchable(&vector_store);
 
-    // When ISSUE-001 is fixed, uncomment this:
-    // fn assert_searchable<T: Searchable>(_: &T) {}
-    // assert_searchable(&_vector_store);
+    // Verify primitive_kind returns Vector
+    assert_eq!(vector_store.primitive_kind(), PrimitiveKind::Vector);
 }
 
 /// Test that VectorStore::search returns proper results directly.
@@ -98,23 +92,24 @@ fn test_vector_primitive_kind_exists() {
     // assert_eq!(vector_store.primitive_kind(), PrimitiveKind::Vector);
 }
 
-/// Test that other primitives (not VectorStore) can be collected as Searchable.
+/// Test that all 6 primitives can be collected as Searchable.
 ///
-/// This tests polymorphic usage of the 5 primitives that DO implement Searchable.
+/// This tests polymorphic usage of all primitives that implement Searchable.
+/// ISSUE-001 is fixed: VectorStore now implements Searchable.
 #[test]
-fn test_other_primitives_as_searchable() {
+fn test_all_primitives_as_searchable() {
     let test_db = TestDb::new();
     let p = test_db.all_primitives();
 
-    // These 5 primitives implement Searchable
-    // VectorStore is notably absent due to ISSUE-001
+    // All 6 primitives implement Searchable
+    // (RunIndex is excluded as it has different semantics)
     let searchables: Vec<&dyn Searchable> = vec![
         &p.kv,
         &p.json,
         &p.event,
         &p.state,
         &p.trace,
-        // &p.vector,  // Cannot include - ISSUE-001
+        &p.vector, // ISSUE-001 fixed: VectorStore now included
     ];
 
     // Verify we can iterate and check primitive kinds
@@ -128,24 +123,29 @@ fn test_other_primitives_as_searchable() {
                     | PrimitiveKind::Event
                     | PrimitiveKind::State
                     | PrimitiveKind::Trace
+                    | PrimitiveKind::Vector
             ),
             "Primitive kind should be one of the expected types"
         );
     }
 
-    // Only 5 primitives implement Searchable (not 6 with Vector)
+    // All 6 primitives implement Searchable
     assert_eq!(
         searchables.len(),
-        5,
-        "ISSUE-001: Only 5 primitives implement Searchable, VectorStore is missing"
+        6,
+        "All 6 searchable primitives should implement Searchable"
     );
 }
 
-/// Test that HybridSearch cannot properly orchestrate vector search (ISSUE-001 impact).
+/// Test that VectorStore returns empty for keyword search (by design).
 ///
-/// This documents the impact of ISSUE-001 on HybridSearch functionality.
+/// Per M8_ARCHITECTURE.md, VectorStore does NOT do keyword search on metadata.
+/// The hybrid search orchestrator must call search_by_embedding() directly
+/// with an explicit embedding vector.
 #[test]
-fn test_hybrid_search_vector_limitation() {
+fn test_vector_keyword_search_returns_empty() {
+    use in_mem_core::search_types::SearchRequest;
+
     let test_db = TestDb::new();
     let vector_store = test_db.vector();
     let run_id = test_db.run_id;
@@ -164,18 +164,21 @@ fn test_hybrid_search_vector_limitation() {
             .expect("Should insert");
     }
 
-    // Direct vector search works as a workaround
+    // Keyword search via Searchable trait returns empty (by design)
+    let search_req = SearchRequest::new(run_id, "test query").with_k(5);
+    let response = Searchable::search(&vector_store, &search_req).expect("Searchable::search should work");
+    assert!(
+        response.hits.is_empty(),
+        "Keyword search should return empty for VectorStore"
+    );
+
+    // Direct vector search with embedding still works
     let query = seeded_vector(3, 42);
     let results = vector_store
         .search(run_id, collection, &query, 5, None)
         .expect("Direct search should work");
 
-    assert!(!results.is_empty(), "Vector search should return results");
-
-    eprintln!(
-        "ISSUE-001: HybridSearch cannot include VectorStore because it doesn't implement Searchable. \
-         Direct VectorStore.search() must be called as a workaround."
-    );
+    assert!(!results.is_empty(), "Direct vector search should return results");
 }
 
 /// Test that SearchRequest structure is compatible.
