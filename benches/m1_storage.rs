@@ -182,21 +182,14 @@ fn engine_put_benchmarks(c: &mut Criterion) {
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
 
-        // Pre-generate keys outside timed loop
-        const MAX_KEYS: usize = 500_000;
-        let keys = pregenerate_keys(&ns, "insert", MAX_KEYS);
         let counter = AtomicU64::new(0);
 
         group.bench_function("insert/dur_strict/uniform", |b| {
             b.iter(|| {
-                let i = counter.fetch_add(1, Ordering::Relaxed) as usize;
-                if i >= MAX_KEYS {
-                    panic!("Benchmark exceeded pre-generated keys");
-                }
-                black_box(
-                    db.put(run_id, keys[i].clone(), Value::I64(i as i64))
-                        .unwrap(),
-                )
+                let i = counter.fetch_add(1, Ordering::Relaxed);
+                // Generate key in real-time - includes key creation cost which is realistic
+                let key = make_key(&ns, &format!("insert_{}", i));
+                black_box(db.put(run_id, key, Value::I64(i as i64)).unwrap())
             });
         });
     }
