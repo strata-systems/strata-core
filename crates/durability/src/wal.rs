@@ -442,6 +442,20 @@ impl DurabilityMode {
 
     /// Create a buffered mode with M4 recommended defaults
     ///
+    /// Returns `Batched { interval_ms: 100, batch_size: 1000 }`.
+    ///
+    /// # Default Values
+    ///
+    /// - **interval_ms**: 100 - Maximum 100ms between fsyncs
+    /// - **batch_size**: 1000 - Maximum 1000 writes before fsync
+    ///
+    /// # Rationale
+    ///
+    /// These defaults balance performance and durability:
+    /// - 100ms interval keeps data loss window bounded
+    /// - 1000 batch size handles burst writes efficiently
+    /// - Both thresholds work together - whichever is reached first triggers fsync
+    ///
     /// This is the recommended mode for production workloads.
     /// Equivalent to M4's "Buffered" mode concept.
     pub fn buffered_default() -> Self {

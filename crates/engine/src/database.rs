@@ -211,8 +211,29 @@ impl DatabaseBuilder {
 
     /// Use Buffered mode with defaults (M4: balanced)
     ///
-    /// Target latency: <30µs for kvstore/put
-    /// Throughput: 50K+ ops/sec
+    /// # Default Parameters
+    ///
+    /// - **flush_interval_ms**: 100ms - Maximum time between fsyncs
+    /// - **max_pending_writes**: 1000 - Maximum writes before forced fsync
+    ///
+    /// These defaults provide a good balance between performance and durability
+    /// for typical production workloads. The maximum data loss window is
+    /// whichever threshold is reached first (100ms OR 1000 writes).
+    ///
+    /// # Performance Targets
+    ///
+    /// - Target latency: <30µs for kvstore/put
+    /// - Throughput: 50K+ ops/sec
+    ///
+    /// # Customization
+    ///
+    /// Use [`buffered_with`](Self::buffered_with) to customize these parameters:
+    ///
+    /// ```ignore
+    /// let db = Database::builder()
+    ///     .buffered_with(200, 500)  // 200ms or 500 writes
+    ///     .open()?;
+    /// ```
     ///
     /// Recommended for production workloads.
     pub fn buffered(mut self) -> Self {
