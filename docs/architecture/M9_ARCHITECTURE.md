@@ -281,6 +281,130 @@ mod invariant_conformance {
 
 ## 4. Core Types
 
+### 4.0 File Organization: The Contract Module
+
+> **The Semantic Question**: Where does the meaning of the system live?
+>
+> M9 introduces types that are not implementation details - they are **contract types**.
+> These types encode the semantic invariants of the system. They define what it means
+> to interact with the database.
+>
+> If contract types are scattered across random files or buried in `types.rs`,
+> you lose:
+> - Semantic clarity
+> - Discoverability
+> - API stability boundaries
+> - A single place to understand the system model
+> - A clean mental map for contributors
+
+**The Solution: A Dedicated Contract Module**
+
+All M9 contract types live in a single cohesive module: `crates/core/src/contract.rs`
+
+```rust
+//! Contract types for the in-mem database
+//!
+//! This module defines the semantic contract of the system.
+//! These types encode the seven invariants and define what it
+//! means to interact with any entity in the database.
+//!
+//! ## What Belongs Here
+//!
+//! Types that are part of the universal mental model:
+//! - EntityRef, PrimitiveType (Invariant 1: Addressable)
+//! - Versioned<T>, Version, Timestamp (Invariant 2: Versioned)
+//! - TransactionOps (Invariant 3: Transactional)
+//! - Lifecycle states (Invariant 4: Lifecycle)
+//! - RunName, RunId (Invariant 5: Run-scoped)
+//! - Introspection types (Invariant 6: Introspectable)
+//!
+//! ## What Does NOT Belong Here
+//!
+//! Implementation details that are internal to subsystems:
+//! - ShardedStore internals
+//! - WAL entry formats
+//! - Index data structures
+//! - Scorer implementations
+
+// === Invariant 1: Everything is Addressable ===
+mod entity_ref;
+pub use entity_ref::{EntityRef, PrimitiveType};
+
+// === Invariant 2: Everything is Versioned ===
+mod versioned;
+mod version;
+mod timestamp;
+pub use versioned::Versioned;
+pub use version::Version;
+pub use timestamp::Timestamp;
+
+// === Invariant 5: Everything is Run-Scoped ===
+mod run_name;
+pub use run_name::RunName;
+// RunId stays in types.rs (internal storage identity)
+
+// Type aliases for backwards compatibility
+pub use crate::search_types::DocRef;       // = EntityRef
+pub use crate::search_types::PrimitiveKind; // = PrimitiveType
+pub use crate::value::VersionedValue;       // = Versioned<Value>
+```
+
+**Module Structure**:
+
+```
+crates/core/src/
+├── contract.rs          # NEW: All M9 contract types
+│   ├── entity_ref.rs    # EntityRef, PrimitiveType
+│   ├── versioned.rs     # Versioned<T>
+│   ├── version.rs       # Version enum
+│   ├── timestamp.rs     # Timestamp type
+│   └── run_name.rs      # RunName type
+├── types.rs             # Internal types (RunId, Key, Namespace, etc.)
+├── value.rs             # Value enum (+ VersionedValue alias)
+├── search_types.rs      # Search types (+ DocRef alias)
+├── error.rs             # Error types
+└── lib.rs               # Re-exports contract types prominently
+```
+
+**Updated lib.rs Exports**:
+
+```rust
+//! Core types for in-mem
+//!
+//! ## Contract Types (M9)
+//!
+//! These types define the semantic contract of the system:
+//! - [`EntityRef`] - Universal addressing for any entity
+//! - [`Versioned<T>`] - Wrapper for versioned reads
+//! - [`Version`] - Version identifier
+//! - [`Timestamp`] - Temporal tracking
+//! - [`RunName`] - Semantic run identity
+//! - [`PrimitiveType`] - Primitive discriminator
+
+// Contract module (M9) - THE semantic contract
+pub mod contract;
+pub use contract::{
+    EntityRef, PrimitiveType,
+    Versioned, Version, Timestamp,
+    RunName,
+};
+
+// Backwards compatibility aliases
+pub use contract::DocRef;        // = EntityRef
+pub use contract::PrimitiveKind; // = PrimitiveType
+pub use contract::VersionedValue; // = Versioned<Value>
+```
+
+**Why This Matters**:
+
+| Without Contract Module | With Contract Module |
+|------------------------|---------------------|
+| Types scattered across files | Single source of truth |
+| No clear API boundary | Clear stability boundary |
+| Hard to document | Easy to document |
+| Hard to generate SDKs | Clean SDK generation |
+| Semantic drift over time | Semantic coherence |
+
 ### 4.1 EntityRef: Universal Addressing (Invariant 1)
 
 ```rust

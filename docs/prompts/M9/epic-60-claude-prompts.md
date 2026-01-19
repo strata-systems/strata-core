@@ -88,6 +88,106 @@ Before starting ANY story in this epic, read:
 
 ---
 
+## File Organization: The Contract Module
+
+> **Critical**: All Epic 60 types go in `crates/core/src/contract/`, NOT scattered across files.
+> These types define the semantic contract of the system - they must live together.
+
+### Directory Structure
+
+Create this structure FIRST before implementing any stories:
+
+```bash
+mkdir -p crates/core/src/contract
+touch crates/core/src/contract/mod.rs
+```
+
+**Target structure**:
+```
+crates/core/src/
+├── contract/              # ALL M9 contract types live here
+│   ├── mod.rs             # Module exports
+│   ├── entity_ref.rs      # EntityRef, PrimitiveType
+│   ├── versioned.rs       # Versioned<T>
+│   ├── version.rs         # Version enum
+│   ├── timestamp.rs       # Timestamp type
+│   └── run_name.rs        # RunName type
+├── types.rs               # Internal types (RunId stays here)
+├── value.rs               # Value enum (+ VersionedValue alias)
+├── search_types.rs        # Search types (+ DocRef, PrimitiveKind aliases)
+└── lib.rs                 # Re-exports contract module prominently
+```
+
+### contract/mod.rs Template
+
+```rust
+//! Contract types for the in-mem database
+//!
+//! This module defines the semantic contract of the system.
+//! These types encode the seven invariants and define what it
+//! means to interact with any entity in the database.
+//!
+//! ## What Belongs Here
+//!
+//! Types that are part of the universal mental model:
+//! - EntityRef, PrimitiveType (Invariant 1: Addressable)
+//! - Versioned<T>, Version, Timestamp (Invariant 2: Versioned)
+//! - RunName (Invariant 5: Run-scoped)
+//!
+//! ## What Does NOT Belong Here
+//!
+//! Implementation details:
+//! - RunId(Uuid) - internal storage identity (stays in types.rs)
+//! - Key, Namespace - internal addressing (stays in types.rs)
+//! - ShardedStore internals, WAL formats, etc.
+
+// === Invariant 1: Everything is Addressable ===
+mod entity_ref;
+pub use entity_ref::{EntityRef, PrimitiveType};
+
+// === Invariant 2: Everything is Versioned ===
+mod versioned;
+mod version;
+mod timestamp;
+pub use versioned::Versioned;
+pub use version::Version;
+pub use timestamp::Timestamp;
+
+// === Invariant 5: Everything is Run-Scoped ===
+mod run_name;
+pub use run_name::RunName;
+```
+
+### Updated lib.rs Exports
+
+After creating the contract module, update `crates/core/src/lib.rs`:
+
+```rust
+//! Core types for in-mem
+//!
+//! ## Contract Types (M9)
+//!
+//! These types define the semantic contract of the system:
+//! - [`EntityRef`] - Universal addressing for any entity
+//! - [`Versioned<T>`] - Wrapper for versioned reads
+//! - [`Version`] - Version identifier
+//! - [`Timestamp`] - Temporal tracking
+//! - [`RunName`] - Semantic run identity
+//! - [`PrimitiveType`] - Primitive discriminator
+
+// Contract module (M9) - THE semantic contract
+pub mod contract;
+pub use contract::{
+    EntityRef, PrimitiveType,
+    Versioned, Version, Timestamp,
+    RunName,
+};
+
+// ... existing exports ...
+```
+
+---
+
 ## Dependency Graph
 
 ```
@@ -159,9 +259,9 @@ gh issue view 469
 
 ### Implementation Steps
 
-#### Step 1: Create entity_ref.rs module
+#### Step 1: Create entity_ref.rs in contract module
 
-Create `crates/core/src/entity_ref.rs`:
+Create `crates/core/src/contract/entity_ref.rs`:
 
 ```rust
 //! Universal entity reference for any in-mem entity
@@ -306,11 +406,11 @@ impl std::fmt::Display for EntityRef {
 }
 ```
 
-#### Step 2: Update lib.rs
+#### Step 2: Update contract/mod.rs
 
 ```rust
-pub mod entity_ref;
-pub use entity_ref::EntityRef;
+mod entity_ref;
+pub use entity_ref::{EntityRef, PrimitiveType};
 ```
 
 #### Step 3: Update search_types.rs to use type alias
@@ -495,7 +595,7 @@ gh issue view 470
 
 ### Implementation
 
-Create `crates/core/src/versioned.rs`:
+Create `crates/core/src/contract/versioned.rs`:
 
 ```rust
 //! Versioned value wrapper
@@ -801,7 +901,7 @@ gh issue view 471
 
 ### Implementation
 
-Create `crates/core/src/version.rs`:
+Create `crates/core/src/contract/version.rs`:
 
 ```rust
 //! Version identifier types
@@ -954,7 +1054,7 @@ gh issue view 472
 
 ### Implementation
 
-Create `crates/core/src/timestamp.rs`:
+Create `crates/core/src/contract/timestamp.rs`:
 
 ```rust
 //! Microsecond-precision timestamp type
@@ -1087,7 +1187,7 @@ gh issue view 473
 
 ### Implementation
 
-Create `crates/core/src/primitive_type.rs`:
+Create `crates/core/src/contract/primitive_type.rs` (or include in entity_ref.rs):
 
 ```rust
 //! Primitive type enumeration
@@ -1236,7 +1336,7 @@ gh issue view 474
 
 #### Part 1: RunName (NEW) - User-Facing Semantic Identity
 
-Create `crates/core/src/run_name.rs`:
+Create `crates/core/src/contract/run_name.rs`:
 
 ```rust
 //! Run name type - user-facing semantic identity

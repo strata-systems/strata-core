@@ -14,6 +14,39 @@
 - Timestamp type for temporal tracking
 - PrimitiveType enum for type discrimination
 - **RunName + RunId dual identity model** (Invariant 5) - semantic user-facing names + internal UUIDs
+- **Contract module organization** - single cohesive home for all M9 contract types
+
+---
+
+## File Organization: The Contract Module
+
+> **Critical**: M9 introduces types that define the **semantic contract** of the system.
+> These are not implementation details - they encode the seven invariants.
+> They must live in a single, discoverable, stable location.
+
+All Epic 60 types are created in `crates/core/src/contract/`:
+
+```
+crates/core/src/
+├── contract/              # NEW: M9 contract types module
+│   ├── mod.rs             # Module exports
+│   ├── entity_ref.rs      # Story #469: EntityRef, PrimitiveType
+│   ├── versioned.rs       # Story #470: Versioned<T>
+│   ├── version.rs         # Story #471: Version enum
+│   ├── timestamp.rs       # Story #472: Timestamp type
+│   └── run_name.rs        # Story #474: RunName type
+├── types.rs               # Internal types (RunId stays here)
+├── value.rs               # Value enum (+ VersionedValue alias)
+├── search_types.rs        # Search types (+ DocRef, PrimitiveKind aliases)
+└── lib.rs                 # Re-exports contract types prominently
+```
+
+**Why a contract module?**
+- Single source of truth for the system's semantics
+- Clear API stability boundary
+- Easy documentation and SDK generation
+- Prevents semantic drift
+- Clean mental model for contributors
 
 ---
 
@@ -1242,9 +1275,13 @@ mod tests {
 
 | File | Action |
 |------|--------|
-| `crates/core/src/entity_ref.rs` | CREATE - EntityRef enum and PrimitiveType |
-| `crates/core/src/versioned.rs` | CREATE - Versioned<T> wrapper |
-| `crates/core/src/version.rs` | CREATE - Version enum |
-| `crates/core/src/timestamp.rs` | CREATE - Timestamp type |
-| `crates/core/src/run_id.rs` | CREATE or MODIFY - RunId standardization |
-| `crates/core/src/lib.rs` | MODIFY - Export new types |
+| `crates/core/src/contract/mod.rs` | CREATE - Contract module exports |
+| `crates/core/src/contract/entity_ref.rs` | CREATE - EntityRef enum and PrimitiveType |
+| `crates/core/src/contract/versioned.rs` | CREATE - Versioned<T> wrapper |
+| `crates/core/src/contract/version.rs` | CREATE - Version enum |
+| `crates/core/src/contract/timestamp.rs` | CREATE - Timestamp type |
+| `crates/core/src/contract/run_name.rs` | CREATE - RunName type |
+| `crates/core/src/types.rs` | MODIFY - Update RunId docs (internal identity) |
+| `crates/core/src/value.rs` | MODIFY - Add `type VersionedValue = Versioned<Value>` |
+| `crates/core/src/search_types.rs` | MODIFY - Add `type DocRef = EntityRef`, `type PrimitiveKind = PrimitiveType` |
+| `crates/core/src/lib.rs` | MODIFY - Export contract module prominently |
