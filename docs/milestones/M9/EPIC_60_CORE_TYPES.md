@@ -13,7 +13,7 @@
 - Version enum for write returns (Invariant 2)
 - Timestamp type for temporal tracking
 - PrimitiveType enum for type discrimination
-- RunId standardization (Invariant 5)
+- **RunName + RunId dual identity model** (Invariant 5) - semantic user-facing names + internal UUIDs
 
 ---
 
@@ -21,12 +21,12 @@
 
 | Story | Description | Priority |
 |-------|-------------|----------|
-| #460 | EntityRef Enum Implementation | FOUNDATION |
-| #461 | Versioned<T> Wrapper Type | FOUNDATION |
-| #462 | Version Enum (TxnId, Sequence, Counter) | FOUNDATION |
-| #463 | Timestamp Type | FOUNDATION |
-| #464 | PrimitiveType Enum | HIGH |
-| #465 | RunId Standardization | FOUNDATION |
+| #469 | EntityRef Enum Implementation | FOUNDATION |
+| #470 | Versioned<T> Wrapper Type | FOUNDATION |
+| #471 | Version Enum (TxnId, Sequence, Counter) | FOUNDATION |
+| #472 | Timestamp Type | FOUNDATION |
+| #473 | PrimitiveType Enum | HIGH |
+| #474 | RunName + RunId Dual Identity Model | FOUNDATION |
 
 ---
 
@@ -705,57 +705,66 @@ impl From<chrono::DateTime<chrono::Utc>> for Timestamp {
 
 ---
 
-## Story #465: RunId Standardization
+## Story #474: RunName + RunId Dual Identity Model
 
-**File**: `crates/core/src/run_id.rs` (MODIFY existing or NEW)
+**Files**:
+- `crates/core/src/run_name.rs` (NEW)
+- `crates/core/src/types.rs` (MODIFY - keep existing RunId(Uuid))
 
-**Deliverable**: Standardized RunId type
+**Deliverable**: Dual identity model - semantic RunName for users, internal RunId for storage
+
+### The Semantic Question
+
+> **Who owns identity - the system or the user?**
+>
+> In a reasoning substrate, runs are not just storage buckets. They are:
+> - Reasoning contexts (conceptual containers for cognition)
+> - Memory boundaries (isolation units for agent state)
+> - Replayable timelines (debuggable execution histories)
+> - Semantic namespaces (user-meaningful identifiers)
+>
+> This requires user-owned semantic identity, not just machine-generated tokens.
 
 ### Implementation
 
+#### RunName: User-Facing Semantic Identity
+
 ```rust
-/// Identifier for a run (execution context)
-///
-/// This type expresses Invariant 5: Everything Exists Within a Run.
-/// All data is scoped to a run. The run is the unit of isolation.
-///
-/// IMPORTANT: Run scope is always explicit. There is no "ambient"
-/// run context. Every operation specifies which run it operates on.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct RunId(String);
+// crates/core/src/run_name.rs (NEW)
 
-impl RunId {
-    /// Create a new RunId
+/// User-facing name for a run (semantic identity)
+///
+/// RunName is what users think about, reference, and script against.
+/// It is:
+/// - Human-readable ("my-experiment-v2")
+/// - Stable (same name = same conceptual run)
+/// - Scriptable (can be used in CLI, prompts, logs)
+///
+/// This type expresses the semantic aspect of Invariant 5.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct RunName(String);
+
+impl RunName {
+    /// Create a new run name
     ///
-    /// The ID can be any non-empty string. Common patterns:
-    /// - UUIDs: "550e8400-e29b-41d4-a716-446655440000"
-    /// - Prefixed: "agent-session-123"
-    /// - Timestamps: "run-2024-01-15-001"
-    pub fn new(id: impl Into<String>) -> Self {
-        let id = id.into();
-        debug_assert!(!id.is_empty(), "RunId cannot be empty");
-        Self(id)
+    /// Names should be meaningful to humans:
+    /// - "chat-session-alice-2026-01"
+    /// - "experiment-transformer-v3"
+    /// - "debug-replay-issue-42"
+    pub fn new(name: impl Into<String>) -> Self {
+        let name = name.into();
+        debug_assert!(!name.is_empty(), "RunName cannot be empty");
+        Self(name)
     }
 
-    /// Generate a new random RunId (UUID v4)
-    #[cfg(feature = "uuid")]
-    pub fn generate() -> Self {
-        Self(uuid::Uuid::new_v4().to_string())
-    }
-
-    /// Get the ID as a string slice
+    /// Get the name as a string slice
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
-    /// Check if the ID matches a pattern
-    pub fn matches(&self, pattern: &str) -> bool {
-        self.0.contains(pattern)
-    }
-
-    /// Check if this is a valid run ID
+    /// Check if this is a valid run name
     ///
-    /// Run IDs must be non-empty and contain only valid characters.
+    /// Run names must be non-empty and contain only valid characters.
     pub fn is_valid(&self) -> bool {
         !self.0.is_empty() && self.0.chars().all(|c| {
             c.is_alphanumeric() || c == '-' || c == '_' || c == '.'
@@ -763,70 +772,179 @@ impl RunId {
     }
 }
 
-impl std::fmt::Display for RunId {
+impl std::fmt::Display for RunName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl From<String> for RunId {
-    fn from(s: String) -> Self {
-        RunId::new(s)
-    }
-}
-
-impl From<&str> for RunId {
+impl From<&str> for RunName {
     fn from(s: &str) -> Self {
-        RunId::new(s)
+        RunName::new(s)
     }
 }
 
-impl AsRef<str> for RunId {
+impl From<String> for RunName {
+    fn from(s: String) -> Self {
+        RunName::new(s)
+    }
+}
+
+impl AsRef<str> for RunName {
     fn as_ref(&self) -> &str {
         &self.0
     }
 }
+```
 
-impl std::borrow::Borrow<str> for RunId {
-    fn borrow(&self) -> &str {
-        &self.0
+#### RunId: Internal Storage Identity (Keep Existing)
+
+```rust
+// crates/core/src/types.rs (KEEP EXISTING - internal use only)
+
+/// Internal identifier for a run (storage identity)
+///
+/// RunId is what the storage layer uses for indexing and references.
+/// It is:
+/// - Globally unique (UUID v4)
+/// - Compact (16 bytes)
+/// - Collision-free
+///
+/// NOTE: Users should not see or use RunIds directly. Public APIs
+/// accept RunName, and the system manages the mapping internally.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct RunId(Uuid);
+
+impl RunId {
+    /// Create a new random RunId (internal use only)
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
     }
-}
 
-// Serde support
-#[cfg(feature = "serde")]
-impl serde::Serialize for RunId {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(&self.0)
+    /// Create from bytes (for deserialization/WAL recovery)
+    pub fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self(Uuid::from_bytes(bytes))
     }
-}
 
-#[cfg(feature = "serde")]
-impl<'de> serde::Deserialize<'de> for RunId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        Ok(RunId::new(s))
+    /// Get bytes (for serialization/WAL)
+    pub fn as_bytes(&self) -> &[u8; 16] {
+        self.0.as_bytes()
     }
 }
 ```
 
+#### Name-to-ID Mapping in Database
+
+```rust
+// The Database manages the bidirectional RunName ↔ RunId mapping
+
+impl Database {
+    /// Create a new run with a user-provided name
+    ///
+    /// Returns error if name already exists.
+    pub fn create_run(&self, name: impl Into<RunName>) -> Result<RunId> {
+        let name = name.into();
+
+        // Check if name already exists
+        if self.run_name_to_id.contains_key(&name) {
+            return Err(Error::RunNameExists { name });
+        }
+
+        // Generate new internal ID
+        let run_id = RunId::new();
+
+        // Store bidirectional mapping (persisted)
+        self.run_name_to_id.insert(name.clone(), run_id);
+        self.run_id_to_name.insert(run_id, name);
+
+        Ok(run_id)
+    }
+
+    /// Get or create a run by name
+    ///
+    /// If name exists, returns existing RunId.
+    /// If not, creates new run with that name.
+    pub fn get_or_create_run(&self, name: impl Into<RunName>) -> RunId {
+        let name = name.into();
+        if let Some(run_id) = self.run_name_to_id.get(&name) {
+            return *run_id;
+        }
+        self.create_run(name).unwrap()
+    }
+
+    /// Resolve a RunName to its RunId
+    pub fn resolve_run(&self, name: &RunName) -> Option<RunId> {
+        self.run_name_to_id.get(name).copied()
+    }
+
+    /// Get the name for a RunId
+    pub fn run_name(&self, run_id: RunId) -> Option<&RunName> {
+        self.run_id_to_name.get(&run_id)
+    }
+
+    /// Get a run handle by name (primary public API)
+    pub fn run(&self, name: impl Into<RunName>) -> RunHandle {
+        let name = name.into();
+        let run_id = self.get_or_create_run(name.clone());
+        RunHandle { name, run_id, db: self.clone() }
+    }
+}
+```
+
+#### Public API Uses RunName
+
+```rust
+// CORRECT: User code is semantic and readable
+let run = db.run("my-experiment-v2");
+run.kv_put("config", json!({"learning_rate": 0.01})).await?;
+
+// Logs are meaningful
+log::info!("Processing run '{}'", run.name()); // "Processing run 'my-experiment-v2'"
+
+// Scripts can reference runs by name
+let replay = db.run("debug-replay-issue-42");
+for event in replay.events().range(0..100)? {
+    println!("{:?}", event);
+}
+```
+
+### Why This Matters
+
+**Without semantic identity:**
+- Logs are full of opaque UUIDs
+- CLI commands require copy-pasting tokens
+- Scripts can't reference runs meaningfully
+- Debugging is cognitively hostile
+- The system feels like infrastructure, not a reasoning tool
+
+**With semantic identity:**
+- `db.run("debug-issue-42")` is self-documenting
+- Logs say "Run 'experiment-v3'" not "Run 550e8400..."
+- Scripts use meaningful names
+- Humans can reason about runs conceptually
+- The substrate aligns with cognition
+
+### Migration Strategy
+
+1. **Keep existing RunId(Uuid)** - no storage changes
+2. **Add RunName type** - new semantic layer
+3. **Add mapping table** - persisted bidirectional mapping
+4. **Update public APIs** - accept RunName, return RunHandle
+5. **Internal code unchanged** - still uses RunId for storage
+
 ### Acceptance Criteria
 
-- [ ] RunId newtype over String
-- [ ] `new()` constructor
-- [ ] `generate()` for UUID generation (feature-gated)
-- [ ] `as_str()` for string access
-- [ ] `is_valid()` for validation
-- [ ] From<String>, From<&str> implementations
-- [ ] AsRef<str>, Borrow<str> implementations
-- [ ] Display impl
-- [ ] Serde support (feature-gated)
+- [ ] RunName newtype over String
+- [ ] RunName validation (non-empty, valid characters)
+- [ ] RunName Display, From<&str>, From<String>
+- [ ] Keep existing RunId(Uuid) unchanged
+- [ ] Bidirectional mapping: RunName ↔ RunId
+- [ ] `db.run(name)` returns RunHandle
+- [ ] `db.create_run(name)` for explicit creation
+- [ ] `db.resolve_run(name)` returns Option<RunId>
+- [ ] Mapping persisted across restarts
+- [ ] EntityRef uses internal RunId (no change)
+- [ ] Error on duplicate RunName creation
 
 ---
 

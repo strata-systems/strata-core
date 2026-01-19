@@ -45,7 +45,7 @@ Before starting ANY story in this epic, read:
 - Version enum (TxnId, Sequence, Counter)
 - Timestamp type for temporal tracking
 - PrimitiveType enum
-- RunId standardization
+- **RunName + RunId dual identity model** (semantic names for users, internal UUIDs for storage)
 
 ### Key Rule: Types Express Invariants
 
@@ -57,7 +57,8 @@ Before starting ANY story in this epic, read:
 | EntityRef | Invariant 1: Everything is Addressable |
 | Versioned<T> | Invariant 2: Everything is Versioned |
 | Version | Invariant 2: Everything is Versioned |
-| RunId | Invariant 5: Everything Exists Within a Run |
+| RunName | Invariant 5: Semantic user-facing run identity |
+| RunId | Invariant 5: Internal storage identity (UUID) |
 | PrimitiveType | Invariant 6: Everything is Introspectable |
 | Timestamp | Invariant 2: Everything is Versioned (temporal) |
 
@@ -70,7 +71,10 @@ Before starting ANY story in this epic, read:
 - [ ] `Version` enum: TxnId(u64), Sequence(u64), Counter(u64)
 - [ ] `Version::as_u64()` for numeric comparison
 - [ ] `Timestamp` type with `now()` constructor
-- [ ] `RunId` newtype with `new()`, `as_str()`, Display impl
+- [ ] `RunName` newtype for semantic user-facing identity
+- [ ] `RunId` kept as `RunId(Uuid)` for internal storage
+- [ ] Database mapping: `RunName ↔ RunId` bidirectional
+- [ ] `db.run(name)` API accepts `RunName` or `&str`
 - [ ] All types implement Debug, Clone; IDs implement Hash, Eq
 
 ### Component Breakdown
@@ -79,7 +83,7 @@ Before starting ANY story in this epic, read:
 - **Story #471**: Version Enum - FOUNDATION
 - **Story #472**: Timestamp Type - FOUNDATION
 - **Story #473**: PrimitiveType Enum - HIGH
-- **Story #474**: RunId Standardization - FOUNDATION
+- **Story #474**: RunName + RunId Dual Identity Model - FOUNDATION
 
 ---
 
@@ -935,80 +939,155 @@ mod tests {
 
 ---
 
-## Story #474: RunId Standardization
+## Story #474: RunName + RunId Dual Identity Model
 
 **GitHub Issue**: [#474](https://github.com/anibjoshi/in-mem/issues/474)
-**Estimated Time**: 1 hour
+**Estimated Time**: 3 hours
 **Dependencies**: None
 **Blocks**: Story #469
+
+### The Semantic Question
+
+> **Who owns identity - the system or the user?**
+>
+> In a reasoning substrate, runs are not just storage buckets. They are:
+> - **Reasoning contexts** - conceptual containers for cognition
+> - **Memory boundaries** - isolation units for agent state
+> - **Replayable timelines** - debuggable execution histories
+> - **Semantic namespaces** - user-meaningful identifiers
+>
+> This requires **user-owned semantic identity** (RunName), not just machine-generated tokens (RunId).
 
 ### Start Story
 
 ```bash
 gh issue view 474
-./scripts/start-story.sh 60 474 run-id
+./scripts/start-story.sh 60 474 run-identity
 ```
 
 ### Implementation
 
-Modify or create `crates/core/src/run_id.rs`:
+#### Part 1: RunName (NEW) - User-Facing Semantic Identity
+
+Create `crates/core/src/run_name.rs`:
 
 ```rust
-//! Run identifier type
+//! Run name type - user-facing semantic identity
 
-/// Unique identifier for a run (execution context)
+use serde::{Deserialize, Serialize};
+
+/// User-facing name for a run (semantic identity)
 ///
-/// All data in Strata is scoped to a run (Invariant 5).
-/// A run is the unit of isolation.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct RunId(String);
+/// RunName is what users think about, reference, and script against.
+/// It is:
+/// - Human-readable ("my-experiment-v2")
+/// - Stable (same name = same conceptual run)
+/// - Scriptable (can be used in CLI, prompts, logs)
+///
+/// This type expresses the semantic aspect of Invariant 5.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct RunName(String);
 
-impl RunId {
-    /// Create a new RunId from a string
+impl RunName {
+    /// Create a new run name
+    ///
+    /// Names should be meaningful to humans:
+    /// - "chat-session-alice-2026-01"
+    /// - "experiment-transformer-v3"
+    /// - "debug-replay-issue-42"
     ///
     /// # Panics
-    /// Panics if the id is empty.
-    pub fn new(id: impl Into<String>) -> Self {
-        let id = id.into();
-        assert!(!id.is_empty(), "RunId cannot be empty");
-        Self(id)
+    /// Panics if name is empty.
+    pub fn new(name: impl Into<String>) -> Self {
+        let name = name.into();
+        assert!(!name.is_empty(), "RunName cannot be empty");
+        Self(name)
     }
 
-    /// Create a new RunId with a generated UUID
-    #[cfg(feature = "uuid")]
-    pub fn generate() -> Self {
-        Self(uuid::Uuid::new_v4().to_string())
-    }
-
-    /// Get the string representation
+    /// Get the name as a string slice
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Check if this is a valid run name
+    ///
+    /// Run names must be non-empty and contain only:
+    /// alphanumeric, dash, underscore, or dot characters.
+    pub fn is_valid(&self) -> bool {
+        !self.0.is_empty() && self.0.chars().all(|c| {
+            c.is_alphanumeric() || c == '-' || c == '_' || c == '.'
+        })
+    }
 }
 
-impl std::fmt::Display for RunId {
+impl std::fmt::Display for RunName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl From<String> for RunId {
-    fn from(s: String) -> Self {
-        Self::new(s)
-    }
-}
-
-impl From<&str> for RunId {
+impl From<&str> for RunName {
     fn from(s: &str) -> Self {
-        Self::new(s)
+        RunName::new(s)
     }
 }
 
-impl AsRef<str> for RunId {
+impl From<String> for RunName {
+    fn from(s: String) -> Self {
+        RunName::new(s)
+    }
+}
+
+impl AsRef<str> for RunName {
     fn as_ref(&self) -> &str {
         &self.0
     }
 }
+```
+
+#### Part 2: Keep Existing RunId - Internal Storage Identity
+
+The existing `RunId(Uuid)` in `crates/core/src/types.rs` is **unchanged**.
+It remains the internal storage identity used by:
+- Storage layer (ShardedStore keys)
+- WAL entries
+- EntityRef (internal addressing)
+
+```rust
+// crates/core/src/types.rs - KEEP EXISTING, add documentation
+
+/// Internal identifier for a run (storage identity)
+///
+/// RunId is what the storage layer uses for indexing and references.
+/// It is:
+/// - Globally unique (UUID v4)
+/// - Compact (16 bytes)
+/// - Collision-free
+///
+/// NOTE: Users should not see or use RunIds directly in public APIs.
+/// Public APIs accept RunName, and the system manages the mapping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct RunId(Uuid);
+// ... existing implementation unchanged
+```
+
+#### Part 3: Name-to-ID Mapping
+
+The mapping will be added to Database in a later story (Epic 62).
+For now, document the interface:
+
+```rust
+// This will be implemented in Epic 62 (Transaction Unification)
+// For now, we define the types and their relationship
+
+/// The Database will manage bidirectional mapping:
+/// - RunName → RunId (lookup)
+/// - RunId → RunName (reverse lookup)
+///
+/// Public API:
+/// - db.run("my-name") - get or create run by name
+/// - db.create_run("my-name") - explicit creation
+/// - db.resolve_run(&name) - lookup only
 ```
 
 ### Tests
@@ -1018,53 +1097,107 @@ impl AsRef<str> for RunId {
 mod tests {
     use super::*;
 
+    // === RunName Tests ===
+
     #[test]
-    fn test_run_id_new() {
-        let run_id = RunId::new("my-run");
-        assert_eq!(run_id.as_str(), "my-run");
+    fn test_run_name_new() {
+        let name = RunName::new("my-experiment");
+        assert_eq!(name.as_str(), "my-experiment");
     }
 
     #[test]
-    #[should_panic(expected = "RunId cannot be empty")]
-    fn test_run_id_empty_panics() {
-        RunId::new("");
+    #[should_panic(expected = "RunName cannot be empty")]
+    fn test_run_name_empty_panics() {
+        RunName::new("");
     }
 
     #[test]
-    fn test_run_id_display() {
-        let run_id = RunId::new("test-123");
-        assert_eq!(format!("{}", run_id), "test-123");
+    fn test_run_name_display() {
+        let name = RunName::new("test-123");
+        assert_eq!(format!("{}", name), "test-123");
     }
 
     #[test]
-    fn test_run_id_from_string() {
-        let run_id: RunId = "from-string".into();
-        assert_eq!(run_id.as_str(), "from-string");
+    fn test_run_name_from_str() {
+        let name: RunName = "from-str".into();
+        assert_eq!(name.as_str(), "from-str");
     }
 
     #[test]
-    fn test_run_id_equality() {
-        let r1 = RunId::new("same");
-        let r2 = RunId::new("same");
-        let r3 = RunId::new("different");
-
-        assert_eq!(r1, r2);
-        assert_ne!(r1, r3);
+    fn test_run_name_from_string() {
+        let name: RunName = String::from("from-string").into();
+        assert_eq!(name.as_str(), "from-string");
     }
 
     #[test]
-    fn test_run_id_hash() {
+    fn test_run_name_equality() {
+        let n1 = RunName::new("same");
+        let n2 = RunName::new("same");
+        let n3 = RunName::new("different");
+
+        assert_eq!(n1, n2);
+        assert_ne!(n1, n3);
+    }
+
+    #[test]
+    fn test_run_name_hash() {
         use std::collections::HashSet;
 
         let mut set = HashSet::new();
-        set.insert(RunId::new("run1"));
-        set.insert(RunId::new("run2"));
+        set.insert(RunName::new("run1"));
+        set.insert(RunName::new("run2"));
 
-        assert!(set.contains(&RunId::new("run1")));
-        assert!(!set.contains(&RunId::new("run3")));
+        assert!(set.contains(&RunName::new("run1")));
+        assert!(!set.contains(&RunName::new("run3")));
+    }
+
+    #[test]
+    fn test_run_name_validation() {
+        assert!(RunName::new("valid-name_123.test").is_valid());
+        assert!(RunName::new("simple").is_valid());
+
+        // These would be invalid if we enforced at construction
+        // For now, is_valid() is advisory
+        let with_space = RunName::new("has space");
+        assert!(!with_space.is_valid());
+    }
+
+    #[test]
+    fn test_run_name_serialization() {
+        let name = RunName::new("serialize-me");
+        let json = serde_json::to_string(&name).unwrap();
+        let restored: RunName = serde_json::from_str(&json).unwrap();
+        assert_eq!(name, restored);
     }
 }
 ```
+
+### Why This Matters
+
+**Without semantic identity:**
+```
+[2026-01-19 10:23:45] Processing run 550e8400-e29b-41d4-a716-446655440000
+[2026-01-19 10:23:46] Error in run 550e8400-e29b-41d4-a716-446655440000: key not found
+```
+
+**With semantic identity:**
+```
+[2026-01-19 10:23:45] Processing run 'experiment-transformer-v3'
+[2026-01-19 10:23:46] Error in run 'experiment-transformer-v3': key not found
+```
+
+### Acceptance Criteria
+
+- [ ] `RunName` newtype over String in `crates/core/src/run_name.rs`
+- [ ] `RunName::new()` constructor with empty check
+- [ ] `RunName::as_str()` accessor
+- [ ] `RunName::is_valid()` validation method
+- [ ] `RunName` implements: Debug, Clone, PartialEq, Eq, Hash, Display
+- [ ] `RunName` implements: From<&str>, From<String>, AsRef<str>
+- [ ] `RunName` implements: Serialize, Deserialize
+- [ ] Existing `RunId(Uuid)` unchanged (documentation updated)
+- [ ] Export `RunName` from `crates/core/src/lib.rs`
+- [ ] All tests passing
 
 ### Complete Story
 
@@ -1093,7 +1226,8 @@ mod tests {
 - [ ] Version enum with TxnId, Sequence, Counter
 - [ ] Timestamp type with now(), from_micros()
 - [ ] PrimitiveType enum with ALL constant
-- [ ] RunId newtype with validation
+- [ ] RunName newtype for semantic identity
+- [ ] RunId kept as internal UUID (unchanged)
 
 ### 3. Merge to Develop
 
@@ -1107,7 +1241,7 @@ Delivered:
 - Version enum
 - Timestamp type
 - PrimitiveType enum
-- RunId standardization
+- RunName + RunId dual identity model
 
 Stories: #469, #470, #471, #472, #473, #474
 "
@@ -1126,4 +1260,5 @@ Epic 60 establishes the foundation types that express the seven invariants. Thes
 - **Version** captures different versioning schemes (Invariant 2)
 - **Timestamp** tracks temporal information (Invariant 2)
 - **PrimitiveType** enables introspection (Invariant 6)
-- **RunId** enforces run scoping (Invariant 5)
+- **RunName** provides semantic user-facing identity (Invariant 5)
+- **RunId** provides internal storage identity (Invariant 5)

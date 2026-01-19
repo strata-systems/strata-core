@@ -418,32 +418,230 @@ impl Version {
 }
 ```
 
-### 4.4 RunId: Universal Scope (Invariant 5)
+### 4.4 Run Identity: Dual Model (Invariant 5)
+
+> **The Semantic Question**: Who owns identity - the system or the user?
+>
+> In a reasoning substrate, runs are not just storage buckets. They are:
+> - **Reasoning contexts** - conceptual containers for cognition
+> - **Memory boundaries** - isolation units for agent state
+> - **Replayable timelines** - debuggable execution histories
+> - **Semantic namespaces** - user-meaningful identifiers
+>
+> This requires **user-owned semantic identity**, not just machine-generated tokens.
+
+#### The Dual Identity Model
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     RUN IDENTITY MODEL                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   User-Facing Layer (Semantic)                              │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │  RunName(String)                                    │   │
+│   │  - "experiment-2026-01-19"                          │   │
+│   │  - "chat-with-alice"                                │   │
+│   │  - "reasoning-session-v3"                           │   │
+│   │  Human-readable, scriptable, stable                 │   │
+│   └─────────────────────────────────────────────────────┘   │
+│                          │                                  │
+│                          ▼ (mapping table)                  │
+│                                                             │
+│   Storage Layer (Mechanical)                                │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │  RunId(Uuid)                                        │   │
+│   │  - 550e8400-e29b-41d4-a716-446655440000             │   │
+│   │  Unique, compact, collision-free                    │   │
+│   └─────────────────────────────────────────────────────┘   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### RunName: User-Facing Semantic Identity
 
 ```rust
-/// Identifier for a run (execution context)
+/// User-facing name for a run (semantic identity)
 ///
-/// This type expresses Invariant 5: Everything Exists Within a Run.
-/// All data is scoped to a run.
+/// RunName is what users think about, reference, and script against.
+/// It is:
+/// - Human-readable ("my-experiment-v2")
+/// - Stable (same name = same conceptual run)
+/// - Scriptable (can be used in CLI, prompts, logs)
+///
+/// This type expresses the semantic aspect of Invariant 5.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct RunId(pub String);
+pub struct RunName(String);
 
-impl RunId {
-    pub fn new(id: impl Into<String>) -> Self {
-        Self(id.into())
+impl RunName {
+    /// Create a new run name
+    ///
+    /// Names should be meaningful to humans:
+    /// - "chat-session-alice-2026-01"
+    /// - "experiment-transformer-v3"
+    /// - "debug-replay-issue-42"
+    pub fn new(name: impl Into<String>) -> Self {
+        let name = name.into();
+        debug_assert!(!name.is_empty(), "RunName cannot be empty");
+        debug_assert!(
+            name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.'),
+            "RunName must contain only alphanumeric, dash, underscore, or dot"
+        );
+        Self(name)
     }
 
+    /// Get the name as a string slice
     pub fn as_str(&self) -> &str {
         &self.0
     }
 }
 
-impl std::fmt::Display for RunId {
+impl std::fmt::Display for RunName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
+
+impl From<&str> for RunName {
+    fn from(s: &str) -> Self {
+        RunName::new(s)
+    }
+}
+
+impl From<String> for RunName {
+    fn from(s: String) -> Self {
+        RunName::new(s)
+    }
+}
 ```
+
+#### RunId: Internal Storage Identity
+
+```rust
+/// Internal identifier for a run (storage identity)
+///
+/// RunId is what the storage layer uses for indexing and references.
+/// It is:
+/// - Globally unique (UUID v4)
+/// - Compact (16 bytes)
+/// - Collision-free
+///
+/// Users should not need to see or use RunIds directly. All public
+/// APIs accept RunName, and the system manages the mapping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RunId(Uuid);
+
+impl RunId {
+    /// Create a new random RunId
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    /// Create from bytes (for deserialization)
+    pub fn from_bytes(bytes: [u8; 16]) -> Self {
+        Self(Uuid::from_bytes(bytes))
+    }
+
+    /// Get bytes (for serialization)
+    pub fn as_bytes(&self) -> &[u8; 16] {
+        self.0.as_bytes()
+    }
+}
+```
+
+#### Name-to-ID Mapping
+
+```rust
+/// The Database manages the RunName → RunId mapping
+impl Database {
+    /// Create a new run with a user-provided name
+    ///
+    /// Returns error if name already exists.
+    pub fn create_run(&self, name: RunName) -> Result<RunId> {
+        // Check if name already exists
+        if self.run_name_to_id.contains_key(&name) {
+            return Err(Error::RunNameExists { name });
+        }
+
+        // Generate new internal ID
+        let run_id = RunId::new();
+
+        // Store bidirectional mapping
+        self.run_name_to_id.insert(name.clone(), run_id);
+        self.run_id_to_name.insert(run_id, name);
+
+        Ok(run_id)
+    }
+
+    /// Get or create a run by name
+    ///
+    /// If name exists, returns existing RunId.
+    /// If not, creates new run with that name.
+    pub fn get_or_create_run(&self, name: RunName) -> RunId {
+        if let Some(run_id) = self.run_name_to_id.get(&name) {
+            return *run_id;
+        }
+        self.create_run(name).unwrap()
+    }
+
+    /// Resolve a RunName to its RunId
+    pub fn resolve_run(&self, name: &RunName) -> Option<RunId> {
+        self.run_name_to_id.get(name).copied()
+    }
+
+    /// Get the name for a RunId
+    pub fn run_name(&self, run_id: RunId) -> Option<&RunName> {
+        self.run_id_to_name.get(&run_id)
+    }
+}
+```
+
+#### Public API Uses RunName
+
+```rust
+// CORRECT: Public API uses RunName
+impl Database {
+    pub fn run(&self, name: impl Into<RunName>) -> RunHandle {
+        let name = name.into();
+        let run_id = self.get_or_create_run(name.clone());
+        RunHandle { name, run_id, db: self.clone() }
+    }
+}
+
+// User code is semantic and readable
+let run = db.run("my-experiment-v2");
+run.kv_put("config", json!({"learning_rate": 0.01})).await?;
+
+// NOT this (opaque UUIDs)
+let run = db.run("550e8400-e29b-41d4-a716-446655440000"); // Bad UX
+```
+
+#### Migration from Current RunId
+
+The current codebase uses `RunId(Uuid)` directly in APIs. Migration path:
+
+1. **Phase 1**: Add `RunName` type, keep existing `RunId(Uuid)` internal
+2. **Phase 2**: Add mapping table to Database
+3. **Phase 3**: Update public APIs to accept `RunName`
+4. **Phase 4**: Deprecate direct `RunId` usage in public APIs
+
+Internal storage and WAL continue using `RunId(Uuid)` - no changes needed there.
+
+#### Why This Matters for a Reasoning Substrate
+
+Without semantic identity:
+- Logs are full of opaque UUIDs
+- CLI commands require copy-pasting tokens
+- Scripts can't reference runs meaningfully
+- Debugging is cognitively hostile
+- The system feels like infrastructure, not a reasoning tool
+
+With semantic identity:
+- `db.run("debug-issue-42")` is self-documenting
+- Logs say "Run 'experiment-v3'" not "Run 550e8400..."
+- Scripts use meaningful names
+- Humans can reason about runs conceptually
+- The substrate aligns with cognition
 
 ### 4.5 Timestamp
 
