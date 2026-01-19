@@ -352,6 +352,87 @@ pub enum PrimitiveType {
 }
 ```
 
+#### 4.1.1 Unification with Existing DocRef and PrimitiveKind
+
+> **The Semantic Question**: Can there be two parallel identity systems in a reasoning substrate?
+>
+> The current codebase has `DocRef` and `PrimitiveKind` in `crates/core/src/search_types.rs`:
+> ```rust
+> pub enum DocRef {
+>     Kv { key: Key },
+>     Json { key: Key, doc_id: JsonDocId },
+>     Event { log_key: Key, seq: u64 },
+>     State { key: Key },
+>     Trace { key: Key, span_id: u64 },
+>     Run { run_id: RunId },
+>     Vector { collection: String, key: String, run_id: RunId },
+> }
+>
+> pub enum PrimitiveKind { Kv, Json, Event, State, Trace, Run, Vector }
+> ```
+>
+> M9 introduces `EntityRef` and `PrimitiveType` as universal contracts. Having both creates:
+> - Two ways to refer to the same thing
+> - Two mental models of identity
+> - Conversion glue everywhere
+> - Inconsistent APIs
+> - Long-term semantic drift
+>
+> **Identity is foundational in a reasoning substrate. You cannot afford multiple notions of "what an entity is."**
+
+**The Solution: Canonicalize EntityRef**
+
+`EntityRef` becomes the **canonical** identity abstraction. `DocRef` becomes a type alias:
+
+```rust
+// In crates/core/src/search_types.rs (after M9)
+
+/// Type alias for backwards compatibility with search layer
+///
+/// New code should use `EntityRef` directly.
+/// This alias exists only for migration compatibility.
+pub type DocRef = EntityRef;
+
+/// Type alias for backwards compatibility
+pub type PrimitiveKind = PrimitiveType;
+```
+
+**Key Differences and Reconciliation**:
+
+| DocRef Field | EntityRef Field | Resolution |
+|-------------|----------------|------------|
+| `Kv { key: Key }` | `Kv { run_id: RunId, key: String }` | Extract run_id from Key.namespace, use user_key |
+| `Json { key, doc_id }` | `Json { run_id, doc_id }` | Extract run_id from Key.namespace |
+| `Event { log_key, seq }` | `Event { run_id, sequence }` | Extract run_id, rename seq→sequence |
+| `State { key }` | `State { run_id, name }` | Extract run_id, use user_key as name |
+| `Trace { key, span_id }` | `Trace { run_id, trace_id }` | Extract run_id, map span_id→trace_id |
+| `Run { run_id }` | `Run { run_id }` | Same |
+| `Vector { collection, key, run_id }` | `Vector { run_id, collection, vector_id }` | Reorder, rename key→vector_id |
+
+**Migration Strategy**:
+
+1. **Phase 1: Add EntityRef** - Implement `EntityRef` with canonical structure
+2. **Phase 2: Add Conversions** - Implement `From<DocRef> for EntityRef` and reverse
+3. **Phase 3: Add Type Aliases** - Make `DocRef = EntityRef`, `PrimitiveKind = PrimitiveType`
+4. **Phase 4: Update Internal Code** - Migrate search layer to use `EntityRef`
+5. **Phase 5: Deprecate DocRef** - Mark `DocRef` usage as deprecated
+
+**Why This Matters for a Reasoning Substrate**:
+
+Without unified identity:
+- Search returns `DocRef`, core returns different types
+- Error messages reference entities inconsistently
+- Wire protocol needs multiple identity formats
+- CLI/SDKs have confusing APIs
+- Provenance tracking is fragmented
+
+With unified identity:
+- One way to reference any entity, everywhere
+- Consistent error messages across all operations
+- Single wire format for entity references
+- Clean APIs for CLI, SDKs, and tools
+- Unified provenance and history tracking
+
 ### 4.2 Versioned<T>: Universal Read Result (Invariant 2)
 
 ```rust

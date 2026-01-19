@@ -109,9 +109,46 @@ Story #474 (RunId) ──> Story #469 (EntityRef uses RunId)
 ## Story #469: EntityRef Enum Implementation
 
 **GitHub Issue**: [#469](https://github.com/anibjoshi/in-mem/issues/469)
-**Estimated Time**: 2 hours
+**Estimated Time**: 3 hours
 **Dependencies**: Stories #473, #474
 **Blocks**: All Epic 61, 62, 63 stories
+
+### Critical: Unification with DocRef
+
+> **The Semantic Problem**: The codebase already has `DocRef` in `crates/core/src/search_types.rs`.
+> M9 cannot introduce a competing `EntityRef` - that creates parallel identity systems.
+>
+> **Solution**: `EntityRef` is the canonical type. `DocRef` becomes a type alias.
+
+**Current DocRef** (in `crates/core/src/search_types.rs`):
+```rust
+pub enum DocRef {
+    Kv { key: Key },                              // run_id inside Key.namespace
+    Json { key: Key, doc_id: JsonDocId },         // run_id inside Key.namespace
+    Event { log_key: Key, seq: u64 },             // run_id inside Key.namespace
+    State { key: Key },                           // run_id inside Key.namespace
+    Trace { key: Key, span_id: u64 },             // run_id inside Key.namespace
+    Run { run_id: RunId },                        // explicit
+    Vector { collection: String, key: String, run_id: RunId }, // explicit
+}
+```
+
+**M9 EntityRef** makes run_id explicit and top-level:
+```rust
+pub enum EntityRef {
+    Kv { run_id: RunId, key: String },
+    Event { run_id: RunId, sequence: u64 },
+    State { run_id: RunId, name: String },
+    Trace { run_id: RunId, trace_id: TraceId },
+    Run { run_id: RunId },
+    Json { run_id: RunId, doc_id: JsonDocId },
+    Vector { run_id: RunId, collection: String, vector_id: VectorId },
+}
+
+// Type alias for backwards compatibility
+pub type DocRef = EntityRef;
+pub type PrimitiveKind = PrimitiveType;
+```
 
 ### Start Story
 
@@ -127,14 +164,17 @@ gh issue view 469
 Create `crates/core/src/entity_ref.rs`:
 
 ```rust
-//! Universal entity reference for any Strata entity
+//! Universal entity reference for any in-mem entity
 //!
 //! This type expresses Invariant 1: Everything is Addressable.
-//! Every entity in Strata has a stable identity that can be:
+//! Every entity in the database has a stable identity that can be:
 //! - Referenced
 //! - Stored
 //! - Passed between systems
 //! - Used to retrieve the entity later
+//!
+//! NOTE: This type unifies with the existing DocRef from search_types.
+//! After M9, `DocRef = EntityRef`.
 
 use crate::{RunId, PrimitiveType};
 
@@ -143,10 +183,15 @@ use crate::TraceId;
 use crate::JsonDocId;
 use crate::VectorId;
 
-/// Universal entity reference for any Strata entity
+/// Universal entity reference for any in-mem entity
 ///
-/// Every entity in Strata can be uniquely identified by an EntityRef.
+/// Every entity can be uniquely identified by an EntityRef.
 /// This enables uniform addressing across all primitives.
+///
+/// ## Unification with DocRef
+///
+/// This type replaces the previous `DocRef` enum from search_types.
+/// The old type becomes a type alias: `pub type DocRef = EntityRef;`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum EntityRef {
     /// KV entry: run + key
@@ -268,6 +313,45 @@ pub mod entity_ref;
 pub use entity_ref::EntityRef;
 ```
 
+#### Step 3: Update search_types.rs to use type alias
+
+After creating `entity_ref.rs`, update `crates/core/src/search_types.rs`:
+
+```rust
+// At the top of search_types.rs, add:
+use crate::{EntityRef, PrimitiveType};
+
+// Replace the DocRef enum with a type alias:
+/// Document reference for search results
+///
+/// This is now a type alias for `EntityRef`.
+/// The original enum has been unified into the universal `EntityRef` type.
+pub type DocRef = EntityRef;
+
+// Replace the PrimitiveKind enum with a type alias:
+/// Primitive kind discriminator
+///
+/// This is now a type alias for `PrimitiveType`.
+pub type PrimitiveKind = PrimitiveType;
+
+// REMOVE the old DocRef and PrimitiveKind enum definitions.
+// The methods are now provided by EntityRef and PrimitiveType.
+```
+
+### Compatibility Note
+
+The following DocRef usage patterns continue to work:
+
+```rust
+// Old code (still works via type alias)
+let doc_ref = DocRef::Kv { run_id, key: "mykey".to_string() };
+assert_eq!(doc_ref.primitive_kind(), PrimitiveKind::Kv);
+
+// New code (preferred)
+let entity_ref: EntityRef = EntityRef::kv(run_id, "mykey");
+assert_eq!(entity_ref.primitive_type(), PrimitiveType::Kv);
+```
+
 ### Tests
 
 ```rust
@@ -322,6 +406,30 @@ mod tests {
         let mut set = HashSet::new();
         set.insert(ref1);
         assert!(set.contains(&ref2));
+    }
+
+    // === DocRef Type Alias Compatibility Tests ===
+
+    #[test]
+    fn test_doc_ref_type_alias() {
+        // This test verifies the type alias works correctly
+        use crate::search_types::DocRef;
+
+        let run_id = RunId::new("test");
+        let doc_ref: DocRef = EntityRef::kv(run_id.clone(), "key");
+
+        // DocRef is just EntityRef, so all methods work
+        assert_eq!(doc_ref.run_id(), &run_id);
+        assert_eq!(doc_ref.primitive_type(), PrimitiveType::Kv);
+    }
+
+    #[test]
+    fn test_primitive_kind_type_alias() {
+        // This test verifies the PrimitiveKind alias works
+        use crate::search_types::PrimitiveKind;
+
+        let kind: PrimitiveKind = PrimitiveType::Kv;
+        assert_eq!(kind.name(), "KV");
     }
 }
 ```

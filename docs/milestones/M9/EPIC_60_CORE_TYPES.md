@@ -30,18 +30,57 @@
 
 ---
 
-## Story #460: EntityRef Enum Implementation
+## Story #469: EntityRef Enum Implementation
 
 **File**: `crates/core/src/entity_ref.rs` (NEW)
 
 **Deliverable**: Universal addressing type for all entities
 
+### Unification with Existing DocRef
+
+> **Critical Design Decision**: The codebase already has `DocRef` in `crates/core/src/search_types.rs`.
+> M9 cannot introduce a competing `EntityRef` - that creates parallel identity systems.
+>
+> **Solution**: `EntityRef` is the canonical type. `DocRef` becomes a type alias.
+
+The current `DocRef` (in `search_types.rs`):
+```rust
+pub enum DocRef {
+    Kv { key: Key },
+    Json { key: Key, doc_id: JsonDocId },
+    Event { log_key: Key, seq: u64 },
+    State { key: Key },
+    Trace { key: Key, span_id: u64 },
+    Run { run_id: RunId },
+    Vector { collection: String, key: String, run_id: RunId },
+}
+```
+
+Must unify with M9's `EntityRef`:
+```rust
+pub enum EntityRef {
+    Kv { run_id: RunId, key: String },
+    Event { run_id: RunId, sequence: u64 },
+    State { run_id: RunId, name: String },
+    Trace { run_id: RunId, trace_id: TraceId },
+    Run { run_id: RunId },
+    Json { run_id: RunId, doc_id: JsonDocId },
+    Vector { run_id: RunId, collection: String, vector_id: VectorId },
+}
+
+// Type alias for backwards compatibility with search layer
+pub type DocRef = EntityRef;
+```
+
+**Key Insight**: DocRef embeds run_id inside the `Key` type (via `Key.namespace.run_id`).
+EntityRef makes run_id explicit and top-level. This is cleaner and enables better APIs.
+
 ### Implementation
 
 ```rust
-use crate::{RunId, TraceId, JsonDocId, CollectionId, VectorId};
+use crate::{RunId, TraceId, JsonDocId, VectorId};
 
-/// Reference to any entity in Strata
+/// Reference to any entity in the database
 ///
 /// This type expresses Invariant 1: Everything is Addressable.
 /// Every entity has a stable identity that can be:
@@ -251,6 +290,9 @@ impl std::fmt::Display for PrimitiveType {
 - [ ] `description()` for human-readable output
 - [ ] Display impl for error messages
 - [ ] Implements Debug, Clone, PartialEq, Eq, Hash
+- [ ] **Type alias**: `pub type DocRef = EntityRef;` in search_types.rs
+- [ ] **Conversions**: `From<DocRef> for EntityRef` (if needed during transition)
+- [ ] **Migration**: Existing search code continues to work via type alias
 
 ---
 
