@@ -4,6 +4,20 @@
 
 ---
 
+## NAMING CONVENTION - CRITICAL
+
+> **NEVER use "M9" or "Strata" in the actual codebase or comments.**
+>
+> - "M9" is an internal milestone tracker only - do not use it in code, comments, or user-facing text
+> - All existing crates refer to the database as "in-mem" - use this name consistently
+> - Do not use "Strata" anywhere in the codebase
+> - This applies to: code, comments, docstrings, error messages, log messages, test names
+>
+> **CORRECT**: `//! Universal entity reference for any in-mem entity`
+> **WRONG**: `//! Universal entity reference for any Strata entity`
+
+---
+
 ## AUTHORITATIVE SPECIFICATIONS - READ THESE FIRST
 
 **The following documents are GOSPEL for ALL M9 implementation:**
