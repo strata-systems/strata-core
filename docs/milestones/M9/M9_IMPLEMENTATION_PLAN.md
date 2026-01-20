@@ -98,9 +98,9 @@ All primitives follow the same API patterns.
 | Epic | Name | Stories | Dependencies | Status |
 |------|------|---------|--------------|--------|
 | 60 | Core Types | 6 | M8 complete | ✅ COMPLETE |
-| 61 | Versioned Returns | 7 | Epic 60 | Pending |
+| 63 | Error Standardization | 4 | Epic 60 | ✅ COMPLETE |
+| 61 | Versioned Returns | 7 | Epic 60 | 🔄 IN PROGRESS (KV done) |
 | 62 | Transaction Unification | 6 | Epic 60 | Pending |
-| 63 | Error Standardization | 4 | Epic 60 | Pending |
 | 64 | Conformance Testing | 5 | Epic 61, 62, 63 | Pending |
 
 ---
@@ -346,7 +346,13 @@ Implement all core types fully:
 
 **Note**: Epic 63 (Error Standardization) deferred to Phase 2 - core types implemented first following in-place migration strategy.
 
-### Phase 2: First Two Primitives (KV + EventLog)
+### Phase 2: Error Standardization + First Two Primitives (KV + EventLog)
+
+**Epic 63: Error Standardization** (prerequisite for versioned returns):
+- #479: StrataError Enum Definition
+- #480: Error Conversion from Primitive Errors
+- #481: EntityRef in Error Messages
+- #482: Error Documentation and Guidelines
 
 Apply versioned returns to **KV** and **EventLog** only:
 - #466: KVStore Versioned Returns
@@ -359,7 +365,11 @@ Wire TransactionOps for these two:
 
 Write conformance tests for KV and EventLog (14 tests each = 28 tests).
 
-**Exit Criteria**: KV and EventLog fully conform to all 7 invariants. Pattern proven.
+**Exit Criteria**:
+- StrataError enum complete with all variants
+- Error conversions from all primitive errors
+- KV and EventLog fully conform to all 7 invariants
+- Pattern proven for remaining primitives
 
 ### Phase 3: Extend to State + Trace
 

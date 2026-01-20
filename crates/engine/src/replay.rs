@@ -28,6 +28,7 @@
 use in_mem_core::run_types::{RunEventOffsets, RunMetadata, RunStatus};
 use in_mem_core::types::{Key, RunId};
 use in_mem_core::value::Value;
+use in_mem_core::{EntityRef, StrataError};
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -62,6 +63,31 @@ pub enum RunError {
 impl From<in_mem_core::error::Error> for RunError {
     fn from(e: in_mem_core::error::Error) -> Self {
         RunError::Storage(e.to_string())
+    }
+}
+
+// M9: Conversion to StrataError
+impl From<RunError> for StrataError {
+    fn from(e: RunError) -> Self {
+        match e {
+            RunError::AlreadyExists(run_id) => StrataError::InvalidOperation {
+                entity_ref: EntityRef::run(run_id),
+                reason: format!("Run '{}' already exists", run_id),
+            },
+            RunError::NotFound(run_id) => StrataError::RunNotFound { run_id },
+            RunError::NotActive(run_id) => StrataError::InvalidOperation {
+                entity_ref: EntityRef::run(run_id),
+                reason: "Run is not active".to_string(),
+            },
+            RunError::Wal(msg) => StrataError::Storage {
+                message: format!("WAL error: {}", msg),
+                source: None,
+            },
+            RunError::Storage(msg) => StrataError::Storage {
+                message: msg,
+                source: None,
+            },
+        }
     }
 }
 

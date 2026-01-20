@@ -13,6 +13,7 @@ use in_mem_core::json::{get_at_path, JsonPatch, JsonPath, JsonValue};
 use in_mem_core::traits::{SnapshotView, Storage};
 use in_mem_core::types::{Key, RunId};
 use in_mem_core::value::Value;
+use in_mem_core::StrataError;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant};
 
@@ -53,6 +54,22 @@ impl std::fmt::Display for CommitError {
 }
 
 impl std::error::Error for CommitError {}
+
+// M9: Conversion to StrataError
+impl From<CommitError> for StrataError {
+    fn from(e: CommitError) -> Self {
+        match e {
+            CommitError::ValidationFailed(result) => StrataError::TransactionAborted {
+                reason: format!("Validation failed: {} conflict(s)", result.conflict_count()),
+            },
+            CommitError::InvalidState(msg) => StrataError::TransactionNotActive { state: msg },
+            CommitError::WALError(msg) => StrataError::Storage {
+                message: format!("WAL error: {}", msg),
+                source: None,
+            },
+        }
+    }
+}
 
 /// Result of applying transaction writes to storage
 ///

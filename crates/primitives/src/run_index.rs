@@ -1508,12 +1508,13 @@ mod tests {
                 .unwrap();
 
             // Verify isolation
+            // M9: get() returns Versioned<Value>
             assert_eq!(
-                kv.get(&run_id1, "key").unwrap(),
+                kv.get(&run_id1, "key").unwrap().map(|v| v.value),
                 Some(Value::String("run1-value".into()))
             );
             assert_eq!(
-                kv.get(&run_id2, "key").unwrap(),
+                kv.get(&run_id2, "key").unwrap().map(|v| v.value),
                 Some(Value::String("run2-value".into()))
             );
 
@@ -1522,7 +1523,7 @@ mod tests {
 
             assert!(kv.get(&run_id1, "key").unwrap().is_none());
             assert_eq!(
-                kv.get(&run_id2, "key").unwrap(),
+                kv.get(&run_id2, "key").unwrap().map(|v| v.value),
                 Some(Value::String("run2-value".into()))
             );
         }
