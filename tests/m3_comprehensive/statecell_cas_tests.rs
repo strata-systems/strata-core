@@ -38,7 +38,7 @@ mod version_monotonicity {
         tp.state_cell.init(&run_id, "cell", values::int(0)).unwrap();
 
         let state = tp.state_cell.read(&run_id, "cell").unwrap().unwrap();
-        assert_eq!(state.version, 1, "Initial version should be 1");
+        assert_eq!(state.value.version, 1, "Initial version should be 1");
     }
 
     #[test]
@@ -50,7 +50,7 @@ mod version_monotonicity {
 
         let mut expected_version = 1u64;
         for i in 1..=10 {
-            let new_ver = tp.state_cell.set(&run_id, "cell", values::int(i)).unwrap();
+            let new_ver = tp.state_cell.set(&run_id, "cell", values::int(i)).unwrap().value;
             expected_version += 1;
             assert_eq!(new_ver, expected_version, "set() should increment version");
         }
@@ -67,14 +67,16 @@ mod version_monotonicity {
         let v2 = tp
             .state_cell
             .cas(&run_id, "cell", 1, values::int(1))
-            .unwrap();
+            .unwrap()
+            .value;
         assert_eq!(v2, 2);
 
         // CAS from v2 to v3
         let v3 = tp
             .state_cell
             .cas(&run_id, "cell", 2, values::int(2))
-            .unwrap();
+            .unwrap()
+            .value;
         assert_eq!(v3, 3);
     }
 
@@ -89,7 +91,7 @@ mod version_monotonicity {
 
         // Perform multiple operations
         for i in 1..=20 {
-            let ver = tp.state_cell.set(&run_id, "cell", values::int(i)).unwrap();
+            let ver = tp.state_cell.set(&run_id, "cell", values::int(i)).unwrap().value;
             versions.push(ver);
         }
 
@@ -119,7 +121,7 @@ mod version_monotonicity {
 
         // cell_b should still be at version 1
         let state_b = tp.state_cell.read(&run_id, "cell_b").unwrap().unwrap();
-        assert_eq!(state_b.version, 1, "cell_b version should be unchanged");
+        assert_eq!(state_b.value.version, 1, "cell_b version should be unchanged");
     }
 
     #[test]
@@ -136,7 +138,7 @@ mod version_monotonicity {
                 p.state_cell.set(&run_id, "cell", values::int(i)).unwrap();
             }
 
-            version_before = p.state_cell.read(&run_id, "cell").unwrap().unwrap().version;
+            version_before = p.state_cell.read(&run_id, "cell").unwrap().unwrap().value.version;
         }
 
         // Recover and continue
@@ -144,12 +146,12 @@ mod version_monotonicity {
             let p = ptp.open();
             let state = p.state_cell.read(&run_id, "cell").unwrap().unwrap();
             assert_eq!(
-                state.version, version_before,
+                state.value.version, version_before,
                 "Version changed after recovery"
             );
 
             // New operations should continue monotonically
-            let new_ver = p.state_cell.set(&run_id, "cell", values::int(100)).unwrap();
+            let new_ver = p.state_cell.set(&run_id, "cell", values::int(100)).unwrap().value;
             assert!(
                 new_ver > version_before,
                 "New version {} not greater than pre-recovery {}",
@@ -237,14 +239,14 @@ mod cas_atomicity {
                 // Retry loop
                 for _ in 0..100 {
                     let state = sc.read(run_id, "counter").unwrap().unwrap();
-                    let current = if let Value::I64(v) = state.value {
+                    let current = if let Value::I64(v) = state.value.value {
                         v
                     } else {
                         panic!()
                     };
 
                     if sc
-                        .cas(run_id, "counter", state.version, Value::I64(current + 1))
+                        .cas(run_id, "counter", state.value.version, Value::I64(current + 1))
                         .is_ok()
                     {
                         success_count.fetch_add(1, Ordering::Relaxed);
@@ -257,7 +259,7 @@ mod cas_atomicity {
 
         // Final value should equal number of successful increments
         let final_state = tp.state_cell.read(&run_id, "counter").unwrap().unwrap();
-        let final_value = if let Value::I64(v) = final_state.value {
+        let final_value = if let Value::I64(v) = final_state.value.value {
             v
         } else {
             panic!()
@@ -287,7 +289,7 @@ mod cas_atomicity {
 
         // Can read current version for retry
         let state = tp.state_cell.read(&run_id, "cell").unwrap().unwrap();
-        assert_eq!(state.version, 2, "Should be able to read current version");
+        assert_eq!(state.value.version, 2, "Should be able to read current version");
     }
 }
 
@@ -340,7 +342,7 @@ mod init_uniqueness {
 
         // Original value preserved
         let state = tp.state_cell.read(&run_id, "cell").unwrap().unwrap();
-        assert_eq!(state.value, values::int(42), "init() should not overwrite");
+        assert_eq!(state.value.value, values::int(42), "init() should not overwrite");
     }
 
     #[test]
@@ -360,6 +362,7 @@ mod init_uniqueness {
             .read(&run_id, "cell")
             .unwrap()
             .unwrap()
+            .value
             .version;
 
         // Try init again
@@ -371,6 +374,7 @@ mod init_uniqueness {
             .read(&run_id, "cell")
             .unwrap()
             .unwrap()
+            .value
             .version;
         assert_eq!(
             version_before, version_after,
@@ -406,8 +410,8 @@ mod init_uniqueness {
         let state1 = tp.state_cell.read(&run1, "cell").unwrap().unwrap();
         let state2 = tp.state_cell.read(&run2, "cell").unwrap().unwrap();
 
-        assert_eq!(state1.value, values::int(1));
-        assert_eq!(state2.value, values::int(2));
+        assert_eq!(state1.value.value, values::int(1));
+        assert_eq!(state2.value.value, values::int(2));
     }
 }
 
@@ -449,7 +453,7 @@ mod transition_speculative_execution {
         assert_eq!(result, 1);
 
         let state = tp.state_cell.read(&run_id, "counter").unwrap().unwrap();
-        assert_eq!(state.value, values::int(1));
+        assert_eq!(state.value.value, values::int(1));
     }
 
     #[test]
@@ -463,6 +467,7 @@ mod transition_speculative_execution {
 
         tp.state_cell
             .transition(&run_id, "cell", |state| {
+                // Inside transition, state is the State struct directly
                 assert_eq!(state.value, values::int(42));
                 assert_eq!(state.version, 1);
                 Ok((values::int(43), ()))
@@ -506,7 +511,7 @@ mod transition_speculative_execution {
         // call_count >= number of successful transitions
         // (may be greater due to retries)
         let final_state = tp.state_cell.read(&run_id, "counter").unwrap().unwrap();
-        let final_value = if let Value::I64(v) = final_state.value {
+        let final_value = if let Value::I64(v) = final_state.value.value {
             v
         } else {
             0
@@ -553,7 +558,7 @@ mod transition_speculative_execution {
 
         // Final value should be exactly num_threads * ops_per_thread
         let final_state = tp.state_cell.read(&run_id, "counter").unwrap().unwrap();
-        let final_value = if let Value::I64(v) = final_state.value {
+        let final_value = if let Value::I64(v) = final_state.value.value {
             v
         } else {
             0
@@ -575,8 +580,8 @@ mod transition_speculative_execution {
         tp.state_cell.init(&run_id, "cell", values::int(0)).unwrap();
 
         // Transition that returns error
-        let result: Result<((), u64), Error> =
-            tp.state_cell.transition(&run_id, "cell", |_state| {
+        let result =
+            tp.state_cell.transition(&run_id, "cell", |_state| -> Result<(Value, ()), Error> {
                 Err(Error::InvalidState("intentional failure".to_string()))
             });
 
@@ -584,8 +589,8 @@ mod transition_speculative_execution {
 
         // Value should be unchanged
         let state = tp.state_cell.read(&run_id, "cell").unwrap().unwrap();
-        assert_eq!(state.value, values::int(0));
-        assert_eq!(state.version, 1);
+        assert_eq!(state.value.value, values::int(0));
+        assert_eq!(state.value.version, 1);
     }
 
     #[test]
@@ -611,7 +616,7 @@ mod transition_speculative_execution {
 
         // Verify state
         let state = tp.state_cell.read(&run_id, "new_cell").unwrap().unwrap();
-        assert_eq!(state.value, values::int(1));
+        assert_eq!(state.value.value, values::int(1));
     }
 
     #[test]

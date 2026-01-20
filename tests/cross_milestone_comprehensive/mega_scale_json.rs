@@ -3,7 +3,7 @@
 //! Tests with large JSON documents and many documents.
 
 use crate::test_utils::*;
-use in_mem_core::json::{JsonPath, JsonValue};
+use in_mem_core::json::JsonPath;
 use in_mem_core::types::JsonDocId;
 
 /// Test 10K JSON documents.

@@ -17,9 +17,8 @@
 
 use crate::fuser::{Fuser, SimpleFuser};
 use in_mem_core::error::Result;
-use in_mem_core::search_types::{
-    PrimitiveKind, SearchBudget, SearchRequest, SearchResponse, SearchStats,
-};
+use in_mem_core::search_types::{SearchBudget, SearchRequest, SearchResponse, SearchStats};
+use in_mem_core::PrimitiveType;
 use in_mem_engine::Database;
 use in_mem_primitives::{EventLog, JsonStore, KVStore, RunIndex, StateCell, TraceStore, VectorStore};
 use std::sync::Arc;
@@ -189,10 +188,10 @@ impl HybridSearch {
     // ========================================================================
 
     /// Select which primitives to search based on request filters
-    fn select_primitives(&self, req: &SearchRequest) -> Vec<PrimitiveKind> {
+    fn select_primitives(&self, req: &SearchRequest) -> Vec<PrimitiveType> {
         match &req.primitive_filter {
             Some(filter) => filter.clone(),
-            None => PrimitiveKind::all().to_vec(),
+            None => PrimitiveType::all().to_vec(),
         }
     }
 
@@ -229,24 +228,24 @@ impl HybridSearch {
     /// Execute search on a single primitive
     fn search_primitive(
         &self,
-        primitive: PrimitiveKind,
+        primitive: PrimitiveType,
         req: &SearchRequest,
     ) -> Result<SearchResponse> {
         use in_mem_primitives::Searchable;
 
         match primitive {
-            PrimitiveKind::Kv => self.kv.search(req),
-            PrimitiveKind::Json => self.json.search(req),
-            PrimitiveKind::Event => self.event.search(req),
-            PrimitiveKind::State => self.state.search(req),
-            PrimitiveKind::Trace => self.trace.search(req),
-            PrimitiveKind::Run => self.run_index.search(req),
+            PrimitiveType::Kv => self.kv.search(req),
+            PrimitiveType::Json => self.json.search(req),
+            PrimitiveType::Event => self.event.search(req),
+            PrimitiveType::State => self.state.search(req),
+            PrimitiveType::Trace => self.trace.search(req),
+            PrimitiveType::Run => self.run_index.search(req),
             // Vector primitive now implements Searchable.
             // Per M8_ARCHITECTURE.md Section 12.3:
             // - Keyword search returns empty (by design)
             // - For vector/hybrid search with embeddings, the orchestrator
             //   should call vector.search_response() directly with the embedding
-            PrimitiveKind::Vector => Searchable::search(&self.vector, req),
+            PrimitiveType::Vector => Searchable::search(&self.vector, req),
         }
     }
 
@@ -313,7 +312,7 @@ mod tests {
             .unwrap();
 
         let hybrid = HybridSearch::new(db);
-        let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveKind::Kv]);
+        let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveType::Kv]);
         let response = hybrid.search(&req).unwrap();
 
         // Should have at least one result
@@ -321,7 +320,7 @@ mod tests {
 
         // All results should be KV
         for hit in &response.hits {
-            assert_eq!(hit.doc_ref.primitive_kind(), PrimitiveKind::Kv);
+            assert_eq!(hit.doc_ref.primitive_kind(), PrimitiveType::Kv);
         }
     }
 
@@ -333,12 +332,12 @@ mod tests {
 
         // Test with filter
         let req_filtered = SearchRequest::new(run_id, "test")
-            .with_primitive_filter(vec![PrimitiveKind::Kv, PrimitiveKind::Json]);
+            .with_primitive_filter(vec![PrimitiveType::Kv, PrimitiveType::Json]);
 
         let primitives = hybrid.select_primitives(&req_filtered);
         assert_eq!(primitives.len(), 2);
-        assert!(primitives.contains(&PrimitiveKind::Kv));
-        assert!(primitives.contains(&PrimitiveKind::Json));
+        assert!(primitives.contains(&PrimitiveType::Kv));
+        assert!(primitives.contains(&PrimitiveType::Json));
 
         // Test without filter (all primitives)
         let req_all = SearchRequest::new(run_id, "test");

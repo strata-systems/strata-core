@@ -15,10 +15,10 @@
 //! writer.write_commit()?;
 //! ```
 
-use chrono::Utc;
 use in_mem_core::error::Result;
 use in_mem_core::types::{Key, RunId};
 use in_mem_core::value::Value;
+use in_mem_core::Timestamp;
 use in_mem_durability::wal::{WALEntry, WAL};
 
 /// Writes transaction operations to WAL
@@ -59,7 +59,7 @@ impl<'a> TransactionWALWriter<'a> {
         let entry = WALEntry::BeginTxn {
             txn_id: self.txn_id,
             run_id: self.run_id,
-            timestamp: Utc::now().timestamp(),
+            timestamp: Timestamp::now(),
         };
         self.wal.append(&entry)?;
         Ok(())

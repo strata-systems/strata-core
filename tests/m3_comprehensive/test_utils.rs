@@ -224,25 +224,26 @@ pub mod assert_helpers {
 /// M3 invariant assertion helpers
 pub mod invariants {
     use super::*;
+    use in_mem_core::contract::Versioned;
     use in_mem_primitives::Event;
 
     /// Assert that EventLog chain is valid (M3.9)
-    pub fn assert_chain_integrity(events: &[Event]) {
+    pub fn assert_chain_integrity(events: &[Versioned<Event>]) {
         if events.is_empty() {
             return;
         }
 
         // First event should have zero prev_hash
         assert_eq!(
-            events[0].prev_hash, [0u8; 32],
+            events[0].value.prev_hash, [0u8; 32],
             "First event prev_hash should be zero"
         );
 
         // Each subsequent event's prev_hash should match previous event's hash
         for i in 1..events.len() {
             assert_eq!(
-                events[i].prev_hash,
-                events[i - 1].hash,
+                events[i].value.prev_hash,
+                events[i - 1].value.hash,
                 "Chain broken at index {}: prev_hash doesn't match previous hash",
                 i
             );
@@ -250,12 +251,12 @@ pub mod invariants {
     }
 
     /// Assert that sequences are contiguous (M3.8)
-    pub fn assert_sequences_contiguous(events: &[Event]) {
+    pub fn assert_sequences_contiguous(events: &[Versioned<Event>]) {
         for (i, event) in events.iter().enumerate() {
             assert_eq!(
-                event.sequence, i as u64,
+                event.value.sequence, i as u64,
                 "Sequence gap at index {}: expected {}, got {}",
-                i, i, event.sequence
+                i, i, event.value.sequence
             );
         }
     }

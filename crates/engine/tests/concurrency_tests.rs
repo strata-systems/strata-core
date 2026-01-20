@@ -166,7 +166,7 @@ fn test_concurrent_cas_conflict() {
 
     // Pre-populate with known version
     db.put(run_id, key.clone(), Value::I64(0)).unwrap();
-    let initial_version = db.get(&key).unwrap().unwrap().version;
+    let initial_version = db.get(&key).unwrap().unwrap().version.as_u64();
 
     // T1: Begin and CAS
     let mut txn1 = db.begin_transaction(run_id);

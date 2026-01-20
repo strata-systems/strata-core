@@ -8,6 +8,7 @@
 //! - RunIndex: create_run/get_run/update_status/fail_run/complete_run/delete_run
 
 use crate::test_utils::{values, TestPrimitives};
+use in_mem_core::contract::Version;
 use in_mem_core::value::Value;
 use in_mem_primitives::{RunStatus, TraceType};
 
@@ -29,7 +30,7 @@ mod kvstore_api {
     fn test_put_and_get() {
         let tp = TestPrimitives::new();
         tp.kv.put(&tp.run_id, "key", values::int(42)).unwrap();
-        let result = tp.kv.get(&tp.run_id, "key").unwrap();
+        let result = tp.kv.get(&tp.run_id, "key").unwrap().map(|v| v.value);
         assert_eq!(result, Some(values::int(42)));
     }
 
@@ -38,7 +39,7 @@ mod kvstore_api {
         let tp = TestPrimitives::new();
         tp.kv.put(&tp.run_id, "key", values::int(1)).unwrap();
         tp.kv.put(&tp.run_id, "key", values::int(2)).unwrap();
-        let result = tp.kv.get(&tp.run_id, "key").unwrap();
+        let result = tp.kv.get(&tp.run_id, "key").unwrap().map(|v| v.value);
         assert_eq!(result, Some(values::int(2)));
     }
 
@@ -108,12 +109,12 @@ mod kvstore_api {
 
         // I64
         tp.kv.put(&tp.run_id, "int", values::int(42)).unwrap();
-        assert_eq!(tp.kv.get(&tp.run_id, "int").unwrap(), Some(values::int(42)));
+        assert_eq!(tp.kv.get(&tp.run_id, "int").unwrap().map(|v| v.value), Some(values::int(42)));
 
         // F64
         tp.kv.put(&tp.run_id, "float", values::float(3.14)).unwrap();
         assert_eq!(
-            tp.kv.get(&tp.run_id, "float").unwrap(),
+            tp.kv.get(&tp.run_id, "float").unwrap().map(|v| v.value),
             Some(values::float(3.14))
         );
 
@@ -122,7 +123,7 @@ mod kvstore_api {
             .put(&tp.run_id, "string", values::string("hello"))
             .unwrap();
         assert_eq!(
-            tp.kv.get(&tp.run_id, "string").unwrap(),
+            tp.kv.get(&tp.run_id, "string").unwrap().map(|v| v.value),
             Some(values::string("hello"))
         );
 
@@ -131,20 +132,20 @@ mod kvstore_api {
             .put(&tp.run_id, "bool", values::bool_val(true))
             .unwrap();
         assert_eq!(
-            tp.kv.get(&tp.run_id, "bool").unwrap(),
+            tp.kv.get(&tp.run_id, "bool").unwrap().map(|v| v.value),
             Some(values::bool_val(true))
         );
 
         // Null
         tp.kv.put(&tp.run_id, "null", values::null()).unwrap();
-        assert_eq!(tp.kv.get(&tp.run_id, "null").unwrap(), Some(values::null()));
+        assert_eq!(tp.kv.get(&tp.run_id, "null").unwrap().map(|v| v.value), Some(values::null()));
 
         // Bytes
         tp.kv
             .put(&tp.run_id, "bytes", values::bytes(&[1, 2, 3]))
             .unwrap();
         assert_eq!(
-            tp.kv.get(&tp.run_id, "bytes").unwrap(),
+            tp.kv.get(&tp.run_id, "bytes").unwrap().map(|v| v.value),
             Some(values::bytes(&[1, 2, 3]))
         );
 
@@ -201,28 +202,32 @@ mod eventlog_api {
     use super::*;
 
     #[test]
-    fn test_append_returns_sequence_and_hash() {
+    fn test_append_returns_sequence_version() {
         let tp = TestPrimitives::new();
-        let (seq, hash) = tp
+        let version = tp
             .event_log
             .append(&tp.run_id, "event", values::null())
             .unwrap();
+        let Version::Sequence(seq) = version else { panic!("Expected Sequence version") };
         assert_eq!(seq, 0);
-        assert_ne!(hash, [0u8; 32]);
+        // Read back to verify hash is non-zero
+        let event = tp.event_log.read(&tp.run_id, seq).unwrap().unwrap();
+        assert_ne!(event.value.hash, [0u8; 32]);
     }
 
     #[test]
     fn test_read_single_event() {
         let tp = TestPrimitives::new();
-        let (seq, _) = tp
+        let version = tp
             .event_log
             .append(&tp.run_id, "test_event", values::int(42))
             .unwrap();
+        let Version::Sequence(seq) = version else { panic!("Expected Sequence version") };
 
         let event = tp.event_log.read(&tp.run_id, seq).unwrap().unwrap();
-        assert_eq!(event.sequence, seq);
-        assert_eq!(event.event_type, "test_event");
-        assert_eq!(event.payload, values::int(42));
+        assert_eq!(event.value.sequence, seq);
+        assert_eq!(event.value.event_type, "test_event");
+        assert_eq!(event.value.payload, values::int(42));
     }
 
     #[test]
@@ -244,9 +249,9 @@ mod eventlog_api {
         // read_range(start, end) reads from start to end (exclusive)
         let events = tp.event_log.read_range(&tp.run_id, 1, 4).unwrap();
         assert_eq!(events.len(), 3);
-        assert_eq!(events[0].sequence, 1);
-        assert_eq!(events[1].sequence, 2);
-        assert_eq!(events[2].sequence, 3);
+        assert_eq!(events[0].value.sequence, 1);
+        assert_eq!(events[1].value.sequence, 2);
+        assert_eq!(events[2].value.sequence, 3);
     }
 
     #[test]
@@ -270,8 +275,8 @@ mod eventlog_api {
             .unwrap();
 
         let head = tp.event_log.head(&tp.run_id).unwrap().unwrap();
-        assert_eq!(head.event_type, "third");
-        assert_eq!(head.sequence, 2);
+        assert_eq!(head.value.event_type, "third");
+        assert_eq!(head.value.sequence, 2);
     }
 
     #[test]
@@ -344,7 +349,7 @@ mod eventlog_api {
         let type_a_events = tp.event_log.read_by_type(&tp.run_id, "type_a").unwrap();
         assert_eq!(type_a_events.len(), 3);
         for event in &type_a_events {
-            assert_eq!(event.event_type, "type_a");
+            assert_eq!(event.value.event_type, "type_a");
         }
     }
 
@@ -381,12 +386,13 @@ mod statecell_api {
         let version = tp
             .state_cell
             .init(&tp.run_id, "cell", values::int(0))
-            .unwrap();
+            .unwrap()
+            .value;
         assert_eq!(version, 1);
 
         let state = tp.state_cell.read(&tp.run_id, "cell").unwrap().unwrap();
-        assert_eq!(state.value, values::int(0));
-        assert_eq!(state.version, 1);
+        assert_eq!(state.value.value, values::int(0));
+        assert_eq!(state.value.version, 1);
     }
 
     #[test]
@@ -417,12 +423,13 @@ mod statecell_api {
         let new_version = tp
             .state_cell
             .cas(&tp.run_id, "cell", 1, values::int(20))
-            .unwrap();
+            .unwrap()
+            .value;
         assert_eq!(new_version, 2);
 
         let state = tp.state_cell.read(&tp.run_id, "cell").unwrap().unwrap();
-        assert_eq!(state.value, values::int(20));
-        assert_eq!(state.version, 2);
+        assert_eq!(state.value.value, values::int(20));
+        assert_eq!(state.value.version, 2);
     }
 
     #[test]
@@ -437,7 +444,7 @@ mod statecell_api {
 
         // Value unchanged
         let state = tp.state_cell.read(&tp.run_id, "cell").unwrap().unwrap();
-        assert_eq!(state.value, values::int(10));
+        assert_eq!(state.value.value, values::int(10));
     }
 
     #[test]
@@ -450,11 +457,12 @@ mod statecell_api {
         let new_version = tp
             .state_cell
             .set(&tp.run_id, "cell", values::int(100))
-            .unwrap();
+            .unwrap()
+            .value;
         assert!(new_version > 1);
 
         let state = tp.state_cell.read(&tp.run_id, "cell").unwrap().unwrap();
-        assert_eq!(state.value, values::int(100));
+        assert_eq!(state.value.value, values::int(100));
     }
 
     #[test]
@@ -465,11 +473,12 @@ mod statecell_api {
         let version = tp
             .state_cell
             .set(&tp.run_id, "new_cell", values::int(42))
-            .unwrap();
+            .unwrap()
+            .value;
         assert!(version >= 1);
 
         let state = tp.state_cell.read(&tp.run_id, "new_cell").unwrap().unwrap();
-        assert_eq!(state.value, values::int(42));
+        assert_eq!(state.value.value, values::int(42));
     }
 
     #[test]
@@ -527,7 +536,7 @@ mod statecell_api {
         assert_eq!(result.0, 1);
 
         let state = tp.state_cell.read(&tp.run_id, "counter").unwrap().unwrap();
-        assert_eq!(state.value, values::int(1));
+        assert_eq!(state.value.value, values::int(1));
     }
 
     #[test]
@@ -550,7 +559,7 @@ mod statecell_api {
         assert_eq!(result, 10);
 
         let state = tp.state_cell.read(&tp.run_id, "counter").unwrap().unwrap();
-        assert_eq!(state.value, values::int(10));
+        assert_eq!(state.value.value, values::int(10));
     }
 }
 
@@ -575,10 +584,11 @@ mod tracestore_api {
                 vec![],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value;
 
         let trace = tp.trace_store.get(&tp.run_id, &trace_id).unwrap().unwrap();
-        assert!(matches!(trace.trace_type, TraceType::Thought { .. }));
+        assert!(matches!(trace.value.trace_type, TraceType::Thought { .. }));
     }
 
     #[test]
@@ -597,10 +607,11 @@ mod tracestore_api {
                 vec!["tag1".to_string(), "tag2".to_string()],
                 values::map(vec![("key", values::int(42))]),
             )
-            .unwrap();
+            .unwrap()
+            .value;
 
         let trace = tp.trace_store.get(&tp.run_id, &trace_id).unwrap().unwrap();
-        assert_eq!(trace.tags, vec!["tag1".to_string(), "tag2".to_string()]);
+        assert_eq!(trace.value.tags, vec!["tag1".to_string(), "tag2".to_string()]);
     }
 
     #[test]
@@ -619,7 +630,8 @@ mod tracestore_api {
                 vec![],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value;
 
         // Create child trace
         let child_id = tp
@@ -634,10 +646,11 @@ mod tracestore_api {
                 vec![],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value;
 
         let child = tp.trace_store.get(&tp.run_id, &child_id).unwrap().unwrap();
-        assert_eq!(child.parent_id, Some(parent_id));
+        assert_eq!(child.value.parent_id, Some(parent_id));
     }
 
     #[test]
@@ -706,7 +719,8 @@ mod tracestore_api {
                 vec![],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value;
 
         // Add children
         tp.trace_store
@@ -856,9 +870,9 @@ mod runindex_api {
         let tp = TestPrimitives::new();
         let meta = tp.run_index.create_run("my-run").unwrap();
 
-        assert_eq!(meta.name, "my-run");
-        assert_eq!(meta.status, RunStatus::Active);
-        assert!(meta.parent_run.is_none());
+        assert_eq!(meta.value.name, "my-run");
+        assert_eq!(meta.value.status, RunStatus::Active);
+        assert!(meta.value.parent_run.is_none());
     }
 
     #[test]
@@ -879,9 +893,9 @@ mod runindex_api {
             )
             .unwrap();
 
-        assert_eq!(meta.name, "child");
-        assert_eq!(meta.parent_run, Some("parent".to_string()));
-        assert_eq!(meta.tags, vec!["tag1".to_string(), "tag2".to_string()]);
+        assert_eq!(meta.value.name, "child");
+        assert_eq!(meta.value.parent_run, Some("parent".to_string()));
+        assert_eq!(meta.value.tags, vec!["tag1".to_string(), "tag2".to_string()]);
     }
 
     #[test]
@@ -900,7 +914,7 @@ mod runindex_api {
 
         let meta = tp.run_index.get_run("my-run").unwrap();
         assert!(meta.is_some());
-        assert_eq!(meta.unwrap().name, "my-run");
+        assert_eq!(meta.unwrap().value.name, "my-run");
     }
 
     #[test]
@@ -949,7 +963,7 @@ mod runindex_api {
             .run_index
             .update_status("my-run", RunStatus::Paused)
             .unwrap();
-        assert_eq!(meta.status, RunStatus::Paused);
+        assert_eq!(meta.value.status, RunStatus::Paused);
     }
 
     #[test]
@@ -958,8 +972,8 @@ mod runindex_api {
         tp.run_index.create_run("my-run").unwrap();
 
         let meta = tp.run_index.complete_run("my-run").unwrap();
-        assert_eq!(meta.status, RunStatus::Completed);
-        assert!(meta.completed_at.is_some());
+        assert_eq!(meta.value.status, RunStatus::Completed);
+        assert!(meta.value.completed_at.is_some());
     }
 
     #[test]
@@ -968,8 +982,8 @@ mod runindex_api {
         tp.run_index.create_run("my-run").unwrap();
 
         let meta = tp.run_index.fail_run("my-run", "error message").unwrap();
-        assert_eq!(meta.status, RunStatus::Failed);
-        assert_eq!(meta.error, Some("error message".to_string()));
+        assert_eq!(meta.value.status, RunStatus::Failed);
+        assert_eq!(meta.value.error, Some("error message".to_string()));
     }
 
     #[test]
@@ -978,7 +992,7 @@ mod runindex_api {
         tp.run_index.create_run("my-run").unwrap();
 
         let meta = tp.run_index.cancel_run("my-run").unwrap();
-        assert_eq!(meta.status, RunStatus::Cancelled);
+        assert_eq!(meta.value.status, RunStatus::Cancelled);
     }
 
     #[test]
@@ -987,10 +1001,10 @@ mod runindex_api {
         tp.run_index.create_run("my-run").unwrap();
 
         let meta = tp.run_index.pause_run("my-run").unwrap();
-        assert_eq!(meta.status, RunStatus::Paused);
+        assert_eq!(meta.value.status, RunStatus::Paused);
 
         let meta = tp.run_index.resume_run("my-run").unwrap();
-        assert_eq!(meta.status, RunStatus::Active);
+        assert_eq!(meta.value.status, RunStatus::Active);
     }
 
     #[test]
@@ -999,7 +1013,7 @@ mod runindex_api {
         tp.run_index.create_run("my-run").unwrap();
 
         let meta = tp.run_index.archive_run("my-run").unwrap();
-        assert_eq!(meta.status, RunStatus::Archived);
+        assert_eq!(meta.value.status, RunStatus::Archived);
     }
 
     #[test]

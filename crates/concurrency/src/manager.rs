@@ -326,7 +326,7 @@ mod tests {
         // Verify storage was updated
         let stored = store.get(&key).unwrap().unwrap();
         assert_eq!(stored.value, Value::I64(42));
-        assert_eq!(stored.version, commit_version);
+        assert_eq!(stored.version.as_u64(), commit_version);
 
         // Verify WAL was written
         let entries = wal.read_all().unwrap();
@@ -404,9 +404,9 @@ mod tests {
         let commit_version = manager.commit(&mut txn, &store, &mut wal).unwrap();
 
         // Per spec Section 6.1: All keys in a transaction get the same commit version
-        assert_eq!(store.get(&key1).unwrap().unwrap().version, commit_version);
-        assert_eq!(store.get(&key2).unwrap().unwrap().version, commit_version);
-        assert_eq!(store.get(&key3).unwrap().unwrap().version, commit_version);
+        assert_eq!(store.get(&key1).unwrap().unwrap().version.as_u64(), commit_version);
+        assert_eq!(store.get(&key2).unwrap().unwrap().version.as_u64(), commit_version);
+        assert_eq!(store.get(&key3).unwrap().unwrap().version.as_u64(), commit_version);
     }
 
     #[test]
@@ -486,7 +486,7 @@ mod tests {
         let key = create_test_key(&ns, "counter");
 
         store.put(key.clone(), Value::I64(0), None).unwrap();
-        let v1 = store.get(&key).unwrap().unwrap().version;
+        let v1 = store.get(&key).unwrap().unwrap().version.as_u64();
 
         let mut txn = create_txn_with_store(&store, &manager);
         txn.cas(key.clone(), v1, Value::I64(1)).unwrap();

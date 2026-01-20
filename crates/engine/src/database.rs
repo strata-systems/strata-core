@@ -625,13 +625,62 @@ impl Database {
         match result {
             Ok(value) => {
                 // Commit on success
-                let commit_result = self.commit_transaction(&mut txn);
+                let _commit_version = self.commit_transaction(&mut txn)?;
                 self.end_transaction(txn); // Return to pool
-                commit_result?;
                 Ok(value)
             }
             Err(e) => {
                 // Abort on error (just discard, per spec no AbortTxn in WAL for user aborts)
+                let _ = txn.mark_aborted(format!("Closure error: {}", e));
+                self.coordinator.record_abort();
+                self.end_transaction(txn); // Return to pool
+                Err(e)
+            }
+        }
+    }
+
+    /// Execute a transaction and return both the result and commit version (M9)
+    ///
+    /// Like `transaction()` but also returns the commit version assigned to all writes.
+    /// Use this when you need to know the version created by write operations.
+    ///
+    /// # Returns
+    /// * `Ok((T, u64))` - Closure result and commit version
+    /// * `Err` - On validation conflict or closure error
+    ///
+    /// # Example
+    /// ```ignore
+    /// let (result, commit_version) = db.transaction_with_version(run_id, |txn| {
+    ///     txn.put(key, value)?;
+    ///     Ok("success")
+    /// })?;
+    /// // commit_version now contains the version assigned to the put
+    /// ```
+    pub fn transaction_with_version<F, T>(&self, run_id: RunId, f: F) -> Result<(T, u64)>
+    where
+        F: FnOnce(&mut TransactionContext) -> Result<T>,
+    {
+        // Check if database is accepting transactions
+        if !self.accepting_transactions.load(Ordering::SeqCst) {
+            return Err(Error::InvalidOperation(
+                "Database is shutting down".to_string(),
+            ));
+        }
+
+        let mut txn = self.begin_transaction(run_id);
+
+        // Execute closure
+        let result = f(&mut txn);
+
+        match result {
+            Ok(value) => {
+                // Commit on success
+                let commit_version = self.commit_transaction(&mut txn)?;
+                self.end_transaction(txn); // Return to pool
+                Ok((value, commit_version))
+            }
+            Err(e) => {
+                // Abort on error
                 let _ = txn.mark_aborted(format!("Closure error: {}", e));
                 self.coordinator.record_abort();
                 self.end_transaction(txn); // Return to pool
@@ -694,7 +743,7 @@ impl Database {
                 Ok(value) => {
                     // Try to commit
                     match self.commit_transaction(&mut txn) {
-                        Ok(()) => {
+                        Ok(_commit_version) => {
                             self.end_transaction(txn); // Return to pool
                             return Ok(value);
                         }
@@ -804,10 +853,9 @@ impl Database {
                     )));
                 }
 
-                // Commit on success
-                let commit_result = self.commit_transaction(&mut txn);
+                // Commit on success (ignore the returned version for this API)
+                let _commit_version = self.commit_transaction(&mut txn)?;
                 self.end_transaction(txn); // Return to pool
-                commit_result?;
                 Ok(value)
             }
             Err(e) => {
@@ -883,13 +931,16 @@ impl Database {
     /// * `txn` - Transaction to commit
     ///
     /// # Returns
-    /// * `Ok(())` - Transaction committed successfully
+    /// * `Ok(commit_version)` - Transaction committed successfully, returns commit version
     /// * `Err(TransactionConflict)` - Validation failed, transaction aborted
     ///
     /// # Errors
     /// - `TransactionConflict` - Read-write or CAS conflict detected
     /// - `InvalidState` - Transaction not in Active state
-    pub fn commit_transaction(&self, txn: &mut TransactionContext) -> Result<()> {
+    ///
+    /// # M9 Contract
+    /// Returns the commit version (u64) assigned to all writes in this transaction.
+    pub fn commit_transaction(&self, txn: &mut TransactionContext) -> Result<u64> {
         // Acquire per-run commit lock to serialize validate → WAL → storage sequence
         // This prevents CAS race conditions where multiple transactions pass validation
         // before any of them writes to storage.
@@ -967,7 +1018,8 @@ impl Database {
         txn.mark_committed()?;
         self.coordinator.record_commit();
 
-        Ok(())
+        // M9: Return commit version for versioned API
+        Ok(commit_version)
     }
 
     /// Get the transaction coordinator (for metrics/testing)
@@ -1454,15 +1506,15 @@ impl Drop for Database {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use in_mem_core::types::{Key, Namespace, RunId};
     use in_mem_core::value::Value;
     use in_mem_core::Storage;
+    use in_mem_core::Timestamp;
     use in_mem_durability::wal::WALEntry;
     use tempfile::TempDir;
 
-    fn now() -> i64 {
-        Utc::now().timestamp()
+    fn now() -> Timestamp {
+        Timestamp::now()
     }
 
     #[test]
@@ -2110,7 +2162,7 @@ mod tests {
         let current = db.get(&key).unwrap().unwrap();
 
         // CAS with correct version
-        db.cas(run_id, key.clone(), current.version, Value::I64(2))
+        db.cas(run_id, key.clone(), current.version.as_u64(), Value::I64(2))
             .unwrap();
 
         // Verify updated
@@ -2203,7 +2255,7 @@ mod tests {
         assert_eq!(v1.value, Value::I64(1));
 
         // CAS to increment
-        db.cas(run_id, key.clone(), v1.version, Value::I64(2))
+        db.cas(run_id, key.clone(), v1.version.as_u64(), Value::I64(2))
             .unwrap();
         let v2 = db.get(&key).unwrap().unwrap();
         assert_eq!(v2.value, Value::I64(2));

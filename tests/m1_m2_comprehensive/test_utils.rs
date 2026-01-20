@@ -1,5 +1,6 @@
 //! Common test utilities for M1+M2 comprehensive tests
 
+use in_mem_core::contract::Version;
 use in_mem_core::traits::Storage;
 use in_mem_core::types::{Key, Namespace, RunId};
 use in_mem_core::value::Value;
@@ -346,7 +347,7 @@ pub mod concurrent {
 #[derive(Debug, Clone, PartialEq)]
 pub struct DatabaseStateSnapshot {
     /// All key-value pairs with their versions, sorted by key
-    pub entries: Vec<(Key, Value, u64)>,
+    pub entries: Vec<(Key, Value, Version)>,
     /// Total number of entries
     pub count: usize,
     /// Checksum of all values (for quick comparison)
@@ -483,7 +484,7 @@ pub struct StateDiff {
     pub missing_in_other: Vec<String>,
     pub missing_in_self: Vec<String>,
     pub value_mismatches: Vec<(String, Value, Value)>,
-    pub version_mismatches: Vec<(String, u64, u64)>,
+    pub version_mismatches: Vec<(String, Version, Version)>,
 }
 
 impl StateDiff {
@@ -541,7 +542,7 @@ pub mod invariants {
     pub fn assert_no_partial_writes(db: &Database, keys: &[Key]) {
         let versions: Vec<Option<u64>> = keys
             .iter()
-            .map(|k| db.get(k).unwrap().map(|v| v.version))
+            .map(|k| db.get(k).unwrap().map(|v| v.version.as_u64()))
             .collect();
 
         // Either all None or all Some

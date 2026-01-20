@@ -8,6 +8,7 @@
 
 use in_mem_core::types::{Key, Namespace, RunId};
 use in_mem_core::value::Value;
+use in_mem_core::Timestamp;
 use in_mem_durability::wal::{DurabilityMode, WALEntry, WAL};
 use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -15,8 +16,8 @@ use tempfile::TempDir;
 use uuid::Uuid;
 
 /// Helper to get current timestamp
-fn now() -> i64 {
-    chrono::Utc::now().timestamp()
+fn now() -> Timestamp {
+    Timestamp::now()
 }
 
 #[test]

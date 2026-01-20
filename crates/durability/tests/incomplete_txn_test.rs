@@ -7,9 +7,9 @@
 //! 4. Aborted transactions are discarded
 //! 5. Validation warnings are generated
 
-use chrono::Utc;
 use in_mem_core::types::{Key, Namespace, RunId};
 use in_mem_core::value::Value;
+use in_mem_core::Timestamp;
 use in_mem_core::Storage; // Need trait in scope for .get() and .current_version()
 use in_mem_durability::recovery::replay_wal;
 use in_mem_durability::wal::{DurabilityMode, WALEntry, WAL};
@@ -17,8 +17,8 @@ use in_mem_storage::UnifiedStore;
 use tempfile::TempDir;
 
 /// Helper to get current timestamp
-fn now() -> i64 {
-    Utc::now().timestamp()
+fn now() -> Timestamp {
+    Timestamp::now()
 }
 
 /// Helper to create a test namespace with a specific run_id

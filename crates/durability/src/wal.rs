@@ -40,7 +40,8 @@ use in_mem_core::{
     error::{Error, Result},
     json::JsonPath,
     types::{JsonDocId, Key, RunId},
-    value::{Timestamp, Value},
+    value::Value,
+    Timestamp,
 };
 use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
@@ -854,12 +855,11 @@ impl Drop for WAL {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use in_mem_core::types::Namespace;
 
     /// Helper to get current timestamp
     fn now() -> Timestamp {
-        Utc::now().timestamp()
+        Timestamp::now()
     }
 
     #[test]

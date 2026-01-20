@@ -106,6 +106,23 @@ in-mem-primitives = { path = "crates/primitives" }
 in-mem-search = { path = "crates/search" }
 uuid = { workspace = true }
 
+# =============================================================================
+# FUNCTIONAL BENCHMARKS (New Structure)
+# =============================================================================
+# These are organized by functional category rather than milestone.
+# Note: Additional benchmarks (eventlog, statecell, vector, transactions,
+# contention) will be added incrementally.
+
+# Primitive-specific benchmarks
+[[bench]]
+name = "primitives_kvstore"
+harness = false
+
+# =============================================================================
+# LEGACY BENCHMARKS (Milestone-based - kept for reference/comparison)
+# =============================================================================
+# These will be deprecated once the new functional benchmarks are validated.
+
 [[bench]]
 name = "comprehensive_benchmarks"
 harness = false

@@ -46,6 +46,7 @@ pub mod event_log;
 pub mod extensions;
 pub mod json_store;
 pub mod kv;
+pub mod run_handle; // Story #478: RunHandle Pattern Implementation
 pub mod run_index;
 pub mod searchable;
 pub mod state_cell;
@@ -56,6 +57,9 @@ pub mod vector;
 pub use event_log::{ChainVerification, Event, EventLog};
 pub use json_store::{JsonDoc, JsonStore};
 pub use kv::{KVStore, KVTransaction};
+pub use run_handle::{
+    EventHandle, JsonHandle, KvHandle, RunHandle, StateHandle, TraceHandle, VectorHandle,
+};
 pub use run_index::{RunIndex, RunMetadata, RunStatus};
 pub use searchable::{build_search_response, SearchCandidate, Searchable, SimpleScorer};
 pub use state_cell::{State, StateCell};

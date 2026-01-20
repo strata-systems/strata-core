@@ -150,9 +150,9 @@ pub fn validate_read_set<S: Storage>(read_set: &HashMap<Key, u64>, store: &S) ->
     let mut result = ValidationResult::ok();
 
     for (key, read_version) in read_set {
-        // Get current version from storage
+        // Get current version from storage (as u64 for comparison)
         let current_version = match store.get(key) {
-            Ok(Some(vv)) => vv.version,
+            Ok(Some(vv)) => vv.version.as_u64(),
             Ok(None) => 0, // Key doesn't exist = version 0
             Err(_) => {
                 // Storage error - treat as version 0 (conservative)
@@ -234,9 +234,9 @@ pub fn validate_cas_set<S: Storage>(cas_set: &[CASOperation], store: &S) -> Vali
     let mut result = ValidationResult::ok();
 
     for cas_op in cas_set {
-        // Get current version from storage
+        // Get current version from storage (as u64 for comparison)
         let current_version = match store.get(&cas_op.key) {
-            Ok(Some(vv)) => vv.version,
+            Ok(Some(vv)) => vv.version.as_u64(),
             Ok(None) => 0, // Key doesn't exist = version 0
             Err(_) => 0,   // Storage error = treat as non-existent
         };
@@ -279,7 +279,7 @@ pub fn validate_json_set<S: Storage>(
     for (key, snapshot_version) in versions {
         // Get current version from storage
         let current_version = match store.get(key) {
-            Ok(Some(vv)) => vv.version,
+            Ok(Some(vv)) => vv.version.as_u64(),
             Ok(None) => 0, // Document deleted = version 0
             Err(_) => 0,   // Storage error = treat as deleted
         };
@@ -603,7 +603,7 @@ mod tests {
             store
                 .put(key.clone(), Value::Bytes(b"value".to_vec()), None)
                 .unwrap();
-            let current_version = store.get(&key).unwrap().unwrap().version;
+            let current_version = store.get(&key).unwrap().unwrap().version.as_u64();
 
             // Read-set records the same version
             let mut read_set = HashMap::new();
@@ -624,7 +624,7 @@ mod tests {
             store
                 .put(key.clone(), Value::Bytes(b"v1".to_vec()), None)
                 .unwrap();
-            let v1 = store.get(&key).unwrap().unwrap().version;
+            let v1 = store.get(&key).unwrap().unwrap().version.as_u64();
 
             // Another transaction modified it (version 2)
             store
@@ -663,7 +663,7 @@ mod tests {
             store
                 .put(key.clone(), Value::Bytes(b"value".to_vec()), None)
                 .unwrap();
-            let version_when_read = store.get(&key).unwrap().unwrap().version;
+            let version_when_read = store.get(&key).unwrap().unwrap().version.as_u64();
             store.delete(&key).unwrap();
 
             // Read-set has version from when key existed
@@ -729,8 +729,8 @@ mod tests {
             store
                 .put(key2.clone(), Value::Bytes(b"v1".to_vec()), None)
                 .unwrap();
-            let v1_1 = store.get(&key1).unwrap().unwrap().version;
-            let v1_2 = store.get(&key2).unwrap().unwrap().version;
+            let v1_1 = store.get(&key1).unwrap().unwrap().version.as_u64();
+            let v1_2 = store.get(&key2).unwrap().unwrap().version.as_u64();
 
             // Both keys modified
             store
@@ -765,8 +765,8 @@ mod tests {
             store
                 .put(key2.clone(), Value::Bytes(b"v1".to_vec()), None)
                 .unwrap();
-            let v1_1 = store.get(&key1).unwrap().unwrap().version;
-            let v1_2 = store.get(&key2).unwrap().unwrap().version;
+            let v1_1 = store.get(&key1).unwrap().unwrap().version.as_u64();
+            let v1_2 = store.get(&key2).unwrap().unwrap().version.as_u64();
 
             // Only key1 modified
             store
@@ -921,7 +921,7 @@ mod tests {
             store
                 .put(key.clone(), Value::Bytes(b"initial".to_vec()), None)
                 .unwrap();
-            let read_version = store.get(&key).unwrap().unwrap().version;
+            let read_version = store.get(&key).unwrap().unwrap().version.as_u64();
             let start_version = store.current_version();
 
             // Key modified by concurrent transaction
@@ -983,7 +983,7 @@ mod tests {
 
             // Put key
             store.put(key.clone(), Value::I64(100), None).unwrap();
-            let current_version = store.get(&key).unwrap().unwrap().version;
+            let current_version = store.get(&key).unwrap().unwrap().version.as_u64();
 
             // CAS with matching version
             let cas_set = vec![CASOperation {
@@ -1005,7 +1005,7 @@ mod tests {
 
             // Put key
             store.put(key.clone(), Value::I64(100), None).unwrap();
-            let v1 = store.get(&key).unwrap().unwrap().version;
+            let v1 = store.get(&key).unwrap().unwrap().version.as_u64();
 
             // Concurrent transaction modifies it
             store.put(key.clone(), Value::I64(200), None).unwrap();
@@ -1127,8 +1127,8 @@ mod tests {
 
             store.put(key1.clone(), Value::I64(1), None).unwrap();
             store.put(key2.clone(), Value::I64(2), None).unwrap();
-            let v1 = store.get(&key1).unwrap().unwrap().version;
-            let v2 = store.get(&key2).unwrap().unwrap().version;
+            let v1 = store.get(&key1).unwrap().unwrap().version.as_u64();
+            let v2 = store.get(&key2).unwrap().unwrap().version.as_u64();
 
             let cas_set = vec![
                 CASOperation {
@@ -1157,8 +1157,8 @@ mod tests {
 
             store.put(key1.clone(), Value::I64(1), None).unwrap();
             store.put(key2.clone(), Value::I64(2), None).unwrap();
-            let v1 = store.get(&key1).unwrap().unwrap().version;
-            let v2 = store.get(&key2).unwrap().unwrap().version;
+            let v1 = store.get(&key1).unwrap().unwrap().version.as_u64();
+            let v2 = store.get(&key2).unwrap().unwrap().version.as_u64();
 
             // Modify only key1
             store.put(key1.clone(), Value::I64(10), None).unwrap();
@@ -1228,7 +1228,7 @@ mod tests {
             store
                 .put(key.clone(), Value::Bytes(b"{}".to_vec()), None)
                 .unwrap();
-            let version = store.get(&key).unwrap().unwrap().version;
+            let version = store.get(&key).unwrap().unwrap().version.as_u64();
 
             // Create snapshot versions matching current state
             let mut versions = HashMap::new();
@@ -1249,7 +1249,7 @@ mod tests {
             store
                 .put(key.clone(), Value::Bytes(b"{}".to_vec()), None)
                 .unwrap();
-            let old_version = store.get(&key).unwrap().unwrap().version;
+            let old_version = store.get(&key).unwrap().unwrap().version.as_u64();
 
             // Modify the document
             store
@@ -1289,7 +1289,7 @@ mod tests {
             store
                 .put(key.clone(), Value::Bytes(b"{}".to_vec()), None)
                 .unwrap();
-            let version = store.get(&key).unwrap().unwrap().version;
+            let version = store.get(&key).unwrap().unwrap().version.as_u64();
 
             // Delete the document
             store.delete(&key).unwrap();

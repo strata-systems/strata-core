@@ -116,7 +116,7 @@ mod tests {
     #[test]
     fn test_ttl_index_insert_and_find_expired() {
         let mut index = TTLIndex::new();
-        let now = 1000i64; // Use a fixed timestamp for testing
+        let now = Timestamp::from_micros(1000); // Use a fixed timestamp for testing
 
         // Insert keys with different expiry times
         let key1 = test_key("expires_at_500");
@@ -124,10 +124,10 @@ mod tests {
         let key3 = test_key("expires_at_1200");
         let key4 = test_key("expires_at_500_also");
 
-        index.insert(500, key1.clone());
-        index.insert(800, key2.clone());
-        index.insert(1200, key3.clone());
-        index.insert(500, key4.clone()); // Same expiry as key1
+        index.insert(Timestamp::from_micros(500), key1.clone());
+        index.insert(Timestamp::from_micros(800), key2.clone());
+        index.insert(Timestamp::from_micros(1200), key3.clone());
+        index.insert(Timestamp::from_micros(500), key4.clone()); // Same expiry as key1
 
         // Find expired at time 1000 - should include key1, key2, key4
         let expired = index.find_expired(now);
@@ -145,22 +145,22 @@ mod tests {
         let key1 = test_key("key1");
         let key2 = test_key("key2");
 
-        index.insert(500, key1.clone());
-        index.insert(500, key2.clone());
+        index.insert(Timestamp::from_micros(500), key1.clone());
+        index.insert(Timestamp::from_micros(500), key2.clone());
 
         assert_eq!(index.len(), 2);
 
         // Remove one key
-        index.remove(500, &key1);
+        index.remove(Timestamp::from_micros(500), &key1);
         assert_eq!(index.len(), 1);
 
         // Verify only key2 remains
-        let expired = index.find_expired(600);
+        let expired = index.find_expired(Timestamp::from_micros(600));
         assert_eq!(expired.len(), 1);
         assert!(expired.contains(&key2));
 
         // Remove the last key - timestamp entry should be cleaned up
-        index.remove(500, &key2);
+        index.remove(Timestamp::from_micros(500), &key2);
         assert!(index.is_empty());
         assert_eq!(index.timestamp_count(), 0);
     }
@@ -173,12 +173,12 @@ mod tests {
         let key2 = test_key("key2");
         let key3 = test_key("key3");
 
-        index.insert(500, key1);
-        index.insert(800, key2);
-        index.insert(1200, key3);
+        index.insert(Timestamp::from_micros(500), key1);
+        index.insert(Timestamp::from_micros(800), key2);
+        index.insert(Timestamp::from_micros(1200), key3);
 
         // Remove expired before 1000
-        let removed = index.remove_expired(1000);
+        let removed = index.remove_expired(Timestamp::from_micros(1000));
         assert_eq!(removed, 2); // key1 and key2
 
         // Only key3 should remain
@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn test_ttl_index_find_expired_empty() {
         let index = TTLIndex::new();
-        let expired = index.find_expired(1000);
+        let expired = index.find_expired(Timestamp::from_micros(1000));
         assert!(expired.is_empty());
     }
 
@@ -198,10 +198,10 @@ mod tests {
         let mut index = TTLIndex::new();
 
         let key = test_key("future_key");
-        index.insert(2000, key);
+        index.insert(Timestamp::from_micros(2000), key);
 
         // At time 1000, nothing is expired
-        let expired = index.find_expired(1000);
+        let expired = index.find_expired(Timestamp::from_micros(1000));
         assert!(expired.is_empty());
     }
 
@@ -218,16 +218,16 @@ mod tests {
         let mut index = TTLIndex::new();
 
         // Insert keys at 5 different timestamps
-        for i in 0..5 {
+        for i in 0..5u64 {
             let key = test_key(&format!("key_{}", i));
-            index.insert((i + 1) * 100, key);
+            index.insert(Timestamp::from_micros((i + 1) * 100), key);
         }
 
         assert_eq!(index.len(), 5);
         assert_eq!(index.timestamp_count(), 5);
 
         // Find expired at 350 - should get keys at 100, 200, 300
-        let expired = index.find_expired(350);
+        let expired = index.find_expired(Timestamp::from_micros(350));
         assert_eq!(expired.len(), 3);
     }
 }

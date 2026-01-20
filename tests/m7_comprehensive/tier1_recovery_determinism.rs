@@ -90,7 +90,7 @@ fn test_r1_ordering_preserved() {
 
     // Final value must be "v3" (last write wins)
     let kv = test_db.kv();
-    let value = kv.get(&run_id, "key").unwrap();
+    let value = kv.get(&run_id, "key").unwrap().map(|v| v.value);
     assert_eq!(
         value,
         Some(Value::String("v3".into())),
@@ -123,15 +123,15 @@ fn test_r1_deterministic_interleaved_operations() {
     // Verify specific values
     let kv = test_db.kv();
     assert_eq!(
-        kv.get(&run_id, "a").unwrap(),
+        kv.get(&run_id, "a").unwrap().map(|v| v.value),
         Some(Value::String("4".into()))
     );
     assert_eq!(
-        kv.get(&run_id, "b").unwrap(),
+        kv.get(&run_id, "b").unwrap().map(|v| v.value),
         Some(Value::String("2".into()))
     );
     assert_eq!(
-        kv.get(&run_id, "c").unwrap(),
+        kv.get(&run_id, "c").unwrap().map(|v| v.value),
         Some(Value::String("3".into()))
     );
 }

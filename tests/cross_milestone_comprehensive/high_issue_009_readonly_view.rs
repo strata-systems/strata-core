@@ -93,7 +93,7 @@ fn test_replay_determinism() {
     test_db.db.flush().expect("flush");
 
     // Final state should be value=2 regardless of intermediate states
-    let value = kv.get(&run_id, "key").expect("get");
+    let value = kv.get(&run_id, "key").expect("get").map(|v| v.value);
     assert_eq!(value, Some(in_mem_core::value::Value::I64(2)));
 
     // When ISSUE-009 is fixed:

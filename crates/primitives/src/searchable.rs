@@ -5,8 +5,9 @@
 
 use in_mem_core::error::Result;
 use in_mem_core::search_types::{
-    DocRef, PrimitiveKind, SearchHit, SearchRequest, SearchResponse, SearchStats,
+    DocRef, SearchHit, SearchRequest, SearchResponse, SearchStats,
 };
+use in_mem_core::PrimitiveType;
 
 /// Trait for primitives that support search
 ///
@@ -24,8 +25,8 @@ pub trait Searchable {
     /// Uses a snapshot for consistency.
     fn search(&self, req: &SearchRequest) -> Result<SearchResponse>;
 
-    /// Get the primitive kind
-    fn primitive_kind(&self) -> PrimitiveKind;
+    /// Get the primitive type
+    fn primitive_kind(&self) -> PrimitiveType;
 }
 
 /// Internal candidate for scoring

@@ -188,7 +188,7 @@ mod version_recovery {
                 let key = pdb.key(&format!("round_{}", round));
                 db.put(pdb.run_id, key.clone(), values::int(round as i64))
                     .unwrap();
-                let version = db.get(&key).unwrap().unwrap().version;
+                let version = db.get(&key).unwrap().unwrap().version.as_u64();
 
                 assert!(
                     version > last_version,

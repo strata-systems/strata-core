@@ -7,7 +7,8 @@
 //!
 //! See `docs/architecture/M6_ARCHITECTURE.md` for authoritative specification.
 
-use in_mem_core::search_types::{DocRef, PrimitiveKind, SearchHit, SearchResponse};
+use in_mem_core::search_types::{DocRef, SearchHit, SearchResponse};
+use in_mem_core::PrimitiveType;
 
 // ============================================================================
 // FusedResult
@@ -51,7 +52,7 @@ pub trait Fuser: Send + Sync {
     ///
     /// Takes a list of (primitive, results) pairs and returns a combined
     /// ranked list truncated to k items.
-    fn fuse(&self, results: Vec<(PrimitiveKind, SearchResponse)>, k: usize) -> FusedResult;
+    fn fuse(&self, results: Vec<(PrimitiveType, SearchResponse)>, k: usize) -> FusedResult;
 
     /// Name for debugging and logging
     fn name(&self) -> &str;
@@ -78,7 +79,7 @@ impl SimpleFuser {
 }
 
 impl Fuser for SimpleFuser {
-    fn fuse(&self, results: Vec<(PrimitiveKind, SearchResponse)>, k: usize) -> FusedResult {
+    fn fuse(&self, results: Vec<(PrimitiveType, SearchResponse)>, k: usize) -> FusedResult {
         // Collect all hits
         let mut all_hits: Vec<SearchHit> = results
             .into_iter()
@@ -172,7 +173,7 @@ impl RRFFuser {
 }
 
 impl Fuser for RRFFuser {
-    fn fuse(&self, results: Vec<(PrimitiveKind, SearchResponse)>, k: usize) -> FusedResult {
+    fn fuse(&self, results: Vec<(PrimitiveType, SearchResponse)>, k: usize) -> FusedResult {
         use std::collections::hash_map::DefaultHasher;
         use std::collections::HashMap;
         use std::hash::{Hash, Hasher};
@@ -252,7 +253,7 @@ impl Fuser for RRFFuser {
 mod tests {
     use super::*;
     use in_mem_core::search_types::{DocRef, SearchStats};
-    use in_mem_core::types::{Key, Namespace, RunId};
+    use in_mem_core::types::RunId;
 
     fn make_hit(doc_ref: DocRef, score: f32, rank: u32) -> SearchHit {
         SearchHit {
@@ -271,10 +272,12 @@ mod tests {
         }
     }
 
-    fn test_key() -> Key {
-        let run_id = RunId::new();
-        let ns = Namespace::for_run(run_id);
-        Key::new_kv(ns, "test")
+    /// Helper to create a KV DocRef
+    fn make_kv_doc_ref(run_id: &RunId, key: &str) -> DocRef {
+        DocRef::Kv {
+            run_id: run_id.clone(),
+            key: key.to_string(),
+        }
     }
 
     #[test]
@@ -289,12 +292,13 @@ mod tests {
     fn test_simple_fuser_single_primitive() {
         let fuser = SimpleFuser::new();
 
-        let key = test_key();
+        let run_id = RunId::new();
+        let doc_ref = make_kv_doc_ref(&run_id, "test");
         let hits = vec![
-            make_hit(DocRef::Kv { key: key.clone() }, 0.8, 1),
-            make_hit(DocRef::Kv { key: key.clone() }, 0.5, 2),
+            make_hit(doc_ref.clone(), 0.8, 1),
+            make_hit(doc_ref.clone(), 0.5, 2),
         ];
-        let results = vec![(PrimitiveKind::Kv, make_response(hits))];
+        let results = vec![(PrimitiveType::Kv, make_response(hits))];
 
         let result = fuser.fuse(results, 10);
         assert_eq!(result.hits.len(), 2);
@@ -307,15 +311,17 @@ mod tests {
     fn test_simple_fuser_multiple_primitives() {
         let fuser = SimpleFuser::new();
 
-        let key = test_key();
         let run_id = RunId::new();
 
-        let kv_hits = vec![make_hit(DocRef::Kv { key: key.clone() }, 0.7, 1)];
-        let run_hits = vec![make_hit(DocRef::Run { run_id }, 0.9, 1)];
+        let kv_ref = make_kv_doc_ref(&run_id, "test");
+        let run_ref = DocRef::Run { run_id: run_id.clone() };
+
+        let kv_hits = vec![make_hit(kv_ref, 0.7, 1)];
+        let run_hits = vec![make_hit(run_ref, 0.9, 1)];
 
         let results = vec![
-            (PrimitiveKind::Kv, make_response(kv_hits)),
-            (PrimitiveKind::Run, make_response(run_hits)),
+            (PrimitiveType::Kv, make_response(kv_hits)),
+            (PrimitiveType::Run, make_response(run_hits)),
         ];
 
         let result = fuser.fuse(results, 10);
@@ -331,12 +337,13 @@ mod tests {
     fn test_simple_fuser_respects_k() {
         let fuser = SimpleFuser::new();
 
-        let key = test_key();
+        let run_id = RunId::new();
+        let doc_ref = make_kv_doc_ref(&run_id, "test");
         let hits: Vec<_> = (0..10)
-            .map(|i| make_hit(DocRef::Kv { key: key.clone() }, 1.0 - i as f32 * 0.1, i + 1))
+            .map(|i| make_hit(doc_ref.clone(), 1.0 - i as f32 * 0.1, i + 1))
             .collect();
 
-        let results = vec![(PrimitiveKind::Kv, make_response(hits))];
+        let results = vec![(PrimitiveType::Kv, make_response(hits))];
 
         let result = fuser.fuse(results, 3);
         assert_eq!(result.hits.len(), 3);
@@ -360,12 +367,6 @@ mod tests {
     // RRFFuser Tests
     // ========================================
 
-    fn make_kv_key(name: &str) -> Key {
-        let run_id = RunId::new();
-        let ns = Namespace::for_run(run_id);
-        Key::new_kv(ns, name)
-    }
-
     #[test]
     fn test_rrf_fuser_empty() {
         let fuser = RRFFuser::default();
@@ -378,14 +379,15 @@ mod tests {
     fn test_rrf_fuser_single_list() {
         let fuser = RRFFuser::default();
 
-        let key_a = make_kv_key("a");
-        let key_b = make_kv_key("b");
+        let run_id = RunId::new();
+        let doc_ref_a = make_kv_doc_ref(&run_id, "a");
+        let doc_ref_b = make_kv_doc_ref(&run_id, "b");
 
         let hits = vec![
-            make_hit(DocRef::Kv { key: key_a.clone() }, 0.9, 1),
-            make_hit(DocRef::Kv { key: key_b.clone() }, 0.8, 2),
+            make_hit(doc_ref_a, 0.9, 1),
+            make_hit(doc_ref_b, 0.8, 2),
         ];
-        let results = vec![(PrimitiveKind::Kv, make_response(hits))];
+        let results = vec![(PrimitiveType::Kv, make_response(hits))];
 
         let result = fuser.fuse(results, 10);
         assert_eq!(result.hits.len(), 2);
@@ -397,15 +399,16 @@ mod tests {
     fn test_rrf_fuser_deduplication() {
         let fuser = RRFFuser::default();
 
-        let key_a = make_kv_key("shared");
+        let run_id = RunId::new();
+        let doc_ref_shared = make_kv_doc_ref(&run_id, "shared");
 
         // Same DocRef in both lists
-        let list1_hits = vec![make_hit(DocRef::Kv { key: key_a.clone() }, 0.9, 1)];
-        let list2_hits = vec![make_hit(DocRef::Kv { key: key_a.clone() }, 0.8, 1)];
+        let list1_hits = vec![make_hit(doc_ref_shared.clone(), 0.9, 1)];
+        let list2_hits = vec![make_hit(doc_ref_shared.clone(), 0.8, 1)];
 
         let results = vec![
-            (PrimitiveKind::Kv, make_response(list1_hits)),
-            (PrimitiveKind::Json, make_response(list2_hits)),
+            (PrimitiveType::Kv, make_response(list1_hits)),
+            (PrimitiveType::Json, make_response(list2_hits)),
         ];
 
         let result = fuser.fuse(results, 10);
@@ -422,22 +425,23 @@ mod tests {
     fn test_rrf_fuser_documents_in_both_lists_rank_higher() {
         let fuser = RRFFuser::default();
 
-        let key_a = make_kv_key("in_both");
-        let key_b = make_kv_key("only_list1");
-        let key_c = make_kv_key("only_list2");
+        let run_id = RunId::new();
+        let doc_ref_a = make_kv_doc_ref(&run_id, "in_both");
+        let doc_ref_b = make_kv_doc_ref(&run_id, "only_list1");
+        let doc_ref_c = make_kv_doc_ref(&run_id, "only_list2");
 
         let list1_hits = vec![
-            make_hit(DocRef::Kv { key: key_a.clone() }, 0.9, 1),
-            make_hit(DocRef::Kv { key: key_b.clone() }, 0.8, 2),
+            make_hit(doc_ref_a.clone(), 0.9, 1),
+            make_hit(doc_ref_b, 0.8, 2),
         ];
         let list2_hits = vec![
-            make_hit(DocRef::Kv { key: key_c.clone() }, 0.9, 1),
-            make_hit(DocRef::Kv { key: key_a.clone() }, 0.7, 2),
+            make_hit(doc_ref_c, 0.9, 1),
+            make_hit(doc_ref_a.clone(), 0.7, 2),
         ];
 
         let results = vec![
-            (PrimitiveKind::Kv, make_response(list1_hits)),
-            (PrimitiveKind::Json, make_response(list2_hits)),
+            (PrimitiveType::Kv, make_response(list1_hits)),
+            (PrimitiveType::Json, make_response(list2_hits)),
         ];
 
         let result = fuser.fuse(results, 10);
@@ -447,21 +451,22 @@ mod tests {
         // key_b: 1/(60+2) = 0.0161
         // key_c: 1/(60+1) = 0.0164
         assert_eq!(result.hits.len(), 3);
-        assert_eq!(result.hits[0].doc_ref, DocRef::Kv { key: key_a.clone() });
+        assert_eq!(result.hits[0].doc_ref, doc_ref_a);
     }
 
     #[test]
     fn test_rrf_fuser_respects_k() {
         let fuser = RRFFuser::default();
 
+        let run_id = RunId::new();
         let hits: Vec<_> = (0..10)
             .map(|i| {
-                let key = make_kv_key(&format!("key{}", i));
-                make_hit(DocRef::Kv { key }, 1.0 - i as f32 * 0.1, (i + 1) as u32)
+                let doc_ref = make_kv_doc_ref(&run_id, &format!("key{}", i));
+                make_hit(doc_ref, 1.0 - i as f32 * 0.1, (i + 1) as u32)
             })
             .collect();
 
-        let results = vec![(PrimitiveKind::Kv, make_response(hits))];
+        let results = vec![(PrimitiveType::Kv, make_response(hits))];
 
         let result = fuser.fuse(results, 3);
         assert_eq!(result.hits.len(), 3);
@@ -472,24 +477,25 @@ mod tests {
     fn test_rrf_fuser_determinism() {
         let fuser = RRFFuser::default();
 
-        let key_a = make_kv_key("det_a");
-        let key_b = make_kv_key("det_b");
-        let key_c = make_kv_key("det_c");
+        let run_id = RunId::new();
+        let doc_ref_a = make_kv_doc_ref(&run_id, "det_a");
+        let doc_ref_b = make_kv_doc_ref(&run_id, "det_b");
+        let doc_ref_c = make_kv_doc_ref(&run_id, "det_c");
 
         let make_results = || {
             vec![
                 (
-                    PrimitiveKind::Kv,
+                    PrimitiveType::Kv,
                     make_response(vec![
-                        make_hit(DocRef::Kv { key: key_a.clone() }, 0.9, 1),
-                        make_hit(DocRef::Kv { key: key_b.clone() }, 0.8, 2),
+                        make_hit(doc_ref_a.clone(), 0.9, 1),
+                        make_hit(doc_ref_b.clone(), 0.8, 2),
                     ]),
                 ),
                 (
-                    PrimitiveKind::Json,
+                    PrimitiveType::Json,
                     make_response(vec![
-                        make_hit(DocRef::Kv { key: key_c.clone() }, 0.9, 1),
-                        make_hit(DocRef::Kv { key: key_b.clone() }, 0.7, 2),
+                        make_hit(doc_ref_c.clone(), 0.9, 1),
+                        make_hit(doc_ref_b.clone(), 0.7, 2),
                     ]),
                 ),
             ]
@@ -512,9 +518,10 @@ mod tests {
         let fuser = RRFFuser::new(10);
         assert_eq!(fuser.k_rrf(), 10);
 
-        let key_a = make_kv_key("custom_k");
-        let hits = vec![make_hit(DocRef::Kv { key: key_a.clone() }, 0.9, 1)];
-        let results = vec![(PrimitiveKind::Kv, make_response(hits))];
+        let run_id = RunId::new();
+        let doc_ref = make_kv_doc_ref(&run_id, "custom_k");
+        let hits = vec![make_hit(doc_ref, 0.9, 1)];
+        let results = vec![(PrimitiveType::Kv, make_response(hits))];
 
         let result = fuser.fuse(results, 10);
 

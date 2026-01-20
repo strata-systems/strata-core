@@ -110,6 +110,7 @@ impl VectorStore {
                 .ok_or_else(|| VectorError::CollectionNotFound {
                     name: collection_id.name.clone(),
                 })?
+                .value
                 .config;
 
             // Get snapshot state from backend
@@ -418,11 +419,11 @@ mod tests {
         assert_eq!(collections[0].count, 3);
 
         // Verify vectors
-        let v1 = store2.get(run_id, "test", "v1").unwrap().unwrap();
+        let v1 = store2.get(run_id, "test", "v1").unwrap().unwrap().value;
         assert_eq!(v1.key, "v1");
         assert_eq!(v1.embedding, vec![1.0, 0.0, 0.0]);
 
-        let v2 = store2.get(run_id, "test", "v2").unwrap().unwrap();
+        let v2 = store2.get(run_id, "test", "v2").unwrap().unwrap().value;
         assert_eq!(v2.metadata, Some(serde_json::json!({"type": "doc"})));
     }
 

@@ -1,6 +1,6 @@
 //! Test utilities for M6 comprehensive tests
 
-use in_mem_core::search_types::{PrimitiveKind, SearchRequest, SearchResponse};
+use in_mem_core::search_types::{PrimitiveType, SearchRequest, SearchResponse};
 use in_mem_core::types::RunId;
 use in_mem_core::value::Value;
 use in_mem_engine::Database;
@@ -62,14 +62,14 @@ pub fn populate_large_dataset(db: &Arc<Database>, run_id: &RunId, count: usize) 
 }
 
 /// Assert that all hits are from a specific primitive
-pub fn assert_all_from_primitive(response: &SearchResponse, kind: PrimitiveKind) {
+pub fn assert_all_from_primitive(response: &SearchResponse, kind: PrimitiveType) {
     for hit in &response.hits {
         assert_eq!(
-            hit.doc_ref.primitive_kind(),
+            hit.doc_ref.primitive_type(),
             kind,
             "Expected all hits from {:?}, found {:?}",
             kind,
-            hit.doc_ref.primitive_kind()
+            hit.doc_ref.primitive_type()
         );
     }
 }

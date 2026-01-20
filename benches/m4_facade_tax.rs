@@ -13,9 +13,9 @@
 //! - B/A0 < 30× (total facade tax)
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use in_mem_core::traits::Storage;
 use in_mem_core::types::{Key, Namespace, RunId, TypeTag};
-use in_mem_core::value::Value;
-use in_mem_core::Storage;
+use in_mem_core::value::{Value, VersionedValue};
 use in_mem_engine::Database;
 use in_mem_primitives::KVStore;
 use rustc_hash::FxHashMap;
@@ -65,7 +65,7 @@ fn bench_a1_storage(c: &mut Criterion) {
     // Warmup
     for i in 0..100 {
         let key = Key::new(ns.clone(), TypeTag::KV, format!("warmup{}", i).into_bytes());
-        let _ = db.storage().put(key, Value::I64(i as i64), None);
+        db.storage().put(key, VersionedValue::new(Value::I64(i as i64), i as u64, None));
     }
 
     group.bench_function("storage_put", |b| {
@@ -73,7 +73,7 @@ fn bench_a1_storage(c: &mut Criterion) {
         b.iter(|| {
             i += 1;
             let key = Key::new(ns.clone(), TypeTag::KV, format!("key{}", i).into_bytes());
-            let _ = db.storage().put(key, Value::I64(i as i64), None);
+            db.storage().put(key, VersionedValue::new(Value::I64(i as i64), i as u64, None));
         });
     });
 
@@ -84,7 +84,7 @@ fn bench_a1_storage(c: &mut Criterion) {
             TypeTag::KV,
             format!("read_key{}", i).into_bytes(),
         );
-        let _ = db.storage().put(key, Value::I64(i as i64), None);
+        db.storage().put(key, VersionedValue::new(Value::I64(i as i64), i as u64, None));
     }
 
     group.bench_function("storage_get", |b| {
@@ -178,7 +178,7 @@ fn bench_layer_comparison(c: &mut Criterion) {
         b.iter(|| {
             i += 1;
             let key = Key::new(ns.clone(), TypeTag::KV, format!("key{}", i).into_bytes());
-            let _ = db.storage().put(key, Value::I64(i as i64), None);
+            db.storage().put(key, VersionedValue::new(Value::I64(i as i64), i as u64, None));
         });
     });
 

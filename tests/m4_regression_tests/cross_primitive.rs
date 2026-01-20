@@ -91,16 +91,16 @@ fn cross_run_complete_isolation() {
             .unwrap();
 
         // Verify isolation
-        assert_eq!(kv.get(&run_a, "key").unwrap(), Some(Value::I64(100)));
-        assert_eq!(kv.get(&run_b, "key").unwrap(), Some(Value::I64(200)));
+        assert_eq!(kv.get(&run_a, "key").unwrap().map(|v| v.value), Some(Value::I64(100)));
+        assert_eq!(kv.get(&run_b, "key").unwrap().map(|v| v.value), Some(Value::I64(200)));
 
         assert_eq!(events.len(&run_a).unwrap(), 1);
         assert_eq!(events.len(&run_b).unwrap(), 1);
 
         let state_a = state.read(&run_a, "cell").unwrap().unwrap();
         let state_b = state.read(&run_b, "cell").unwrap().unwrap();
-        assert_eq!(state_a.value, Value::I64(100));
-        assert_eq!(state_b.value, Value::I64(200));
+        assert_eq!(state_a.value.value, Value::I64(100));
+        assert_eq!(state_b.value.value, Value::I64(200));
 
         assert_eq!(traces.count(&run_a).unwrap(), 1);
         assert_eq!(traces.count(&run_b).unwrap(), 1);
@@ -182,7 +182,7 @@ fn concurrent_runs_no_interference() {
                 // Verify own data
                 for i in 0..OPS_PER_RUN {
                     let expected = Value::I64(run_idx as i64 * 1000 + i as i64);
-                    let actual = kv.get(&run_id, &format!("key_{}", i)).unwrap();
+                    let actual = kv.get(&run_id, &format!("key_{}", i)).unwrap().map(|v| v.value);
                     assert_eq!(actual, Some(expected), "Run {} key {} mismatch", run_idx, i);
                 }
 
@@ -197,7 +197,7 @@ fn concurrent_runs_no_interference() {
     for (run_idx, run_id) in run_ids.iter().enumerate() {
         let sample_key = "key_50";
         let expected = Value::I64(run_idx as i64 * 1000 + 50);
-        let actual = kv.get(run_id, sample_key).unwrap();
+        let actual = kv.get(run_id, sample_key).unwrap().map(|v| v.value);
         assert_eq!(
             actual,
             Some(expected),
@@ -242,10 +242,10 @@ fn mixed_primitive_sequence() {
         events.append(&run_id, "log", Value::I64(4)).unwrap();
 
         // Verify all state is correct
-        assert_eq!(kv.get(&run_id, "step").unwrap(), Some(Value::I64(4)));
+        assert_eq!(kv.get(&run_id, "step").unwrap().map(|v| v.value), Some(Value::I64(4)));
         assert_eq!(events.len(&run_id).unwrap(), 2);
         assert_eq!(
-            state.read(&run_id, "progress").unwrap().unwrap().value,
+            state.read(&run_id, "progress").unwrap().unwrap().value.value,
             Value::I64(2)
         );
         assert_eq!(traces.count(&run_id).unwrap(), 1);
@@ -290,19 +290,19 @@ fn run_status_valid_transitions() {
 
         // Create run (starts as Active)
         let meta = runs.create_run("transition-test").unwrap();
-        assert_eq!(meta.status, RunStatus::Active);
+        assert_eq!(meta.value.status, RunStatus::Active);
 
         // Active -> Paused
         let meta = runs.pause_run("transition-test").unwrap();
-        assert_eq!(meta.status, RunStatus::Paused);
+        assert_eq!(meta.value.status, RunStatus::Paused);
 
         // Paused -> Active
         let meta = runs.resume_run("transition-test").unwrap();
-        assert_eq!(meta.status, RunStatus::Active);
+        assert_eq!(meta.value.status, RunStatus::Active);
 
         // Active -> Completed
         let meta = runs.complete_run("transition-test").unwrap();
-        assert_eq!(meta.status, RunStatus::Completed);
+        assert_eq!(meta.value.status, RunStatus::Completed);
 
         true
     });
@@ -332,12 +332,12 @@ fn data_survives_facade_recreation() {
 
         // Data should still be there
         assert_eq!(
-            kv2.get(&run_id, "persistent").unwrap(),
+            kv2.get(&run_id, "persistent").unwrap().map(|v| v.value),
             Some(Value::I64(999))
         );
         assert_eq!(events2.len(&run_id).unwrap(), 1);
         assert_eq!(
-            state2.read(&run_id, "saved").unwrap().unwrap().value,
+            state2.read(&run_id, "saved").unwrap().unwrap().value.value,
             Value::I64(777)
         );
 

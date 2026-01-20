@@ -122,7 +122,7 @@ fn test_r2_idempotent_with_overwrites() {
 
     // Verify final value
     let kv = test_db.kv();
-    assert_eq!(kv.get(&run_id, "counter").unwrap(), Some(Value::I64(99)));
+    assert_eq!(kv.get(&run_id, "counter").unwrap().map(|v| v.value), Some(Value::I64(99)));
 }
 
 /// R2: State invariant - recovery never adds extra data

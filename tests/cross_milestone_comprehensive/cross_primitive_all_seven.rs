@@ -80,7 +80,7 @@ fn test_all_seven_primitives_atomic_commit() {
     test_db.db.flush().expect("flush");
 
     // Verify all data exists
-    assert!(p.kv.get(&run_id, "seven_key").expect("kv get").is_some());
+    assert!(p.kv.get(&run_id, "seven_key").expect("kv get").map(|v| v.value).is_some());
     assert!(p
         .json
         .get(&run_id, &doc_id, &JsonPath::root())
@@ -118,7 +118,7 @@ fn test_all_seven_primitives_atomic_rollback() {
     // - All other changes should rollback
 
     // For now, verify isolation between operations
-    assert!(p.kv.get(&run_id, "initial").expect("get").is_some());
+    assert!(p.kv.get(&run_id, "initial").expect("get").map(|v| v.value).is_some());
 }
 
 /// Test cross-primitive visibility.
@@ -141,7 +141,7 @@ fn test_cross_primitive_visibility() {
     p.state.init(&run_id, "vis_state", Value::Bool(true)).expect("state");
 
     // All should be visible immediately (snapshot isolation)
-    assert!(p.kv.get(&run_id, "vis_key").expect("get").is_some());
+    assert!(p.kv.get(&run_id, "vis_key").expect("get").map(|v| v.value).is_some());
     assert!(p
         .json
         .get(&run_id, &doc_id, &JsonPath::root())
@@ -190,8 +190,8 @@ fn test_cross_primitive_run_isolation() {
         .expect("insert b");
 
     // Verify isolation
-    let a_kv = p.kv.get(&run_a, "iso_key").expect("get a").unwrap();
-    let b_kv = p.kv.get(&run_b, "iso_key").expect("get b").unwrap();
+    let a_kv = p.kv.get(&run_a, "iso_key").expect("get a").map(|v| v.value).unwrap();
+    let b_kv = p.kv.get(&run_b, "iso_key").expect("get b").map(|v| v.value).unwrap();
     assert_ne!(a_kv, b_kv, "Runs should be isolated");
 
     let a_json = p
@@ -217,7 +217,7 @@ fn test_cross_primitive_run_isolation() {
         .get(run_b, "iso_col", "v1")
         .expect("get b")
         .unwrap();
-    assert_ne!(a_vec.embedding, b_vec.embedding, "Vectors should be isolated");
+    assert_ne!(a_vec.value.embedding, b_vec.value.embedding, "Vectors should be isolated");
 }
 
 /// Test recovery of all 7 primitives.
@@ -269,7 +269,7 @@ fn test_all_seven_primitives_recovery() {
     let p = test_db.all_primitives();
 
     assert!(
-        p.kv.get(&run_id, "recover_kv").expect("kv").is_some(),
+        p.kv.get(&run_id, "recover_kv").expect("kv").map(|v| v.value).is_some(),
         "KV should recover"
     );
     assert!(

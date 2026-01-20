@@ -340,13 +340,14 @@ impl InvertedIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use in_mem_core::types::{Key, Namespace, RunId};
+    use in_mem_core::types::RunId;
 
     fn test_doc_ref(name: &str) -> DocRef {
         let run_id = RunId::new();
-        let ns = Namespace::for_run(run_id);
-        let key = Key::new_kv(ns, name);
-        DocRef::Kv { key }
+        DocRef::Kv {
+            run_id,
+            key: name.to_string(),
+        }
     }
 
     #[test]

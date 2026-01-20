@@ -272,14 +272,14 @@ pub fn decode_entry(buf: &[u8], offset: u64) -> Result<(WALEntry, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use in_mem_core::types::{Key, Namespace, RunId};
-    use in_mem_core::value::{Timestamp, Value};
+    use in_mem_core::value::Value;
+    use in_mem_core::Timestamp;
     use uuid::Uuid;
 
     /// Helper to get current timestamp
     fn now() -> Timestamp {
-        Utc::now().timestamp()
+        Timestamp::now()
     }
 
     #[test]

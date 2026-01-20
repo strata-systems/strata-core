@@ -11,9 +11,10 @@
 //!
 //! These invariants are non-negotiable and define correctness.
 
-use chrono::Utc;
+use in_mem_core::contract::Version;
 use in_mem_core::types::{Key, Namespace, RunId};
 use in_mem_core::value::Value;
+use in_mem_core::Timestamp;
 use in_mem_core::Storage;
 use in_mem_durability::recovery::replay_wal;
 use in_mem_durability::wal::{DurabilityMode, WALEntry, WAL};
@@ -22,8 +23,8 @@ use std::collections::HashSet;
 use tempfile::TempDir;
 
 /// Helper to get current timestamp
-fn now() -> i64 {
-    Utc::now().timestamp()
+fn now() -> Timestamp {
+    Timestamp::now()
 }
 
 /// Helper to create a test namespace with a specific run_id
@@ -183,7 +184,7 @@ fn test_recovery_deterministic_ordering_r1() {
             iteration
         );
         assert_eq!(
-            result.version, 5,
+            result.version, Version::TxnId(5),
             "Iteration {}: Final version should be 5",
             iteration
         );

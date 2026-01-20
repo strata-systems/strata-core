@@ -284,7 +284,7 @@ mod write_operations {
         let key = kv_key(&ns, "cas_test");
 
         db.put(run_id, key.clone(), values::int(1)).unwrap();
-        let version = db.get(&key).unwrap().unwrap().version;
+        let version = db.get(&key).unwrap().unwrap().version.as_u64();
 
         let mut txn = db.begin_transaction(run_id);
         txn.cas(key.clone(), version, values::int(2)).unwrap();
@@ -311,7 +311,7 @@ mod write_operations {
         let mut txn = db.begin_transaction(run_id);
 
         for (i, key) in keys.iter().enumerate() {
-            let version = db.get(key).unwrap().unwrap().version;
+            let version = db.get(key).unwrap().unwrap().version.as_u64();
             txn.cas(key.clone(), version, values::int((i + 10) as i64))
                 .unwrap();
         }
@@ -330,7 +330,7 @@ mod write_operations {
         let key3 = kv_key(&ns, "key3");
 
         db.put(run_id, key3.clone(), values::int(1)).unwrap();
-        let version = db.get(&key3).unwrap().unwrap().version;
+        let version = db.get(&key3).unwrap().unwrap().version.as_u64();
 
         let mut txn = db.begin_transaction(run_id);
         txn.put(key1.clone(), values::int(1)).unwrap();
@@ -746,7 +746,7 @@ mod pending_operations {
 
         for i in 0..2 {
             let key = kv_key(&ns, &format!("cas_{}", i));
-            let version = db.get(&key).unwrap().unwrap().version;
+            let version = db.get(&key).unwrap().unwrap().version.as_u64();
             txn.cas(key, version, values::int(i + 10)).unwrap();
         }
 

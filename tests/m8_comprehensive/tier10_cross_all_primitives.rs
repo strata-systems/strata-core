@@ -88,7 +88,9 @@ fn test_all_primitives_partial_update() {
     // Both updated
     let kv = test_db.kv();
 
-    if let Some(in_mem_core::value::Value::I64(v)) = kv.get(&run_id, "version").unwrap() {
-        assert_eq!(v, 2);
+    if let Some(versioned) = kv.get(&run_id, "version").unwrap() {
+        if let in_mem_core::value::Value::I64(v) = versioned.value {
+            assert_eq!(v, 2);
+        }
     }
 }

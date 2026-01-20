@@ -15,14 +15,21 @@
 //! - put(): Only locks target shard
 //! - Snapshot acquisition: < 500ns
 //! - Different runs: Never contend
+//!
+//! # Storage vs Contract Types
+//!
+//! - `StoredValue`: Internal storage type that includes TTL (storage concern)
+//! - `VersionedValue`: Contract type returned to callers (no TTL)
 
 use dashmap::DashMap;
 use in_mem_core::types::{Key, RunId};
-use in_mem_core::VersionedValue;
+use in_mem_core::{Timestamp, Version, VersionedValue};
 use rustc_hash::FxHashMap;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+
+use crate::stored_value::StoredValue;
 
 /// Per-run shard containing run's data
 ///
@@ -39,12 +46,13 @@ use std::sync::Arc;
 pub struct VersionChain {
     /// Versions stored newest-first for efficient MVCC reads
     /// VecDeque provides O(1) push_front for new versions
-    versions: VecDeque<VersionedValue>,
+    /// Uses StoredValue to include TTL information
+    versions: VecDeque<StoredValue>,
 }
 
 impl VersionChain {
     /// Create a new version chain with a single version
-    pub fn new(value: VersionedValue) -> Self {
+    pub fn new(value: StoredValue) -> Self {
         let mut versions = VecDeque::with_capacity(4);
         versions.push_front(value);
         Self { versions }
@@ -54,20 +62,22 @@ impl VersionChain {
     ///
     /// O(1) operation using VecDeque::push_front
     #[inline]
-    pub fn push(&mut self, value: VersionedValue) {
+    pub fn push(&mut self, value: StoredValue) {
         // O(1) insert at front (newest first)
         self.versions.push_front(value);
     }
 
     /// Get the version at or before the given max_version
-    pub fn get_at_version(&self, max_version: u64) -> Option<&VersionedValue> {
+    pub fn get_at_version(&self, max_version: u64) -> Option<&StoredValue> {
         // Versions are newest-first, so we scan until we find one <= max_version
-        self.versions.iter().find(|vv| vv.version <= max_version)
+        self.versions
+            .iter()
+            .find(|sv| sv.version().as_u64() <= max_version)
     }
 
     /// Get the latest version
     #[inline]
-    pub fn latest(&self) -> Option<&VersionedValue> {
+    pub fn latest(&self) -> Option<&StoredValue> {
         self.versions.front()
     }
 
@@ -81,7 +91,7 @@ impl VersionChain {
         // Versions are newest-first, so pop from back (oldest)
         while self.versions.len() > 1 {
             if let Some(oldest) = self.versions.back() {
-                if oldest.version < min_version {
+                if oldest.version().as_u64() < min_version {
                     self.versions.pop_back();
                 } else {
                     break;
@@ -237,14 +247,14 @@ impl ShardedStore {
     /// # Arguments
     ///
     /// * `key` - Key to store (contains RunId)
-    /// * `value` - Value to store
+    /// * `value` - StoredValue to store (includes TTL)
     ///
     /// # Performance
     ///
     /// - O(1) insert via FxHashMap
     /// - Only locks the target run's shard
     #[inline]
-    pub fn put(&self, key: Key, value: VersionedValue) {
+    pub fn put(&self, key: Key, value: StoredValue) {
         let run_id = key.namespace.run_id;
         let mut shard = self.shards.entry(run_id).or_default();
 
@@ -271,7 +281,7 @@ impl ShardedStore {
         self.shards
             .get_mut(&run_id)
             .and_then(|mut shard| shard.data.remove(key))
-            .and_then(|chain| chain.latest().cloned())
+            .and_then(|chain| chain.latest().map(|sv| sv.versioned().clone()))
     }
 
     /// Check if a key exists
@@ -310,21 +320,20 @@ impl ShardedStore {
         deletes: &[Key],
         version: u64,
     ) -> in_mem_core::error::Result<()> {
-        use chrono::Utc;
         use std::sync::atomic::Ordering;
 
         // Capture timestamp once for entire batch (M4 optimization)
-        let timestamp = Utc::now().timestamp();
+        let timestamp = Timestamp::now();
 
         // Apply writes
         for (key, value) in writes {
-            let versioned = VersionedValue {
-                value: value.clone(),
-                version,
+            let stored = StoredValue::with_timestamp(
+                value.clone(),
+                Version::txn(version),
                 timestamp,
-                ttl: None,
-            };
-            self.put(key.clone(), versioned);
+                None,
+            );
+            self.put(key.clone(), stored);
         }
 
         // Apply deletes
@@ -370,7 +379,9 @@ impl ShardedStore {
                 let mut results: Vec<_> = shard
                     .data
                     .iter()
-                    .filter_map(|(k, chain)| chain.latest().map(|v| (k.clone(), v.clone())))
+                    .filter_map(|(k, chain)| {
+                        chain.latest().map(|sv| (k.clone(), sv.versioned().clone()))
+                    })
                     .collect();
 
                 // Sort for consistent ordering (Key implements Ord)
@@ -404,7 +415,9 @@ impl ShardedStore {
                     .data
                     .iter()
                     .filter(|(k, _)| k.starts_with(prefix))
-                    .filter_map(|(k, chain)| chain.latest().map(|v| (k.clone(), v.clone())))
+                    .filter_map(|(k, chain)| {
+                        chain.latest().map(|sv| (k.clone(), sv.versioned().clone()))
+                    })
                     .collect();
 
                 // Sort for consistent ordering
@@ -438,7 +451,9 @@ impl ShardedStore {
                     .data
                     .iter()
                     .filter(|(k, _)| k.type_tag == type_tag)
-                    .filter_map(|(k, chain)| chain.latest().map(|v| (k.clone(), v.clone())))
+                    .filter_map(|(k, chain)| {
+                        chain.latest().map(|sv| (k.clone(), sv.versioned().clone()))
+                    })
                     .collect();
 
                 // Sort for consistent ordering
@@ -698,9 +713,9 @@ impl Storage for ShardedStore {
         let run_id = key.namespace.run_id;
         Ok(self.shards.get(&run_id).and_then(|shard| {
             shard.data.get(key).and_then(|chain| {
-                chain.latest().and_then(|vv| {
-                    if !vv.is_expired() {
-                        Some(vv.clone())
+                chain.latest().and_then(|sv| {
+                    if !sv.is_expired() {
+                        Some(sv.versioned().clone())
                     } else {
                         None
                     }
@@ -716,9 +731,9 @@ impl Storage for ShardedStore {
         let run_id = key.namespace.run_id;
         Ok(self.shards.get(&run_id).and_then(|shard| {
             shard.data.get(key).and_then(|chain| {
-                chain.get_at_version(max_version).and_then(|vv| {
-                    if !vv.is_expired() {
-                        Some(vv.clone())
+                chain.get_at_version(max_version).and_then(|sv| {
+                    if !sv.is_expired() {
+                        Some(sv.versioned().clone())
                     } else {
                         None
                     }
@@ -731,20 +746,11 @@ impl Storage for ShardedStore {
     ///
     /// Allocates a new version and returns it.
     fn put(&self, key: Key, value: Value, ttl: Option<Duration>) -> Result<u64> {
-        use chrono::Utc;
-
         let version = self.next_version();
-        let timestamp = Utc::now().timestamp();
-
-        let versioned = VersionedValue {
-            value,
-            version,
-            timestamp,
-            ttl,
-        };
+        let stored = StoredValue::new(value, Version::txn(version), ttl);
 
         // Use the inherent put method which handles version chain
-        ShardedStore::put(self, key, versioned);
+        ShardedStore::put(self, key, stored);
 
         Ok(version)
     }
@@ -772,9 +778,9 @@ impl Storage for ShardedStore {
                         if !k.starts_with(prefix) {
                             return None;
                         }
-                        chain.get_at_version(max_version).and_then(|vv| {
-                            if !vv.is_expired() {
-                                Some((k.clone(), vv.clone()))
+                        chain.get_at_version(max_version).and_then(|sv| {
+                            if !sv.is_expired() {
+                                Some((k.clone(), sv.versioned().clone()))
                             } else {
                                 None
                             }
@@ -800,9 +806,9 @@ impl Storage for ShardedStore {
                     .data
                     .iter()
                     .filter_map(|(k, chain)| {
-                        chain.get_at_version(max_version).and_then(|vv| {
-                            if !vv.is_expired() {
-                                Some((k.clone(), vv.clone()))
+                        chain.get_at_version(max_version).and_then(|sv| {
+                            if !sv.is_expired() {
+                                Some((k.clone(), sv.versioned().clone()))
                             } else {
                                 None
                             }
@@ -831,19 +837,10 @@ impl Storage for ShardedStore {
         version: u64,
         ttl: Option<Duration>,
     ) -> Result<()> {
-        use chrono::Utc;
-
-        let timestamp = Utc::now().timestamp();
-
-        let versioned = VersionedValue {
-            value,
-            version,
-            timestamp,
-            ttl,
-        };
+        let stored = StoredValue::new(value, Version::txn(version), ttl);
 
         // Use the inherent put method which handles version chain
-        ShardedStore::put(self, key, versioned);
+        ShardedStore::put(self, key, stored);
 
         // Update global version to be at least this version
         self.version.fetch_max(version, Ordering::AcqRel);
@@ -886,9 +883,9 @@ impl SnapshotView for ShardedSnapshot {
         let run_id = key.namespace.run_id;
         let result = self.store.shards.get(&run_id).and_then(|shard| {
             shard.data.get(key).and_then(|chain| {
-                chain.get_at_version(self.version).and_then(|vv| {
-                    if !vv.is_expired() {
-                        Some(vv.clone())
+                chain.get_at_version(self.version).and_then(|sv| {
+                    if !sv.is_expired() {
+                        Some(sv.versioned().clone())
                     } else {
                         None
                     }
@@ -922,9 +919,9 @@ impl SnapshotView for ShardedSnapshot {
                         if !k.starts_with(prefix) {
                             return None;
                         }
-                        chain.get_at_version(self.version).and_then(|vv| {
-                            if !vv.is_expired() {
-                                Some((k.clone(), vv.clone()))
+                        chain.get_at_version(self.version).and_then(|sv| {
+                            if !sv.is_expired() {
+                                Some((k.clone(), sv.versioned().clone()))
                             } else {
                                 None
                             }
@@ -1036,14 +1033,8 @@ mod tests {
         Key::new_kv(ns, name)
     }
 
-    fn create_versioned_value(value: in_mem_core::value::Value, version: u64) -> VersionedValue {
-        use chrono::Utc;
-        VersionedValue {
-            value,
-            version,
-            timestamp: Utc::now().timestamp(),
-            ttl: None,
-        }
+    fn create_stored_value(value: in_mem_core::value::Value, version: u64) -> StoredValue {
+        StoredValue::new(value, Version::txn(version), None)
     }
 
     #[test]
@@ -1053,7 +1044,7 @@ mod tests {
         let store = ShardedStore::new();
         let run_id = RunId::new();
         let key = create_test_key(run_id, "test_key");
-        let value = create_versioned_value(Value::I64(42), 1);
+        let value = create_stored_value(Value::I64(42), 1);
 
         // Put
         store.put(key.clone(), value);
@@ -1080,7 +1071,7 @@ mod tests {
         let store = ShardedStore::new();
         let run_id = RunId::new();
         let key = create_test_key(run_id, "to_delete");
-        let value = create_versioned_value(Value::I64(42), 1);
+        let value = create_stored_value(Value::I64(42), 1);
 
         store.put(key.clone(), value);
         assert!(store.get(&key).unwrap().is_some());
@@ -1107,7 +1098,7 @@ mod tests {
         let store = ShardedStore::new();
         let run_id = RunId::new();
         let key = create_test_key(run_id, "exists");
-        let value = create_versioned_value(Value::I64(42), 1);
+        let value = create_stored_value(Value::I64(42), 1);
 
         assert!(!store.contains(&key));
         store.put(key.clone(), value);
@@ -1122,12 +1113,12 @@ mod tests {
         let run_id = RunId::new();
         let key = create_test_key(run_id, "overwrite");
 
-        store.put(key.clone(), create_versioned_value(Value::I64(1), 1));
-        store.put(key.clone(), create_versioned_value(Value::I64(2), 2));
+        store.put(key.clone(), create_stored_value(Value::I64(1), 1));
+        store.put(key.clone(), create_stored_value(Value::I64(2), 2));
 
         let retrieved = store.get(&key).unwrap().unwrap();
         assert_eq!(retrieved.value, Value::I64(2));
-        assert_eq!(retrieved.version, 2);
+        assert_eq!(retrieved.version, Version::txn(2));
     }
 
     #[test]
@@ -1141,8 +1132,8 @@ mod tests {
         let key1 = create_test_key(run1, "key");
         let key2 = create_test_key(run2, "key");
 
-        store.put(key1.clone(), create_versioned_value(Value::I64(1), 1));
-        store.put(key2.clone(), create_versioned_value(Value::I64(2), 1));
+        store.put(key1.clone(), create_stored_value(Value::I64(1), 1));
+        store.put(key2.clone(), create_stored_value(Value::I64(2), 1));
 
         // Different runs, same key name, different values
         assert_eq!(store.get(&key1).unwrap().unwrap().value, Value::I64(1));
@@ -1162,7 +1153,7 @@ mod tests {
         let key3 = create_test_key(run_id, "batch3");
 
         // First, put key3 so we can delete it
-        store.put(key3.clone(), create_versioned_value(Value::I64(999), 1));
+        store.put(key3.clone(), create_stored_value(Value::I64(999), 1));
 
         // Apply batch
         let writes = vec![(key1.clone(), Value::I64(1)), (key2.clone(), Value::I64(2))];
@@ -1171,7 +1162,7 @@ mod tests {
         store.apply_batch(&writes, &deletes, 2).unwrap();
 
         assert_eq!(store.get(&key1).unwrap().unwrap().value, Value::I64(1));
-        assert_eq!(store.get(&key1).unwrap().unwrap().version, 2);
+        assert_eq!(store.get(&key1).unwrap().unwrap().version, Version::txn(2));
         assert_eq!(store.get(&key2).unwrap().unwrap().value, Value::I64(2));
         assert!(store.get(&key3).unwrap().is_none());
     }
@@ -1187,7 +1178,7 @@ mod tests {
 
         for i in 0..5 {
             let key = create_test_key(run_id, &format!("key{}", i));
-            store.put(key, create_versioned_value(Value::I64(i), 1));
+            store.put(key, create_stored_value(Value::I64(i), 1));
         }
 
         assert_eq!(store.run_entry_count(&run_id), 5);
@@ -1209,7 +1200,7 @@ mod tests {
                     let run_id = RunId::new();
                     for i in 0..100 {
                         let key = create_test_key(run_id, &format!("key{}", i));
-                        store.put(key, create_versioned_value(Value::I64(i), 1));
+                        store.put(key, create_stored_value(Value::I64(i), 1));
                     }
                     run_id
                 })
@@ -1250,7 +1241,7 @@ mod tests {
         // Insert some keys
         for i in 0..5 {
             let key = create_test_key(run_id, &format!("key{}", i));
-            store.put(key, create_versioned_value(Value::I64(i), 1));
+            store.put(key, create_stored_value(Value::I64(i), 1));
         }
 
         let results = store.list_run(&run_id);
@@ -1279,15 +1270,15 @@ mod tests {
         // Insert keys with different prefixes
         store.put(
             Key::new_kv(ns.clone(), "user:alice"),
-            create_versioned_value(Value::I64(1), 1),
+            create_stored_value(Value::I64(1), 1),
         );
         store.put(
             Key::new_kv(ns.clone(), "user:bob"),
-            create_versioned_value(Value::I64(2), 1),
+            create_stored_value(Value::I64(2), 1),
         );
         store.put(
             Key::new_kv(ns.clone(), "config:timeout"),
-            create_versioned_value(Value::I64(3), 1),
+            create_stored_value(Value::I64(3), 1),
         );
 
         // Query with "user:" prefix
@@ -1316,7 +1307,7 @@ mod tests {
 
         store.put(
             Key::new_kv(ns.clone(), "data:foo"),
-            create_versioned_value(Value::I64(1), 1),
+            create_stored_value(Value::I64(1), 1),
         );
 
         // Query with non-matching prefix
@@ -1343,23 +1334,23 @@ mod tests {
         // Insert KV entries
         store.put(
             Key::new_kv(ns.clone(), "kv1"),
-            create_versioned_value(Value::I64(1), 1),
+            create_stored_value(Value::I64(1), 1),
         );
         store.put(
             Key::new_kv(ns.clone(), "kv2"),
-            create_versioned_value(Value::I64(2), 1),
+            create_stored_value(Value::I64(2), 1),
         );
 
         // Insert Event entries
         store.put(
             Key::new_event(ns.clone(), 1),
-            create_versioned_value(Value::I64(10), 1),
+            create_stored_value(Value::I64(10), 1),
         );
 
         // Insert State entries
         store.put(
             Key::new_state(ns.clone(), "state1"),
-            create_versioned_value(Value::I64(20), 1),
+            create_stored_value(Value::I64(20), 1),
         );
 
         // Query by type
@@ -1394,13 +1385,13 @@ mod tests {
         for i in 0..5 {
             store.put(
                 Key::new_kv(ns.clone(), &format!("kv{}", i)),
-                create_versioned_value(Value::I64(i), 1),
+                create_stored_value(Value::I64(i), 1),
             );
         }
         for i in 0..3 {
             store.put(
                 Key::new_event(ns.clone(), i as u64),
-                create_versioned_value(Value::I64(i), 1),
+                create_stored_value(Value::I64(i), 1),
             );
         }
 
@@ -1421,15 +1412,15 @@ mod tests {
         // Insert data for 3 runs
         store.put(
             create_test_key(run1, "k1"),
-            create_versioned_value(Value::I64(1), 1),
+            create_stored_value(Value::I64(1), 1),
         );
         store.put(
             create_test_key(run2, "k1"),
-            create_versioned_value(Value::I64(2), 1),
+            create_stored_value(Value::I64(2), 1),
         );
         store.put(
             create_test_key(run3, "k1"),
-            create_versioned_value(Value::I64(3), 1),
+            create_stored_value(Value::I64(3), 1),
         );
 
         let run_ids = store.run_ids();
@@ -1449,7 +1440,7 @@ mod tests {
         // Insert some data
         for i in 0..5 {
             let key = create_test_key(run_id, &format!("key{}", i));
-            store.put(key, create_versioned_value(Value::I64(i), 1));
+            store.put(key, create_stored_value(Value::I64(i), 1));
         }
 
         assert_eq!(store.run_entry_count(&run_id), 5);
@@ -1490,7 +1481,7 @@ mod tests {
         for k in &keys {
             store.put(
                 Key::new_kv(ns.clone(), *k),
-                create_versioned_value(Value::String(k.to_string()), 1),
+                create_stored_value(Value::String(k.to_string()), 1),
             );
         }
 
@@ -1544,7 +1535,7 @@ mod tests {
 
         // Put some data (version=1)
         let key = create_test_key(run_id, "test_key");
-        store.put(key.clone(), create_versioned_value(Value::I64(42), 1));
+        store.put(key.clone(), create_stored_value(Value::I64(42), 1));
         // Update store version so snapshot can see data at version 1
         store.set_version(1);
 
@@ -1570,7 +1561,7 @@ mod tests {
         // Put some data
         for i in 0..5 {
             let key = create_test_key(run_id, &format!("key{}", i));
-            store.put(key, create_versioned_value(Value::I64(i), 1));
+            store.put(key, create_stored_value(Value::I64(i), 1));
         }
 
         let snapshot = store.snapshot();
@@ -1599,7 +1590,7 @@ mod tests {
 
         // Add data and increment version
         let key1 = create_test_key(run_id, "key1");
-        store.put(key1.clone(), create_versioned_value(Value::I64(1), 1));
+        store.put(key1.clone(), create_stored_value(Value::I64(1), 1));
         store.next_version();
 
         // Create second snapshot at version 1
@@ -1608,7 +1599,7 @@ mod tests {
 
         // Add more data
         let key2 = create_test_key(run_id, "key2");
-        store.put(key2.clone(), create_versioned_value(Value::I64(2), 2));
+        store.put(key2.clone(), create_stored_value(Value::I64(2), 2));
         store.next_version();
 
         // Create third snapshot at version 2
@@ -1695,7 +1686,7 @@ mod tests {
             let key = create_test_key(run_id, &format!("key{}", i));
             store.put(
                 key,
-                create_versioned_value(in_mem_core::value::Value::I64(i), 1),
+                create_stored_value(in_mem_core::value::Value::I64(i), 1),
             );
         }
 
@@ -1887,7 +1878,7 @@ mod tests {
 
         // Verify version is 42
         let result = Storage::get(&store, &key).unwrap().unwrap();
-        assert_eq!(result.version, 42);
+        assert_eq!(result.version, Version::txn(42));
 
         // current_version should be updated
         assert!(Storage::current_version(&store) >= 42);

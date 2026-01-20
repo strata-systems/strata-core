@@ -2,9 +2,9 @@
 
 ## Overview
 
-This document establishes the M7 performance baseline for the in-mem database. It serves as a reference for future optimizations and ensures no regressions are introduced.
+This document establishes the M8 performance baseline for the in-mem database. It serves as a reference for M9 optimizations and ensures no regressions are introduced.
 
-**Status**: Established after M7 completion
+**Status**: Established after M8 completion (includes Vector primitive)
 
 ## Performance Targets
 
@@ -49,6 +49,37 @@ This document establishes the M7 performance baseline for the in-mem database. I
 | replay_run() (10K events) | <100ms | <500ms |
 | diff_runs() (1K keys each) | <5ms | <50ms |
 
+### Vector Primitive (M8)
+
+| Operation | Target | Acceptable |
+|-----------|--------|------------|
+| Insert single (384d) | <50µs | <100µs |
+| Insert batch 100 (384d) | <5ms | <10ms |
+| Insert batch 1000 (384d) | <50ms | <100ms |
+| Search cosine 10K (384d) | <10ms | <50ms |
+| Search euclidean 10K (384d) | <10ms | <50ms |
+| Search dot product 10K (384d) | <10ms | <50ms |
+| Search with filter 10K | <15ms | <60ms |
+| Collection create | <100µs | <500µs |
+| Collection delete | <100µs | <500µs |
+| Collection list | <50µs | <200µs |
+
+### Vector Dimension Scaling (M8)
+
+| Dimension | Search 10K Target | Search 10K Acceptable |
+|-----------|-------------------|----------------------|
+| 128d | <5ms | <20ms |
+| 384d | <10ms | <50ms |
+| 768d | <20ms | <80ms |
+| 1536d | <40ms | <150ms |
+
+### Vector Collection Scaling (M8)
+
+| Collection Size | Search Target | Search Acceptable |
+|-----------------|---------------|-------------------|
+| 10K vectors | <10ms | <50ms |
+| 100K vectors | <100ms | <500ms |
+
 ## Durability Mode Characteristics
 
 ### InMemory Mode
@@ -76,20 +107,30 @@ This document establishes the M7 performance baseline for the in-mem database. I
 ### Running Benchmarks
 
 ```bash
-# Run all benchmarks
+# Run ALL benchmarks with M9 tracking (RECOMMENDED)
+./scripts/bench_runner.sh --full --tag=baseline --notes="M9 baseline"
+
+# Run specific milestone
+./scripts/bench_runner.sh --m1
+./scripts/bench_runner.sh --m6
+./scripts/bench_runner.sh --m8
+
+# Run with filters
+./scripts/bench_runner.sh --m8 --filter="vector_search"
+
+# Using cargo directly
 cargo bench --bench comprehensive_benchmarks
+cargo bench --bench m4_performance
+cargo bench --bench m6_search
+cargo bench --bench m8_vector
 
 # Run specific categories
 cargo bench --bench comprehensive_benchmarks -- kv_microbenchmarks
 cargo bench --bench comprehensive_benchmarks -- concurrency
 cargo bench --bench comprehensive_benchmarks -- recovery
 cargo bench --bench comprehensive_benchmarks -- durability
-
-# M4 performance benchmarks
-cargo bench --bench m4_performance
-
-# M6 search benchmarks
-cargo bench --bench m6_search
+cargo bench --bench m8_vector -- vector_insert
+cargo bench --bench m8_vector -- vector_search
 ```
 
 ### Benchmark Categories
@@ -133,6 +174,15 @@ Agent-like workloads:
 - Typical agent run simulation
 - Long-running agent behavior
 - Burst write patterns
+
+#### Tier 7: Vector Operations (M8)
+Vector primitive performance:
+- Insert latency (single and batch)
+- Similarity search (cosine, euclidean, dot product)
+- Dimension scaling (128d to 1536d)
+- Collection management (create, delete, list)
+- Metadata filtering overhead
+- Concurrent access patterns
 
 ## Key Metrics to Monitor
 
@@ -188,14 +238,20 @@ Total: O(snapshot) + O(WAL since snapshot) + O(index rebuild)
 
 ## Future Optimization Opportunities
 
-### M8+ Optimizations (Not in M7)
+### M9 Optimization Targets
 
-1. **Compression**: Snapshot and WAL compression (reserved in format)
-2. **Incremental snapshots**: Only changed data since last snapshot
-3. **Parallel recovery**: Multi-threaded WAL replay
-4. **Index persistence**: Save indexes in snapshot (trade-off: larger snapshots)
-5. **Memory-mapped IO**: For large datasets
-6. **Async WAL writer**: Non-blocking WAL append
+The following are candidates for M9 performance tuning:
+
+1. **SIMD Vector Operations**: Use SIMD for distance calculations (significant speedup for cosine/euclidean)
+2. **Compression**: Snapshot and WAL compression (reserved in format)
+3. **Incremental snapshots**: Only changed data since last snapshot
+4. **Parallel recovery**: Multi-threaded WAL replay
+5. **Index persistence**: Save indexes in snapshot (trade-off: larger snapshots)
+6. **Memory-mapped IO**: For large datasets
+7. **Async WAL writer**: Non-blocking WAL append
+8. **Vector indexing**: HNSW or similar approximate nearest neighbor index
+9. **Batch optimization**: Amortize transaction overhead across batch operations
+10. **Lock-free reads**: Remove read locks for fast-path operations
 
 ### Performance Tuning Guidelines
 
@@ -218,15 +274,19 @@ Each CI run should verify:
 Compare against tagged baseline:
 
 ```bash
-# Checkout baseline
-git checkout m7_perf_baseline
+# Using bench_runner.sh (recommended for M9)
+./scripts/bench_runner.sh --full --tag=baseline --notes="M8 baseline before optimization"
+# Make changes...
+./scripts/bench_runner.sh --full --tag=opt-name --notes="Description of optimization"
+# Check target/benchmark-results/INDEX.md for comparison
 
-# Run benchmarks
-cargo bench --bench comprehensive_benchmarks -- --save-baseline m7
+# Using Criterion directly
+cargo bench --bench comprehensive_benchmarks -- --save-baseline m8
+cargo bench --bench m8_vector -- --save-baseline m8
 
 # Compare against current
-git checkout main
-cargo bench --bench comprehensive_benchmarks -- --baseline m7
+cargo bench --bench comprehensive_benchmarks -- --baseline m8
+cargo bench --bench m8_vector -- --baseline m8
 ```
 
 ## Appendix: Raw Benchmark Data
@@ -261,3 +321,4 @@ Benchmark: kv_get (InMemory)
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-01-17 | Initial M7 baseline established |
+| 2.0 | 2026-01-18 | Updated for M8 Vector primitive, added M9 optimization targets |

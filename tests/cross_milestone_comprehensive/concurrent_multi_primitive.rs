@@ -6,7 +6,6 @@ use crate::test_utils::*;
 use in_mem_core::json::JsonValue;
 use in_mem_core::types::JsonDocId;
 use in_mem_core::value::Value;
-use std::sync::Arc;
 use std::thread;
 
 /// Test concurrent operations on all primitives.

@@ -8,7 +8,7 @@ use in_mem_core::value::Value;
 use in_mem_engine::Database;
 use in_mem_primitives::{
     register_vector_recovery, DistanceMetric, EventLog, JsonStore, KVStore, RunIndex, StateCell,
-    StorageDtype, TraceStore, TraceType, VectorConfig, VectorStore,
+    StorageDtype, TraceStore, VectorConfig, VectorStore,
 };
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -25,9 +25,7 @@ fn ensure_recovery_registered() {
 }
 
 // Re-export types for tests
-pub use in_mem_core::json::{JsonPath as CoreJsonPath, JsonValue as CoreJsonValue};
-pub use in_mem_core::types::JsonDocId as CoreJsonDocId;
-pub use in_mem_primitives::TraceType as CoreTraceType;
+pub use in_mem_primitives::TraceType;
 
 // Counter for generating unique keys
 static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -287,7 +285,7 @@ pub fn assert_db_healthy(db: &Arc<Database>, run_id: &RunId) {
     let key = unique_key();
     kv.put(run_id, &key, Value::String("test".into()))
         .expect("Database should be able to write");
-    let value = kv.get(run_id, &key).expect("Database should be able to read");
+    let value = kv.get(run_id, &key).expect("Database should be able to read").map(|v| v.value);
     assert!(value.is_some(), "Database should return written value");
 }
 
@@ -300,7 +298,7 @@ pub fn assert_all_primitives_healthy(test_db: &TestDb) {
     let key = unique_key();
     p.kv.put(&run_id, &key, Value::String("kv_test".into()))
         .expect("KV should write");
-    assert!(p.kv.get(&run_id, &key).expect("KV read").is_some());
+    assert!(p.kv.get(&run_id, &key).expect("KV read").map(|v| v.value).is_some());
 
     // JSON
     let doc_id = JsonDocId::new();

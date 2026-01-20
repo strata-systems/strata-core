@@ -188,7 +188,7 @@ fn test_p2_empty_run_no_side_effects() {
     kv.put(&run_id, "new_key", Value::I64(42)).unwrap();
 
     // Verify the write succeeded (previous captures didn't interfere)
-    let value = kv.get(&run_id, "new_key").unwrap();
+    let value = kv.get(&run_id, "new_key").unwrap().map(|v| v.value);
     assert_eq!(value, Some(Value::I64(42)));
 }
 
@@ -226,7 +226,7 @@ fn test_p2_concurrent_reads_safe() {
 
     // Original data should be unchanged
     let kv = test_db.kv();
-    let value = kv.get(&run_id, "shared").unwrap();
+    let value = kv.get(&run_id, "shared").unwrap().map(|v| v.value);
     assert_eq!(value, Some(Value::String("shared_value".into())));
 }
 

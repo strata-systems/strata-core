@@ -565,7 +565,7 @@ fn test_m1_cas_operations() {
     // Get version
     let val = db.get(&key).unwrap().unwrap();
     assert_eq!(val.value, Value::I64(1));
-    let version = val.version;
+    let version = val.version.as_u64();
 
     // Update with correct version
     db.cas(run_id, key.clone(), version, Value::I64(2)).unwrap();

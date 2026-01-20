@@ -3,7 +3,7 @@
 //! Tests for HybridSearch orchestration.
 
 use super::test_utils::*;
-use in_mem_core::search_types::{PrimitiveKind, SearchRequest};
+use in_mem_core::search_types::{PrimitiveType, SearchRequest};
 use in_mem_search::{DatabaseSearchExt, HybridSearch, RRFFuser};
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -60,10 +60,10 @@ fn test_tier8_hybrid_includes_kv() {
     let primitives: HashSet<_> = response
         .hits
         .iter()
-        .map(|h| h.doc_ref.primitive_kind())
+        .map(|h| h.doc_ref.primitive_type())
         .collect();
 
-    assert!(primitives.contains(&PrimitiveKind::Kv));
+    assert!(primitives.contains(&PrimitiveType::Kv));
 }
 
 // ============================================================================
@@ -78,11 +78,11 @@ fn test_tier8_hybrid_respects_filter() {
     populate_test_data(&db, &run_id);
 
     let hybrid = db.hybrid();
-    let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveKind::Kv]);
+    let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveType::Kv]);
     let response = hybrid.search(&req).unwrap();
 
     for hit in &response.hits {
-        assert_eq!(hit.doc_ref.primitive_kind(), PrimitiveKind::Kv);
+        assert_eq!(hit.doc_ref.primitive_type(), PrimitiveType::Kv);
     }
 }
 
@@ -109,13 +109,13 @@ fn test_tier8_hybrid_multi_filter() {
 
     let hybrid = db.hybrid();
     let req = SearchRequest::new(run_id, "test")
-        .with_primitive_filter(vec![PrimitiveKind::Kv, PrimitiveKind::Run]);
+        .with_primitive_filter(vec![PrimitiveType::Kv, PrimitiveType::Run]);
     let response = hybrid.search(&req).unwrap();
 
     for hit in &response.hits {
-        let kind = hit.doc_ref.primitive_kind();
+        let kind = hit.doc_ref.primitive_type();
         assert!(
-            kind == PrimitiveKind::Kv || kind == PrimitiveKind::Run,
+            kind == PrimitiveType::Kv || kind == PrimitiveType::Run,
             "Should only include filtered primitives"
         );
     }

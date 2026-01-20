@@ -5,7 +5,7 @@
 //!
 //! See `docs/architecture/M6_ARCHITECTURE.md` for authoritative specification.
 
-use in_mem_core::search_types::{PrimitiveKind, SearchRequest, SearchResponse};
+use in_mem_core::search_types::{PrimitiveType, SearchRequest, SearchResponse};
 use in_mem_core::types::RunId;
 use in_mem_core::value::Value;
 use in_mem_engine::Database;
@@ -111,8 +111,8 @@ fn test_docref_primitive_kind_matches() {
 
     for hit in &response.hits {
         assert_eq!(
-            hit.doc_ref.primitive_kind(),
-            PrimitiveKind::Kv,
+            hit.doc_ref.primitive_type(),
+            PrimitiveType::Kv,
             "DocRef from KV search should report Kv primitive kind"
         );
         assert_eq!(
@@ -195,12 +195,12 @@ fn test_hybrid_search_orchestrates() {
     let primitives: HashSet<_> = response
         .hits
         .iter()
-        .map(|h| h.doc_ref.primitive_kind())
+        .map(|h| h.doc_ref.primitive_type())
         .collect();
 
     // At minimum, KV should be represented
     assert!(
-        primitives.contains(&PrimitiveKind::Kv),
+        primitives.contains(&PrimitiveType::Kv),
         "Hybrid search should include KV results"
     );
 }
@@ -215,14 +215,14 @@ fn test_hybrid_search_respects_filter() {
     let hybrid = db.hybrid();
 
     // Search only KV primitive
-    let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveKind::Kv]);
+    let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveType::Kv]);
     let response = hybrid.search(&req).unwrap();
 
     // All results should be from KV only
     for hit in &response.hits {
         assert_eq!(
-            hit.doc_ref.primitive_kind(),
-            PrimitiveKind::Kv,
+            hit.doc_ref.primitive_type(),
+            PrimitiveType::Kv,
             "Results should only come from filtered primitives"
         );
     }
@@ -278,14 +278,14 @@ fn test_search_request_builder() {
 
     let req = SearchRequest::new(run_id, "query text")
         .with_k(20)
-        .with_primitive_filter(vec![PrimitiveKind::Kv, PrimitiveKind::Json]);
+        .with_primitive_filter(vec![PrimitiveType::Kv, PrimitiveType::Json]);
 
     assert_eq!(req.run_id, run_id);
     assert_eq!(req.query, "query text");
     assert_eq!(req.k, 20);
     assert_eq!(
         req.primitive_filter,
-        Some(vec![PrimitiveKind::Kv, PrimitiveKind::Json])
+        Some(vec![PrimitiveType::Kv, PrimitiveType::Json])
     );
 }
 
@@ -296,7 +296,7 @@ fn test_includes_primitive() {
 
     // No filter - includes all
     let req1 = SearchRequest::new(run_id, "test");
-    for kind in PrimitiveKind::all() {
+    for kind in PrimitiveType::all() {
         assert!(
             req1.includes_primitive(*kind),
             "No filter should include all primitives"
@@ -304,10 +304,10 @@ fn test_includes_primitive() {
     }
 
     // With filter
-    let req2 = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveKind::Kv]);
-    assert!(req2.includes_primitive(PrimitiveKind::Kv));
-    assert!(!req2.includes_primitive(PrimitiveKind::Json));
-    assert!(!req2.includes_primitive(PrimitiveKind::Event));
+    let req2 = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveType::Kv]);
+    assert!(req2.includes_primitive(PrimitiveType::Kv));
+    assert!(!req2.includes_primitive(PrimitiveType::Json));
+    assert!(!req2.includes_primitive(PrimitiveType::Event));
 }
 
 // ============================================================================
@@ -357,30 +357,31 @@ fn test_hits_are_ranked() {
 }
 
 // ============================================================================
-// PrimitiveKind Contract Tests
+// PrimitiveType Contract Tests
 // ============================================================================
 
-/// PrimitiveKind::all() returns all 6 primitives
+/// PrimitiveType::all() returns all 7 primitives
 #[test]
-fn test_primitive_kind_all() {
-    let all = PrimitiveKind::all();
-    assert_eq!(all.len(), 6, "Should have exactly 6 primitives");
+fn test_primitive_type_all() {
+    let all = PrimitiveType::all();
+    assert_eq!(all.len(), 7, "Should have exactly 7 primitives");
 
-    assert!(all.contains(&PrimitiveKind::Kv));
-    assert!(all.contains(&PrimitiveKind::Json));
-    assert!(all.contains(&PrimitiveKind::Event));
-    assert!(all.contains(&PrimitiveKind::State));
-    assert!(all.contains(&PrimitiveKind::Trace));
-    assert!(all.contains(&PrimitiveKind::Run));
+    assert!(all.contains(&PrimitiveType::Kv));
+    assert!(all.contains(&PrimitiveType::Json));
+    assert!(all.contains(&PrimitiveType::Event));
+    assert!(all.contains(&PrimitiveType::State));
+    assert!(all.contains(&PrimitiveType::Trace));
+    assert!(all.contains(&PrimitiveType::Run));
+    assert!(all.contains(&PrimitiveType::Vector));
 }
 
-/// PrimitiveKind has correct display strings
+/// PrimitiveType has correct display strings (uses name())
 #[test]
-fn test_primitive_kind_display() {
-    assert_eq!(format!("{}", PrimitiveKind::Kv), "kv");
-    assert_eq!(format!("{}", PrimitiveKind::Json), "json");
-    assert_eq!(format!("{}", PrimitiveKind::Event), "event");
-    assert_eq!(format!("{}", PrimitiveKind::State), "state");
-    assert_eq!(format!("{}", PrimitiveKind::Trace), "trace");
-    assert_eq!(format!("{}", PrimitiveKind::Run), "run");
+fn test_primitive_type_display() {
+    assert_eq!(format!("{}", PrimitiveType::Kv), "KVStore");
+    assert_eq!(format!("{}", PrimitiveType::Json), "JsonStore");
+    assert_eq!(format!("{}", PrimitiveType::Event), "EventLog");
+    assert_eq!(format!("{}", PrimitiveType::State), "StateCell");
+    assert_eq!(format!("{}", PrimitiveType::Trace), "TraceStore");
+    assert_eq!(format!("{}", PrimitiveType::Run), "RunIndex");
 }

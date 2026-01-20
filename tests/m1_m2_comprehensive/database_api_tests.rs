@@ -825,7 +825,7 @@ mod implicit_transactions {
 
         tdb.db.put(tdb.run_id, key.clone(), values::int(1)).unwrap();
         let val = tdb.db.get(&key).unwrap().unwrap();
-        let version = val.version;
+        let version = val.version.as_u64();
 
         tdb.db
             .cas(tdb.run_id, key.clone(), version, values::int(2))

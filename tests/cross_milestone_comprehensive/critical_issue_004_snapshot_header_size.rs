@@ -23,7 +23,6 @@
 
 use crate::test_utils::*;
 use std::fs;
-use std::path::Path;
 
 /// Expected header layout per SNAPSHOT_FORMAT.md:
 /// | Field       | Offset | Size | Type   |

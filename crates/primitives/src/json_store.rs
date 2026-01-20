@@ -33,6 +33,9 @@
 //! 5. WAL remains unified (entry types 0x20-0x23)
 //! 6. JSON API feels like other primitives
 
+use crate::extensions::JsonStoreExt;
+use in_mem_concurrency::TransactionContext;
+use in_mem_core::contract::{Timestamp, Version, Versioned};
 use in_mem_core::error::{Error, Result};
 use in_mem_core::json::{delete_at_path, get_at_path, set_at_path, JsonPath, JsonValue, LimitError};
 use in_mem_core::traits::SnapshotView;
@@ -185,7 +188,7 @@ impl JsonStore {
     /// Serialize document for storage
     ///
     /// Uses MessagePack for efficient binary serialization.
-    fn serialize_doc(doc: &JsonDoc) -> Result<Value> {
+    pub(crate) fn serialize_doc(doc: &JsonDoc) -> Result<Value> {
         let bytes = rmp_serde::to_vec(doc).map_err(|e| Error::SerializationError(e.to_string()))?;
         Ok(Value::Bytes(bytes))
     }
@@ -193,7 +196,7 @@ impl JsonStore {
     /// Deserialize document from storage
     ///
     /// Expects Value::Bytes containing MessagePack-encoded JsonDoc.
-    fn deserialize_doc(value: &Value) -> Result<JsonDoc> {
+    pub(crate) fn deserialize_doc(value: &Value) -> Result<JsonDoc> {
         match value {
             Value::Bytes(bytes) => {
                 rmp_serde::from_slice(bytes).map_err(|e| Error::SerializationError(e.to_string()))
@@ -219,16 +222,16 @@ impl JsonStore {
     ///
     /// # Returns
     ///
-    /// * `Ok(1)` - Document created with version 1
+    /// * `Ok(Version)` - Document created with version
     /// * `Err(InvalidOperation)` - Document already exists
     ///
     /// # Example
     ///
     /// ```ignore
     /// let version = json.create(&run_id, &doc_id, JsonValue::object())?;
-    /// assert_eq!(version, 1);
+    /// assert_eq!(version, Version::counter(1));
     /// ```
-    pub fn create(&self, run_id: &RunId, doc_id: &JsonDocId, value: JsonValue) -> Result<u64> {
+    pub fn create(&self, run_id: &RunId, doc_id: &JsonDocId, value: JsonValue) -> Result<Version> {
         // Validate document limits (Issue #440)
         value.validate().map_err(limit_error_to_error)?;
 
@@ -246,7 +249,7 @@ impl JsonStore {
 
             let serialized = Self::serialize_doc(&doc)?;
             txn.put(key.clone(), serialized)?;
-            Ok(doc.version)
+            Ok(Version::counter(doc.version))
         })
     }
 
@@ -271,7 +274,7 @@ impl JsonStore {
     ///
     /// # Returns
     ///
-    /// * `Ok(Some(value))` - Value at path
+    /// * `Ok(Some(Versioned<value>))` - Value at path with version info
     /// * `Ok(None)` - Document doesn't exist or path not found
     /// * `Err` - On deserialization error
     pub fn get(
@@ -279,7 +282,7 @@ impl JsonStore {
         run_id: &RunId,
         doc_id: &JsonDocId,
         path: &JsonPath,
-    ) -> Result<Option<JsonValue>> {
+    ) -> Result<Option<Versioned<JsonValue>>> {
         // Validate path limits (Issue #440)
         path.validate().map_err(limit_error_to_error)?;
 
@@ -289,7 +292,14 @@ impl JsonStore {
         match snapshot.get(&key)? {
             Some(vv) => {
                 let doc = Self::deserialize_doc(&vv.value)?;
-                Ok(get_at_path(&doc.value, path).cloned())
+                match get_at_path(&doc.value, path).cloned() {
+                    Some(value) => Ok(Some(Versioned::with_timestamp(
+                        value,
+                        Version::counter(doc.version),
+                        Timestamp::from_micros((doc.updated_at * 1000) as u64),
+                    ))),
+                    None => Ok(None),
+                }
             }
             None => Ok(None),
         }
@@ -298,12 +308,20 @@ impl JsonStore {
     /// Get the full document (FAST PATH)
     ///
     /// Returns the entire JsonDoc including metadata (version, timestamps).
-    pub fn get_doc(&self, run_id: &RunId, doc_id: &JsonDocId) -> Result<Option<JsonDoc>> {
+    pub fn get_doc(&self, run_id: &RunId, doc_id: &JsonDocId) -> Result<Option<Versioned<JsonDoc>>> {
         let snapshot = self.db.storage().create_snapshot();
         let key = self.key_for(run_id, doc_id);
 
         match snapshot.get(&key)? {
-            Some(vv) => Ok(Some(Self::deserialize_doc(&vv.value)?)),
+            Some(vv) => {
+                let doc = Self::deserialize_doc(&vv.value)?;
+                let versioned = Versioned::with_timestamp(
+                    doc.clone(),
+                    Version::counter(doc.version),
+                    Timestamp::from_micros((doc.updated_at * 1000) as u64),
+                );
+                Ok(Some(versioned))
+            }
             None => Ok(None),
         }
     }
@@ -352,7 +370,7 @@ impl JsonStore {
     ///
     /// # Returns
     ///
-    /// * `Ok(version)` - New document version after modification
+    /// * `Ok(Version)` - New document version after modification
     /// * `Err(InvalidOperation)` - Document doesn't exist
     /// * `Err` - On path error or serialization error
     pub fn set(
@@ -361,7 +379,7 @@ impl JsonStore {
         doc_id: &JsonDocId,
         path: &JsonPath,
         value: JsonValue,
-    ) -> Result<u64> {
+    ) -> Result<Version> {
         // Validate path and value limits (Issue #440)
         path.validate().map_err(limit_error_to_error)?;
         value.validate().map_err(limit_error_to_error)?;
@@ -384,7 +402,7 @@ impl JsonStore {
             let serialized = Self::serialize_doc(&doc)?;
             txn.put(key.clone(), serialized)?;
 
-            Ok(doc.version)
+            Ok(Version::counter(doc.version))
         })
     }
 
@@ -401,7 +419,7 @@ impl JsonStore {
     ///
     /// # Returns
     ///
-    /// * `Ok(version)` - New document version after deletion
+    /// * `Ok(Version)` - New document version after deletion
     /// * `Err(InvalidOperation)` - Document doesn't exist or path error
     ///
     /// # Example
@@ -415,7 +433,7 @@ impl JsonStore {
         run_id: &RunId,
         doc_id: &JsonDocId,
         path: &JsonPath,
-    ) -> Result<u64> {
+    ) -> Result<Version> {
         // Validate path limits (Issue #440)
         path.validate().map_err(limit_error_to_error)?;
 
@@ -437,7 +455,7 @@ impl JsonStore {
             let serialized = Self::serialize_doc(&doc)?;
             txn.put(key.clone(), serialized)?;
 
-            Ok(doc.version)
+            Ok(Version::counter(doc.version))
         })
     }
 
@@ -512,7 +530,7 @@ impl JsonStore {
         let mut truncated = false;
 
         // Scan all JSON documents for this run
-        for (key, versioned_value) in snapshot.scan_prefix(&scan_prefix)? {
+        for (_key, versioned_value) in snapshot.scan_prefix(&scan_prefix)? {
             // Check budget constraints
             if start.elapsed().as_micros() as u64 >= req.budget.max_wall_time_micros {
                 truncated = true;
@@ -542,7 +560,7 @@ impl JsonStore {
 
             candidates.push(SearchCandidate::new(
                 DocRef::Json {
-                    key: key.clone(),
+                    run_id: req.run_id,
                     doc_id: doc.id,
                 },
                 text,
@@ -622,8 +640,122 @@ impl crate::searchable::Searchable for JsonStore {
         self.search(req)
     }
 
-    fn primitive_kind(&self) -> in_mem_core::search_types::PrimitiveKind {
-        in_mem_core::search_types::PrimitiveKind::Json
+    fn primitive_kind(&self) -> in_mem_core::PrimitiveType {
+        in_mem_core::PrimitiveType::Json
+    }
+}
+
+// =============================================================================
+// JsonStoreExt Implementation (Story #477)
+// =============================================================================
+//
+// Extension trait implementation for cross-primitive transactions.
+// Allows JSON operations within a TransactionContext.
+
+/// Parse a doc_id string into a JsonDocId
+///
+/// The string can be either:
+/// - A valid UUID string (parsed via uuid crate)
+/// - Any string (converted to a deterministic UUID using hash)
+fn parse_doc_id(doc_id: &str) -> Result<JsonDocId> {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    // First try to parse as UUID
+    match uuid::Uuid::parse_str(doc_id) {
+        Ok(uuid) => Ok(JsonDocId::from_uuid(uuid)),
+        Err(_) => {
+            // Generate deterministic UUID from string hash
+            // This allows using human-readable doc IDs like "user-profile"
+            let mut hasher = DefaultHasher::new();
+            doc_id.hash(&mut hasher);
+            let hash1 = hasher.finish();
+            // Hash again with different seed for second half
+            hasher.write_u64(0x12345678);
+            doc_id.hash(&mut hasher);
+            let hash2 = hasher.finish();
+
+            // Combine hashes into 16 bytes for UUID
+            let mut bytes = [0u8; 16];
+            bytes[..8].copy_from_slice(&hash1.to_le_bytes());
+            bytes[8..].copy_from_slice(&hash2.to_le_bytes());
+
+            // Set version 4 bits (random UUID format)
+            bytes[6] = (bytes[6] & 0x0f) | 0x40;
+            // Set variant bits
+            bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+            let uuid = uuid::Uuid::from_bytes(bytes);
+            Ok(JsonDocId::from_uuid(uuid))
+        }
+    }
+}
+
+impl JsonStoreExt for TransactionContext {
+    fn json_get(&mut self, doc_id: &str, path: &JsonPath) -> Result<Option<JsonValue>> {
+        // Validate path limits (Issue #440)
+        path.validate().map_err(limit_error_to_error)?;
+
+        let doc_id = parse_doc_id(doc_id)?;
+        let key = Key::new_json(Namespace::for_run(self.run_id), &doc_id);
+
+        // Read from transaction context (respects read-your-writes)
+        match self.get(&key)? {
+            Some(value) => {
+                let doc = JsonStore::deserialize_doc(&value)?;
+                Ok(get_at_path(&doc.value, path).cloned())
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn json_set(&mut self, doc_id: &str, path: &JsonPath, value: JsonValue) -> Result<Version> {
+        // Validate path and value limits (Issue #440)
+        path.validate().map_err(limit_error_to_error)?;
+        value.validate().map_err(limit_error_to_error)?;
+
+        let doc_id = parse_doc_id(doc_id)?;
+        let key = Key::new_json(Namespace::for_run(self.run_id), &doc_id);
+
+        // Load existing document from transaction context
+        let stored = self.get(&key)?.ok_or_else(|| {
+            Error::InvalidOperation(format!("JSON document {} not found", doc_id))
+        })?;
+        let mut doc = JsonStore::deserialize_doc(&stored)?;
+
+        // Apply mutation
+        set_at_path(&mut doc.value, path, value)
+            .map_err(|e| Error::InvalidOperation(format!("Path error: {}", e)))?;
+        doc.touch();
+
+        // Store updated document in transaction write set
+        let serialized = JsonStore::serialize_doc(&doc)?;
+        self.put(key, serialized)?;
+
+        Ok(Version::counter(doc.version))
+    }
+
+    fn json_create(&mut self, doc_id: &str, value: JsonValue) -> Result<Version> {
+        // Validate document limits (Issue #440)
+        value.validate().map_err(limit_error_to_error)?;
+
+        let doc_id_typed = parse_doc_id(doc_id)?;
+        let key = Key::new_json(Namespace::for_run(self.run_id), &doc_id_typed);
+        let doc = JsonDoc::new(doc_id_typed, value);
+
+        // Check if document already exists
+        if self.get(&key)?.is_some() {
+            return Err(Error::InvalidOperation(format!(
+                "JSON document {} already exists",
+                doc_id
+            )));
+        }
+
+        // Store new document
+        let serialized = JsonStore::serialize_doc(&doc)?;
+        self.put(key, serialized)?;
+
+        Ok(Version::counter(doc.version))
     }
 }
 
@@ -837,7 +969,7 @@ mod tests {
         let version = store
             .create(&run_id, &doc_id, JsonValue::from(42i64))
             .unwrap();
-        assert_eq!(version, 1);
+        assert_eq!(version, Version::counter(1));
     }
 
     #[test]
@@ -854,7 +986,7 @@ mod tests {
         .into();
 
         let version = store.create(&run_id, &doc_id, value).unwrap();
-        assert_eq!(version, 1);
+        assert_eq!(version, Version::counter(1));
     }
 
     #[test]
@@ -886,8 +1018,8 @@ mod tests {
         let v1 = store.create(&run_id, &doc1, JsonValue::from(1i64)).unwrap();
         let v2 = store.create(&run_id, &doc2, JsonValue::from(2i64)).unwrap();
 
-        assert_eq!(v1, 1);
-        assert_eq!(v2, 1);
+        assert_eq!(v1, Version::counter(1));
+        assert_eq!(v2, Version::counter(1));
     }
 
     #[test]
@@ -903,8 +1035,8 @@ mod tests {
         let v1 = store.create(&run1, &doc_id, JsonValue::from(1i64)).unwrap();
         let v2 = store.create(&run2, &doc_id, JsonValue::from(2i64)).unwrap();
 
-        assert_eq!(v1, 1);
-        assert_eq!(v2, 1);
+        assert_eq!(v1, Version::counter(1));
+        assert_eq!(v2, Version::counter(1));
     }
 
     #[test]
@@ -915,7 +1047,7 @@ mod tests {
         let doc_id = JsonDocId::new();
 
         let version = store.create(&run_id, &doc_id, JsonValue::null()).unwrap();
-        assert_eq!(version, 1);
+        assert_eq!(version, Version::counter(1));
     }
 
     #[test]
@@ -926,7 +1058,7 @@ mod tests {
         let doc_id = JsonDocId::new();
 
         let version = store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
-        assert_eq!(version, 1);
+        assert_eq!(version, Version::counter(1));
     }
 
     #[test]
@@ -937,7 +1069,7 @@ mod tests {
         let doc_id = JsonDocId::new();
 
         let version = store.create(&run_id, &doc_id, JsonValue::array()).unwrap();
-        assert_eq!(version, 1);
+        assert_eq!(version, Version::counter(1));
     }
 
     // ========================================
@@ -956,7 +1088,7 @@ mod tests {
             .unwrap();
 
         let value = store.get(&run_id, &doc_id, &JsonPath::root()).unwrap();
-        assert_eq!(value.and_then(|v| v.as_i64()), Some(42));
+        assert_eq!(value.map(|v| v.value).and_then(|v| v.as_i64()), Some(42));
     }
 
     #[test]
@@ -978,14 +1110,14 @@ mod tests {
             .get(&run_id, &doc_id, &"name".parse().unwrap())
             .unwrap();
         assert_eq!(
-            name.and_then(|v| v.as_str().map(String::from)),
+            name.map(|v| v.value).and_then(|v| v.as_str().map(String::from)),
             Some("Alice".to_string())
         );
 
         let age = store
             .get(&run_id, &doc_id, &"age".parse().unwrap())
             .unwrap();
-        assert_eq!(age.and_then(|v| v.as_i64()), Some(30));
+        assert_eq!(age.map(|v| v.value).and_then(|v| v.as_i64()), Some(30));
     }
 
     #[test]
@@ -1010,7 +1142,7 @@ mod tests {
             .get(&run_id, &doc_id, &"user.profile.name".parse().unwrap())
             .unwrap();
         assert_eq!(
-            name.and_then(|v| v.as_str().map(String::from)),
+            name.map(|v| v.value).and_then(|v| v.as_str().map(String::from)),
             Some("Bob".to_string())
         );
     }
@@ -1033,7 +1165,7 @@ mod tests {
             .get(&run_id, &doc_id, &"items[1]".parse().unwrap())
             .unwrap();
         assert_eq!(
-            item.and_then(|v| v.as_str().map(String::from)),
+            item.map(|v| v.value).and_then(|v| v.as_str().map(String::from)),
             Some("b".to_string())
         );
     }
@@ -1075,7 +1207,8 @@ mod tests {
             .create(&run_id, &doc_id, JsonValue::from(42i64))
             .unwrap();
 
-        let doc = store.get_doc(&run_id, &doc_id).unwrap().unwrap();
+        let versioned_doc = store.get_doc(&run_id, &doc_id).unwrap().unwrap();
+        let doc = versioned_doc.value;
         assert_eq!(doc.id, doc_id);
         assert_eq!(doc.version, 1);
         assert_eq!(doc.value, JsonValue::from(42i64));
@@ -1170,10 +1303,10 @@ mod tests {
         let v2 = store
             .set(&run_id, &doc_id, &JsonPath::root(), JsonValue::from(100i64))
             .unwrap();
-        assert_eq!(v2, 2);
+        assert_eq!(v2, Version::counter(2));
 
         let value = store.get(&run_id, &doc_id, &JsonPath::root()).unwrap();
-        assert_eq!(value.and_then(|v| v.as_i64()), Some(100));
+        assert_eq!(value.map(|v| v.value).and_then(|v| v.as_i64()), Some(100));
     }
 
     #[test]
@@ -1193,13 +1326,13 @@ mod tests {
                 JsonValue::from("Alice"),
             )
             .unwrap();
-        assert_eq!(v2, 2);
+        assert_eq!(v2, Version::counter(2));
 
         let name = store
             .get(&run_id, &doc_id, &"name".parse().unwrap())
             .unwrap();
         assert_eq!(
-            name.and_then(|v| v.as_str().map(String::from)),
+            name.map(|v| v.value).and_then(|v| v.as_str().map(String::from)),
             Some("Alice".to_string())
         );
     }
@@ -1222,13 +1355,13 @@ mod tests {
                 JsonValue::from("Bob"),
             )
             .unwrap();
-        assert_eq!(v2, 2);
+        assert_eq!(v2, Version::counter(2));
 
         let name = store
             .get(&run_id, &doc_id, &"user.profile.name".parse().unwrap())
             .unwrap();
         assert_eq!(
-            name.and_then(|v| v.as_str().map(String::from)),
+            name.map(|v| v.value).and_then(|v| v.as_str().map(String::from)),
             Some("Bob".to_string())
         );
     }
@@ -1303,7 +1436,7 @@ mod tests {
             .get(&run_id, &doc_id, &"name".parse().unwrap())
             .unwrap();
         assert_eq!(
-            name.and_then(|v| v.as_str().map(String::from)),
+            name.map(|v| v.value).and_then(|v| v.as_str().map(String::from)),
             Some("Bob".to_string())
         );
     }
@@ -1330,7 +1463,7 @@ mod tests {
         let item = store
             .get(&run_id, &doc_id, &"items[1]".parse().unwrap())
             .unwrap();
-        assert_eq!(item.and_then(|v| v.as_i64()), Some(999));
+        assert_eq!(item.map(|v| v.value).and_then(|v| v.as_i64()), Some(999));
     }
 
     // ========================================
@@ -1355,7 +1488,7 @@ mod tests {
         let v2 = store
             .delete_at_path(&run_id, &doc_id, &"age".parse().unwrap())
             .unwrap();
-        assert_eq!(v2, 2);
+        assert_eq!(v2, Version::counter(2));
 
         // Verify "age" is gone but "name" remains
         assert!(store
@@ -1366,6 +1499,7 @@ mod tests {
             store
                 .get(&run_id, &doc_id, &"name".parse().unwrap())
                 .unwrap()
+                .map(|v| v.value)
                 .and_then(|v| v.as_str().map(String::from)),
             Some("Alice".to_string())
         );
@@ -1393,7 +1527,7 @@ mod tests {
         let v2 = store
             .delete_at_path(&run_id, &doc_id, &"user.profile.temp".parse().unwrap())
             .unwrap();
-        assert_eq!(v2, 2);
+        assert_eq!(v2, Version::counter(2));
 
         // Verify "temp" is gone
         assert!(store
@@ -1406,6 +1540,7 @@ mod tests {
             store
                 .get(&run_id, &doc_id, &"user.profile.name".parse().unwrap())
                 .unwrap()
+                .map(|v| v.value)
                 .and_then(|v| v.as_str().map(String::from)),
             Some("Bob".to_string())
         );
@@ -1428,13 +1563,14 @@ mod tests {
         let v2 = store
             .delete_at_path(&run_id, &doc_id, &"items[1]".parse().unwrap())
             .unwrap();
-        assert_eq!(v2, 2);
+        assert_eq!(v2, Version::counter(2));
 
         // Array should now be ["a", "c"]
         let items = store
             .get(&run_id, &doc_id, &"items".parse().unwrap())
             .unwrap()
-            .unwrap();
+            .unwrap()
+            .value;
         let arr = items.as_array().unwrap();
         assert_eq!(arr.len(), 2);
         assert_eq!(arr[0].as_str(), Some("a"));
@@ -1492,7 +1628,7 @@ mod tests {
         let v2 = store
             .delete_at_path(&run_id, &doc_id, &"nonexistent".parse().unwrap())
             .unwrap();
-        assert_eq!(v2, 2); // Version still increments even though nothing was removed
+        assert_eq!(v2, Version::counter(2)); // Version still increments even though nothing was removed
     }
 
     // ========================================
@@ -1565,10 +1701,10 @@ mod tests {
         let version = store
             .create(&run_id, &doc_id, JsonValue::from(2i64))
             .unwrap();
-        assert_eq!(version, 1); // Fresh document starts at version 1
+        assert_eq!(version, Version::counter(1)); // Fresh document starts at version 1
 
         let value = store.get(&run_id, &doc_id, &JsonPath::root()).unwrap();
-        assert_eq!(value.and_then(|v| v.as_i64()), Some(2));
+        assert_eq!(value.map(|v| v.value).and_then(|v| v.as_i64()), Some(2));
     }
 
     #[test]

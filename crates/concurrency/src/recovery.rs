@@ -198,10 +198,10 @@ impl RecoveryStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use in_mem_core::traits::Storage;
     use in_mem_core::types::{Key, Namespace, RunId};
     use in_mem_core::value::Value;
+    use in_mem_core::Timestamp;
     use in_mem_durability::wal::WALEntry;
     use tempfile::TempDir;
 
@@ -214,8 +214,8 @@ mod tests {
         )
     }
 
-    fn now() -> i64 {
-        Utc::now().timestamp()
+    fn now() -> Timestamp {
+        Timestamp::now()
     }
 
     #[test]
@@ -280,7 +280,7 @@ mod tests {
         // Storage should have the key with preserved version
         let stored = result.storage.get(&key).unwrap().unwrap();
         assert_eq!(stored.value, Value::I64(42));
-        assert_eq!(stored.version, 100); // Version preserved exactly
+        assert_eq!(stored.version.as_u64(), 100); // Version preserved exactly
     }
 
     #[test]
@@ -389,13 +389,13 @@ mod tests {
 
         // Verify each key has correct version
         let key1 = Key::new_kv(ns.clone(), "key1");
-        assert_eq!(result.storage.get(&key1).unwrap().unwrap().version, 100);
+        assert_eq!(result.storage.get(&key1).unwrap().unwrap().version.as_u64(), 100);
 
         let key2 = Key::new_kv(ns.clone(), "key2");
-        assert_eq!(result.storage.get(&key2).unwrap().unwrap().version, 100);
+        assert_eq!(result.storage.get(&key2).unwrap().unwrap().version.as_u64(), 100);
 
         let key3 = Key::new_kv(ns.clone(), "key3");
-        assert_eq!(result.storage.get(&key3).unwrap().unwrap().version, 200);
+        assert_eq!(result.storage.get(&key3).unwrap().unwrap().version.as_u64(), 200);
     }
 
     #[test]
@@ -860,7 +860,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(stored.value, Value::String("must_exist".to_string()));
-        assert_eq!(stored.version, 100);
+        assert_eq!(stored.version.as_u64(), 100);
     }
 
     /// Scenario 6: One committed, one incomplete
@@ -1334,7 +1334,7 @@ mod tests {
             let key = Key::new_kv(ns.clone(), format!("key{}", i));
             let stored = result.storage.get(&key).unwrap().unwrap();
             assert_eq!(stored.value, Value::I64(i as i64 * 10));
-            assert_eq!(stored.version, i);
+            assert_eq!(stored.version.as_u64(), i);
         }
     }
 
@@ -1442,7 +1442,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(key1.value, Value::String("updated".to_string()));
-        assert_eq!(key1.version, 2);
+        assert_eq!(key1.version.as_u64(), 2);
 
         // key2 should be deleted
         assert!(result
@@ -1458,7 +1458,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(key3.value, Value::I64(42));
-        assert_eq!(key3.version, 5);
+        assert_eq!(key3.version.as_u64(), 5);
     }
 
     /// Test recovery maintains transaction ordering
@@ -1504,7 +1504,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(counter.value, Value::I64(300));
-        assert_eq!(counter.version, 300);
+        assert_eq!(counter.version.as_u64(), 300);
     }
 
     /// Test recovery with new transactions after recovery
@@ -1667,7 +1667,7 @@ mod tests {
             .get(&Key::new_kv(ns.clone(), "committed"))
             .unwrap()
             .unwrap();
-        assert_eq!(committed.version, 100, "Rule: Versions preserved exactly");
+        assert_eq!(committed.version.as_u64(), 100, "Rule: Versions preserved exactly");
 
         // Spec Section 6.1: Global version counter restored
         // NOTE: Version counter is set to MAX version seen in WAL (including incomplete txns)

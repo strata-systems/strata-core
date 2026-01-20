@@ -11,7 +11,6 @@
 //! - Multiple threads operating on same collection
 
 use crate::test_utils::*;
-use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 

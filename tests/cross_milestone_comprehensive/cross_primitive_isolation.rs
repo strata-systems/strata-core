@@ -57,8 +57,8 @@ fn test_complete_run_isolation() {
 
     // Verify isolation: run_a data
     assert_eq!(
-        p.kv.get(&run_a, "key").expect("get").unwrap(),
-        Value::String("a".into())
+        p.kv.get(&run_a, "key").expect("get").map(|v| v.value),
+        Some(Value::String("a".into()))
     );
     let json_a = p
         .json
@@ -70,8 +70,8 @@ fn test_complete_run_isolation() {
 
     // Verify isolation: run_b data
     assert_eq!(
-        p.kv.get(&run_b, "key").expect("get").unwrap(),
-        Value::String("b".into())
+        p.kv.get(&run_b, "key").expect("get").map(|v| v.value),
+        Some(Value::String("b".into()))
     );
     let json_b = p
         .json
@@ -81,7 +81,7 @@ fn test_complete_run_isolation() {
     assert!(format!("{:?}", json_b).contains("run"));
 
     // Verify run_c sees nothing (different doc_id would be needed, but KV should be empty)
-    assert!(p.kv.get(&run_c, "key").expect("get").is_none());
+    assert!(p.kv.get(&run_c, "key").expect("get").map(|v| v.value).is_none());
 }
 
 /// Test that primitive operations don't leak across runs.
@@ -97,7 +97,7 @@ fn test_no_cross_run_leakage() {
         .expect("put");
 
     // run_b should not see run_a's data
-    assert!(p.kv.get(&run_b, "secret").expect("get").is_none());
+    assert!(p.kv.get(&run_b, "secret").expect("get").map(|v| v.value).is_none());
 
     // run_b creates same key with different value
     p.kv.put(&run_b, "secret", Value::String("run_b_secret".into()))
@@ -105,11 +105,11 @@ fn test_no_cross_run_leakage() {
 
     // Both should maintain their own values
     assert_eq!(
-        p.kv.get(&run_a, "secret").expect("get").unwrap(),
-        Value::String("run_a_secret".into())
+        p.kv.get(&run_a, "secret").expect("get").map(|v| v.value),
+        Some(Value::String("run_a_secret".into()))
     );
     assert_eq!(
-        p.kv.get(&run_b, "secret").expect("get").unwrap(),
-        Value::String("run_b_secret".into())
+        p.kv.get(&run_b, "secret").expect("get").map(|v| v.value),
+        Some(Value::String("run_b_secret".into()))
     );
 }

@@ -24,7 +24,7 @@ fn kv_read_your_writes() {
 
         // Immediate read should see the write
         let v = kv.get(&run_id, "key").unwrap();
-        v == Some(Value::String("value".to_string()))
+        v.map(|x| x.value) == Some(Value::String("value".to_string()))
     });
 }
 
@@ -40,7 +40,7 @@ fn kv_put_overwrites() {
         kv.put(&run_id, "key", Value::I64(3)).unwrap();
 
         let v = kv.get(&run_id, "key").unwrap();
-        v == Some(Value::I64(3))
+        v.map(|x| x.value) == Some(Value::I64(3))
     });
 }
 
@@ -119,8 +119,8 @@ fn kv_run_isolation() {
         kv.put(&run_a, "shared_key", Value::I64(100)).unwrap();
         kv.put(&run_b, "shared_key", Value::I64(200)).unwrap();
 
-        let val_a = kv.get(&run_a, "shared_key").unwrap();
-        let val_b = kv.get(&run_b, "shared_key").unwrap();
+        let val_a = kv.get(&run_a, "shared_key").unwrap().map(|x| x.value);
+        let val_b = kv.get(&run_b, "shared_key").unwrap().map(|x| x.value);
 
         assert_eq!(val_a, Some(Value::I64(100)));
         assert_eq!(val_b, Some(Value::I64(200)));
@@ -129,7 +129,7 @@ fn kv_run_isolation() {
         kv.delete(&run_a, "shared_key").unwrap();
 
         assert!(kv.get(&run_a, "shared_key").unwrap().is_none());
-        assert_eq!(kv.get(&run_b, "shared_key").unwrap(), Some(Value::I64(200)));
+        assert_eq!(kv.get(&run_b, "shared_key").unwrap().map(|x| x.value), Some(Value::I64(200)));
 
         true
     });
@@ -202,10 +202,10 @@ fn kv_get_many() {
         let values = kv.get_many(&run_id, &["a", "b", "missing", "c"]).unwrap();
 
         assert_eq!(values.len(), 4);
-        assert_eq!(values[0], Some(Value::I64(1)));
-        assert_eq!(values[1], Some(Value::I64(2)));
+        assert_eq!(values[0].as_ref().map(|x| x.value.clone()), Some(Value::I64(1)));
+        assert_eq!(values[1].as_ref().map(|x| x.value.clone()), Some(Value::I64(2)));
         assert_eq!(values[2], None); // missing
-        assert_eq!(values[3], Some(Value::I64(3)));
+        assert_eq!(values[3].as_ref().map(|x| x.value.clone()), Some(Value::I64(3)));
 
         true
     });
@@ -235,8 +235,8 @@ fn kv_transaction_isolation() {
         });
 
         assert_eq!(result.unwrap(), 10);
-        assert_eq!(kv.get(&run_id, "x").unwrap(), Some(Value::I64(11)));
-        assert_eq!(kv.get(&run_id, "y").unwrap(), Some(Value::I64(20)));
+        assert_eq!(kv.get(&run_id, "x").unwrap().map(|v| v.value), Some(Value::I64(11)));
+        assert_eq!(kv.get(&run_id, "y").unwrap().map(|v| v.value), Some(Value::I64(20)));
 
         true
     });
@@ -257,15 +257,15 @@ fn kv_value_types_preserved() {
         kv.put(&run_id, "bytes", Value::Bytes(vec![1, 2, 3]))
             .unwrap();
 
-        assert_eq!(kv.get(&run_id, "int").unwrap(), Some(Value::I64(42)));
-        assert_eq!(kv.get(&run_id, "float").unwrap(), Some(Value::F64(3.14)));
+        assert_eq!(kv.get(&run_id, "int").unwrap().map(|v| v.value), Some(Value::I64(42)));
+        assert_eq!(kv.get(&run_id, "float").unwrap().map(|v| v.value), Some(Value::F64(3.14)));
         assert_eq!(
-            kv.get(&run_id, "string").unwrap(),
+            kv.get(&run_id, "string").unwrap().map(|v| v.value),
             Some(Value::String("hello".to_string()))
         );
-        assert_eq!(kv.get(&run_id, "bool").unwrap(), Some(Value::Bool(true)));
+        assert_eq!(kv.get(&run_id, "bool").unwrap().map(|v| v.value), Some(Value::Bool(true)));
         assert_eq!(
-            kv.get(&run_id, "bytes").unwrap(),
+            kv.get(&run_id, "bytes").unwrap().map(|v| v.value),
             Some(Value::Bytes(vec![1, 2, 3]))
         );
 
@@ -283,7 +283,7 @@ fn kv_empty_key() {
         kv.put(&run_id, "", Value::I64(99)).unwrap();
         let v = kv.get(&run_id, "").unwrap();
 
-        v == Some(Value::I64(99))
+        v.map(|x| x.value) == Some(Value::I64(99))
     });
 }
 
@@ -299,7 +299,7 @@ fn kv_large_value() {
             .unwrap();
 
         let v = kv.get(&run_id, "large").unwrap();
-        v == Some(Value::String(large_string))
+        v.map(|x| x.value) == Some(Value::String(large_string))
     });
 }
 
@@ -320,9 +320,11 @@ fn kv_many_keys() {
             // Verify some random keys
             let mut found = 0;
             for i in [0, 100, 500, 999] {
-                if let Some(Value::I64(n)) = kv.get(&run_id, &format!("key_{}", i)).unwrap() {
-                    if n == i as i64 {
-                        found += 1;
+                if let Some(versioned) = kv.get(&run_id, &format!("key_{}", i)).unwrap() {
+                    if let Value::I64(n) = versioned.value {
+                        if n == i as i64 {
+                            found += 1;
+                        }
                     }
                 }
             }
@@ -346,7 +348,7 @@ mod kv_unit_tests {
         kv.put(&run_id, "test", Value::I64(123)).unwrap();
         let v = kv.get(&run_id, "test").unwrap();
 
-        assert_eq!(v, Some(Value::I64(123)));
+        assert_eq!(v.map(|x| x.value), Some(Value::I64(123)));
     }
 
     #[test]

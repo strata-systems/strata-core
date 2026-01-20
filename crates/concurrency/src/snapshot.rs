@@ -26,7 +26,7 @@
 use in_mem_core::error::Result;
 use in_mem_core::traits::SnapshotView;
 use in_mem_core::types::Key;
-use in_mem_core::value::VersionedValue;
+use in_mem_core::VersionedValue;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -155,6 +155,7 @@ mod tests {
     use super::*;
     use in_mem_core::types::{Namespace, RunId, TypeTag};
     use in_mem_core::value::Value;
+    use in_mem_core::Version;
 
     // === Test Helpers ===
 
@@ -172,7 +173,7 @@ mod tests {
     }
 
     fn create_versioned_value(data: &[u8], version: u64) -> VersionedValue {
-        VersionedValue::new(Value::Bytes(data.to_vec()), version, None)
+        VersionedValue::new(Value::Bytes(data.to_vec()), Version::txn(version))
     }
 
     fn create_populated_snapshot() -> (ClonedSnapshotView, Namespace) {
@@ -259,7 +260,7 @@ mod tests {
         assert!(result.is_some());
 
         let vv = result.unwrap();
-        assert_eq!(vv.version, 10);
+        assert_eq!(vv.version.as_u64(), 10);
         match &vv.value {
             Value::Bytes(data) => assert_eq!(data, b"value1"),
             _ => panic!("Expected Bytes value"),

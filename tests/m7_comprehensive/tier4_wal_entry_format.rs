@@ -90,8 +90,10 @@ fn test_large_value_in_wal() {
     // Should be readable
     let value = kv.get(&run_id, "large").unwrap();
     assert!(value.is_some());
-    if let Some(Value::String(s)) = value {
-        assert_eq!(s.len(), large_value.len());
+    if let Some(versioned) = value {
+        if let Value::String(s) = versioned.value {
+            assert_eq!(s.len(), large_value.len());
+        }
     }
 }
 

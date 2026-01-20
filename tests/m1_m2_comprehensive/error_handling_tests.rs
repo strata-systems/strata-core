@@ -92,7 +92,7 @@ mod error_types {
         let key = tdb.key("version_mismatch");
 
         tdb.db.put(tdb.run_id, key.clone(), values::int(1)).unwrap();
-        let actual_version = tdb.db.get(&key).unwrap().unwrap().version;
+        let actual_version = tdb.db.get(&key).unwrap().unwrap().version.as_u64();
 
         // CAS with wrong version
         let result = tdb.db.cas(

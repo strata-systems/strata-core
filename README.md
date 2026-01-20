@@ -12,7 +12,7 @@ AI agents today are non-deterministic black boxes. When they fail, you can't rep
 
 **in-mem is not a traditional database.** It's a state substrate for AI agents that need:
 
-- **Durable Memory**: KV storage, JSON documents, and event logs that survive crashes
+- **Durable Memory**: KV storage, JSON documents, vectors, and event logs that survive crashes
 - **Safe Coordination**: Lock-free primitives for managing state machines and tool outputs
 - **Deterministic Replay**: Reconstruct any agent execution exactly, like Git for runs
 - **Fast Search**: Hybrid keyword + semantic search across all primitives
@@ -32,7 +32,7 @@ Think of runs as commits. Every agent execution is a `RunId`—a first-class ent
 
 ### What in-mem Is NOT
 
-- **Not a vector database**: Use Qdrant/Pinecone for embeddings (we complement them)
+- **Not a standalone vector database**: Use Qdrant/Pinecone for large-scale embedding search (we provide run-scoped vectors)
 - **Not a general-purpose database**: Use Postgres/MySQL for application data
 - **Not a cache**: Use Redis for hot ephemeral data
 - **Not LangGraph/LangChain**: We're the state layer they can build on
@@ -41,7 +41,7 @@ Think of runs as commits. Every agent execution is a `RunId`—a first-class ent
 
 ## Features
 
-### Six Primitives for Agent State
+### Seven Primitives for Agent State
 
 All transactional. All replay-able. All tagged with the run that created them.
 
@@ -53,6 +53,34 @@ All transactional. All replay-able. All tagged with the run that created them.
 | **TraceStore** | Structured reasoning | Confidence scores, alternatives |
 | **RunIndex** | Run metadata | Status, tags, parent-child relationships |
 | **JsonStore** | Structured documents | Conversation history, agent config |
+| **VectorStore** | Semantic memory | Embeddings, similarity search, RAG context |
+
+### Vector Store with Similarity Search
+
+Run-scoped vector storage with collections and metadata filtering:
+
+```rust
+// Create a collection with cosine similarity
+let config = VectorConfig::new(384)  // 384-dimensional vectors
+    .with_metric(DistanceMetric::Cosine);
+vector.create_collection(run_id, "memories", config)?;
+
+// Insert vectors with metadata
+vector.insert(run_id, "memories", "doc_1", &embedding, Some(json!({
+    "source": "conversation",
+    "timestamp": 1234567890
+})))?;
+
+// Search with optional metadata filtering
+let filter = MetadataFilter::eq("source", "conversation");
+let results = vector.search(run_id, "memories", &query_embedding, 10, Some(filter))?;
+```
+
+Features:
+- **Collection management**: Create, delete, list collections per run
+- **Metadata filtering**: Filter search results by JSON metadata
+- **Three distance metrics**: Cosine, Euclidean, Dot Product
+- **Full durability**: WAL + snapshots for crash recovery
 
 ### JSON with Path-Level Mutations
 
@@ -72,11 +100,11 @@ json.set(&run_id, "config", "$.temp", json!(0.9))?;
 Search across all primitives with BM25 keyword scoring and RRF fusion:
 
 ```rust
-let request = SearchRequest::new("error handling")
-    .with_limit(10)
-    .with_budget_ms(50);
+let request = SearchRequest::new(run_id, "error handling")
+    .with_k(10)
+    .with_budget(SearchBudget::default().with_time(50_000)); // 50ms
 
-let response = db.hybrid.search(&run_id, request)?;
+let response = db.hybrid().search(&request)?;
 ```
 
 ### Three Durability Modes
@@ -109,6 +137,7 @@ Deterministic, idempotent, prefix-consistent recovery:
 - **Deterministic**: Same WAL + Snapshot = Same state
 - **Idempotent**: Replaying recovery produces identical state
 - **Prefix-consistent**: No partial transactions visible
+- **All primitives recovered**: KV, JSON, Event, State, Trace, Run, and Vector
 
 ```rust
 // Check recovery result after restart
@@ -173,6 +202,11 @@ db.kv.put(&run_id, "thinking", Value::String("analyzing query".into()))?;
 db.event.append(&run_id, "tool_call", json!({"tool": "search"}))?;
 db.state.set(&run_id, "status", Value::String("working".into()))?;
 
+// Store and search vectors
+let vector = VectorStore::new(db.clone());
+vector.create_collection(run_id, "context", VectorConfig::new(384))?;
+vector.insert(run_id, "context", "chunk_1", &embedding, None)?;
+
 // End the run (makes it replay-able)
 db.end_run(run_id)?;
 
@@ -186,7 +220,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-in-mem = "0.7"
+in-mem = "0.8"
 ```
 
 Or clone and build:
@@ -207,7 +241,7 @@ cargo test --all
                             │
 ┌───────────────────────────▼─────────────────────────────┐
 │  Primitives (KV, EventLog, StateCell, Trace, RunIndex,  │
-│              JsonStore)                                 │
+│              JsonStore, VectorStore)                    │
 └───────────────────────────┬─────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────┐
@@ -234,6 +268,8 @@ cargo test --all
 
 4. **Batched Durability**: fsync batched by default. Agents prefer speed; losing 100ms of work is acceptable.
 
+5. **Stateless Facades**: All primitives are stateless—they hold only a Database reference. Multiple instances are safe, no warm-up needed, idempotent retry works correctly.
+
 See [Architecture Overview](docs/reference/architecture.md) for technical details.
 
 ## Performance
@@ -249,12 +285,15 @@ See [Architecture Overview](docs/reference/architecture.md) for technical detail
 | Snapshot write (100MB) | < 5 seconds |
 | Full recovery (100MB + 10K WAL) | < 5 seconds |
 | Replay run (1K events) | < 100 ms |
+| Vector search (10K vectors) | < 50ms |
+| Vector insert | < 100µs |
 
 ## Documentation
 
 - **[Getting Started](docs/reference/getting-started.md)** - Installation, patterns, best practices
 - **[API Reference](docs/reference/api-reference.md)** - Complete API documentation
 - **[Architecture](docs/reference/architecture.md)** - How in-mem works internally
+- **[WAL Entry Types](docs/architecture/WAL_ENTRY_TYPES.md)** - WAL format and entry allocation
 
 ## Development
 
@@ -267,10 +306,10 @@ in-mem/
 │   ├── storage/        # UnifiedStore + primitive extension
 │   ├── concurrency/    # OCC transactions
 │   ├── durability/     # WAL + snapshots + recovery
-│   ├── primitives/     # 6 primitives
+│   ├── primitives/     # 7 primitives (KV, Event, State, Trace, Run, JSON, Vector)
 │   ├── search/         # Hybrid search + BM25 + inverted index
 │   └── engine/         # Database orchestration + replay
-├── tests/              # Integration tests
+├── tests/              # Integration tests (M1-M8 comprehensive)
 ├── benches/            # Performance benchmarks
 └── docs/               # Documentation
 ```
@@ -287,6 +326,9 @@ cargo test -p in-mem-durability
 # Integration tests
 cargo test --test '*'
 
+# Stress tests (run sequentially)
+cargo test --test m6_comprehensive -- --ignored --test-threads=1
+
 # Benchmarks
 cargo bench
 ```
@@ -299,44 +341,49 @@ You *can* build this yourself. Most agent frameworks do. But you'll end up with:
 - **Locking hell**: Redis locks for coordination, race conditions everywhere
 - **No causality**: Events in Postgres have timestamps, not causal relationships
 - **Manual versioning**: Tracking what changed when, rolling back partial runs
+- **Separate vector DB**: Another service to manage for embeddings
 
 **in-mem gives you all of this out of the box**, designed for agents from the ground up.
 
 ## Roadmap
 
-**Complete**:
+**Complete (M1-M8)**:
 - Foundation (storage, WAL, recovery)
 - Transactions (OCC, snapshot isolation)
-- Primitives (KV, EventLog, StateCell, TraceStore, RunIndex)
+- Primitives (KV, EventLog, StateCell, TraceStore, RunIndex, JsonStore, VectorStore)
 - Performance (250K+ ops/sec, three durability modes)
 - JSON Primitive (path-level mutations, region-based conflict detection)
 - Retrieval (hybrid search, BM25, inverted index)
 - Durability (snapshots, crash recovery, replay, run lifecycle)
+- Vector Primitive (collections, similarity search, metadata filtering, WAL + snapshots)
 
 **Next**:
-- Vector Primitive (semantic search, HNSW index)
 - Python Client
 - Security (authentication, authorization, multi-tenancy)
 - Production Readiness (observability, deployment)
+- Distributed Mode (replication, sharding)
 
 See [MILESTONES.md](docs/milestones/MILESTONES.md) for detailed roadmap.
 
 ## FAQ
 
 **Q: Is this a replacement for Redis/Postgres?**
-A: No. in-mem complements traditional databases. Use Postgres for application data, Redis for caching, Qdrant for vectors. Use in-mem for agent state that needs replay and coordination.
+A: No. in-mem complements traditional databases. Use Postgres for application data, Redis for caching, Qdrant for large-scale vector search. Use in-mem for agent state that needs replay and coordination.
 
 **Q: Why not just use SQLite?**
 A: SQLite is great for relational data but doesn't have run-scoped operations, deterministic replay, or causality tracking built in. You'd build in-mem's features yourself on top of SQLite.
 
 **Q: Is this production-ready?**
-A: Yes for embedded use. Comprehensive test coverage, crash recovery verified, performance benchmarked. Network layer and distributed mode are planned.
+A: Yes for embedded use. Comprehensive test coverage (M1-M8), crash recovery verified, performance benchmarked. Network layer and distributed mode are planned.
 
 **Q: What about horizontal scaling?**
 A: Currently embedded (in-process). Distributed mode is planned. For now, use multiple in-mem instances with agent-level sharding.
 
 **Q: Can I use this with LangChain/LangGraph?**
 A: Yes! in-mem sits below agent frameworks. They can use in-mem for state management instead of building custom persistence.
+
+**Q: How does VectorStore compare to dedicated vector DBs?**
+A: VectorStore is designed for run-scoped agent memory, not large-scale similarity search. It provides durability (WAL + snapshots), collection management, and metadata filtering—all scoped to runs. For million-scale embeddings, use a dedicated vector DB; for agent context and working memory, use in-mem.
 
 ## License
 

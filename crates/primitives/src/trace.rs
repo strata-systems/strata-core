@@ -25,156 +25,29 @@
 
 use crate::extensions::TraceStoreExt;
 use in_mem_concurrency::TransactionContext;
+use in_mem_core::contract::{Version, Versioned};
 use in_mem_core::error::{Error, Result};
 use in_mem_core::types::{Key, Namespace, RunId};
 use in_mem_core::value::Value;
+use in_mem_core::Timestamp;
 use in_mem_engine::Database;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-// ========== TraceType Enum (Story #185) ==========
+// Re-export Trace types from core
+pub use in_mem_core::primitives::{Trace, TraceTree, TraceType};
 
-/// Types of reasoning traces
-///
-/// Each variant captures different aspects of agent reasoning:
-/// - ToolCall: External tool invocations
-/// - Decision: Choice points with reasoning
-/// - Query: Information lookups
-/// - Thought: Internal reasoning
-/// - Error: Error occurrences
-/// - Custom: User-defined types
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum TraceType {
-    /// External tool invocation
-    ToolCall {
-        /// Name of the tool invoked
-        tool_name: String,
-        /// Arguments passed to the tool
-        arguments: Value,
-        /// Result returned by the tool (if completed)
-        result: Option<Value>,
-        /// Duration in milliseconds (if measured)
-        duration_ms: Option<u64>,
-    },
-    /// Decision point with options
-    Decision {
-        /// The question being decided
-        question: String,
-        /// Available options
-        options: Vec<String>,
-        /// The chosen option
-        chosen: String,
-        /// Reasoning for the choice (optional)
-        reasoning: Option<String>,
-    },
-    /// Information query
-    Query {
-        /// Type of query (e.g., "database", "api", "search")
-        query_type: String,
-        /// The actual query
-        query: String,
-        /// Number of results returned (optional)
-        results_count: Option<u32>,
-    },
-    /// Internal reasoning
-    Thought {
-        /// The thought content
-        content: String,
-        /// Confidence level 0.0-1.0 (optional)
-        confidence: Option<f64>,
-    },
-    /// Error occurrence
-    Error {
-        /// Type of error
-        error_type: String,
-        /// Error message
-        message: String,
-        /// Whether the error is recoverable
-        recoverable: bool,
-    },
-    /// User-defined trace type
-    Custom {
-        /// Custom type name
-        name: String,
-        /// Custom data
-        data: Value,
-    },
-}
-
-impl TraceType {
-    /// Get the type name for indexing
-    ///
-    /// Returns a stable string identifier for the trace type.
-    /// Custom types return their user-defined name.
-    pub fn type_name(&self) -> &str {
-        match self {
-            TraceType::ToolCall { .. } => "ToolCall",
-            TraceType::Decision { .. } => "Decision",
-            TraceType::Query { .. } => "Query",
-            TraceType::Thought { .. } => "Thought",
-            TraceType::Error { .. } => "Error",
-            TraceType::Custom { name, .. } => name,
-        }
-    }
-}
-
-// ========== Trace Struct (Story #185) ==========
-
-/// A reasoning trace entry
-///
-/// Each trace represents a single unit of reasoning with:
-/// - Unique identifier
-/// - Optional parent for nesting
-/// - Typed content
-/// - Timestamp for ordering
-/// - Tags for filtering
-/// - Arbitrary metadata
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Trace {
-    /// Unique trace ID (format: "trace-{uuid}")
-    pub id: String,
-    /// Parent trace ID (if nested)
-    pub parent_id: Option<String>,
-    /// Type of trace with type-specific data
-    pub trace_type: TraceType,
-    /// Creation timestamp (milliseconds since epoch)
-    pub timestamp: i64,
-    /// User-defined tags for filtering
-    pub tags: Vec<String>,
-    /// Additional metadata
-    pub metadata: Value,
-}
-
-impl Trace {
+/// Extension trait for trace ID generation (requires uuid crate)
+pub trait TraceIdGenerator {
     /// Generate a new trace ID
     ///
     /// Format: "trace-{uuid}" where uuid is a v4 UUID
-    pub fn generate_id() -> String {
+    fn generate_id() -> String {
         format!("trace-{}", uuid::Uuid::new_v4())
     }
-
-    /// Get current timestamp in milliseconds
-    fn now() -> i64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64
-    }
 }
 
-// ========== TraceTree Struct (Story #189) ==========
-
-/// A trace with its children for tree visualization
-///
-/// Used by `get_tree()` to reconstruct the hierarchical
-/// structure of traces from their parent-child relationships.
-#[derive(Debug, Clone)]
-pub struct TraceTree {
-    /// The trace at this node
-    pub trace: Trace,
-    /// Child traces (recursively)
-    pub children: Vec<TraceTree>,
-}
+impl TraceIdGenerator for Trace {}
 
 // ========== Serialization Helpers ==========
 
@@ -268,24 +141,27 @@ impl TraceStore {
         Key::new_trace_with_id(self.namespace_for_run(run_id), trace_id)
     }
 
-    // ========== Record Operations (Story #186) ==========
+    // ========== Record Operations (Story #186, #469) ==========
 
     /// Record a new trace
     ///
     /// Generates unique ID, writes trace and all secondary indices atomically.
     ///
     /// ## Returns
-    /// The generated trace ID on success.
+    /// `Versioned<String>` containing the generated trace ID with version metadata.
+    /// Uses `Version::TxnId` type per M9 spec.
     ///
     /// ## Errors
     /// - `SerializationError` if trace cannot be serialized
+    ///
+    /// # Story #469: TraceStore Versioned Returns
     pub fn record(
         &self,
         run_id: &RunId,
         trace_type: TraceType,
         tags: Vec<String>,
         metadata: Value,
-    ) -> Result<String> {
+    ) -> Result<Versioned<String>> {
         self.record_with_options(run_id, None, trace_type, tags, metadata)
     }
 
@@ -294,11 +170,13 @@ impl TraceStore {
     /// Parent must exist. Validates parent ID before recording.
     ///
     /// ## Returns
-    /// The generated trace ID on success.
+    /// `Versioned<String>` containing the generated trace ID with version metadata.
     ///
     /// ## Errors
     /// - `NotFound` if parent trace doesn't exist
     /// - `SerializationError` if trace cannot be serialized
+    ///
+    /// # Story #469: TraceStore Versioned Returns
     pub fn record_child(
         &self,
         run_id: &RunId,
@@ -306,7 +184,7 @@ impl TraceStore {
         trace_type: TraceType,
         tags: Vec<String>,
         metadata: Value,
-    ) -> Result<String> {
+    ) -> Result<Versioned<String>> {
         self.record_with_options(
             run_id,
             Some(parent_id.to_string()),
@@ -319,6 +197,8 @@ impl TraceStore {
     /// Record trace with full options
     ///
     /// Internal method that handles both root and child traces.
+    ///
+    /// # Story #469: TraceStore Versioned Returns
     fn record_with_options(
         &self,
         run_id: &RunId,
@@ -326,10 +206,10 @@ impl TraceStore {
         trace_type: TraceType,
         tags: Vec<String>,
         metadata: Value,
-    ) -> Result<String> {
+    ) -> Result<Versioned<String>> {
         let trace_id = Trace::generate_id();
 
-        self.db.transaction(*run_id, |txn| {
+        let txn_id = self.db.transaction(*run_id, |txn| {
             let ns = self.namespace_for_run(run_id);
 
             // Validate parent exists if provided
@@ -359,8 +239,10 @@ impl TraceStore {
             // Write secondary indices (Story #187)
             Self::write_indices_internal(txn, &ns, &trace)?;
 
-            Ok(trace_id)
-        })
+            Ok(txn.txn_id)
+        })?;
+
+        Ok(Versioned::new(trace_id, Version::txn(txn_id)))
     }
 
     /// Get a trace by ID (FAST PATH)
@@ -369,12 +251,14 @@ impl TraceStore {
     /// Uses direct snapshot read which maintains snapshot isolation.
     ///
     /// ## Returns
-    /// - `Some(trace)` if found
+    /// - `Some(Versioned<Trace>)` if found
     /// - `None` if not found
     ///
     /// ## Errors
     /// - `SerializationError` if trace cannot be deserialized
-    pub fn get(&self, run_id: &RunId, trace_id: &str) -> Result<Option<Trace>> {
+    ///
+    /// # Story #469: TraceStore Versioned Returns
+    pub fn get(&self, run_id: &RunId, trace_id: &str) -> Result<Option<Versioned<Trace>>> {
         use in_mem_core::traits::SnapshotView;
 
         let snapshot = self.db.storage().create_snapshot();
@@ -384,7 +268,10 @@ impl TraceStore {
             Some(vv) => {
                 let trace: Trace = from_stored_value(&vv.value)
                     .map_err(|e| Error::SerializationError(e.to_string()))?;
-                Ok(Some(trace))
+                // Use version from storage directly (it's already a Version type)
+                let version = vv.version;
+                let timestamp = Timestamp::from_micros(trace.timestamp as u64);
+                Ok(Some(Versioned::with_timestamp(trace, version, timestamp)))
             }
             None => Ok(None),
         }
@@ -393,14 +280,18 @@ impl TraceStore {
     /// Get a trace by ID (with full transaction)
     ///
     /// Use this when you need transaction semantics.
-    pub fn get_in_transaction(&self, run_id: &RunId, trace_id: &str) -> Result<Option<Trace>> {
+    ///
+    /// # Story #469: TraceStore Versioned Returns
+    pub fn get_in_transaction(&self, run_id: &RunId, trace_id: &str) -> Result<Option<Versioned<Trace>>> {
         self.db.transaction(*run_id, |txn| {
             let key = self.key_for(run_id, trace_id);
             match txn.get(&key)? {
                 Some(v) => {
                     let trace: Trace = from_stored_value(&v)
                         .map_err(|e| Error::SerializationError(e.to_string()))?;
-                    Ok(Some(trace))
+                    let version = Version::txn(txn.txn_id);
+                    let timestamp = Timestamp::from_micros(trace.timestamp as u64);
+                    Ok(Some(Versioned::with_timestamp(trace, version, timestamp)))
                 }
                 None => Ok(None),
             }
@@ -563,11 +454,12 @@ impl TraceStore {
     /// Get multiple traces by IDs
     ///
     /// Internal helper for query methods.
+    /// Extracts inner Trace values from Versioned wrappers.
     fn get_many(&self, run_id: &RunId, ids: &[String]) -> Result<Vec<Trace>> {
         let mut traces = Vec::new();
         for id in ids {
-            if let Some(trace) = self.get(run_id, id)? {
-                traces.push(trace);
+            if let Some(versioned) = self.get(run_id, id)? {
+                traces.push(versioned.value);
             }
         }
         Ok(traces)
@@ -585,7 +477,7 @@ impl TraceStore {
     /// - `None` if root trace not found
     pub fn get_tree(&self, run_id: &RunId, root_id: &str) -> Result<Option<TraceTree>> {
         let root = match self.get(run_id, root_id)? {
-            Some(t) => t,
+            Some(versioned) => versioned.value,
             None => return Ok(None),
         };
 
@@ -693,7 +585,7 @@ impl TraceStore {
         let mut truncated = false;
 
         // Scan all traces for this run
-        for (key, versioned_value) in snapshot.scan_prefix(&scan_prefix)? {
+        for (_key, versioned_value) in snapshot.scan_prefix(&scan_prefix)? {
             // Check budget constraints
             if start.elapsed().as_micros() as u64 >= req.budget.max_wall_time_micros {
                 truncated = true;
@@ -720,19 +612,10 @@ impl TraceStore {
             // Extract searchable text
             let text = self.extract_trace_text(&trace);
 
-            // Generate a numeric span_id from the trace_id hash
-            let span_id = {
-                use std::collections::hash_map::DefaultHasher;
-                use std::hash::{Hash, Hasher};
-                let mut hasher = DefaultHasher::new();
-                trace.id.hash(&mut hasher);
-                hasher.finish()
-            };
-
             candidates.push(SearchCandidate::new(
                 DocRef::Trace {
-                    key: key.clone(),
-                    span_id,
+                    run_id: req.run_id,
+                    trace_id: trace.id.clone(),
                 },
                 text,
                 Some(trace.timestamp as u64),
@@ -769,8 +652,8 @@ impl crate::searchable::Searchable for TraceStore {
         self.search(req)
     }
 
-    fn primitive_kind(&self) -> in_mem_core::search_types::PrimitiveKind {
-        in_mem_core::search_types::PrimitiveKind::Trace
+    fn primitive_kind(&self) -> in_mem_core::PrimitiveType {
+        in_mem_core::PrimitiveType::Trace
     }
 }
 
@@ -1025,13 +908,14 @@ mod tests {
                 vec!["test".into()],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value; // Extract trace_id from Versioned
 
         assert!(trace_id.starts_with("trace-"));
 
         let trace = ts.get(&run_id, &trace_id).unwrap().unwrap();
-        assert_eq!(trace.id, trace_id);
-        assert_eq!(trace.tags, vec!["test".to_string()]);
+        assert_eq!(trace.value.id, trace_id);
+        assert_eq!(trace.value.tags, vec!["test".to_string()]);
     }
 
     #[test]
@@ -1053,7 +937,8 @@ mod tests {
                 vec![],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value; // Extract trace_id from Versioned
 
         // Create child
         let child_id = ts
@@ -1069,10 +954,11 @@ mod tests {
                 vec![],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value; // Extract trace_id from Versioned
 
         let child = ts.get(&run_id, &child_id).unwrap().unwrap();
-        assert_eq!(child.parent_id, Some(parent_id));
+        assert_eq!(child.value.parent_id, Some(parent_id));
     }
 
     #[test]
@@ -1117,7 +1003,8 @@ mod tests {
                 vec![],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value; // Extract trace_id from Versioned
 
         assert!(ts.exists(&run_id, &trace_id).unwrap());
         assert!(!ts.exists(&run_id, "nonexistent").unwrap());
@@ -1279,7 +1166,8 @@ mod tests {
                 vec![],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value; // Extract trace_id from Versioned
 
         // Create children
         ts.record_child(
@@ -1331,7 +1219,8 @@ mod tests {
                 vec![],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value; // Extract trace_id from Versioned
 
         let child1_id = ts
             .record_child(
@@ -1344,7 +1233,8 @@ mod tests {
                 vec![],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value; // Extract trace_id from Versioned
 
         ts.record_child(
             &run_id,
@@ -1396,7 +1286,8 @@ mod tests {
                 vec![],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value; // Extract trace_id from Versioned
 
         ts.record(
             &run_id,
@@ -1482,7 +1373,7 @@ mod tests {
         let ts = TraceStore::new(db);
         let trace = ts.get(&run_id, &trace_id).unwrap().unwrap();
         assert!(
-            matches!(trace.trace_type, TraceType::Custom { name, .. } if name == "MyOperation")
+            matches!(trace.value.trace_type, TraceType::Custom { name, .. } if name == "MyOperation")
         );
     }
 
@@ -1506,7 +1397,7 @@ mod tests {
         // Verify relationship
         let ts = TraceStore::new(db);
         let child = ts.get(&run_id, &child_id).unwrap().unwrap();
-        assert_eq!(child.parent_id, Some(parent_id));
+        assert_eq!(child.value.parent_id, Some(parent_id));
     }
 
     #[test]
@@ -1541,7 +1432,8 @@ mod tests {
                 vec![],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value; // Extract trace_id from Versioned
 
         // Should exist in run1
         assert!(ts.get(&run1, &trace_id).unwrap().is_some());
@@ -1635,7 +1527,8 @@ mod tests {
                 vec![],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value; // Extract trace_id from Versioned
 
         let mut parent_id = root_id.clone();
         for i in 1..5 {
@@ -1650,7 +1543,8 @@ mod tests {
                     vec![],
                     Value::Null,
                 )
-                .unwrap();
+                .unwrap()
+                .value; // Extract trace_id from Versioned
         }
 
         // Get tree and verify depth
@@ -1685,11 +1579,12 @@ mod tests {
                 vec!["important".into()],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value; // Extract trace_id from Versioned
 
         let trace = ts.get(&run_id, &trace_id).unwrap().unwrap();
-        assert_eq!(trace.id, trace_id);
-        assert_eq!(trace.tags, vec!["important".to_string()]);
+        assert_eq!(trace.value.id, trace_id);
+        assert_eq!(trace.value.tags, vec!["important".to_string()]);
     }
 
     #[test]
@@ -1720,12 +1615,14 @@ mod tests {
                 vec![],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value; // Extract trace_id from Versioned
 
         let fast = ts.get(&run_id, &trace_id).unwrap();
         let txn = ts.get_in_transaction(&run_id, &trace_id).unwrap();
 
-        assert_eq!(fast, txn);
+        // Compare the trace values (version metadata may differ between paths)
+        assert_eq!(fast.as_ref().map(|v| &v.value), txn.as_ref().map(|v| &v.value));
     }
 
     #[test]
@@ -1746,7 +1643,8 @@ mod tests {
                 vec![],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value; // Extract trace_id from Versioned
 
         assert!(ts.exists(&run_id, &trace_id).unwrap());
     }
@@ -1768,7 +1666,8 @@ mod tests {
                 vec![],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value; // Extract trace_id from Versioned
 
         // Should exist in run1
         assert!(ts.get(&run1, &trace_id).unwrap().is_some());

@@ -7,6 +7,7 @@
 //! - Extension trait composition
 
 use crate::test_utils::{values, PersistentTestPrimitives, TestPrimitives};
+use in_mem_core::contract::Version;
 use in_mem_core::value::Value;
 use in_mem_primitives::{RunStatus, TraceType};
 
@@ -63,7 +64,7 @@ mod atomic_operations {
             .append(&run_id, "finished", values::null())
             .unwrap();
 
-        assert_eq!(tp.kv.get(&run_id, "step").unwrap(), Some(values::int(2)));
+        assert_eq!(tp.kv.get(&run_id, "step").unwrap().map(|v| v.value), Some(values::int(2)));
         assert_eq!(tp.event_log.len(&run_id).unwrap(), 2);
     }
 
@@ -87,7 +88,8 @@ mod atomic_operations {
                 vec![],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value;
 
         tp.state_cell
             .set(&run_id, "counter", values::int(1))
@@ -106,7 +108,7 @@ mod atomic_operations {
             .unwrap();
 
         let state = tp.state_cell.read(&run_id, "counter").unwrap().unwrap();
-        assert_eq!(state.value, values::int(1));
+        assert_eq!(state.value.value, values::int(1));
         assert_eq!(tp.trace_store.count(&run_id).unwrap(), 2);
     }
 }
@@ -124,7 +126,7 @@ mod read_your_writes {
         let run_id = tp.run_id;
 
         tp.kv.put(&run_id, "key", values::int(42)).unwrap();
-        let value = tp.kv.get(&run_id, "key").unwrap();
+        let value = tp.kv.get(&run_id, "key").unwrap().map(|v| v.value);
         assert_eq!(value, Some(values::int(42)));
     }
 
@@ -133,12 +135,13 @@ mod read_your_writes {
         let tp = TestPrimitives::new();
         let run_id = tp.run_id;
 
-        let (seq, _) = tp
+        let version = tp
             .event_log
             .append(&run_id, "test", values::int(100))
             .unwrap();
+        let Version::Sequence(seq) = version else { panic!("Expected Sequence version") };
         let event = tp.event_log.read(&run_id, seq).unwrap().unwrap();
-        assert_eq!(event.payload, values::int(100));
+        assert_eq!(event.value.payload, values::int(100));
     }
 
     #[test]
@@ -150,7 +153,7 @@ mod read_your_writes {
             .init(&run_id, "cell", values::string("hello"))
             .unwrap();
         let state = tp.state_cell.read(&run_id, "cell").unwrap().unwrap();
-        assert_eq!(state.value, values::string("hello"));
+        assert_eq!(state.value.value, values::string("hello"));
     }
 
     #[test]
@@ -163,8 +166,8 @@ mod read_your_writes {
             .cas(&run_id, "cell", 1, values::int(10))
             .unwrap();
         let state = tp.state_cell.read(&run_id, "cell").unwrap().unwrap();
-        assert_eq!(state.value, values::int(10));
-        assert_eq!(state.version, 2);
+        assert_eq!(state.value.value, values::int(10));
+        assert_eq!(state.value.version, 2);
     }
 
     #[test]
@@ -183,10 +186,11 @@ mod read_your_writes {
                 vec![],
                 Value::Null,
             )
-            .unwrap();
+            .unwrap()
+            .value;
         let trace = tp.trace_store.get(&run_id, &trace_id).unwrap().unwrap();
         assert!(
-            matches!(trace.trace_type, TraceType::Custom { data, .. } if data == values::bool_val(true))
+            matches!(trace.value.trace_type, TraceType::Custom { data, .. } if data == values::bool_val(true))
         );
     }
 
@@ -198,14 +202,15 @@ mod read_your_writes {
 
         // Write sequence
         tp.kv.put(&run_id, "step1", values::int(1)).unwrap();
-        let (seq, _) = tp
+        let version = tp
             .event_log
             .append(&run_id, "step1", values::int(1))
             .unwrap();
+        let Version::Sequence(seq) = version else { panic!("Expected Sequence version") };
         tp.state_cell.init(&run_id, "step", values::int(1)).unwrap();
 
         // All immediately visible
-        assert_eq!(tp.kv.get(&run_id, "step1").unwrap(), Some(values::int(1)));
+        assert_eq!(tp.kv.get(&run_id, "step1").unwrap().map(|v| v.value), Some(values::int(1)));
         assert!(tp.event_log.read(&run_id, seq).unwrap().is_some());
         assert!(tp.state_cell.read(&run_id, "step").unwrap().is_some());
 
@@ -217,10 +222,10 @@ mod read_your_writes {
         tp.state_cell.set(&run_id, "step", values::int(2)).unwrap();
 
         // All updates visible
-        assert_eq!(tp.kv.get(&run_id, "step2").unwrap(), Some(values::int(2)));
+        assert_eq!(tp.kv.get(&run_id, "step2").unwrap().map(|v| v.value), Some(values::int(2)));
         assert_eq!(tp.event_log.len(&run_id).unwrap(), 2);
         let state = tp.state_cell.read(&run_id, "step").unwrap().unwrap();
-        assert_eq!(state.value, values::int(2));
+        assert_eq!(state.value.value, values::int(2));
     }
 }
 
@@ -266,13 +271,13 @@ mod multi_primitive_persistence {
         {
             let prims = ptp.open();
             assert_eq!(
-                prims.kv.get(&run_id, "key").unwrap(),
+                prims.kv.get(&run_id, "key").unwrap().map(|v| v.value),
                 Some(values::int(100))
             );
             let event = prims.event_log.read(&run_id, 0).unwrap().unwrap();
-            assert_eq!(event.payload, values::int(200));
+            assert_eq!(event.value.payload, values::int(200));
             let state = prims.state_cell.read(&run_id, "cell").unwrap().unwrap();
-            assert_eq!(state.value, values::int(300));
+            assert_eq!(state.value.value, values::int(300));
             let traces = prims.trace_store.query_by_type(&run_id, "trace").unwrap();
             assert!(
                 matches!(&traces[0].trace_type, TraceType::Custom { data, .. } if *data == values::int(400))
@@ -351,11 +356,11 @@ mod run_scoped_transactions {
 
         // Each run has its own data
         assert_eq!(
-            tp.kv.get(&run1, "shared_key").unwrap(),
+            tp.kv.get(&run1, "shared_key").unwrap().map(|v| v.value),
             Some(values::int(1))
         );
         assert_eq!(
-            tp.kv.get(&run2, "shared_key").unwrap(),
+            tp.kv.get(&run2, "shared_key").unwrap().map(|v| v.value),
             Some(values::int(2))
         );
         assert_eq!(tp.event_log.len(&run1).unwrap(), 1);
@@ -378,7 +383,7 @@ mod run_scoped_transactions {
         // Verify each run has correct data
         for (i, run) in runs.iter().enumerate() {
             assert_eq!(
-                tp.kv.get(run, "counter").unwrap(),
+                tp.kv.get(run, "counter").unwrap().map(|v| v.value),
                 Some(values::int(i as i64))
             );
             assert_eq!(tp.event_log.len(run).unwrap(), (i + 1) as u64);
@@ -410,21 +415,21 @@ mod run_status_with_primitives {
 
         // Update status using the run name
         tp.run_index
-            .update_status(&meta.name, RunStatus::Paused)
+            .update_status(&meta.value.name, RunStatus::Paused)
             .unwrap();
 
         // Primitive data still accessible
-        assert_eq!(tp.kv.get(&run_id, "key").unwrap(), Some(values::int(42)));
+        assert_eq!(tp.kv.get(&run_id, "key").unwrap().map(|v| v.value), Some(values::int(42)));
         assert_eq!(tp.event_log.len(&run_id).unwrap(), 1);
 
         // Complete the run
         tp.run_index
-            .update_status(&meta.name, RunStatus::Active)
+            .update_status(&meta.value.name, RunStatus::Active)
             .unwrap();
-        tp.run_index.complete_run(&meta.name).unwrap();
+        tp.run_index.complete_run(&meta.value.name).unwrap();
 
         // Data still accessible after completion
-        assert_eq!(tp.kv.get(&run_id, "key").unwrap(), Some(values::int(42)));
+        assert_eq!(tp.kv.get(&run_id, "key").unwrap().map(|v| v.value), Some(values::int(42)));
     }
 
     #[test]
@@ -437,12 +442,12 @@ mod run_status_with_primitives {
         tp.kv
             .put(&run_id, "archived_key", values::string("data"))
             .unwrap();
-        tp.run_index.complete_run(&meta.name).unwrap();
-        tp.run_index.archive_run(&meta.name).unwrap();
+        tp.run_index.complete_run(&meta.value.name).unwrap();
+        tp.run_index.archive_run(&meta.value.name).unwrap();
 
         // Data still accessible
         assert_eq!(
-            tp.kv.get(&run_id, "archived_key").unwrap(),
+            tp.kv.get(&run_id, "archived_key").unwrap().map(|v| v.value),
             Some(values::string("data"))
         );
     }

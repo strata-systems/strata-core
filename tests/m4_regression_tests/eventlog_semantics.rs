@@ -5,6 +5,7 @@
 //! and hash chain validity across all durability modes.
 
 use super::*;
+use in_mem_core::contract::Version;
 use in_mem_core::types::RunId;
 use in_mem_core::value::Value;
 use in_mem_primitives::EventLog;
@@ -30,9 +31,9 @@ fn eventlog_sequence_monotonicity() {
 
         for (i, event) in all.iter().enumerate() {
             assert_eq!(
-                event.sequence, i as u64,
+                event.value.sequence, i as u64,
                 "Sequence mismatch at index {}: expected {}, got {}",
-                i, i, event.sequence
+                i, i, event.value.sequence
             );
         }
 
@@ -120,7 +121,7 @@ fn eventlog_concurrent_append_integrity() {
         .unwrap();
     for (i, event) in all.iter().enumerate() {
         assert_eq!(
-            event.sequence, i as u64,
+            event.value.sequence, i as u64,
             "Sequence gap or duplicate at index {}",
             i
         );
@@ -144,8 +145,10 @@ fn eventlog_append_returns_sequence() {
 
         let mut sequences = Vec::new();
         for i in 0..10 {
-            let (seq, _hash) = events.append(&run_id, "test", Value::I64(i)).unwrap();
-            sequences.push(seq);
+            let version = events.append(&run_id, "test", Value::I64(i)).unwrap();
+            if let Version::Sequence(seq) = version {
+                sequences.push(seq);
+            }
         }
 
         // Sequences should be 0, 1, 2, ..., 9
@@ -174,8 +177,8 @@ fn eventlog_read_by_sequence() {
         // Read specific sequences
         for i in 0..20 {
             let event = events.read(&run_id, i).unwrap().unwrap();
-            assert_eq!(event.sequence, i);
-            assert_eq!(event.payload, Value::I64(i as i64 * 100));
+            assert_eq!(event.value.sequence, i);
+            assert_eq!(event.value.payload, Value::I64(i as i64 * 100));
         }
 
         true
@@ -197,12 +200,12 @@ fn eventlog_read_range() {
         let slice = events.read_range(&run_id, 25, 75).unwrap();
 
         assert_eq!(slice.len(), 50);
-        assert_eq!(slice[0].sequence, 25);
-        assert_eq!(slice[49].sequence, 74);
+        assert_eq!(slice[0].value.sequence, 25);
+        assert_eq!(slice[49].value.sequence, 74);
 
         for (i, event) in slice.iter().enumerate() {
-            assert_eq!(event.sequence, (25 + i) as u64);
-            assert_eq!(event.payload, Value::I64((25 + i) as i64));
+            assert_eq!(event.value.sequence, (25 + i) as u64);
+            assert_eq!(event.value.payload, Value::I64((25 + i) as i64));
         }
 
         true
@@ -224,8 +227,8 @@ fn eventlog_head() {
             events.append(&run_id, "test", Value::I64(i)).unwrap();
 
             let head = events.head(&run_id).unwrap().unwrap();
-            assert_eq!(head.sequence, i as u64);
-            assert_eq!(head.payload, Value::I64(i));
+            assert_eq!(head.value.sequence, i as u64);
+            assert_eq!(head.value.payload, Value::I64(i));
         }
 
         true
@@ -245,9 +248,9 @@ fn eventlog_event_type_preserved() {
 
         let all = events.read_range(&run_id, 0, 3).unwrap();
 
-        assert_eq!(all[0].event_type, "type_a");
-        assert_eq!(all[1].event_type, "type_b");
-        assert_eq!(all[2].event_type, "type_a");
+        assert_eq!(all[0].value.event_type, "type_a");
+        assert_eq!(all[1].value.event_type, "type_b");
+        assert_eq!(all[2].value.event_type, "type_a");
 
         true
     });
@@ -280,7 +283,7 @@ fn eventlog_read_by_type() {
 
         // Verify all alphas have correct type
         for event in &alphas {
-            assert_eq!(event.event_type, "alpha");
+            assert_eq!(event.value.event_type, "alpha");
         }
 
         true
@@ -313,11 +316,11 @@ fn eventlog_run_isolation() {
         let b_events = events.read_range(&run_b, 0, 5).unwrap();
 
         for event in &a_events {
-            assert_eq!(event.event_type, "run_a");
+            assert_eq!(event.value.event_type, "run_a");
         }
 
         for event in &b_events {
-            assert_eq!(event.event_type, "run_b");
+            assert_eq!(event.value.event_type, "run_b");
         }
 
         true
@@ -340,12 +343,12 @@ fn eventlog_timestamp_ordering() {
         let mut last_ts = 0i64;
         for event in &all {
             assert!(
-                event.timestamp >= last_ts,
+                event.value.timestamp >= last_ts,
                 "Timestamp regression: {} < {}",
-                event.timestamp,
+                event.value.timestamp,
                 last_ts
             );
-            last_ts = event.timestamp;
+            last_ts = event.value.timestamp;
         }
 
         true
@@ -383,15 +386,15 @@ mod eventlog_unit_tests {
         let events = EventLog::new(db);
         let run_id = RunId::new();
 
-        let (seq, _hash) = events
+        let version = events
             .append(&run_id, "test", Value::String("hello".to_string()))
             .unwrap();
 
-        assert_eq!(seq, 0);
+        assert!(matches!(version, Version::Sequence(0)));
 
         let read = events.read(&run_id, 0).unwrap().unwrap();
-        assert_eq!(read.event_type, "test");
-        assert_eq!(read.payload, Value::String("hello".to_string()));
+        assert_eq!(read.value.event_type, "test");
+        assert_eq!(read.value.payload, Value::String("hello".to_string()));
     }
 
     #[test]
@@ -400,25 +403,26 @@ mod eventlog_unit_tests {
         let events = EventLog::new(db);
         let run_id = RunId::new();
 
-        let (seq0, hash0) = events.append(&run_id, "a", Value::I64(0)).unwrap();
-        let (seq1, hash1) = events.append(&run_id, "b", Value::I64(1)).unwrap();
-        let (seq2, hash2) = events.append(&run_id, "c", Value::I64(2)).unwrap();
+        let version0 = events.append(&run_id, "a", Value::I64(0)).unwrap();
+        let version1 = events.append(&run_id, "b", Value::I64(1)).unwrap();
+        let version2 = events.append(&run_id, "c", Value::I64(2)).unwrap();
 
         // Sequences should be monotonic
-        assert_eq!(seq0, 0);
-        assert_eq!(seq1, 1);
-        assert_eq!(seq2, 2);
-
-        // Hashes should be non-zero (indicating actual computation happened)
-        assert_ne!(hash0, [0u8; 32]);
-        assert_ne!(hash1, [0u8; 32]);
-        assert_ne!(hash2, [0u8; 32]);
+        assert!(matches!(version0, Version::Sequence(0)));
+        assert!(matches!(version1, Version::Sequence(1)));
+        assert!(matches!(version2, Version::Sequence(2)));
 
         // Read back and verify chain
         let e0 = events.read(&run_id, 0).unwrap().unwrap();
         let e1 = events.read(&run_id, 1).unwrap().unwrap();
+        let e2 = events.read(&run_id, 2).unwrap().unwrap();
+
+        // Hashes should be non-zero (indicating actual computation happened)
+        assert_ne!(e0.value.hash, [0u8; 32]);
+        assert_ne!(e1.value.hash, [0u8; 32]);
+        assert_ne!(e2.value.hash, [0u8; 32]);
 
         // e1's prev_hash should match e0's hash
-        assert_eq!(e1.prev_hash, e0.hash);
+        assert_eq!(e1.value.prev_hash, e0.value.hash);
     }
 }

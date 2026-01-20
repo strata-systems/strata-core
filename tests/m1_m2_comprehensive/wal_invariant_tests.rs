@@ -327,7 +327,7 @@ mod order_preservation {
             for (key, expected_value) in &expected_order {
                 let val = db.get(key).unwrap().expect("Key should exist");
                 assert_eq!(val.value, values::int(*expected_value));
-                versions.push(val.version);
+                versions.push(val.version.as_u64());
             }
 
             // Versions must be strictly increasing
@@ -349,7 +349,7 @@ mod order_preservation {
             // Write same key multiple times
             for i in 0..10 {
                 db.put(pdb.run_id, key.clone(), values::int(i)).unwrap();
-                version_history.push(db.get(&key).unwrap().unwrap().version);
+                version_history.push(db.get(&key).unwrap().unwrap().version.as_u64());
             }
         }
 
@@ -361,7 +361,7 @@ mod order_preservation {
             let db = pdb.open();
             let val = db.get(&key).unwrap().unwrap();
             assert_eq!(val.value, values::int(9));
-            assert_eq!(val.version, *version_history.last().unwrap());
+            assert_eq!(val.version.as_u64(), *version_history.last().unwrap());
         }
     }
 
@@ -381,7 +381,7 @@ mod order_preservation {
                     let key = pdb.key(&format!("interleave_{}", key_id));
                     db.put(pdb.run_id, key.clone(), values::int(round * 10 + key_id))
                         .unwrap();
-                    let version = db.get(&key).unwrap().unwrap().version;
+                    let version = db.get(&key).unwrap().unwrap().version.as_u64();
                     write_order.push((key, version));
                 }
             }

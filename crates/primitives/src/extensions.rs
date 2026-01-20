@@ -39,6 +39,8 @@
 //! - Consistent behavior between standalone and transaction APIs
 //! - Easier maintenance and testing
 
+use in_mem_core::contract::Version;
+use in_mem_core::json::{JsonPath, JsonValue};
 use in_mem_core::{Result, Value};
 
 // Forward declarations - traits are defined here, implementations
@@ -97,6 +99,40 @@ pub trait TraceStoreExt {
         trace_type: &str,
         metadata: Value,
     ) -> Result<String>;
+}
+
+/// JSON store operations within a transaction
+///
+/// Implemented in `json_store.rs` (Story #477)
+pub trait JsonStoreExt {
+    /// Get value at path in a document
+    fn json_get(&mut self, doc_id: &str, path: &JsonPath) -> Result<Option<JsonValue>>;
+
+    /// Set value at path in a document, returns new version
+    fn json_set(&mut self, doc_id: &str, path: &JsonPath, value: JsonValue) -> Result<Version>;
+
+    /// Create a new JSON document, returns version
+    fn json_create(&mut self, doc_id: &str, value: JsonValue) -> Result<Version>;
+}
+
+/// Vector store operations within a transaction
+///
+/// Note: VectorStore operations in transactions are limited due to
+/// the backend state management complexity. Only basic read/write ops
+/// are supported.
+///
+/// Implemented in `vector/store.rs` (Story #477)
+pub trait VectorStoreExt {
+    /// Get a vector by key
+    fn vector_get(&mut self, collection: &str, key: &str) -> Result<Option<Vec<f32>>>;
+
+    /// Insert/upsert a vector, returns version
+    fn vector_insert(
+        &mut self,
+        collection: &str,
+        key: &str,
+        embedding: &[f32],
+    ) -> Result<Version>;
 }
 
 // Note: RunIndex does not have an extension trait because run operations

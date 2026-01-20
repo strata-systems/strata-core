@@ -24,6 +24,7 @@
 
 use crate::extensions::EventLogExt;
 use in_mem_concurrency::TransactionContext;
+use in_mem_core::contract::{Timestamp, Version, Versioned};
 use in_mem_core::error::Result;
 use in_mem_core::types::{Key, Namespace, RunId};
 use in_mem_core::value::Value;
@@ -33,41 +34,14 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-/// An event in the log
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Event {
-    /// Sequence number (auto-assigned, monotonic per run)
-    pub sequence: u64,
-    /// Event type (user-defined category)
-    pub event_type: String,
-    /// Event payload (arbitrary data)
-    pub payload: Value,
-    /// Timestamp when event was appended (milliseconds since epoch)
-    pub timestamp: i64,
-    /// Hash of previous event (for chaining)
-    pub prev_hash: [u8; 32],
-    /// Hash of this event
-    pub hash: [u8; 32],
-}
+// Re-export Event and ChainVerification from core
+pub use in_mem_core::primitives::{ChainVerification, Event};
 
 /// EventLog metadata stored per run
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub(crate) struct EventLogMeta {
     pub next_sequence: u64,
     pub head_hash: [u8; 32],
-}
-
-/// Chain verification result
-#[derive(Debug, Clone)]
-pub struct ChainVerification {
-    /// Whether the chain is valid
-    pub is_valid: bool,
-    /// Total length of the chain
-    pub length: u64,
-    /// First invalid sequence number (if any)
-    pub first_invalid: Option<u64>,
-    /// Error description (if any)
-    pub error: Option<String>,
 }
 
 /// Compute event hash (causal, not cryptographic)
@@ -167,7 +141,7 @@ impl EventLog {
 
     /// Append a new event to the log
     ///
-    /// Returns the assigned sequence number and event hash.
+    /// Returns the assigned sequence version.
     /// Serializes through CAS on metadata key - parallel appends will retry
     /// automatically with exponential backoff.
     ///
@@ -177,13 +151,13 @@ impl EventLog {
     /// * `payload` - Event data
     ///
     /// # Returns
-    /// Tuple of (sequence_number, event_hash)
+    /// Version::Sequence containing the assigned sequence number
     pub fn append(
         &self,
         run_id: &RunId,
         event_type: &str,
         payload: Value,
-    ) -> Result<(u64, [u8; 32])> {
+    ) -> Result<Version> {
         // Use high retry count for contention scenarios
         // EventLog appends serialize through metadata CAS, so conflicts are expected
         // With N concurrent threads, worst case needs N retries per append
@@ -241,7 +215,7 @@ impl EventLog {
                 };
                 txn.put(meta_key, to_stored_value(&new_meta))?;
 
-                Ok((sequence, hash))
+                Ok(Version::Sequence(sequence))
             })
     }
 
@@ -251,7 +225,8 @@ impl EventLog {
     ///
     /// Bypasses full transaction overhead for read-only access.
     /// Uses direct snapshot read which maintains snapshot isolation.
-    pub fn read(&self, run_id: &RunId, sequence: u64) -> Result<Option<Event>> {
+    /// Returns Versioned<Event> if found.
+    pub fn read(&self, run_id: &RunId, sequence: u64) -> Result<Option<Versioned<Event>>> {
         use in_mem_core::traits::SnapshotView;
 
         let snapshot = self.db.storage().create_snapshot();
@@ -262,7 +237,11 @@ impl EventLog {
             Some(vv) => {
                 let event: Event = from_stored_value(&vv.value)
                     .map_err(|e| in_mem_core::error::Error::SerializationError(e.to_string()))?;
-                Ok(Some(event))
+                Ok(Some(Versioned::with_timestamp(
+                    event.clone(),
+                    Version::Sequence(sequence),
+                    Timestamp::from_millis(event.timestamp as u64),
+                )))
             }
             None => Ok(None),
         }
@@ -271,7 +250,8 @@ impl EventLog {
     /// Read a single event by sequence number (with full transaction)
     ///
     /// Use this when you need transaction semantics (e.g., consistent multi-read).
-    pub fn read_in_transaction(&self, run_id: &RunId, sequence: u64) -> Result<Option<Event>> {
+    /// Returns Versioned<Event> if found.
+    pub fn read_in_transaction(&self, run_id: &RunId, sequence: u64) -> Result<Option<Versioned<Event>>> {
         self.db.transaction(*run_id, |txn| {
             let ns = self.namespace_for_run(run_id);
             let event_key = Key::new_event(ns, sequence);
@@ -281,7 +261,11 @@ impl EventLog {
                     let event: Event = from_stored_value(&v).map_err(|e| {
                         in_mem_core::error::Error::SerializationError(e.to_string())
                     })?;
-                    Ok(Some(event))
+                    Ok(Some(Versioned::with_timestamp(
+                        event.clone(),
+                        Version::Sequence(sequence),
+                        Timestamp::from_millis(event.timestamp as u64),
+                    )))
                 }
                 None => Ok(None),
             }
@@ -289,7 +273,9 @@ impl EventLog {
     }
 
     /// Read a range of events [start, end)
-    pub fn read_range(&self, run_id: &RunId, start: u64, end: u64) -> Result<Vec<Event>> {
+    ///
+    /// Returns Vec<Versioned<Event>> for the range.
+    pub fn read_range(&self, run_id: &RunId, start: u64, end: u64) -> Result<Vec<Versioned<Event>>> {
         self.db.transaction(*run_id, |txn| {
             let mut events = Vec::new();
             let ns = self.namespace_for_run(run_id);
@@ -300,7 +286,11 @@ impl EventLog {
                     let event: Event = from_stored_value(&v).map_err(|e| {
                         in_mem_core::error::Error::SerializationError(e.to_string())
                     })?;
-                    events.push(event);
+                    events.push(Versioned::with_timestamp(
+                        event.clone(),
+                        Version::Sequence(seq),
+                        Timestamp::from_millis(event.timestamp as u64),
+                    ));
                 }
             }
 
@@ -309,7 +299,9 @@ impl EventLog {
     }
 
     /// Get the latest event (head of the log)
-    pub fn head(&self, run_id: &RunId) -> Result<Option<Event>> {
+    ///
+    /// Returns Versioned<Event> if the log is not empty.
+    pub fn head(&self, run_id: &RunId) -> Result<Option<Versioned<Event>>> {
         self.db.transaction(*run_id, |txn| {
             let ns = self.namespace_for_run(run_id);
             let meta_key = Key::new_event_meta(ns.clone());
@@ -323,13 +315,18 @@ impl EventLog {
                 return Ok(None);
             }
 
-            let event_key = Key::new_event(ns, meta.next_sequence - 1);
+            let sequence = meta.next_sequence - 1;
+            let event_key = Key::new_event(ns, sequence);
             match txn.get(&event_key)? {
                 Some(v) => {
                     let event: Event = from_stored_value(&v).map_err(|e| {
                         in_mem_core::error::Error::SerializationError(e.to_string())
                     })?;
-                    Ok(Some(event))
+                    Ok(Some(Versioned::with_timestamp(
+                        event.clone(),
+                        Version::Sequence(sequence),
+                        Timestamp::from_millis(event.timestamp as u64),
+                    )))
                 }
                 None => Ok(None),
             }
@@ -445,7 +442,9 @@ impl EventLog {
     // ========== Query by Type (Story #178) ==========
 
     /// Read events filtered by type
-    pub fn read_by_type(&self, run_id: &RunId, event_type: &str) -> Result<Vec<Event>> {
+    ///
+    /// Returns Vec<Versioned<Event>> for events matching the type.
+    pub fn read_by_type(&self, run_id: &RunId, event_type: &str) -> Result<Vec<Versioned<Event>>> {
         self.db.transaction(*run_id, |txn| {
             let ns = self.namespace_for_run(run_id);
             let meta_key = Key::new_event_meta(ns.clone());
@@ -463,7 +462,11 @@ impl EventLog {
                         in_mem_core::error::Error::SerializationError(e.to_string())
                     })?;
                     if event.event_type == event_type {
-                        filtered.push(event);
+                        filtered.push(Versioned::with_timestamp(
+                            event.clone(),
+                            Version::Sequence(seq),
+                            Timestamp::from_millis(event.timestamp as u64),
+                        ));
                     }
                 }
             }
@@ -569,8 +572,8 @@ impl EventLog {
 
                 candidates.push(SearchCandidate::new(
                     DocRef::Event {
-                        log_key: event_key,
-                        seq,
+                        run_id: req.run_id,
+                        sequence: seq,
                     },
                     text,
                     Some(event.timestamp as u64),
@@ -607,8 +610,8 @@ impl crate::searchable::Searchable for EventLog {
         self.search(req)
     }
 
-    fn primitive_kind(&self) -> in_mem_core::search_types::PrimitiveKind {
-        in_mem_core::search_types::PrimitiveKind::Event
+    fn primitive_kind(&self) -> in_mem_core::PrimitiveType {
+        in_mem_core::PrimitiveType::Event
     }
 }
 
@@ -728,9 +731,8 @@ mod tests {
         let (_temp, _db, log) = setup();
         let run_id = RunId::new();
 
-        let (seq, hash) = log.append(&run_id, "test", Value::Null).unwrap();
-        assert_eq!(seq, 0);
-        assert_ne!(hash, [0u8; 32]); // Hash is computed
+        let version = log.append(&run_id, "test", Value::Null).unwrap();
+        assert!(matches!(version, Version::Sequence(0)));
     }
 
     #[test]
@@ -738,13 +740,13 @@ mod tests {
         let (_temp, _db, log) = setup();
         let run_id = RunId::new();
 
-        let (seq1, _) = log.append(&run_id, "test", Value::Null).unwrap();
-        let (seq2, _) = log.append(&run_id, "test", Value::Null).unwrap();
-        let (seq3, _) = log.append(&run_id, "test", Value::Null).unwrap();
+        let v1 = log.append(&run_id, "test", Value::Null).unwrap();
+        let v2 = log.append(&run_id, "test", Value::Null).unwrap();
+        let v3 = log.append(&run_id, "test", Value::Null).unwrap();
 
-        assert_eq!(seq1, 0);
-        assert_eq!(seq2, 1);
-        assert_eq!(seq3, 2);
+        assert!(matches!(v1, Version::Sequence(0)));
+        assert!(matches!(v2, Version::Sequence(1)));
+        assert!(matches!(v3, Version::Sequence(2)));
     }
 
     #[test]
@@ -752,12 +754,13 @@ mod tests {
         let (_temp, _db, log) = setup();
         let run_id = RunId::new();
 
-        let (_, hash1) = log.append(&run_id, "test", Value::Null).unwrap();
-        let (_, _) = log.append(&run_id, "test", Value::Null).unwrap();
+        log.append(&run_id, "test", Value::Null).unwrap();
+        let event1 = log.read(&run_id, 0).unwrap().unwrap();
+        log.append(&run_id, "test", Value::Null).unwrap();
 
         // Verify chain through read
         let event2 = log.read(&run_id, 1).unwrap().unwrap();
-        assert_eq!(event2.prev_hash, hash1);
+        assert_eq!(event2.value.prev_hash, event1.value.hash);
     }
 
     #[test]
@@ -770,11 +773,12 @@ mod tests {
             ("query".to_string(), Value::String("rust async".into())),
         ]));
 
-        let (seq, _) = log.append(&run_id, "tool_call", payload.clone()).unwrap();
+        let version = log.append(&run_id, "tool_call", payload.clone()).unwrap();
+        let seq = match version { Version::Sequence(s) => s, _ => panic!("Expected sequence") };
         let event = log.read(&run_id, seq).unwrap().unwrap();
 
-        assert_eq!(event.event_type, "tool_call");
-        assert_eq!(event.payload, payload);
+        assert_eq!(event.value.event_type, "tool_call");
+        assert_eq!(event.value.payload, payload);
     }
 
     #[test]
@@ -795,7 +799,7 @@ mod tests {
 
         assert_eq!(run1_events.len(), 2);
         assert_eq!(run2_events.len(), 1);
-        assert_eq!(run2_events[0].event_type, "run2_event");
+        assert_eq!(run2_events[0].value.event_type, "run2_event");
     }
 
     // ========== Read Tests (Story #176) ==========
@@ -808,10 +812,11 @@ mod tests {
         log.append(&run_id, "test", Value::String("data".into()))
             .unwrap();
 
-        let event = log.read(&run_id, 0).unwrap().unwrap();
-        assert_eq!(event.sequence, 0);
-        assert_eq!(event.event_type, "test");
-        assert_eq!(event.payload, Value::String("data".into()));
+        let versioned = log.read(&run_id, 0).unwrap().unwrap();
+        assert_eq!(versioned.value.sequence, 0);
+        assert_eq!(versioned.value.event_type, "test");
+        assert_eq!(versioned.value.payload, Value::String("data".into()));
+        assert!(matches!(versioned.version, Version::Sequence(0)));
     }
 
     #[test]
@@ -834,9 +839,13 @@ mod tests {
 
         let events = log.read_range(&run_id, 1, 4).unwrap();
         assert_eq!(events.len(), 3);
-        assert_eq!(events[0].sequence, 1);
-        assert_eq!(events[1].sequence, 2);
-        assert_eq!(events[2].sequence, 3);
+        assert_eq!(events[0].value.sequence, 1);
+        assert_eq!(events[1].value.sequence, 2);
+        assert_eq!(events[2].value.sequence, 3);
+        // Verify version matches sequence
+        assert!(matches!(events[0].version, Version::Sequence(1)));
+        assert!(matches!(events[1].version, Version::Sequence(2)));
+        assert!(matches!(events[2].version, Version::Sequence(3)));
     }
 
     #[test]
@@ -853,8 +862,9 @@ mod tests {
         log.append(&run_id, "third", Value::I64(3)).unwrap();
 
         let head = log.head(&run_id).unwrap().unwrap();
-        assert_eq!(head.sequence, 2);
-        assert_eq!(head.event_type, "third");
+        assert_eq!(head.value.sequence, 2);
+        assert_eq!(head.value.event_type, "third");
+        assert!(matches!(head.version, Version::Sequence(2)));
     }
 
     #[test]
@@ -932,9 +942,9 @@ mod tests {
 
         let tool_calls = log.read_by_type(&run_id, "tool_call").unwrap();
         assert_eq!(tool_calls.len(), 3);
-        assert_eq!(tool_calls[0].payload, Value::I64(1));
-        assert_eq!(tool_calls[1].payload, Value::I64(3));
-        assert_eq!(tool_calls[2].payload, Value::I64(5));
+        assert_eq!(tool_calls[0].value.payload, Value::I64(1));
+        assert_eq!(tool_calls[1].value.payload, Value::I64(3));
+        assert_eq!(tool_calls[2].value.payload, Value::I64(5));
 
         let thoughts = log.read_by_type(&run_id, "thought").unwrap();
         assert_eq!(thoughts.len(), 1);
@@ -978,8 +988,8 @@ mod tests {
         .unwrap();
 
         // Verify via EventLog
-        let event = log.read(&run_id, 0).unwrap().unwrap();
-        assert_eq!(event.event_type, "ext_event");
+        let versioned = log.read(&run_id, 0).unwrap().unwrap();
+        assert_eq!(versioned.value.event_type, "ext_event");
     }
 
     #[test]
@@ -1038,9 +1048,9 @@ mod tests {
         log.append(&run_id, "test", Value::String("data".into()))
             .unwrap();
 
-        let event = log.read(&run_id, 0).unwrap().unwrap();
-        assert_eq!(event.event_type, "test");
-        assert_eq!(event.payload, Value::String("data".into()));
+        let versioned = log.read(&run_id, 0).unwrap().unwrap();
+        assert_eq!(versioned.value.event_type, "test");
+        assert_eq!(versioned.value.payload, Value::String("data".into()));
     }
 
     #[test]
@@ -1062,7 +1072,8 @@ mod tests {
         let fast = log.read(&run_id, 0).unwrap();
         let txn = log.read_in_transaction(&run_id, 0).unwrap();
 
-        assert_eq!(fast, txn);
+        // Both should return Versioned<Event> with same value
+        assert_eq!(fast.as_ref().map(|v| &v.value), txn.as_ref().map(|v| &v.value));
     }
 
     #[test]
@@ -1093,8 +1104,8 @@ mod tests {
         let event1 = log.read(&run1, 0).unwrap().unwrap();
         let event2 = log.read(&run2, 0).unwrap().unwrap();
 
-        assert_eq!(event1.event_type, "run1");
-        assert_eq!(event2.event_type, "run2");
+        assert_eq!(event1.value.event_type, "run1");
+        assert_eq!(event2.value.event_type, "run2");
 
         // Cross-run reads return None
         assert!(log.read(&run1, 1).unwrap().is_none());

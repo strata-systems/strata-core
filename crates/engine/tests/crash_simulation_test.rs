@@ -15,16 +15,16 @@
 //! - Multiple incomplete transactions (all discarded)
 //! - Mix of committed and incomplete (only committed recovered)
 
-use chrono::Utc;
 use in_mem_core::types::{Key, Namespace, RunId};
 use in_mem_core::value::Value;
+use in_mem_core::Timestamp;
 use in_mem_core::Storage;
 use in_mem_durability::wal::{DurabilityMode, WALEntry};
 use in_mem_engine::Database;
 use tempfile::TempDir;
 
-fn now() -> i64 {
-    Utc::now().timestamp()
+fn now() -> Timestamp {
+    Timestamp::now()
 }
 
 /// Test: Crash after BeginTxn, before any Write

@@ -40,7 +40,7 @@ fn test_buffered_auto_starts_flush_thread() {
 
     // Verify data is accessible
     for i in 0..10 {
-        let value = kv.get(&test_db.run_id, &format!("key_{}", i)).expect("get");
+        let value = kv.get(&test_db.run_id, &format!("key_{}", i)).expect("get").map(|v| v.value);
         assert!(value.is_some(), "Key {} should exist", i);
     }
 }
@@ -64,7 +64,7 @@ fn test_buffered_no_data_loss() {
 
     // Verify data survived
     let kv = test_db.kv();
-    let value = kv.get(&run_id, "important").expect("get");
+    let value = kv.get(&run_id, "important").expect("get").map(|v| v.value);
     assert!(value.is_some(), "Data should survive restart");
 }
 

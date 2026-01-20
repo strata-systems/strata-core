@@ -11,7 +11,6 @@
 //! **Impact**: Performance doesn't scale with concurrent access.
 
 use crate::test_utils::*;
-use std::sync::Arc;
 use std::thread;
 use std::time::Instant;
 

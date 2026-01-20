@@ -21,6 +21,8 @@ use std::sync::Arc;
 
 use in_mem_core::{Key, Result, SnapshotView, VersionedValue};
 
+use crate::stored_value::StoredValue;
+
 /// A snapshot view that clones the entire BTreeMap
 ///
 /// This is the MVP implementation - simple but expensive.
@@ -41,8 +43,8 @@ use in_mem_core::{Key, Result, SnapshotView, VersionedValue};
 pub struct ClonedSnapshotView {
     /// The version at which this snapshot was created
     version: u64,
-    /// Deep clone of the storage data at snapshot time
-    data: Arc<BTreeMap<Key, VersionedValue>>,
+    /// Deep clone of the storage data at snapshot time (includes TTL info)
+    data: Arc<BTreeMap<Key, StoredValue>>,
 }
 
 impl ClonedSnapshotView {
@@ -56,7 +58,7 @@ impl ClonedSnapshotView {
     /// # Note
     ///
     /// This is typically called by `UnifiedStore::create_snapshot()`, not directly.
-    pub fn new(version: u64, data: BTreeMap<Key, VersionedValue>) -> Self {
+    pub fn new(version: u64, data: BTreeMap<Key, StoredValue>) -> Self {
         Self {
             version,
             data: Arc::new(data),
@@ -67,7 +69,9 @@ impl ClonedSnapshotView {
 impl SnapshotView for ClonedSnapshotView {
     fn get(&self, key: &Key) -> Result<Option<VersionedValue>> {
         match self.data.get(key) {
-            Some(vv) if vv.version <= self.version && !vv.is_expired() => Ok(Some(vv.clone())),
+            Some(sv) if sv.version().as_u64() <= self.version && !sv.is_expired() => {
+                Ok(Some(sv.versioned().clone()))
+            }
             _ => Ok(None),
         }
     }
@@ -77,8 +81,8 @@ impl SnapshotView for ClonedSnapshotView {
             .data
             .range(prefix.clone()..)
             .take_while(|(k, _)| k.starts_with(prefix))
-            .filter(|(_, vv)| vv.version <= self.version && !vv.is_expired())
-            .map(|(k, vv)| (k.clone(), vv.clone()))
+            .filter(|(_, sv)| sv.version().as_u64() <= self.version && !sv.is_expired())
+            .map(|(k, sv)| (k.clone(), sv.versioned().clone()))
             .collect();
 
         Ok(results)
@@ -145,6 +149,8 @@ mod tests {
 
     #[test]
     fn test_snapshot_get() {
+        use in_mem_core::Version;
+
         let store = UnifiedStore::new();
         let ns = test_namespace();
 
@@ -163,7 +169,7 @@ mod tests {
 
         let vv = result.unwrap();
         assert_eq!(vv.value, value);
-        assert_eq!(vv.version, 1);
+        assert_eq!(vv.version, Version::txn(1));
     }
 
     // ========================================

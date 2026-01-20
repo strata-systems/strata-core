@@ -270,7 +270,7 @@ mod conflict_detection {
         let key = tdb.key("cas_conflict");
 
         tdb.db.put(tdb.run_id, key.clone(), values::int(1)).unwrap();
-        let v1 = tdb.db.get(&key).unwrap().unwrap().version;
+        let v1 = tdb.db.get(&key).unwrap().unwrap().version.as_u64();
 
         // Update the key
         tdb.db.put(tdb.run_id, key.clone(), values::int(2)).unwrap();
@@ -833,7 +833,7 @@ mod version_monotonicity {
             })
             .unwrap();
 
-            db.get(&key).unwrap().unwrap().version
+            db.get(&key).unwrap().unwrap().version.as_u64()
         });
 
         // All versions should be unique

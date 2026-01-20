@@ -10,6 +10,7 @@
 //! - Cross-primitive stress
 
 use crate::test_utils::{concurrent, values, TestPrimitives};
+use in_mem_core::contract::Version;
 use in_mem_core::value::Value;
 use in_mem_primitives::TraceType;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -164,11 +165,13 @@ mod eventlog_stress {
             move |i, (tp, run_id)| {
                 let mut sequences = Vec::new();
                 for _ in 0..appends_per_thread {
-                    if let Ok((seq, _)) =
+                    if let Ok(version) =
                         tp.event_log
                             .append(run_id, &format!("thread_{}", i), values::null())
                     {
-                        sequences.push(seq);
+                        if let Version::Sequence(seq) = version {
+                            sequences.push(seq);
+                        }
                     }
                 }
                 sequences
@@ -214,7 +217,7 @@ mod eventlog_stress {
             .read_range(&run_id, 0, num_events as u64)
             .unwrap();
         for (i, event) in events.iter().enumerate() {
-            assert_eq!(event.sequence, i as u64);
+            assert_eq!(event.value.sequence, i as u64);
         }
     }
 
@@ -319,7 +322,7 @@ mod statecell_stress {
         // Final value should equal total increments (no lost updates)
         let state = tp.state_cell.read(&run_id, "counter").unwrap().unwrap();
         assert_eq!(
-            state.value,
+            state.value.value,
             values::int((num_threads * increments_per_thread) as i64)
         );
     }
@@ -396,10 +399,10 @@ mod statecell_stress {
                     if let Ok((_, new_version)) = result {
                         // Per-thread: each successful transition should return a higher version
                         // than the previous successful transition by THIS thread
-                        if new_version <= last_version {
+                        if new_version.value <= last_version {
                             version_decreases += 1;
                         }
-                        last_version = new_version;
+                        last_version = new_version.value;
                     }
                 }
                 version_decreases
@@ -417,7 +420,7 @@ mod statecell_stress {
         let final_state = tp.state_cell.read(&run_id, "cell").unwrap().unwrap();
         let expected_version = (num_threads * ops_per_thread + 1) as u64; // +1 for init
         assert_eq!(
-            final_state.version, expected_version,
+            final_state.value.version, expected_version,
             "Final version should equal total transitions + 1"
         );
     }
@@ -520,7 +523,7 @@ mod cross_primitive_stress {
         // StateCell should equal total transitions
         let state = tp.state_cell.read(&run_id, "state").unwrap().unwrap();
         assert_eq!(
-            state.value,
+            state.value.value,
             values::int((num_threads * ops_per_thread) as i64)
         );
     }
@@ -578,7 +581,7 @@ mod run_lifecycle_stress {
         let mut run_names = Vec::with_capacity(num_runs);
         for i in 0..num_runs {
             let meta = tp.run_index.create_run(&format!("run-{}", i)).unwrap();
-            run_names.push(meta.name);
+            run_names.push(meta.value.name);
         }
 
         // All runs should exist
@@ -598,7 +601,7 @@ mod run_lifecycle_stress {
         let num_runs = 100;
 
         let run_names: Vec<_> = (0..num_runs)
-            .map(|i| tp.run_index.create_run(&format!("run-{}", i)).unwrap().name)
+            .map(|i| tp.run_index.create_run(&format!("run-{}", i)).unwrap().value.name)
             .collect();
 
         // Rapidly transition each run through lifecycle
@@ -620,7 +623,7 @@ mod run_lifecycle_stress {
         // All should be archived
         for run_name in &run_names {
             let run = tp.run_index.get_run(run_name).unwrap().unwrap();
-            assert_eq!(run.status, RunStatus::Archived);
+            assert_eq!(run.value.status, RunStatus::Archived);
         }
     }
 
@@ -663,7 +666,7 @@ mod run_lifecycle_stress {
         }
 
         // Delete the run from index
-        tp.run_index.delete_run(&run_meta.name).unwrap();
+        tp.run_index.delete_run(&run_meta.value.name).unwrap();
 
         // Note: Deleting from RunIndex removes metadata, but not primitive data
         // Data deletion would be a separate cleanup operation

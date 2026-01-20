@@ -60,8 +60,8 @@ fn test_r4_no_phantom_values() {
     test_db.reopen();
 
     let kv = test_db.kv();
-    if let Some(value) = kv.get(&run_id, "key").unwrap() {
-        if let Value::String(s) = value {
+    if let Some(versioned) = kv.get(&run_id, "key").unwrap() {
+        if let Value::String(s) = versioned.value {
             assert_eq!(
                 s, original_value,
                 "R4 VIOLATED: Value changed to phantom: {}",
@@ -121,7 +121,7 @@ fn test_r4_value_integrity_preserved() {
     for (key, expected) in &test_values {
         let actual = kv.get(&run_id, key).unwrap();
         assert_eq!(
-            actual.as_ref(),
+            actual.as_ref().map(|v| &v.value),
             Some(expected),
             "R4 VIOLATED: Value for {} changed",
             key
@@ -233,18 +233,22 @@ fn test_r4_large_values_preserved() {
     test_db.reopen();
 
     let kv = test_db.kv();
-    if let Some(Value::String(recovered)) = kv.get(&run_id, "large").unwrap() {
-        assert_eq!(
-            recovered.len(),
-            large_value.len(),
-            "R4 VIOLATED: Large value length changed"
-        );
-        assert_eq!(
-            recovered, large_value,
-            "R4 VIOLATED: Large value content changed"
-        );
+    if let Some(versioned) = kv.get(&run_id, "large").unwrap() {
+        if let Value::String(recovered) = versioned.value {
+            assert_eq!(
+                recovered.len(),
+                large_value.len(),
+                "R4 VIOLATED: Large value length changed"
+            );
+            assert_eq!(
+                recovered, large_value,
+                "R4 VIOLATED: Large value content changed"
+            );
+        } else {
+            panic!("R4 VIOLATED: Large value wrong type");
+        }
     } else {
-        panic!("R4 VIOLATED: Large value missing or wrong type");
+        panic!("R4 VIOLATED: Large value missing");
     }
 }
 
@@ -268,10 +272,14 @@ fn test_r4_no_cross_run_contamination() {
     let kv = test_db.kv();
 
     // Each run should have its own data
-    if let Some(Value::String(v1)) = kv.get(&run_id1, "key").unwrap() {
-        assert_eq!(v1, "run1_value", "R4: run1 contaminated");
+    if let Some(versioned) = kv.get(&run_id1, "key").unwrap() {
+        if let Value::String(v1) = versioned.value {
+            assert_eq!(v1, "run1_value", "R4: run1 contaminated");
+        }
     }
-    if let Some(Value::String(v2)) = kv.get(&run_id2, "key").unwrap() {
-        assert_eq!(v2, "run2_value", "R4: run2 contaminated");
+    if let Some(versioned) = kv.get(&run_id2, "key").unwrap() {
+        if let Value::String(v2) = versioned.value {
+            assert_eq!(v2, "run2_value", "R4: run2 contaminated");
+        }
     }
 }

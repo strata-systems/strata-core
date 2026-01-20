@@ -6,9 +6,10 @@
 //! 3. Preserves version numbers from WAL entries
 //! 4. Handles multiple transactions correctly
 
-use chrono::Utc;
+use in_mem_core::contract::Version;
 use in_mem_core::types::{Key, Namespace, RunId};
 use in_mem_core::value::Value;
+use in_mem_core::Timestamp;
 use in_mem_core::Storage; // Need trait in scope for .get() and .current_version()
 use in_mem_durability::recovery::replay_wal;
 use in_mem_durability::wal::{DurabilityMode, WALEntry, WAL};
@@ -16,8 +17,8 @@ use in_mem_storage::UnifiedStore;
 use tempfile::TempDir;
 
 /// Helper to get current timestamp
-fn now() -> i64 {
-    Utc::now().timestamp()
+fn now() -> Timestamp {
+    Timestamp::now()
 }
 
 /// Helper to create a test namespace with a specific run_id
@@ -83,7 +84,7 @@ fn test_replay_single_committed_transaction() {
     assert!(result.is_some());
     let vv = result.unwrap();
     assert_eq!(vv.value, Value::String("world".to_string()));
-    assert_eq!(vv.version, 1);
+    assert_eq!(vv.version, Version::TxnId(1));
 }
 
 #[test]
@@ -183,7 +184,7 @@ fn test_replay_multiple_committed_transactions() {
         let key = Key::new_kv(ns.clone(), format!("key{}", i));
         let result = store.get(&key).unwrap().unwrap();
         assert_eq!(result.value, Value::I64(i as i64 * 100));
-        assert_eq!(result.version, i);
+        assert_eq!(result.version, Version::TxnId(i));
     }
 }
 
@@ -383,21 +384,21 @@ fn test_replay_preserves_exact_versions() {
         .get(&Key::new_kv(ns.clone(), "alpha"))
         .unwrap()
         .unwrap();
-    assert_eq!(alpha.version, 1000); // Not 1, but 1000!
+    assert_eq!(alpha.version, Version::TxnId(1000)); // Not 1, but 1000!
     assert_eq!(alpha.value, Value::I64(111));
 
     let beta = store
         .get(&Key::new_kv(ns.clone(), "beta"))
         .unwrap()
         .unwrap();
-    assert_eq!(beta.version, 2000); // Not 2, but 2000!
+    assert_eq!(beta.version, Version::TxnId(2000)); // Not 2, but 2000!
     assert_eq!(beta.value, Value::I64(222));
 
     let gamma = store
         .get(&Key::new_kv(ns.clone(), "gamma"))
         .unwrap()
         .unwrap();
-    assert_eq!(gamma.version, 3000); // Not 3, but 3000!
+    assert_eq!(gamma.version, Version::TxnId(3000)); // Not 3, but 3000!
     assert_eq!(gamma.value, Value::I64(333));
 }
 
@@ -465,7 +466,7 @@ fn test_replay_version_ordering_preserved() {
             .unwrap()
             .unwrap()
             .version,
-        50
+        Version::TxnId(50)
     );
     assert_eq!(
         store
@@ -473,7 +474,7 @@ fn test_replay_version_ordering_preserved() {
             .unwrap()
             .unwrap()
             .version,
-        10
+        Version::TxnId(10)
     );
     assert_eq!(
         store
@@ -481,7 +482,7 @@ fn test_replay_version_ordering_preserved() {
             .unwrap()
             .unwrap()
             .version,
-        30
+        Version::TxnId(30)
     );
 }
 
@@ -645,7 +646,7 @@ fn test_replay_multiple_writes_same_key() {
     // Final value is the last one
     let result = store.get(&Key::new_kv(ns, "counter")).unwrap().unwrap();
     assert_eq!(result.value, Value::I64(3));
-    assert_eq!(result.version, 3);
+    assert_eq!(result.version, Version::TxnId(3));
 }
 
 // ============================================================================
@@ -827,7 +828,7 @@ fn test_replay_deterministic_order() {
             let key = Key::new_kv(ns.clone(), format!("k{}", i));
             let vv = store.get(&key).unwrap().unwrap();
             assert_eq!(vv.value, Value::I64(i as i64));
-            assert_eq!(vv.version, i);
+            assert_eq!(vv.version, Version::TxnId(i));
         }
     }
 }
@@ -921,7 +922,7 @@ fn test_replay_twenty_sequential_transactions() {
             i,
             i
         );
-        assert_eq!(vv.version, i, "key{} should have version {}", i, i);
+        assert_eq!(vv.version, Version::TxnId(i), "key{} should have version {}", i, i);
     }
 }
 

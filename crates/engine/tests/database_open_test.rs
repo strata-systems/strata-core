@@ -6,16 +6,17 @@
 //! - Automatic WAL recovery
 //! - Multiple write/close/reopen cycles
 
-use chrono::Utc;
+use in_mem_core::contract::Version;
 use in_mem_core::types::{Key, Namespace, RunId};
 use in_mem_core::value::Value;
+use in_mem_core::Timestamp;
 use in_mem_core::Storage;
 use in_mem_durability::wal::{DurabilityMode, WALEntry};
 use in_mem_engine::Database;
 use tempfile::TempDir;
 
-fn now() -> i64 {
-    Utc::now().timestamp()
+fn now() -> Timestamp {
+    Timestamp::now()
 }
 
 #[test]
@@ -84,7 +85,7 @@ fn test_database_lifecycle() {
             .unwrap()
             .expect("user:1 should exist");
         assert_eq!(user1.value, Value::String("Alice".to_string()));
-        assert_eq!(user1.version, 1);
+        assert_eq!(user1.version, Version::TxnId(1));
 
         let user2 = db
             .storage()
@@ -92,7 +93,7 @@ fn test_database_lifecycle() {
             .unwrap()
             .expect("user:2 should exist");
         assert_eq!(user2.value, Value::String("Bob".to_string()));
-        assert_eq!(user2.version, 2);
+        assert_eq!(user2.version, Version::TxnId(2));
 
         // Add more data
         let wal = db.wal();
@@ -583,7 +584,7 @@ fn test_large_transaction() {
                 .unwrap()
                 .unwrap_or_else(|| panic!("key_{} should exist", i));
             assert_eq!(val.value, Value::I64(i as i64));
-            assert_eq!(val.version, (i + 1) as u64);
+            assert_eq!(val.version, Version::TxnId((i + 1) as u64));
         }
 
         assert_eq!(db.storage().current_version(), NUM_ENTRIES as u64);

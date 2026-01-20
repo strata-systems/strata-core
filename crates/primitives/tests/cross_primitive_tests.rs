@@ -56,14 +56,14 @@ fn test_kv_event_state_trace_atomic() {
     let trace_store = TraceStore::new(db.clone());
 
     assert_eq!(
-        kv.get(&run_id, "task/status").unwrap(),
+        kv.get(&run_id, "task/status").unwrap().map(|v| v.value),
         Some(Value::String("running".into()))
     );
     assert_eq!(event_log.len(&run_id).unwrap(), 1);
 
     let state = state_cell.read(&run_id, "workflow").unwrap().unwrap();
-    assert_eq!(state.value, Value::String("step1".into()));
-    assert_eq!(state.version, 2);
+    assert_eq!(state.value.value, Value::String("step1".into()));
+    assert_eq!(state.value.version, 2);
 
     assert_eq!(trace_store.count(&run_id).unwrap(), 1);
 }
@@ -105,8 +105,8 @@ fn test_cross_primitive_rollback() {
 
     // Verify StateCell unchanged
     let state = state_cell.read(&run_id, "cell").unwrap().unwrap();
-    assert_eq!(state.value, Value::I64(100));
-    assert_eq!(state.version, 1);
+    assert_eq!(state.value.value, Value::I64(100));
+    assert_eq!(state.value.version, 1);
 }
 
 /// Test that all 4 extension traits compose correctly in single transaction
@@ -190,7 +190,7 @@ fn test_partial_failure_full_rollback() {
     assert_eq!(trace_store.count(&run_id).unwrap(), 0);
 
     let state = state_cell.read(&run_id, "state").unwrap().unwrap();
-    assert_eq!(state.version, 1); // Unchanged
+    assert_eq!(state.value.version, 1); // Unchanged
 }
 
 /// Test nested/chained primitive operations within single transaction
@@ -236,13 +236,13 @@ fn test_nested_primitive_operations() {
     // Verify causal chain worked
     let event_log = EventLog::new(db.clone());
     let event = event_log.read(&run_id, 0).unwrap().unwrap();
-    assert_eq!(event.payload, Value::I64(42)); // From KV
+    assert_eq!(event.value.payload, Value::I64(42)); // From KV
 
     let state = state_cell
         .read(&run_id, "sequence_tracker")
         .unwrap()
         .unwrap();
-    assert_eq!(state.value, Value::I64(0)); // Sequence number (starts at 0)
+    assert_eq!(state.value.value, Value::I64(0)); // Sequence number (starts at 0)
 
     let trace_store = TraceStore::new(db.clone());
     assert_eq!(trace_store.count(&run_id).unwrap(), 1);
@@ -277,7 +277,7 @@ fn test_multiple_transactions_consistency() {
     // All 10 KV entries exist
     for i in 1..=10 {
         assert_eq!(
-            kv.get(&run_id, &format!("key_{}", i)).unwrap(),
+            kv.get(&run_id, &format!("key_{}", i)).unwrap().map(|v| v.value),
             Some(Value::I64(i))
         );
     }
@@ -287,7 +287,7 @@ fn test_multiple_transactions_consistency() {
 
     // Counter at 10
     let state = state_cell.read(&run_id, "counter").unwrap().unwrap();
-    assert_eq!(state.value, Value::I64(10));
+    assert_eq!(state.value.value, Value::I64(10));
 
     // 10 traces
     assert_eq!(trace_store.count(&run_id).unwrap(), 10);
@@ -346,7 +346,7 @@ fn test_read_only_transaction() {
     assert!(result.is_ok());
 
     // Data unchanged
-    assert_eq!(kv.get(&run_id, "existing").unwrap(), Some(Value::I64(100)));
+    assert_eq!(kv.get(&run_id, "existing").unwrap().map(|v| v.value), Some(Value::I64(100)));
     let state = state_cell.read(&run_id, "cell").unwrap().unwrap();
-    assert_eq!(state.version, 1);
+    assert_eq!(state.value.version, 1);
 }

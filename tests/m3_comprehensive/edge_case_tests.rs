@@ -7,6 +7,7 @@
 //! - Concurrent edge cases
 
 use crate::test_utils::{concurrent, values, TestPrimitives};
+use in_mem_core::contract::Version;
 use in_mem_core::value::Value;
 use in_mem_primitives::TraceType;
 use std::sync::Arc;
@@ -121,7 +122,7 @@ mod boundary_values {
     fn test_kv_empty_key() {
         let tp = TestPrimitives::new();
         tp.kv.put(&tp.run_id, "", values::int(42)).unwrap();
-        assert_eq!(tp.kv.get(&tp.run_id, "").unwrap(), Some(values::int(42)));
+        assert_eq!(tp.kv.get(&tp.run_id, "").unwrap().map(|v| v.value), Some(values::int(42)));
     }
 
     #[test]
@@ -130,7 +131,7 @@ mod boundary_values {
         let long_key = "a".repeat(1000);
         tp.kv.put(&tp.run_id, &long_key, values::int(1)).unwrap();
         assert_eq!(
-            tp.kv.get(&tp.run_id, &long_key).unwrap(),
+            tp.kv.get(&tp.run_id, &long_key).unwrap().map(|v| v.value),
             Some(values::int(1))
         );
     }
@@ -140,7 +141,7 @@ mod boundary_values {
         let tp = TestPrimitives::new();
         tp.kv.put(&tp.run_id, "key", values::string("")).unwrap();
         assert_eq!(
-            tp.kv.get(&tp.run_id, "key").unwrap(),
+            tp.kv.get(&tp.run_id, "key").unwrap().map(|v| v.value),
             Some(values::string(""))
         );
     }
@@ -150,7 +151,7 @@ mod boundary_values {
         let tp = TestPrimitives::new();
         tp.kv.put(&tp.run_id, "key", values::bytes(&[])).unwrap();
         assert_eq!(
-            tp.kv.get(&tp.run_id, "key").unwrap(),
+            tp.kv.get(&tp.run_id, "key").unwrap().map(|v| v.value),
             Some(values::bytes(&[]))
         );
     }
@@ -162,7 +163,7 @@ mod boundary_values {
         tp.kv
             .put(&tp.run_id, "key", values::bytes(&large_bytes))
             .unwrap();
-        let result = tp.kv.get(&tp.run_id, "key").unwrap().unwrap();
+        let result = tp.kv.get(&tp.run_id, "key").unwrap().unwrap().value;
         if let Value::Bytes(bytes) = result {
             assert_eq!(bytes.len(), 100_000);
         } else {
@@ -177,11 +178,11 @@ mod boundary_values {
         tp.kv.put(&tp.run_id, "max", values::int(i64::MAX)).unwrap();
 
         assert_eq!(
-            tp.kv.get(&tp.run_id, "min").unwrap(),
+            tp.kv.get(&tp.run_id, "min").unwrap().map(|v| v.value),
             Some(values::int(i64::MIN))
         );
         assert_eq!(
-            tp.kv.get(&tp.run_id, "max").unwrap(),
+            tp.kv.get(&tp.run_id, "max").unwrap().map(|v| v.value),
             Some(values::int(i64::MAX))
         );
     }
@@ -200,11 +201,11 @@ mod boundary_values {
         tp.kv.put(&tp.run_id, "zero", values::float(0.0)).unwrap();
 
         assert_eq!(
-            tp.kv.get(&tp.run_id, "inf").unwrap(),
+            tp.kv.get(&tp.run_id, "inf").unwrap().map(|v| v.value),
             Some(values::float(f64::INFINITY))
         );
         assert_eq!(
-            tp.kv.get(&tp.run_id, "neg_inf").unwrap(),
+            tp.kv.get(&tp.run_id, "neg_inf").unwrap().map(|v| v.value),
             Some(values::float(f64::NEG_INFINITY))
         );
     }
@@ -214,7 +215,7 @@ mod boundary_values {
         let tp = TestPrimitives::new();
         tp.kv.put(&tp.run_id, "key", values::array(vec![])).unwrap();
         assert_eq!(
-            tp.kv.get(&tp.run_id, "key").unwrap(),
+            tp.kv.get(&tp.run_id, "key").unwrap().map(|v| v.value),
             Some(values::array(vec![]))
         );
     }
@@ -227,7 +228,7 @@ mod boundary_values {
             values::array(vec![values::int(3), values::int(4)]),
         ]);
         tp.kv.put(&tp.run_id, "key", nested.clone()).unwrap();
-        assert_eq!(tp.kv.get(&tp.run_id, "key").unwrap(), Some(nested));
+        assert_eq!(tp.kv.get(&tp.run_id, "key").unwrap().map(|v| v.value), Some(nested));
     }
 
     #[test]
@@ -235,7 +236,7 @@ mod boundary_values {
         let tp = TestPrimitives::new();
         tp.kv.put(&tp.run_id, "key", values::map(vec![])).unwrap();
         assert_eq!(
-            tp.kv.get(&tp.run_id, "key").unwrap(),
+            tp.kv.get(&tp.run_id, "key").unwrap().map(|v| v.value),
             Some(values::map(vec![]))
         );
     }
@@ -243,21 +244,23 @@ mod boundary_values {
     #[test]
     fn test_eventlog_empty_event_type() {
         let tp = TestPrimitives::new();
-        let (seq, _) = tp.event_log.append(&tp.run_id, "", values::null()).unwrap();
+        let version = tp.event_log.append(&tp.run_id, "", values::null()).unwrap();
+        let Version::Sequence(seq) = version else { panic!("Expected Sequence version") };
         let event = tp.event_log.read(&tp.run_id, seq).unwrap().unwrap();
-        assert_eq!(event.event_type, "");
+        assert_eq!(event.value.event_type, "");
     }
 
     #[test]
     fn test_eventlog_long_event_type() {
         let tp = TestPrimitives::new();
         let long_type = "event_".to_string() + &"a".repeat(1000);
-        let (seq, _) = tp
+        let version = tp
             .event_log
             .append(&tp.run_id, &long_type, values::null())
             .unwrap();
+        let Version::Sequence(seq) = version else { panic!("Expected Sequence version") };
         let event = tp.event_log.read(&tp.run_id, seq).unwrap().unwrap();
-        assert_eq!(event.event_type, long_type);
+        assert_eq!(event.value.event_type, long_type);
     }
 
     #[test]
@@ -281,9 +284,10 @@ mod boundary_values {
                 vec![],
                 values::null(),
             )
-            .unwrap();
+            .unwrap()
+            .value;
         let trace = tp.trace_store.get(&tp.run_id, &id).unwrap().unwrap();
-        assert!(matches!(trace.trace_type, TraceType::Custom { name, .. } if name.is_empty()));
+        assert!(matches!(trace.value.trace_type, TraceType::Custom { name, .. } if name.is_empty()));
     }
 }
 
@@ -300,7 +304,7 @@ mod unicode_and_special {
         let unicode_key = "キー_🔑_مفتاح";
         tp.kv.put(&tp.run_id, unicode_key, values::int(42)).unwrap();
         assert_eq!(
-            tp.kv.get(&tp.run_id, unicode_key).unwrap(),
+            tp.kv.get(&tp.run_id, unicode_key).unwrap().map(|v| v.value),
             Some(values::int(42))
         );
     }
@@ -313,7 +317,7 @@ mod unicode_and_special {
             .put(&tp.run_id, "key", values::string(unicode_value))
             .unwrap();
         assert_eq!(
-            tp.kv.get(&tp.run_id, "key").unwrap(),
+            tp.kv.get(&tp.run_id, "key").unwrap().map(|v| v.value),
             Some(values::string(unicode_value))
         );
     }
@@ -324,7 +328,7 @@ mod unicode_and_special {
         let emoji_key = "🔥💯🚀";
         tp.kv.put(&tp.run_id, emoji_key, values::int(100)).unwrap();
         assert_eq!(
-            tp.kv.get(&tp.run_id, emoji_key).unwrap(),
+            tp.kv.get(&tp.run_id, emoji_key).unwrap().map(|v| v.value),
             Some(values::int(100))
         );
     }
@@ -337,7 +341,7 @@ mod unicode_and_special {
             .put(&tp.run_id, "key", values::string(multiline))
             .unwrap();
         assert_eq!(
-            tp.kv.get(&tp.run_id, "key").unwrap(),
+            tp.kv.get(&tp.run_id, "key").unwrap().map(|v| v.value),
             Some(values::string(multiline))
         );
     }
@@ -350,7 +354,7 @@ mod unicode_and_special {
             .put(&tp.run_id, key_with_null, values::int(1))
             .unwrap();
         assert_eq!(
-            tp.kv.get(&tp.run_id, key_with_null).unwrap(),
+            tp.kv.get(&tp.run_id, key_with_null).unwrap().map(|v| v.value),
             Some(values::int(1))
         );
     }
@@ -363,7 +367,7 @@ mod unicode_and_special {
             .put(&tp.run_id, "binary", values::bytes(&binary))
             .unwrap();
         assert_eq!(
-            tp.kv.get(&tp.run_id, "binary").unwrap(),
+            tp.kv.get(&tp.run_id, "binary").unwrap().map(|v| v.value),
             Some(values::bytes(&binary))
         );
     }
@@ -372,12 +376,13 @@ mod unicode_and_special {
     fn test_eventlog_unicode_event_type() {
         let tp = TestPrimitives::new();
         let unicode_type = "イベント_🎯_حدث";
-        let (seq, _) = tp
+        let version = tp
             .event_log
             .append(&tp.run_id, unicode_type, values::null())
             .unwrap();
+        let Version::Sequence(seq) = version else { panic!("Expected Sequence version") };
         let event = tp.event_log.read(&tp.run_id, seq).unwrap().unwrap();
-        assert_eq!(event.event_type, unicode_type);
+        assert_eq!(event.value.event_type, unicode_type);
     }
 
     #[test]
@@ -409,9 +414,10 @@ mod unicode_and_special {
                 vec![],
                 values::null(),
             )
-            .unwrap();
+            .unwrap()
+            .value;
         let trace = tp.trace_store.get(&tp.run_id, &id).unwrap().unwrap();
-        assert!(matches!(trace.trace_type, TraceType::Custom { name, .. } if name == unicode_type));
+        assert!(matches!(trace.value.trace_type, TraceType::Custom { name, .. } if name == unicode_type));
     }
 }
 
@@ -440,7 +446,7 @@ mod concurrent_edge_cases {
         }
 
         // Final value is from one of the threads
-        let final_value = tp.kv.get(&run_id, "contended_key").unwrap().unwrap();
+        let final_value = tp.kv.get(&run_id, "contended_key").unwrap().unwrap().value;
         if let Value::I64(n) = final_value {
             assert!(n >= 0 && n < num_threads as i64);
         } else {
@@ -560,7 +566,7 @@ mod concurrent_edge_cases {
         // Final value should be total increments
         let state = tp.state_cell.read(&run_id, "counter").unwrap().unwrap();
         assert_eq!(
-            state.value,
+            state.value.value,
             values::int((num_threads * increments_per_thread) as i64)
         );
     }
@@ -586,7 +592,7 @@ mod delete_edge_cases {
         tp.kv.put(&tp.run_id, "key", values::int(1)).unwrap();
         tp.kv.delete(&tp.run_id, "key").unwrap();
         tp.kv.put(&tp.run_id, "key", values::int(2)).unwrap();
-        assert_eq!(tp.kv.get(&tp.run_id, "key").unwrap(), Some(values::int(2)));
+        assert_eq!(tp.kv.get(&tp.run_id, "key").unwrap().map(|v| v.value), Some(values::int(2)));
     }
 
     #[test]
@@ -609,7 +615,7 @@ mod delete_edge_cases {
             .init(&tp.run_id, "cell", values::int(2))
             .unwrap();
         let state = tp.state_cell.read(&tp.run_id, "cell").unwrap().unwrap();
-        assert_eq!(state.value, values::int(2));
-        assert_eq!(state.version, 1); // Version resets after delete
+        assert_eq!(state.value.value, values::int(2));
+        assert_eq!(state.value.version, 1); // Version resets after delete
     }
 }

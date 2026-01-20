@@ -271,7 +271,7 @@ mod consistency {
 
         for i in 0..10 {
             tdb.db.put(tdb.run_id, key.clone(), values::int(i)).unwrap();
-            versions.push(tdb.db.get(&key).unwrap().unwrap().version);
+            versions.push(tdb.db.get(&key).unwrap().unwrap().version.as_u64());
         }
 
         // CONSISTENCY: versions must be strictly increasing

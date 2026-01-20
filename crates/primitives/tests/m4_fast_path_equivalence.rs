@@ -48,9 +48,9 @@ fn kv_fast_path_equals_transaction_read() {
     let txn2 = kv.get_in_transaction(&run_id, "key2").unwrap();
     let txn_missing = kv.get_in_transaction(&run_id, "missing").unwrap();
 
-    // Must be identical
-    assert_eq!(fast1, txn1, "key1 values must match");
-    assert_eq!(fast2, txn2, "key2 values must match");
+    // Values must be identical (metadata like version/timestamp may differ between paths)
+    assert_eq!(fast1.as_ref().map(|v| &v.value), txn1.as_ref().map(|v| &v.value), "key1 values must match");
+    assert_eq!(fast2.as_ref().map(|v| &v.value), txn2.as_ref().map(|v| &v.value), "key2 values must match");
     assert_eq!(fast_missing, txn_missing, "missing key must match");
 }
 
@@ -62,20 +62,20 @@ fn kv_fast_path_observes_latest_committed() {
 
     // Initial value
     kv.put(&run_id, "key", Value::I64(1)).unwrap();
-    assert_eq!(kv.get(&run_id, "key").unwrap(), Some(Value::I64(1)));
+    assert_eq!(kv.get(&run_id, "key").unwrap().map(|v| v.value), Some(Value::I64(1)));
 
     // Update value
     kv.put(&run_id, "key", Value::I64(2)).unwrap();
-    assert_eq!(kv.get(&run_id, "key").unwrap(), Some(Value::I64(2)));
+    assert_eq!(kv.get(&run_id, "key").unwrap().map(|v| v.value), Some(Value::I64(2)));
 
     // Update again
     kv.put(&run_id, "key", Value::I64(3)).unwrap();
-    assert_eq!(kv.get(&run_id, "key").unwrap(), Some(Value::I64(3)));
+    assert_eq!(kv.get(&run_id, "key").unwrap().map(|v| v.value), Some(Value::I64(3)));
 
-    // Fast path and transaction should agree
+    // Fast path and transaction should agree on value
     assert_eq!(
-        kv.get(&run_id, "key").unwrap(),
-        kv.get_in_transaction(&run_id, "key").unwrap()
+        kv.get(&run_id, "key").unwrap().map(|v| v.value),
+        kv.get_in_transaction(&run_id, "key").unwrap().map(|v| v.value)
     );
 }
 
@@ -106,8 +106,8 @@ fn kv_batch_get_snapshot_consistency() {
     let results = kv.get_many(&run_id, &["a", "b"]).unwrap();
 
     // Both values should be from the same snapshot
-    assert_eq!(results[0], Some(Value::I64(100)));
-    assert_eq!(results[1], Some(Value::I64(200)));
+    assert_eq!(results[0].as_ref().map(|v| v.value.clone()), Some(Value::I64(100)));
+    assert_eq!(results[1].as_ref().map(|v| v.value.clone()), Some(Value::I64(200)));
 }
 
 // ============================================================================
@@ -205,8 +205,8 @@ fn statecell_version_monotonicity() {
         sc.set(&run_id, "counter", Value::I64(i)).unwrap();
 
         let state = sc.read(&run_id, "counter").unwrap().unwrap();
-        assert_eq!(state.version, (i + 1) as u64, "version should increment");
-        assert_eq!(state.value, Value::I64(i), "value should update");
+        assert_eq!(state.value.version, (i + 1) as u64, "version should increment");
+        assert_eq!(state.value.value, Value::I64(i), "value should update");
     }
 }
 
@@ -231,7 +231,8 @@ fn tracestore_fast_path_equals_transaction_read() {
             vec!["important".into()],
             Value::Null,
         )
-        .unwrap();
+        .unwrap()
+        .value; // Extract trace_id from Versioned
 
     let trace2_id = ts
         .record(
@@ -245,7 +246,8 @@ fn tracestore_fast_path_equals_transaction_read() {
             vec![],
             Value::Null,
         )
-        .unwrap();
+        .unwrap()
+        .value; // Extract trace_id from Versioned
 
     // Fast path reads
     let fast1 = ts.get(&run_id, &trace1_id).unwrap();
@@ -257,9 +259,9 @@ fn tracestore_fast_path_equals_transaction_read() {
     let txn2 = ts.get_in_transaction(&run_id, &trace2_id).unwrap();
     let txn_missing = ts.get_in_transaction(&run_id, "nonexistent").unwrap();
 
-    // Must be identical
-    assert_eq!(fast1, txn1, "trace1 must match");
-    assert_eq!(fast2, txn2, "trace2 must match");
+    // Values must be identical (version metadata may differ between paths)
+    assert_eq!(fast1.as_ref().map(|v| &v.value), txn1.as_ref().map(|v| &v.value), "trace1 values must match");
+    assert_eq!(fast2.as_ref().map(|v| &v.value), txn2.as_ref().map(|v| &v.value), "trace2 values must match");
     assert_eq!(fast_missing, txn_missing, "missing trace must match");
 }
 
@@ -282,7 +284,8 @@ fn tracestore_parent_child_relationship_preserved() {
             vec![],
             Value::Null,
         )
-        .unwrap();
+        .unwrap()
+        .value; // Extract trace_id from Versioned
 
     let child_id = ts
         .record_child(
@@ -297,11 +300,12 @@ fn tracestore_parent_child_relationship_preserved() {
             vec![],
             Value::Null,
         )
-        .unwrap();
+        .unwrap()
+        .value; // Extract trace_id from Versioned
 
     // Fast path should see correct relationship
     let child = ts.get(&run_id, &child_id).unwrap().unwrap();
-    assert_eq!(child.parent_id, Some(parent_id.clone()));
+    assert_eq!(child.value.parent_id, Some(parent_id.clone()));
 
     // Tree reconstruction should work with fast path reads
     let tree = ts.get_tree(&run_id, &parent_id).unwrap().unwrap();
@@ -339,7 +343,8 @@ fn all_primitives_run_isolation() {
             vec![],
             Value::Null,
         )
-        .unwrap();
+        .unwrap()
+        .value; // Extract trace_id from Versioned
 
     // Write to run2
     kv.put(&run2, "key", Value::I64(2)).unwrap();
@@ -355,26 +360,27 @@ fn all_primitives_run_isolation() {
             vec![],
             Value::Null,
         )
-        .unwrap();
+        .unwrap()
+        .value; // Extract trace_id from Versioned
 
     // Fast path reads should maintain run isolation
-    assert_eq!(kv.get(&run1, "key").unwrap(), Some(Value::I64(1)));
-    assert_eq!(kv.get(&run2, "key").unwrap(), Some(Value::I64(2)));
+    assert_eq!(kv.get(&run1, "key").unwrap().map(|v| v.value), Some(Value::I64(1)));
+    assert_eq!(kv.get(&run2, "key").unwrap().map(|v| v.value), Some(Value::I64(2)));
 
     let event1 = log.read(&run1, 0).unwrap().unwrap();
     let event2 = log.read(&run2, 0).unwrap().unwrap();
-    assert_eq!(event1.payload, Value::I64(1));
-    assert_eq!(event2.payload, Value::I64(2));
+    assert_eq!(event1.value.payload, Value::I64(1));
+    assert_eq!(event2.value.payload, Value::I64(2));
 
     let state1 = sc.read(&run1, "cell").unwrap().unwrap();
     let state2 = sc.read(&run2, "cell").unwrap().unwrap();
-    assert_eq!(state1.value, Value::I64(1));
-    assert_eq!(state2.value, Value::I64(2));
+    assert_eq!(state1.value.value, Value::I64(1));
+    assert_eq!(state2.value.value, Value::I64(2));
 
     let t1 = ts.get(&run1, &trace1_id).unwrap().unwrap();
     let t2 = ts.get(&run2, &trace2_id).unwrap().unwrap();
-    assert!(matches!(t1.trace_type, TraceType::Thought { content, .. } if content == "run1"));
-    assert!(matches!(t2.trace_type, TraceType::Thought { content, .. } if content == "run2"));
+    assert!(matches!(t1.value.trace_type, TraceType::Thought { content, .. } if content == "run1"));
+    assert!(matches!(t2.value.trace_type, TraceType::Thought { content, .. } if content == "run2"));
 
     // Cross-run reads should return None
     assert!(ts.get(&run1, &trace2_id).unwrap().is_none());
@@ -391,17 +397,17 @@ fn fast_path_observes_committed_data_only() {
     kv.put(&run_id, "key", Value::I64(1)).unwrap();
 
     // Fast path should see the committed value
-    assert_eq!(kv.get(&run_id, "key").unwrap(), Some(Value::I64(1)));
+    assert_eq!(kv.get(&run_id, "key").unwrap().map(|v| v.value), Some(Value::I64(1)));
 
     // Update in a new transaction
     kv.put(&run_id, "key", Value::I64(2)).unwrap();
 
     // Fast path should see the new committed value
-    assert_eq!(kv.get(&run_id, "key").unwrap(), Some(Value::I64(2)));
+    assert_eq!(kv.get(&run_id, "key").unwrap().map(|v| v.value), Some(Value::I64(2)));
 
     // Transaction read should match
     assert_eq!(
-        kv.get_in_transaction(&run_id, "key").unwrap(),
+        kv.get_in_transaction(&run_id, "key").unwrap().map(|v| v.value),
         Some(Value::I64(2))
     );
 }

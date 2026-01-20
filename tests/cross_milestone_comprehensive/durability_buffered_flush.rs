@@ -23,7 +23,7 @@ fn test_explicit_flush() {
     // Reopen and verify
     test_db.reopen();
     let kv = test_db.kv();
-    assert!(kv.get(&run_id, "flush_test").expect("get").is_some());
+    assert!(kv.get(&run_id, "flush_test").expect("get").map(|v| v.value).is_some());
 }
 
 /// Test automatic flush after interval.

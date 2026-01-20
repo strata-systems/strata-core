@@ -3,7 +3,7 @@
 //! Tests for inverted index behavior and consistency.
 
 use in_mem_core::search_types::DocRef;
-use in_mem_core::types::{Key, Namespace, RunId};
+use in_mem_core::types::RunId;
 use in_mem_search::InvertedIndex;
 
 // ============================================================================
@@ -39,9 +39,9 @@ fn test_tier7_index_disable() {
 fn test_tier7_add_when_disabled_noop() {
     let index = InvertedIndex::new();
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
     let doc_ref = DocRef::Kv {
-        key: Key::new_kv(ns, "test"),
+        run_id,
+        key: "test".to_string(),
     };
 
     // Add without enabling
@@ -58,9 +58,9 @@ fn test_tier7_add_when_enabled_works() {
     index.enable();
 
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
     let doc_ref = DocRef::Kv {
-        key: Key::new_kv(ns, "test"),
+        run_id,
+        key: "test".to_string(),
     };
 
     index.index_document(&doc_ref, "hello world", None);
@@ -81,16 +81,18 @@ fn test_tier7_index_returns_matches() {
     index.enable();
 
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
 
     let ref1 = DocRef::Kv {
-        key: Key::new_kv(ns.clone(), "doc1"),
+        run_id: run_id.clone(),
+        key: "doc1".to_string(),
     };
     let ref2 = DocRef::Kv {
-        key: Key::new_kv(ns.clone(), "doc2"),
+        run_id: run_id.clone(),
+        key: "doc2".to_string(),
     };
     let ref3 = DocRef::Kv {
-        key: Key::new_kv(ns.clone(), "doc3"),
+        run_id,
+        key: "doc3".to_string(),
     };
 
     index.index_document(&ref1, "hello world", None);
@@ -109,9 +111,9 @@ fn test_tier7_index_case_insensitive() {
     index.enable();
 
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
     let doc_ref = DocRef::Kv {
-        key: Key::new_kv(ns, "doc"),
+        run_id,
+        key: "doc".to_string(),
     };
 
     index.index_document(&doc_ref, "Hello World", None);
@@ -127,9 +129,9 @@ fn test_tier7_index_no_matches_empty() {
     index.enable();
 
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
     let doc_ref = DocRef::Kv {
-        key: Key::new_kv(ns, "doc"),
+        run_id,
+        key: "doc".to_string(),
     };
 
     index.index_document(&doc_ref, "hello world", None);
@@ -149,9 +151,9 @@ fn test_tier7_index_remove_document() {
     index.enable();
 
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
     let doc_ref = DocRef::Kv {
-        key: Key::new_kv(ns, "doc"),
+        run_id,
+        key: "doc".to_string(),
     };
 
     index.index_document(&doc_ref, "hello world", None);
@@ -169,11 +171,11 @@ fn test_tier7_index_clear() {
     index.enable();
 
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
 
     for i in 0..10 {
         let doc_ref = DocRef::Kv {
-            key: Key::new_kv(ns.clone(), &format!("doc{}", i)),
+            run_id: run_id.clone(),
+            key: format!("doc{}", i),
         };
         index.index_document(&doc_ref, "hello world", None);
     }
@@ -196,13 +198,13 @@ fn test_tier7_index_total_docs() {
     index.enable();
 
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
 
     assert_eq!(index.total_docs(), 0);
 
     for i in 0..5 {
         let doc_ref = DocRef::Kv {
-            key: Key::new_kv(ns.clone(), &format!("doc{}", i)),
+            run_id: run_id.clone(),
+            key: format!("doc{}", i),
         };
         index.index_document(&doc_ref, "hello world", None);
     }
@@ -217,13 +219,14 @@ fn test_tier7_index_avg_doc_len() {
     index.enable();
 
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
 
     let ref1 = DocRef::Kv {
-        key: Key::new_kv(ns.clone(), "doc1"),
+        run_id: run_id.clone(),
+        key: "doc1".to_string(),
     };
     let ref2 = DocRef::Kv {
-        key: Key::new_kv(ns.clone(), "doc2"),
+        run_id,
+        key: "doc2".to_string(),
     };
 
     index.index_document(&ref1, "hello world", None); // 2 tokens
@@ -240,12 +243,12 @@ fn test_tier7_index_idf() {
     index.enable();
 
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
 
     // Add documents where "hello" appears in 2 and "rare" in 1
     for i in 0..10 {
         let doc_ref = DocRef::Kv {
-            key: Key::new_kv(ns.clone(), &format!("doc{}", i)),
+            run_id: run_id.clone(),
+            key: format!("doc{}", i),
         };
         if i < 2 {
             index.index_document(&doc_ref, "hello world", None);
@@ -270,11 +273,11 @@ fn test_tier7_index_doc_freq() {
     index.enable();
 
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
 
     for i in 0..5 {
         let doc_ref = DocRef::Kv {
-            key: Key::new_kv(ns.clone(), &format!("doc{}", i)),
+            run_id: run_id.clone(),
+            key: format!("doc{}", i),
         };
         index.index_document(&doc_ref, "hello world", None);
     }
@@ -295,9 +298,9 @@ fn test_tier7_index_version_increments() {
     index.enable();
 
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
     let doc_ref = DocRef::Kv {
-        key: Key::new_kv(ns, "doc"),
+        run_id,
+        key: "doc".to_string(),
     };
 
     let v1 = index.version();
@@ -316,9 +319,9 @@ fn test_tier7_index_wait_for_version() {
     index.enable();
 
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
     let doc_ref = DocRef::Kv {
-        key: Key::new_kv(ns, "doc"),
+        run_id,
+        key: "doc".to_string(),
     };
 
     index.index_document(&doc_ref, "hello", None);

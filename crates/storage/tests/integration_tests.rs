@@ -199,7 +199,7 @@ mod edge_cases {
 
         let result = store.get(&key).unwrap().unwrap();
         assert_eq!(result.value, Value::I64(2));
-        assert_eq!(result.version, v2);
+        assert_eq!(result.version, in_mem_core::Version::txn(v2));
     }
 
     #[test]
@@ -1029,7 +1029,7 @@ mod version_ordering {
 
             // The version in the stored value should match
             let stored = store.get(&key).unwrap().unwrap();
-            assert_eq!(stored.version, version);
+            assert_eq!(stored.version, in_mem_core::Version::txn(version));
         }
     }
 }

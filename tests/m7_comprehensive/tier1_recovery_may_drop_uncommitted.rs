@@ -133,7 +133,7 @@ fn test_r6_can_write_after_recovery() {
     kv.put(&run_id, "after_crash", Value::String("new_value".into()))
         .unwrap();
 
-    let value = kv.get(&run_id, "after_crash").unwrap();
+    let value = kv.get(&run_id, "after_crash").unwrap().map(|v| v.value);
     assert_eq!(value, Some(Value::String("new_value".into())));
 }
 
@@ -252,14 +252,16 @@ fn test_r6_read_consistency() {
     let kv = test_db.kv();
 
     // If count exists, all items should exist (or none)
-    if let Some(Value::I64(count)) = kv.get(&run_id, "count").unwrap() {
-        for i in 0..count {
-            // Note: This is a consistency check, not an R6 violation
-            // If count is present, items should be too (prefix consistency R3)
-            let item = kv.get(&run_id, &format!("item_{}", i)).unwrap();
-            if item.is_none() {
-                // This would indicate R3 violation, not R6
-                // R6 just says uncommitted may vanish
+    if let Some(versioned) = kv.get(&run_id, "count").unwrap() {
+        if let Value::I64(count) = versioned.value {
+            for i in 0..count {
+                // Note: This is a consistency check, not an R6 violation
+                // If count is present, items should be too (prefix consistency R3)
+                let item = kv.get(&run_id, &format!("item_{}", i)).unwrap();
+                if item.is_none() {
+                    // This would indicate R3 violation, not R6
+                    // R6 just says uncommitted may vanish
+                }
             }
         }
     }

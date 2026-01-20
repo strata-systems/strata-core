@@ -29,6 +29,7 @@
 //! RunIndex uses a global namespace (not run-scoped) since it manages runs themselves.
 
 use in_mem_concurrency::TransactionContext;
+use in_mem_core::contract::{Timestamp, Version, Versioned};
 use in_mem_core::error::{Error, Result};
 use in_mem_core::types::{Key, Namespace, RunId, TypeTag};
 use in_mem_core::value::Value;
@@ -160,6 +161,13 @@ pub struct RunMetadata {
     pub metadata: Value,
     /// Error message if failed
     pub error: Option<String>,
+    /// Internal version counter for CAS operations
+    #[serde(default = "default_version")]
+    pub version: u64,
+}
+
+fn default_version() -> u64 {
+    1
 }
 
 impl RunMetadata {
@@ -180,7 +188,25 @@ impl RunMetadata {
             tags: vec![],
             metadata: Value::Null,
             error: None,
+            version: 1,
         }
+    }
+
+    /// Wrap this metadata in a Versioned container
+    pub fn into_versioned(self) -> Versioned<RunMetadata> {
+        let version = self.version;
+        let timestamp = self.updated_at;
+        Versioned::with_timestamp(
+            self,
+            Version::counter(version),
+            Timestamp::from_micros((timestamp * 1000) as u64),
+        )
+    }
+
+    /// Increment version and update timestamp
+    pub fn touch(&mut self) {
+        self.version += 1;
+        self.updated_at = Self::now();
     }
 
     /// Get current timestamp in milliseconds
@@ -238,15 +264,15 @@ fn from_stored_value<T: for<'de> Deserialize<'de>>(
 ///
 /// // Create a run
 /// let meta = ri.create_run("my-run")?;
-/// assert_eq!(meta.status, RunStatus::Active);
+/// assert_eq!(meta.value.status, RunStatus::Active);
 ///
 /// // Complete the run
 /// let meta = ri.complete_run("my-run")?;
-/// assert_eq!(meta.status, RunStatus::Completed);
+/// assert_eq!(meta.value.status, RunStatus::Completed);
 ///
 /// // Archive it (soft delete)
 /// let meta = ri.archive_run("my-run")?;
-/// assert_eq!(meta.status, RunStatus::Archived);
+/// assert_eq!(meta.value.status, RunStatus::Archived);
 /// ```
 #[derive(Clone)]
 pub struct RunIndex {
@@ -274,7 +300,7 @@ impl RunIndex {
     /// Create a new run
     ///
     /// Creates a run with Active status and no parent.
-    pub fn create_run(&self, run_id: &str) -> Result<RunMetadata> {
+    pub fn create_run(&self, run_id: &str) -> Result<Versioned<RunMetadata>> {
         self.create_run_with_options(run_id, None, vec![], Value::Null)
     }
 
@@ -295,7 +321,7 @@ impl RunIndex {
         parent_run: Option<String>,
         tags: Vec<String>,
         metadata: Value,
-    ) -> Result<RunMetadata> {
+    ) -> Result<Versioned<RunMetadata>> {
         self.db.transaction(global_run_id(), |txn| {
             let key = self.key_for(run_id);
 
@@ -328,23 +354,23 @@ impl RunIndex {
             // Write indices
             Self::write_indices_internal(txn, &run_meta)?;
 
-            Ok(run_meta)
+            Ok(run_meta.into_versioned())
         })
     }
 
     /// Get run metadata
     ///
     /// ## Returns
-    /// - `Some(metadata)` if run exists
+    /// - `Some(Versioned<metadata>)` if run exists
     /// - `None` if run doesn't exist
-    pub fn get_run(&self, run_id: &str) -> Result<Option<RunMetadata>> {
+    pub fn get_run(&self, run_id: &str) -> Result<Option<Versioned<RunMetadata>>> {
         self.db.transaction(global_run_id(), |txn| {
             let key = self.key_for(run_id);
             match txn.get(&key)? {
                 Some(v) => {
                     let meta: RunMetadata = from_stored_value(&v)
                         .map_err(|e| Error::SerializationError(e.to_string()))?;
-                    Ok(Some(meta))
+                    Ok(Some(meta.into_versioned()))
                 }
                 None => Ok(None),
             }
@@ -392,7 +418,7 @@ impl RunIndex {
     /// ## Errors
     /// - `InvalidOperation` if run doesn't exist
     /// - `InvalidOperation` if transition is invalid
-    pub fn update_status(&self, run_id: &str, new_status: RunStatus) -> Result<RunMetadata> {
+    pub fn update_status(&self, run_id: &str, new_status: RunStatus) -> Result<Versioned<RunMetadata>> {
         self.db.transaction(global_run_id(), |txn| {
             let key = self.key_for(run_id);
 
@@ -418,7 +444,7 @@ impl RunIndex {
 
             let old_status = run_meta.status;
             run_meta.status = new_status;
-            run_meta.updated_at = RunMetadata::now();
+            run_meta.touch(); // Increment version and update timestamp
 
             // Set completed_at for finished states
             if new_status.is_finished() {
@@ -430,17 +456,17 @@ impl RunIndex {
             // Update status index
             Self::update_status_index_internal(txn, run_id, old_status, new_status)?;
 
-            Ok(run_meta)
+            Ok(run_meta.into_versioned())
         })
     }
 
     /// Complete a run successfully
-    pub fn complete_run(&self, run_id: &str) -> Result<RunMetadata> {
+    pub fn complete_run(&self, run_id: &str) -> Result<Versioned<RunMetadata>> {
         self.update_status(run_id, RunStatus::Completed)
     }
 
     /// Fail a run with error message
-    pub fn fail_run(&self, run_id: &str, error: &str) -> Result<RunMetadata> {
+    pub fn fail_run(&self, run_id: &str, error: &str) -> Result<Versioned<RunMetadata>> {
         self.db.transaction(global_run_id(), |txn| {
             let key = self.key_for(run_id);
 
@@ -466,28 +492,28 @@ impl RunIndex {
             let old_status = run_meta.status;
             run_meta.status = RunStatus::Failed;
             run_meta.error = Some(error.to_string());
-            run_meta.updated_at = RunMetadata::now();
+            run_meta.touch(); // Increment version and update timestamp
             run_meta.completed_at = Some(run_meta.updated_at);
 
             txn.put(key, to_stored_value(&run_meta))?;
             Self::update_status_index_internal(txn, run_id, old_status, RunStatus::Failed)?;
 
-            Ok(run_meta)
+            Ok(run_meta.into_versioned())
         })
     }
 
     /// Pause a run
-    pub fn pause_run(&self, run_id: &str) -> Result<RunMetadata> {
+    pub fn pause_run(&self, run_id: &str) -> Result<Versioned<RunMetadata>> {
         self.update_status(run_id, RunStatus::Paused)
     }
 
     /// Resume a paused run
-    pub fn resume_run(&self, run_id: &str) -> Result<RunMetadata> {
+    pub fn resume_run(&self, run_id: &str) -> Result<Versioned<RunMetadata>> {
         self.update_status(run_id, RunStatus::Active)
     }
 
     /// Cancel a run
-    pub fn cancel_run(&self, run_id: &str) -> Result<RunMetadata> {
+    pub fn cancel_run(&self, run_id: &str) -> Result<Versioned<RunMetadata>> {
         self.update_status(run_id, RunStatus::Cancelled)
     }
 
@@ -578,8 +604,8 @@ impl RunIndex {
     fn get_many(&self, ids: &[String]) -> Result<Vec<RunMetadata>> {
         let mut runs = Vec::new();
         for id in ids {
-            if let Some(meta) = self.get_run(id)? {
-                runs.push(meta);
+            if let Some(versioned) = self.get_run(id)? {
+                runs.push(versioned.value);
             }
         }
         Ok(runs)
@@ -591,7 +617,7 @@ impl RunIndex {
     ///
     /// The run metadata is preserved but marked as archived.
     /// Archived runs cannot transition to any other status.
-    pub fn archive_run(&self, run_id: &str) -> Result<RunMetadata> {
+    pub fn archive_run(&self, run_id: &str) -> Result<Versioned<RunMetadata>> {
         self.update_status(run_id, RunStatus::Archived)
     }
 
@@ -607,7 +633,8 @@ impl RunIndex {
         // First get the run metadata to know what indices to delete
         let run_meta = self
             .get_run(run_id)?
-            .ok_or_else(|| Error::InvalidOperation(format!("Run '{}' not found", run_id)))?;
+            .ok_or_else(|| Error::InvalidOperation(format!("Run '{}' not found", run_id)))?
+            .value;
 
         // Parse run_id string to get actual RunId for namespace
         let actual_run_id = RunId::from_string(&run_meta.run_id).ok_or_else(|| {
@@ -677,7 +704,7 @@ impl RunIndex {
     }
 
     /// Add tags to a run
-    pub fn add_tags(&self, run_id: &str, new_tags: Vec<String>) -> Result<RunMetadata> {
+    pub fn add_tags(&self, run_id: &str, new_tags: Vec<String>) -> Result<Versioned<RunMetadata>> {
         self.db.transaction(global_run_id(), |txn| {
             let key = self.key_for(run_id);
 
@@ -705,15 +732,15 @@ impl RunIndex {
                 }
             }
 
-            meta.updated_at = RunMetadata::now();
+            meta.touch();
             txn.put(key, to_stored_value(&meta))?;
 
-            Ok(meta)
+            Ok(meta.into_versioned())
         })
     }
 
     /// Remove tags from a run
-    pub fn remove_tags(&self, run_id: &str, tags_to_remove: Vec<String>) -> Result<RunMetadata> {
+    pub fn remove_tags(&self, run_id: &str, tags_to_remove: Vec<String>) -> Result<Versioned<RunMetadata>> {
         self.db.transaction(global_run_id(), |txn| {
             let key = self.key_for(run_id);
 
@@ -741,15 +768,15 @@ impl RunIndex {
                 }
             }
 
-            meta.updated_at = RunMetadata::now();
+            meta.touch();
             txn.put(key, to_stored_value(&meta))?;
 
-            Ok(meta)
+            Ok(meta.into_versioned())
         })
     }
 
     /// Update custom metadata
-    pub fn update_metadata(&self, run_id: &str, metadata: Value) -> Result<RunMetadata> {
+    pub fn update_metadata(&self, run_id: &str, metadata: Value) -> Result<Versioned<RunMetadata>> {
         self.db.transaction(global_run_id(), |txn| {
             let key = self.key_for(run_id);
 
@@ -766,10 +793,10 @@ impl RunIndex {
             };
 
             meta.metadata = metadata;
-            meta.updated_at = RunMetadata::now();
+            meta.touch();
             txn.put(key, to_stored_value(&meta))?;
 
-            Ok(meta)
+            Ok(meta.into_versioned())
         })
     }
 
@@ -887,8 +914,8 @@ impl crate::searchable::Searchable for RunIndex {
         self.search(req)
     }
 
-    fn primitive_kind(&self) -> in_mem_core::search_types::PrimitiveKind {
-        in_mem_core::search_types::PrimitiveKind::Run
+    fn primitive_kind(&self) -> in_mem_core::PrimitiveType {
+        in_mem_core::PrimitiveType::Run
     }
 }
 
@@ -1017,10 +1044,10 @@ mod tests {
         let ri = RunIndex::new(db);
 
         let meta = ri.create_run("my-run").unwrap();
-        assert_eq!(meta.name, "my-run");
+        assert_eq!(meta.value.name, "my-run");
         // run_id is a generated UUID
-        assert!(RunId::from_string(&meta.run_id).is_some());
-        assert_eq!(meta.status, RunStatus::Active);
+        assert!(RunId::from_string(&meta.value.run_id).is_some());
+        assert_eq!(meta.value.status, RunStatus::Active);
     }
 
     #[test]
@@ -1055,7 +1082,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(meta.parent_run, Some("parent-run".to_string()));
+        assert_eq!(meta.value.parent_run, Some("parent-run".to_string()));
     }
 
     #[test]
@@ -1087,7 +1114,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(meta.tags, vec!["experiment", "v1"]);
+        assert_eq!(meta.value.tags, vec!["experiment", "v1"]);
     }
 
     #[test]
@@ -1098,8 +1125,8 @@ mod tests {
         let created = ri.create_run("my-run").unwrap();
         let meta = ri.get_run("my-run").unwrap().unwrap();
 
-        assert_eq!(meta.name, "my-run");
-        assert_eq!(meta.run_id, created.run_id);
+        assert_eq!(meta.value.name, "my-run");
+        assert_eq!(meta.value.run_id, created.value.run_id);
     }
 
     #[test]
@@ -1159,8 +1186,8 @@ mod tests {
         ri.create_run("my-run").unwrap();
         let meta = ri.complete_run("my-run").unwrap();
 
-        assert_eq!(meta.status, RunStatus::Completed);
-        assert!(meta.completed_at.is_some());
+        assert_eq!(meta.value.status, RunStatus::Completed);
+        assert!(meta.value.completed_at.is_some());
     }
 
     #[test]
@@ -1171,9 +1198,9 @@ mod tests {
         ri.create_run("my-run").unwrap();
         let meta = ri.fail_run("my-run", "Something went wrong").unwrap();
 
-        assert_eq!(meta.status, RunStatus::Failed);
-        assert_eq!(meta.error, Some("Something went wrong".to_string()));
-        assert!(meta.completed_at.is_some());
+        assert_eq!(meta.value.status, RunStatus::Failed);
+        assert_eq!(meta.value.error, Some("Something went wrong".to_string()));
+        assert!(meta.value.completed_at.is_some());
     }
 
     #[test]
@@ -1184,10 +1211,10 @@ mod tests {
         ri.create_run("my-run").unwrap();
 
         let meta = ri.pause_run("my-run").unwrap();
-        assert_eq!(meta.status, RunStatus::Paused);
+        assert_eq!(meta.value.status, RunStatus::Paused);
 
         let meta = ri.resume_run("my-run").unwrap();
-        assert_eq!(meta.status, RunStatus::Active);
+        assert_eq!(meta.value.status, RunStatus::Active);
     }
 
     #[test]
@@ -1198,8 +1225,8 @@ mod tests {
         ri.create_run("my-run").unwrap();
         let meta = ri.cancel_run("my-run").unwrap();
 
-        assert_eq!(meta.status, RunStatus::Cancelled);
-        assert!(meta.completed_at.is_some());
+        assert_eq!(meta.value.status, RunStatus::Cancelled);
+        assert!(meta.value.completed_at.is_some());
     }
 
     #[test]
@@ -1297,7 +1324,7 @@ mod tests {
         ri.complete_run("my-run").unwrap();
         let meta = ri.archive_run("my-run").unwrap();
 
-        assert_eq!(meta.status, RunStatus::Archived);
+        assert_eq!(meta.value.status, RunStatus::Archived);
     }
 
     #[test]
@@ -1331,8 +1358,8 @@ mod tests {
             .add_tags("my-run", vec!["tag1".to_string(), "tag2".to_string()])
             .unwrap();
 
-        assert!(meta.tags.contains(&"tag1".to_string()));
-        assert!(meta.tags.contains(&"tag2".to_string()));
+        assert!(meta.value.tags.contains(&"tag1".to_string()));
+        assert!(meta.value.tags.contains(&"tag2".to_string()));
 
         // Tags should be queryable
         let results = ri.query_by_tag("tag1").unwrap();
@@ -1354,8 +1381,8 @@ mod tests {
 
         let meta = ri.remove_tags("my-run", vec!["tag1".to_string()]).unwrap();
 
-        assert!(!meta.tags.contains(&"tag1".to_string()));
-        assert!(meta.tags.contains(&"tag2".to_string()));
+        assert!(!meta.value.tags.contains(&"tag1".to_string()));
+        assert!(meta.value.tags.contains(&"tag2".to_string()));
 
         // Tag1 should no longer return results
         let results = ri.query_by_tag("tag1").unwrap();
@@ -1372,7 +1399,7 @@ mod tests {
             .update_metadata("my-run", Value::String("custom data".to_string()))
             .unwrap();
 
-        assert_eq!(meta.metadata, Value::String("custom data".to_string()));
+        assert_eq!(meta.value.metadata, Value::String("custom data".to_string()));
     }
 
     // ========== Edge Cases ==========
@@ -1406,24 +1433,24 @@ mod tests {
 
         // Create
         let meta = ri.create_run("lifecycle-run").unwrap();
-        assert_eq!(meta.status, RunStatus::Active);
+        assert_eq!(meta.value.status, RunStatus::Active);
 
         // Pause
         let meta = ri.pause_run("lifecycle-run").unwrap();
-        assert_eq!(meta.status, RunStatus::Paused);
+        assert_eq!(meta.value.status, RunStatus::Paused);
 
         // Resume
         let meta = ri.resume_run("lifecycle-run").unwrap();
-        assert_eq!(meta.status, RunStatus::Active);
+        assert_eq!(meta.value.status, RunStatus::Active);
 
         // Complete
         let meta = ri.complete_run("lifecycle-run").unwrap();
-        assert_eq!(meta.status, RunStatus::Completed);
-        assert!(meta.completed_at.is_some());
+        assert_eq!(meta.value.status, RunStatus::Completed);
+        assert!(meta.value.completed_at.is_some());
 
         // Archive
         let meta = ri.archive_run("lifecycle-run").unwrap();
-        assert_eq!(meta.status, RunStatus::Archived);
+        assert_eq!(meta.value.status, RunStatus::Archived);
 
         // Cannot transition from Archived
         assert!(ri
@@ -1449,7 +1476,7 @@ mod tests {
 
             // Create run via RunIndex
             let meta = run_index.create_run("integration-test-run").unwrap();
-            let run_id = RunId::from_string(&meta.run_id).unwrap();
+            let run_id = RunId::from_string(&meta.value.run_id).unwrap();
 
             // Use all primitives with this run
             kv.put(&run_id, "key", Value::I64(42)).unwrap();
@@ -1498,8 +1525,8 @@ mod tests {
             // Create two runs
             let meta1 = run_index.create_run("run-1").unwrap();
             let meta2 = run_index.create_run("run-2").unwrap();
-            let run_id1 = RunId::from_string(&meta1.run_id).unwrap();
-            let run_id2 = RunId::from_string(&meta2.run_id).unwrap();
+            let run_id1 = RunId::from_string(&meta1.value.run_id).unwrap();
+            let run_id2 = RunId::from_string(&meta2.value.run_id).unwrap();
 
             // Store data in both runs
             kv.put(&run_id1, "key", Value::String("run1-value".into()))
@@ -1508,12 +1535,13 @@ mod tests {
                 .unwrap();
 
             // Verify isolation
+            // M9: get() returns Versioned<Value>
             assert_eq!(
-                kv.get(&run_id1, "key").unwrap(),
+                kv.get(&run_id1, "key").unwrap().map(|v| v.value),
                 Some(Value::String("run1-value".into()))
             );
             assert_eq!(
-                kv.get(&run_id2, "key").unwrap(),
+                kv.get(&run_id2, "key").unwrap().map(|v| v.value),
                 Some(Value::String("run2-value".into()))
             );
 
@@ -1522,7 +1550,7 @@ mod tests {
 
             assert!(kv.get(&run_id1, "key").unwrap().is_none());
             assert_eq!(
-                kv.get(&run_id2, "key").unwrap(),
+                kv.get(&run_id2, "key").unwrap().map(|v| v.value),
                 Some(Value::String("run2-value".into()))
             );
         }
@@ -1546,7 +1574,7 @@ mod tests {
                     Value::Null,
                 )
                 .unwrap();
-            let run_id = RunId::from_string(&meta.run_id).unwrap();
+            let run_id = RunId::from_string(&meta.value.run_id).unwrap();
 
             // KV: store multiple entries
             kv.put(&run_id, "config", Value::String("{}".into()))
@@ -1600,7 +1628,7 @@ mod tests {
 
             // Query run by tag
             let prod_runs = run_index.query_by_tag("production").unwrap();
-            assert!(prod_runs.iter().any(|r| r.run_id == meta.run_id));
+            assert!(prod_runs.iter().any(|r| r.run_id == meta.value.run_id));
 
             // Complete and archive the run
             run_index.complete_run("full-integration").unwrap();
@@ -1608,7 +1636,7 @@ mod tests {
 
             // Verify run is archived
             let archived = run_index.query_by_status(RunStatus::Archived).unwrap();
-            assert!(archived.iter().any(|r| r.run_id == meta.run_id));
+            assert!(archived.iter().any(|r| r.run_id == meta.value.run_id));
 
             // Delete the run
             run_index.delete_run("full-integration").unwrap();
@@ -1624,7 +1652,7 @@ mod tests {
 
             // Verify indices are cleaned up
             let prod_runs = run_index.query_by_tag("production").unwrap();
-            assert!(!prod_runs.iter().any(|r| r.run_id == meta.run_id));
+            assert!(!prod_runs.iter().any(|r| r.run_id == meta.value.run_id));
         }
     }
 }

@@ -134,7 +134,7 @@ fn test_r3_commit_order_preserved() {
 
     // Final value should reflect last commit
     let kv = test_db.kv();
-    let value = kv.get(&run_id, "counter").unwrap();
+    let value = kv.get(&run_id, "counter").unwrap().map(|v| v.value);
     assert_eq!(value, Some(Value::I64(3)), "R3: Commit order not preserved");
 }
 
@@ -190,7 +190,7 @@ fn test_r3_delete_then_put_preserved() {
     test_db.reopen();
 
     let kv = test_db.kv();
-    let value = kv.get(&run_id, "key").unwrap();
+    let value = kv.get(&run_id, "key").unwrap().map(|v| v.value);
     assert_eq!(
         value,
         Some(Value::String("recreated".into())),

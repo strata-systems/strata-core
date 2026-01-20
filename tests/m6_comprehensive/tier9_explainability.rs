@@ -3,7 +3,7 @@
 //! Tests for result provenance and debugging capabilities.
 
 use super::test_utils::*;
-use in_mem_core::search_types::{PrimitiveKind, SearchRequest, SearchStats};
+use in_mem_core::search_types::{PrimitiveType, SearchRequest, SearchStats};
 use in_mem_primitives::KVStore;
 use in_mem_search::DatabaseSearchExt;
 
@@ -23,8 +23,8 @@ fn test_tier9_hit_has_primitive_kind() {
     let response = hybrid.search(&req).unwrap();
 
     for hit in &response.hits {
-        let kind = hit.doc_ref.primitive_kind();
-        assert!(PrimitiveKind::all().contains(&kind));
+        let kind = hit.doc_ref.primitive_type();
+        assert!(PrimitiveType::all().contains(&kind));
     }
 }
 
@@ -133,15 +133,15 @@ fn test_tier9_stats_per_primitive() {
     let stats = SearchStats::default();
 
     let mut stats = stats;
-    stats.add_primitive_candidates(PrimitiveKind::Kv, 100);
-    stats.add_primitive_candidates(PrimitiveKind::Json, 50);
+    stats.add_primitive_candidates(PrimitiveType::Kv, 100);
+    stats.add_primitive_candidates(PrimitiveType::Json, 50);
 
     assert_eq!(
-        stats.candidates_by_primitive.get(&PrimitiveKind::Kv),
+        stats.candidates_by_primitive.get(&PrimitiveType::Kv),
         Some(&100)
     );
     assert_eq!(
-        stats.candidates_by_primitive.get(&PrimitiveKind::Json),
+        stats.candidates_by_primitive.get(&PrimitiveType::Json),
         Some(&50)
     );
     assert_eq!(stats.candidates_considered, 150);

@@ -1,7 +1,7 @@
 //! UnifiedStore: MVP storage backend with BTreeMap and version management
 //!
 //! This module implements the Storage trait using:
-//! - `BTreeMap<Key, VersionedValue>` for ordered key storage
+//! - `BTreeMap<Key, StoredValue>` for ordered key storage with TTL
 //! - `parking_lot::RwLock` for thread-safe access
 //! - `AtomicU64` for monotonically increasing version numbers
 //! - Secondary indices for efficient run and type queries
@@ -12,19 +12,24 @@
 //! - **Logical TTL expiration**: Expired values are filtered at read time, not deleted
 //! - **Version allocation before write lock**: Prevents lock contention during version assignment
 //! - **Secondary indices**: run_index and type_index enable O(subset) queries instead of O(total)
+//!
+//! # Storage vs Contract Types
+//!
+//! - `StoredValue`: Internal storage type that includes TTL (storage concern)
+//! - `VersionedValue`: Contract type returned to callers (no TTL)
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::Utc;
 use parking_lot::RwLock;
 
-use in_mem_core::{Key, Result, RunId, Storage, Timestamp, TypeTag, Value, VersionedValue};
+use in_mem_core::{Key, Result, RunId, Storage, Timestamp, TypeTag, Value, Version, VersionedValue};
 
 use crate::index::{RunIndex, TypeIndex};
 use crate::snapshot::ClonedSnapshotView;
+use crate::stored_value::StoredValue;
 use crate::ttl::TTLIndex;
 
 /// Unified storage backend using BTreeMap with RwLock
@@ -41,8 +46,8 @@ use crate::ttl::TTLIndex;
 /// All indices are updated atomically with the main data store within the same write lock.
 #[derive(Debug)]
 pub struct UnifiedStore {
-    /// The main data store: ordered map from Key to VersionedValue
-    data: Arc<RwLock<BTreeMap<Key, VersionedValue>>>,
+    /// The main data store: ordered map from Key to StoredValue (includes TTL)
+    data: Arc<RwLock<BTreeMap<Key, StoredValue>>>,
     /// Secondary index: RunId → Keys for efficient run-scoped queries
     run_index: Arc<RwLock<RunIndex>>,
     /// Secondary index: TypeTag → Keys for efficient type-scoped queries
@@ -68,11 +73,11 @@ impl UnifiedStore {
         }
     }
 
-    /// Calculate expiry timestamp from a VersionedValue
+    /// Calculate expiry timestamp from a StoredValue
     ///
     /// Returns Some(timestamp) if the value has a TTL, None otherwise.
-    fn expiry_timestamp(vv: &VersionedValue) -> Option<Timestamp> {
-        vv.ttl.map(|ttl| vv.timestamp + ttl.as_secs() as i64)
+    fn expiry_timestamp(sv: &StoredValue) -> Option<Timestamp> {
+        sv.expiry_timestamp()
     }
 
     /// Find all keys that have expired before the current time
@@ -80,7 +85,7 @@ impl UnifiedStore {
     /// Uses ttl_index for efficient O(expired count) lookup instead of O(total data).
     /// Returns keys that should be cleaned up by the TTL cleaner.
     pub fn find_expired_keys(&self) -> Result<Vec<Key>> {
-        let now = Utc::now().timestamp();
+        let now = Timestamp::now();
         let ttl_idx = self.ttl_index.read();
         Ok(ttl_idx.find_expired(now))
     }
@@ -103,9 +108,9 @@ impl UnifiedStore {
         let results = if let Some(keys) = type_idx.get(&type_tag) {
             keys.iter()
                 .filter_map(|key| {
-                    data.get(key).and_then(|vv| {
-                        if vv.version <= max_version && !vv.is_expired() {
-                            Some((key.clone(), vv.clone()))
+                    data.get(key).and_then(|sv| {
+                        if sv.version().as_u64() <= max_version && !sv.is_expired() {
+                            Some((key.clone(), sv.versioned().clone()))
                         } else {
                             None
                         }
@@ -198,7 +203,7 @@ impl UnifiedStore {
 
         // Apply all writes
         for (key, value) in writes {
-            let versioned_value = VersionedValue::new(value.clone(), version, None);
+            let stored_value = StoredValue::new(value.clone(), Version::txn(version), None);
 
             // Check if key already exists with TTL (need to remove old TTL entry)
             if let Some(old_value) = data.get(key) {
@@ -208,7 +213,7 @@ impl UnifiedStore {
             }
 
             // Insert into main storage
-            data.insert(key.clone(), versioned_value);
+            data.insert(key.clone(), stored_value);
 
             // Update secondary indices
             run_idx.insert(key.namespace.run_id, key.clone());
@@ -250,7 +255,7 @@ impl Storage for UnifiedStore {
     fn get(&self, key: &Key) -> Result<Option<VersionedValue>> {
         let data = self.data.read();
         match data.get(key) {
-            Some(vv) if !vv.is_expired() => Ok(Some(vv.clone())),
+            Some(sv) if !sv.is_expired() => Ok(Some(sv.versioned().clone())),
             _ => Ok(None),
         }
     }
@@ -258,7 +263,9 @@ impl Storage for UnifiedStore {
     fn get_versioned(&self, key: &Key, max_version: u64) -> Result<Option<VersionedValue>> {
         let data = self.data.read();
         match data.get(key) {
-            Some(vv) if vv.version <= max_version && !vv.is_expired() => Ok(Some(vv.clone())),
+            Some(sv) if sv.version().as_u64() <= max_version && !sv.is_expired() => {
+                Ok(Some(sv.versioned().clone()))
+            }
             _ => Ok(None),
         }
     }
@@ -267,8 +274,8 @@ impl Storage for UnifiedStore {
         // Allocate version BEFORE acquiring write lock
         let version = self.next_version();
 
-        let versioned_value = VersionedValue::new(value, version, ttl);
-        let new_expiry = Self::expiry_timestamp(&versioned_value);
+        let stored_value = StoredValue::new(value, Version::txn(version), ttl);
+        let new_expiry = Self::expiry_timestamp(&stored_value);
 
         // Acquire ALL locks (data + indices) for atomic update
         let mut data = self.data.write();
@@ -284,7 +291,7 @@ impl Storage for UnifiedStore {
         }
 
         // Insert into main storage
-        data.insert(key.clone(), versioned_value);
+        data.insert(key.clone(), stored_value);
 
         // Update secondary indices
         run_idx.insert(key.namespace.run_id, key.clone());
@@ -307,18 +314,18 @@ impl Storage for UnifiedStore {
 
         let removed = data.remove(key);
 
-        if let Some(ref value) = removed {
+        if let Some(ref sv) = removed {
             // Update secondary indices
             run_idx.remove(key.namespace.run_id, key);
             type_idx.remove(key.type_tag, key);
 
             // Remove from TTL index if it had TTL
-            if let Some(expiry) = Self::expiry_timestamp(value) {
+            if let Some(expiry) = Self::expiry_timestamp(sv) {
                 ttl_idx.remove(expiry, key);
             }
         }
 
-        Ok(removed)
+        Ok(removed.map(|sv| sv.into_versioned()))
     }
 
     fn scan_prefix(&self, prefix: &Key, max_version: u64) -> Result<Vec<(Key, VersionedValue)>> {
@@ -327,8 +334,8 @@ impl Storage for UnifiedStore {
         let results: Vec<(Key, VersionedValue)> = data
             .range(prefix.clone()..)
             .take_while(|(k, _)| k.starts_with(prefix))
-            .filter(|(_, vv)| vv.version <= max_version && !vv.is_expired())
-            .map(|(k, vv)| (k.clone(), vv.clone()))
+            .filter(|(_, sv)| sv.version().as_u64() <= max_version && !sv.is_expired())
+            .map(|(k, sv)| (k.clone(), sv.versioned().clone()))
             .collect();
 
         Ok(results)
@@ -342,9 +349,9 @@ impl Storage for UnifiedStore {
         let results = if let Some(keys) = run_idx.get(&run_id) {
             keys.iter()
                 .filter_map(|key| {
-                    data.get(key).and_then(|vv| {
-                        if vv.version <= max_version && !vv.is_expired() {
-                            Some((key.clone(), vv.clone()))
+                    data.get(key).and_then(|sv| {
+                        if sv.version().as_u64() <= max_version && !sv.is_expired() {
+                            Some((key.clone(), sv.versioned().clone()))
                         } else {
                             None
                         }
@@ -369,8 +376,8 @@ impl Storage for UnifiedStore {
         version: u64,
         ttl: Option<Duration>,
     ) -> Result<()> {
-        let versioned_value = VersionedValue::new(value, version, ttl);
-        let new_expiry = Self::expiry_timestamp(&versioned_value);
+        let stored_value = StoredValue::new(value, Version::txn(version), ttl);
+        let new_expiry = Self::expiry_timestamp(&stored_value);
 
         // Acquire ALL locks (data + indices) for atomic update
         let mut data = self.data.write();
@@ -386,7 +393,7 @@ impl Storage for UnifiedStore {
         }
 
         // Insert into main storage
-        data.insert(key.clone(), versioned_value);
+        data.insert(key.clone(), stored_value);
 
         // Update secondary indices
         run_idx.insert(key.namespace.run_id, key.clone());
@@ -414,13 +421,13 @@ impl Storage for UnifiedStore {
 
         let removed = data.remove(key);
 
-        if let Some(ref value) = removed {
+        if let Some(ref sv) = removed {
             // Update secondary indices
             run_idx.remove(key.namespace.run_id, key);
             type_idx.remove(key.type_tag, key);
 
             // Remove from TTL index if it had TTL
-            if let Some(expiry) = Self::expiry_timestamp(value) {
+            if let Some(expiry) = Self::expiry_timestamp(sv) {
                 ttl_idx.remove(expiry, key);
             }
         }
@@ -429,7 +436,7 @@ impl Storage for UnifiedStore {
         self.version
             .fetch_max(version, std::sync::atomic::Ordering::SeqCst);
 
-        Ok(removed)
+        Ok(removed.map(|sv| sv.into_versioned()))
     }
 }
 
@@ -494,8 +501,7 @@ mod tests {
 
         let vv = result.unwrap();
         assert_eq!(vv.value, value);
-        assert_eq!(vv.version, 1);
-        assert!(vv.ttl.is_none());
+        assert_eq!(vv.version, Version::txn(1));
     }
 
     // ========================================
@@ -607,12 +613,17 @@ mod tests {
 
         // After expiration, should return None
         // We simulate expiration by waiting (for real test)
-        // For now, we test the is_expired logic separately
+        // For now, we test the is_expired logic separately using StoredValue
 
-        // Create an expired value manually by modifying timestamp
-        let mut vv = VersionedValue::new(value.clone(), 100, Some(Duration::from_secs(1)));
-        vv.timestamp -= 2; // Set timestamp to 2 seconds ago
-        assert!(vv.is_expired());
+        // Create an expired value manually using old timestamp
+        let old_ts = Timestamp::from_micros(0); // Epoch = ancient past
+        let sv = StoredValue::with_timestamp(
+            value.clone(),
+            Version::txn(100),
+            old_ts,
+            Some(Duration::from_secs(1)),
+        );
+        assert!(sv.is_expired());
     }
 
     // ========================================
@@ -758,7 +769,7 @@ mod tests {
 
         // The stored value should have version 2
         let result = store.get(&key).unwrap().unwrap();
-        assert_eq!(result.version, 2);
+        assert_eq!(result.version, Version::txn(2));
         assert_eq!(result.value, Value::I64(2));
     }
 

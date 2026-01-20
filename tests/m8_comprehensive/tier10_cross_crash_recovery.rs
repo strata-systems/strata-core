@@ -93,8 +93,10 @@ fn test_cross_primitive_incremental_writes() {
     let kv = test_db.kv();
     let vector = test_db.vector();
 
-    if let Some(in_mem_core::value::Value::I64(v)) = kv.get(&run_id, "batch").unwrap() {
-        assert_eq!(v, 2);
+    if let Some(versioned) = kv.get(&run_id, "batch").unwrap() {
+        if let in_mem_core::value::Value::I64(v) = versioned.value {
+            assert_eq!(v, 2);
+        }
     }
     assert_eq!(vector.count(run_id, "embeddings").unwrap(), 2);
 }

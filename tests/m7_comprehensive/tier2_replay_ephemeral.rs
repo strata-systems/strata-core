@@ -35,7 +35,7 @@ fn test_p4_view_not_persisted() {
 
     // Only original data should be present, no view artifacts
     let kv = test_db.kv();
-    let value = kv.get(&run_id, "key").unwrap();
+    let value = kv.get(&run_id, "key").unwrap().map(|v| v.value);
     assert_eq!(value, Some(Value::String("value".into())));
 }
 
@@ -107,7 +107,7 @@ fn test_p4_drop_does_not_affect_db() {
 
     // Database should be unchanged
     let kv = test_db.kv();
-    let value = kv.get(&run_id, "persistent").unwrap();
+    let value = kv.get(&run_id, "persistent").unwrap().map(|v| v.value);
     assert_eq!(value, Some(Value::String("data".into())));
 
     // New view should be identical

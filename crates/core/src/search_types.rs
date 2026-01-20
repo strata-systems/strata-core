@@ -6,182 +6,30 @@
 //! - SearchResponse: Results from any search operation
 //! - SearchHit: Individual search result with score and rank
 //! - SearchStats: Execution statistics for debugging/monitoring
-//! - DocRef: Back-pointer to source record in any primitive
-//! - PrimitiveKind: Enumeration of all searchable primitives
+//!
+//! ## M9 Migration
+//!
+//! - `DocRef` is now `EntityRef` (re-exported from contract module)
+//! - `PrimitiveKind` is now `PrimitiveType` (re-exported from contract module)
+//!
+//! Import from crate root: `use in_mem_core::{EntityRef, DocRef, PrimitiveType};`
 //!
 //! These types define the interface contracts for search operations.
 //! See `docs/architecture/M6_ARCHITECTURE.md` for authoritative specification.
 
-use crate::types::{JsonDocId, Key, RunId};
+use crate::contract::EntityRef;
+use crate::types::RunId;
 use std::collections::HashMap;
 
-// ============================================================================
-// PrimitiveKind (Story #307)
-// ============================================================================
+// Re-export contract types for backwards compatibility with M6 code
+pub use crate::contract::EntityRef as DocRef;
+pub use crate::contract::PrimitiveType;
 
-/// Enumeration of all searchable primitives
+/// Backwards compatibility alias for PrimitiveType
 ///
-/// This enum identifies which primitive a search result comes from,
-/// enabling per-primitive filtering and statistics tracking.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PrimitiveKind {
-    /// Key-Value store
-    Kv,
-    /// JSON document store
-    Json,
-    /// Event log
-    Event,
-    /// State cell
-    State,
-    /// Trace store (reasoning logs)
-    Trace,
-    /// Run index
-    Run,
-    /// Vector store (M8)
-    Vector,
-}
-
-impl PrimitiveKind {
-    /// Returns all primitive kinds
-    ///
-    /// Useful for iterating over all primitives in composite search.
-    pub fn all() -> &'static [PrimitiveKind] {
-        &[
-            PrimitiveKind::Kv,
-            PrimitiveKind::Json,
-            PrimitiveKind::Event,
-            PrimitiveKind::State,
-            PrimitiveKind::Trace,
-            PrimitiveKind::Run,
-            PrimitiveKind::Vector,
-        ]
-    }
-}
-
-impl std::fmt::Display for PrimitiveKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PrimitiveKind::Kv => write!(f, "kv"),
-            PrimitiveKind::Json => write!(f, "json"),
-            PrimitiveKind::Event => write!(f, "event"),
-            PrimitiveKind::State => write!(f, "state"),
-            PrimitiveKind::Trace => write!(f, "trace"),
-            PrimitiveKind::Run => write!(f, "run"),
-            PrimitiveKind::Vector => write!(f, "vector"),
-        }
-    }
-}
-
-// ============================================================================
-// DocRef (Story #306)
-// ============================================================================
-
-/// Reference back to source record
-///
-/// Every search hit contains a DocRef that can be used to retrieve
-/// the actual data from the appropriate primitive. This is the
-/// back-pointer model that avoids data duplication.
-///
-/// # Invariant
-///
-/// DocRef MUST have a variant for every searchable primitive.
-/// When a new primitive is added, DocRef MUST be extended.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum DocRef {
-    /// KV store entry
-    Kv {
-        /// Key of the KV entry
-        key: Key,
-    },
-
-    /// JSON document
-    Json {
-        /// Key of the JSON collection
-        key: Key,
-        /// Document ID within the collection
-        doc_id: JsonDocId,
-    },
-
-    /// Event log entry
-    Event {
-        /// Key of the event log
-        log_key: Key,
-        /// Sequence number within the log
-        seq: u64,
-    },
-
-    /// State cell
-    State {
-        /// Key of the state cell
-        key: Key,
-    },
-
-    /// Trace span
-    Trace {
-        /// Key of the trace store
-        key: Key,
-        /// Span ID within the trace
-        span_id: u64,
-    },
-
-    /// Run metadata
-    Run {
-        /// Run ID
-        run_id: RunId,
-    },
-
-    /// Vector entry (M8)
-    Vector {
-        /// Collection name
-        collection: String,
-        /// Vector key within collection
-        key: String,
-        /// Run ID for isolation
-        run_id: RunId,
-    },
-}
-
-impl DocRef {
-    /// Get the primitive kind for this reference
-    pub fn primitive_kind(&self) -> PrimitiveKind {
-        match self {
-            DocRef::Kv { .. } => PrimitiveKind::Kv,
-            DocRef::Json { .. } => PrimitiveKind::Json,
-            DocRef::Event { .. } => PrimitiveKind::Event,
-            DocRef::State { .. } => PrimitiveKind::State,
-            DocRef::Trace { .. } => PrimitiveKind::Trace,
-            DocRef::Run { .. } => PrimitiveKind::Run,
-            DocRef::Vector { .. } => PrimitiveKind::Vector,
-        }
-    }
-
-    /// Get the run_id this reference belongs to
-    pub fn run_id(&self) -> RunId {
-        match self {
-            DocRef::Kv { key } => key.namespace.run_id,
-            DocRef::Json { key, .. } => key.namespace.run_id,
-            DocRef::Event { log_key, .. } => log_key.namespace.run_id,
-            DocRef::State { key } => key.namespace.run_id,
-            DocRef::Trace { key, .. } => key.namespace.run_id,
-            DocRef::Run { run_id } => *run_id,
-            DocRef::Vector { run_id, .. } => *run_id,
-        }
-    }
-
-    /// Create a vector document reference
-    pub fn vector(run_id: RunId, collection: impl Into<String>, key: impl Into<String>) -> Self {
-        DocRef::Vector {
-            collection: collection.into(),
-            key: key.into(),
-            run_id,
-        }
-    }
-
-    /// Check if this is a vector reference
-    pub fn is_vector(&self) -> bool {
-        matches!(self, DocRef::Vector { .. })
-    }
-}
+/// M6 code used PrimitiveKind. New code should use PrimitiveType.
+#[deprecated(since = "0.9.0", note = "Use PrimitiveType instead")]
+pub type PrimitiveKind = PrimitiveType;
 
 // ============================================================================
 // SearchBudget (Story #303)
@@ -314,7 +162,7 @@ pub struct SearchRequest {
     pub mode: SearchMode,
 
     /// Optional: limit to specific primitives (for composite search)
-    pub primitive_filter: Option<Vec<PrimitiveKind>>,
+    pub primitive_filter: Option<Vec<PrimitiveType>>,
 
     /// Optional: time range filter (microseconds since epoch)
     pub time_range: Option<(u64, u64)>,
@@ -365,7 +213,7 @@ impl SearchRequest {
     }
 
     /// Builder: set primitive filter
-    pub fn with_primitive_filter(mut self, filter: Vec<PrimitiveKind>) -> Self {
+    pub fn with_primitive_filter(mut self, filter: Vec<PrimitiveType>) -> Self {
         self.primitive_filter = Some(filter);
         self
     }
@@ -383,7 +231,7 @@ impl SearchRequest {
     }
 
     /// Check if a primitive is included in this request
-    pub fn includes_primitive(&self, kind: PrimitiveKind) -> bool {
+    pub fn includes_primitive(&self, kind: PrimitiveType) -> bool {
         match &self.primitive_filter {
             Some(filter) => filter.contains(&kind),
             None => true, // No filter means include all
@@ -397,12 +245,12 @@ impl SearchRequest {
 
 /// A single search result
 ///
-/// Contains a back-pointer to the source record (DocRef),
+/// Contains a back-pointer to the source record (EntityRef),
 /// the score from the scorer, and the rank in the result set.
 #[derive(Debug, Clone)]
 pub struct SearchHit {
     /// Back-pointer to source record
-    pub doc_ref: DocRef,
+    pub doc_ref: EntityRef,
 
     /// Score from scorer (higher = more relevant)
     pub score: f32,
@@ -416,7 +264,7 @@ pub struct SearchHit {
 
 impl SearchHit {
     /// Create a new SearchHit
-    pub fn new(doc_ref: DocRef, score: f32, rank: u32) -> Self {
+    pub fn new(doc_ref: EntityRef, score: f32, rank: u32) -> Self {
         SearchHit {
             doc_ref,
             score,
@@ -449,7 +297,7 @@ pub struct SearchStats {
     pub candidates_considered: usize,
 
     /// Candidates per primitive (for composite search)
-    pub candidates_by_primitive: HashMap<PrimitiveKind, usize>,
+    pub candidates_by_primitive: HashMap<PrimitiveType, usize>,
 
     /// Whether an index was used (vs. full scan)
     pub index_used: bool,
@@ -473,7 +321,7 @@ impl SearchStats {
     }
 
     /// Add candidates count for a primitive
-    pub fn add_primitive_candidates(&mut self, kind: PrimitiveKind, count: usize) {
+    pub fn add_primitive_candidates(&mut self, kind: PrimitiveType, count: usize) {
         self.candidates_by_primitive.insert(kind, count);
         self.candidates_considered += count;
     }
@@ -541,143 +389,8 @@ impl SearchResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::Namespace;
 
-    // ========================================
-    // PrimitiveKind Tests
-    // ========================================
-
-    #[test]
-    fn test_primitive_kind_all() {
-        let all = PrimitiveKind::all();
-        assert_eq!(all.len(), 7);
-        assert!(all.contains(&PrimitiveKind::Kv));
-        assert!(all.contains(&PrimitiveKind::Json));
-        assert!(all.contains(&PrimitiveKind::Event));
-        assert!(all.contains(&PrimitiveKind::State));
-        assert!(all.contains(&PrimitiveKind::Trace));
-        assert!(all.contains(&PrimitiveKind::Run));
-        assert!(all.contains(&PrimitiveKind::Vector));
-    }
-
-    #[test]
-    fn test_primitive_kind_display() {
-        assert_eq!(format!("{}", PrimitiveKind::Kv), "kv");
-        assert_eq!(format!("{}", PrimitiveKind::Json), "json");
-        assert_eq!(format!("{}", PrimitiveKind::Event), "event");
-        assert_eq!(format!("{}", PrimitiveKind::State), "state");
-        assert_eq!(format!("{}", PrimitiveKind::Trace), "trace");
-        assert_eq!(format!("{}", PrimitiveKind::Run), "run");
-        assert_eq!(format!("{}", PrimitiveKind::Vector), "vector");
-    }
-
-    #[test]
-    fn test_primitive_kind_copy() {
-        let kind = PrimitiveKind::Kv;
-        let kind2 = kind; // Copy
-        assert_eq!(kind, kind2);
-    }
-
-    #[test]
-    fn test_primitive_kind_hash() {
-        use std::collections::HashSet;
-
-        let mut set = HashSet::new();
-        for kind in PrimitiveKind::all() {
-            set.insert(*kind);
-        }
-        assert_eq!(set.len(), 7, "All PrimitiveKinds should be unique");
-    }
-
-    // ========================================
-    // DocRef Tests
-    // ========================================
-
-    #[test]
-    fn test_doc_ref_primitive_kind() {
-        let run_id = RunId::new();
-        let ns = Namespace::for_run(run_id);
-
-        let kv_ref = DocRef::Kv {
-            key: Key::new_kv(ns.clone(), "test"),
-        };
-        assert_eq!(kv_ref.primitive_kind(), PrimitiveKind::Kv);
-
-        let json_ref = DocRef::Json {
-            key: Key::new_json(ns.clone(), &JsonDocId::new()),
-            doc_id: JsonDocId::new(),
-        };
-        assert_eq!(json_ref.primitive_kind(), PrimitiveKind::Json);
-
-        let event_ref = DocRef::Event {
-            log_key: Key::new_event(ns.clone(), 0),
-            seq: 42,
-        };
-        assert_eq!(event_ref.primitive_kind(), PrimitiveKind::Event);
-
-        let state_ref = DocRef::State {
-            key: Key::new_state(ns.clone(), "cell"),
-        };
-        assert_eq!(state_ref.primitive_kind(), PrimitiveKind::State);
-
-        let trace_ref = DocRef::Trace {
-            key: Key::new_trace(ns.clone(), 0),
-            span_id: 123,
-        };
-        assert_eq!(trace_ref.primitive_kind(), PrimitiveKind::Trace);
-
-        let run_ref = DocRef::Run { run_id };
-        assert_eq!(run_ref.primitive_kind(), PrimitiveKind::Run);
-    }
-
-    #[test]
-    fn test_doc_ref_run_id() {
-        let run_id = RunId::new();
-        let ns = Namespace::for_run(run_id);
-
-        let kv_ref = DocRef::Kv {
-            key: Key::new_kv(ns.clone(), "test"),
-        };
-        assert_eq!(kv_ref.run_id(), run_id);
-
-        let run_ref = DocRef::Run { run_id };
-        assert_eq!(run_ref.run_id(), run_id);
-    }
-
-    #[test]
-    fn test_doc_ref_equality() {
-        let run_id = RunId::new();
-        let ns = Namespace::for_run(run_id);
-        let key = Key::new_kv(ns.clone(), "test");
-
-        let ref1 = DocRef::Kv { key: key.clone() };
-        let ref2 = DocRef::Kv { key: key.clone() };
-
-        assert_eq!(ref1, ref2);
-    }
-
-    #[test]
-    fn test_doc_ref_hash() {
-        use std::collections::HashSet;
-
-        let run_id = RunId::new();
-        let ns = Namespace::for_run(run_id);
-
-        let ref1 = DocRef::Kv {
-            key: Key::new_kv(ns.clone(), "key1"),
-        };
-        let ref2 = DocRef::Kv {
-            key: Key::new_kv(ns.clone(), "key2"),
-        };
-
-        let mut set = HashSet::new();
-        set.insert(ref1.clone());
-        set.insert(ref2.clone());
-
-        assert_eq!(set.len(), 2);
-        assert!(set.contains(&ref1));
-        assert!(set.contains(&ref2));
-    }
+    // PrimitiveType and EntityRef tests are now in contract module
 
     // ========================================
     // SearchBudget Tests
@@ -756,7 +469,7 @@ mod tests {
             .with_k(20)
             .with_budget(SearchBudget::default().with_time(50_000))
             .with_mode(SearchMode::Keyword)
-            .with_primitive_filter(vec![PrimitiveKind::Kv, PrimitiveKind::Json])
+            .with_primitive_filter(vec![PrimitiveType::Kv, PrimitiveType::Json])
             .with_time_range(1000, 2000)
             .with_tags(vec!["important".to_string()]);
 
@@ -764,7 +477,7 @@ mod tests {
         assert_eq!(req.budget.max_wall_time_micros, 50_000);
         assert_eq!(
             req.primitive_filter,
-            Some(vec![PrimitiveKind::Kv, PrimitiveKind::Json])
+            Some(vec![PrimitiveType::Kv, PrimitiveType::Json])
         );
         assert_eq!(req.time_range, Some((1000, 2000)));
         assert_eq!(req.tags_any, vec!["important".to_string()]);
@@ -776,17 +489,17 @@ mod tests {
 
         // No filter - includes all
         let req1 = SearchRequest::new(run_id, "test");
-        assert!(req1.includes_primitive(PrimitiveKind::Kv));
-        assert!(req1.includes_primitive(PrimitiveKind::Json));
-        assert!(req1.includes_primitive(PrimitiveKind::Event));
+        assert!(req1.includes_primitive(PrimitiveType::Kv));
+        assert!(req1.includes_primitive(PrimitiveType::Json));
+        assert!(req1.includes_primitive(PrimitiveType::Event));
 
         // With filter - only includes specified
         let req2 = SearchRequest::new(run_id, "test")
-            .with_primitive_filter(vec![PrimitiveKind::Kv, PrimitiveKind::Json]);
-        assert!(req2.includes_primitive(PrimitiveKind::Kv));
-        assert!(req2.includes_primitive(PrimitiveKind::Json));
-        assert!(!req2.includes_primitive(PrimitiveKind::Event));
-        assert!(!req2.includes_primitive(PrimitiveKind::State));
+            .with_primitive_filter(vec![PrimitiveType::Kv, PrimitiveType::Json]);
+        assert!(req2.includes_primitive(PrimitiveType::Kv));
+        assert!(req2.includes_primitive(PrimitiveType::Json));
+        assert!(!req2.includes_primitive(PrimitiveType::Event));
+        assert!(!req2.includes_primitive(PrimitiveType::State));
     }
 
     // ========================================
@@ -796,7 +509,7 @@ mod tests {
     #[test]
     fn test_search_hit_new() {
         let run_id = RunId::new();
-        let doc_ref = DocRef::Run { run_id };
+        let doc_ref = EntityRef::run(run_id);
 
         let hit = SearchHit::new(doc_ref.clone(), 0.95, 1);
 
@@ -809,7 +522,7 @@ mod tests {
     #[test]
     fn test_search_hit_with_snippet() {
         let run_id = RunId::new();
-        let doc_ref = DocRef::Run { run_id };
+        let doc_ref = EntityRef::run(run_id);
 
         let hit = SearchHit::new(doc_ref, 0.95, 1).with_snippet("matched text here".to_string());
 
@@ -849,16 +562,16 @@ mod tests {
     fn test_search_stats_add_primitive_candidates() {
         let mut stats = SearchStats::default();
 
-        stats.add_primitive_candidates(PrimitiveKind::Kv, 100);
-        stats.add_primitive_candidates(PrimitiveKind::Json, 200);
+        stats.add_primitive_candidates(PrimitiveType::Kv, 100);
+        stats.add_primitive_candidates(PrimitiveType::Json, 200);
 
         assert_eq!(stats.candidates_considered, 300);
         assert_eq!(
-            stats.candidates_by_primitive.get(&PrimitiveKind::Kv),
+            stats.candidates_by_primitive.get(&PrimitiveType::Kv),
             Some(&100)
         );
         assert_eq!(
-            stats.candidates_by_primitive.get(&PrimitiveKind::Json),
+            stats.candidates_by_primitive.get(&PrimitiveType::Json),
             Some(&200)
         );
     }
@@ -880,8 +593,8 @@ mod tests {
     fn test_search_response_new() {
         let run_id = RunId::new();
         let hits = vec![
-            SearchHit::new(DocRef::Run { run_id }, 0.9, 1),
-            SearchHit::new(DocRef::Run { run_id }, 0.8, 2),
+            SearchHit::new(EntityRef::run(run_id), 0.9, 1),
+            SearchHit::new(EntityRef::run(run_id), 0.8, 2),
         ];
         let stats = SearchStats::new(500, 100);
 

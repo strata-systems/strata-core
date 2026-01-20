@@ -38,7 +38,7 @@ fn test_r5_committed_survives_crash_basic() {
         "R5 VIOLATED: Committed key disappeared after crash"
     );
     assert_eq!(
-        value.unwrap(),
+        value.unwrap().value,
         Value::String("committed_value".into()),
         "R5 VIOLATED: Committed value changed after crash"
     );
@@ -135,22 +135,22 @@ fn test_r5_committed_value_integrity() {
 
     // Verify values are exactly as committed
     assert_eq!(
-        kv.get(&run_id, "str").unwrap(),
+        kv.get(&run_id, "str").unwrap().map(|v| v.value),
         Some(Value::String("test_string".into())),
         "R5: String value corrupted"
     );
     assert_eq!(
-        kv.get(&run_id, "int").unwrap(),
+        kv.get(&run_id, "int").unwrap().map(|v| v.value),
         Some(Value::I64(42)),
         "R5: Int value corrupted"
     );
     assert_eq!(
-        kv.get(&run_id, "float").unwrap(),
+        kv.get(&run_id, "float").unwrap().map(|v| v.value),
         Some(Value::F64(3.14)),
         "R5: Float value corrupted"
     );
     assert_eq!(
-        kv.get(&run_id, "bool").unwrap(),
+        kv.get(&run_id, "bool").unwrap().map(|v| v.value),
         Some(Value::Bool(true)),
         "R5: Bool value corrupted"
     );
@@ -211,7 +211,7 @@ fn test_r5_earlier_commits_survive_later_operations() {
 
     // Early commit must survive
     let kv = test_db.kv();
-    let early = kv.get(&run_id, "early_key").unwrap();
+    let early = kv.get(&run_id, "early_key").unwrap().map(|v| v.value);
     assert_eq!(
         early,
         Some(Value::String("early_value".into())),
@@ -267,7 +267,7 @@ fn test_r5_final_committed_value_survives() {
     test_db.reopen();
 
     let kv = test_db.kv();
-    let value = kv.get(&run_id, "counter").unwrap();
+    let value = kv.get(&run_id, "counter").unwrap().map(|v| v.value);
     assert_eq!(
         value,
         Some(Value::I64(3)),

@@ -1,16 +1,16 @@
-//! Value types and versioning for in-mem
+//! Value types for in-mem
 //!
 //! This module defines:
 //! - Value: Unified enum for all primitive data types
-//! - VersionedValue: Wrapper with version, timestamp, and TTL
-//! - Associated types for structured data (events, traces, etc.)
+//!
+//! ## Migration Note (M9)
+//!
+//! - `Timestamp` is now in `contract::Timestamp` (microseconds, not seconds)
+//! - `VersionedValue` is now `contract::Versioned<Value>`
+//!
+//! Import from crate root: `use in_mem_core::{Timestamp, VersionedValue, Version};`
 
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
-
-/// Timestamp type (Unix timestamp in seconds)
-pub type Timestamp = i64;
 
 /// Unified value type for all primitives
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -33,47 +33,10 @@ pub enum Value {
     Map(std::collections::HashMap<String, Value>),
 }
 
-/// Versioned value with metadata
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct VersionedValue {
-    /// The actual value
-    pub value: Value,
-    /// Monotonically increasing version number
-    pub version: u64,
-    /// Unix timestamp when the value was created
-    pub timestamp: Timestamp,
-    /// Optional time-to-live duration
-    pub ttl: Option<Duration>,
-}
-
-impl VersionedValue {
-    /// Create a new versioned value
-    pub fn new(value: Value, version: u64, ttl: Option<Duration>) -> Self {
-        Self {
-            value,
-            version,
-            timestamp: Utc::now().timestamp(),
-            ttl,
-        }
-    }
-
-    /// Check if the value has expired based on TTL
-    pub fn is_expired(&self) -> bool {
-        if let Some(ttl) = self.ttl {
-            let now = Utc::now().timestamp();
-            let elapsed = now - self.timestamp;
-            elapsed as u64 >= ttl.as_secs()
-        } else {
-            false
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashMap;
-    use std::thread;
 
     // Tests for Value enum variants
 
@@ -196,95 +159,5 @@ mod tests {
         assert_eq!(value, deserialized);
     }
 
-    // Tests for VersionedValue
-
-    #[test]
-    fn test_versioned_value_creation() {
-        let value = Value::String("test".to_string());
-        let versioned = VersionedValue::new(value.clone(), 42, None);
-
-        assert_eq!(versioned.value, value);
-        assert_eq!(versioned.version, 42);
-        assert!(versioned.ttl.is_none());
-        assert!(!versioned.is_expired());
-    }
-
-    #[test]
-    fn test_versioned_value_with_ttl() {
-        let value = Value::I64(100);
-        let ttl = Duration::from_secs(60);
-        let versioned = VersionedValue::new(value.clone(), 1, Some(ttl));
-
-        assert_eq!(versioned.value, value);
-        assert_eq!(versioned.version, 1);
-        assert_eq!(versioned.ttl, Some(ttl));
-
-        // Should not be expired immediately
-        assert!(!versioned.is_expired());
-    }
-
-    #[test]
-    fn test_versioned_value_ttl_expired() {
-        let value = Value::String("ephemeral".to_string());
-        let ttl = Duration::from_secs(1);
-        let mut versioned = VersionedValue::new(value, 1, Some(ttl));
-
-        // Should not be expired immediately
-        assert!(!versioned.is_expired());
-
-        // Manually set timestamp to the past to simulate expiration
-        versioned.timestamp -= 2; // 2 seconds ago
-
-        // Should be expired now
-        assert!(versioned.is_expired());
-    }
-
-    #[test]
-    fn test_versioned_value_no_ttl_never_expires() {
-        let value = Value::Bool(true);
-        let versioned = VersionedValue::new(value, 99, None);
-
-        // Should never expire without TTL
-        assert!(!versioned.is_expired());
-
-        // Even after some time
-        thread::sleep(Duration::from_millis(10));
-        assert!(!versioned.is_expired());
-    }
-
-    #[test]
-    fn test_versioned_value_serialization() {
-        let value = Value::Array(vec![Value::I64(1), Value::String("test".to_string())]);
-        let ttl = Duration::from_secs(300);
-        let versioned = VersionedValue::new(value, 5, Some(ttl));
-
-        let serialized = serde_json::to_string(&versioned).unwrap();
-        let deserialized: VersionedValue = serde_json::from_str(&serialized).unwrap();
-
-        assert_eq!(versioned.value, deserialized.value);
-        assert_eq!(versioned.version, deserialized.version);
-        assert_eq!(versioned.ttl, deserialized.ttl);
-        // Timestamp should be very close (within a second)
-        assert!((versioned.timestamp - deserialized.timestamp).abs() <= 1);
-    }
-
-    #[test]
-    fn test_versioned_value_different_versions() {
-        let value = Value::String("data".to_string());
-        let v1 = VersionedValue::new(value.clone(), 1, None);
-        let v2 = VersionedValue::new(value.clone(), 2, None);
-
-        assert_ne!(v1.version, v2.version);
-        assert_eq!(v1.value, v2.value);
-    }
-
-    #[test]
-    fn test_versioned_value_timestamp_set() {
-        let value = Value::Null;
-        let versioned = VersionedValue::new(value, 0, None);
-
-        let now = Utc::now().timestamp();
-        // Timestamp should be within 1 second of current time
-        assert!((versioned.timestamp - now).abs() <= 1);
-    }
+    // VersionedValue tests are now in contract/versioned.rs
 }

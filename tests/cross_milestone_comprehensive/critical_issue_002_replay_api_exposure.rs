@@ -26,8 +26,6 @@
 use crate::test_utils::*;
 use in_mem_core::types::RunId;
 use in_mem_core::value::Value;
-use in_mem_engine::Database;
-use std::sync::Arc;
 
 /// Test that Database::replay_run is publicly accessible.
 ///
@@ -132,7 +130,7 @@ fn test_replay_run_returns_readonly_view() {
 
     // For now, verify data exists in the database
     for i in 0..10 {
-        let value = kv.get(&run_id, &format!("key_{}", i)).expect("Should get");
+        let value = kv.get(&run_id, &format!("key_{}", i)).expect("Should get").map(|v| v.value);
         assert!(value.is_some());
     }
 }
@@ -178,8 +176,8 @@ fn test_diff_runs_returns_run_diff() {
     // assert!(diff.added.contains(&"only_b".to_string()));
 
     // For now, verify both runs have their data
-    assert!(kv.get(&run_a, "only_a").expect("get").is_some());
-    assert!(kv.get(&run_b, "only_b").expect("get").is_some());
+    assert!(kv.get(&run_a, "only_a").expect("get").map(|v| v.value).is_some());
+    assert!(kv.get(&run_b, "only_b").expect("get").map(|v| v.value).is_some());
 }
 
 /// Test replay determinism - same run_id always produces same view.
@@ -218,8 +216,8 @@ fn test_replay_determinism() {
     // For now, verify data can be read consistently
     for i in 0..5 {
         let key = format!("det_key_{}", i);
-        let v1 = kv.get(&run_id, &key).expect("get");
-        let v2 = kv.get(&run_id, &key).expect("get");
+        let v1 = kv.get(&run_id, &key).expect("get").map(|v| v.value);
+        let v2 = kv.get(&run_id, &key).expect("get").map(|v| v.value);
         assert_eq!(v1, v2, "Reads should be consistent for key {}", key);
     }
 }
@@ -252,7 +250,7 @@ fn test_replay_after_restart() {
 
     // For now, verify data survives restart
     let kv = test_db.kv();
-    let value = kv.get(&run_id, "persist_key").expect("get");
+    let value = kv.get(&run_id, "persist_key").expect("get").map(|v| v.value);
     assert!(value.is_some());
 }
 
@@ -295,8 +293,8 @@ fn test_diff_runs_overlapping_data() {
     // assert!(diff.added.contains(&"unique_b".to_string()), "unique_b should be marked added");
 
     // For now, verify isolation between runs
-    assert!(kv.get(&run_a, "unique_a").expect("get").is_some());
-    assert!(kv.get(&run_a, "unique_b").expect("get").is_none()); // Not in run_a
-    assert!(kv.get(&run_b, "unique_b").expect("get").is_some());
-    assert!(kv.get(&run_b, "unique_a").expect("get").is_none()); // Not in run_b
+    assert!(kv.get(&run_a, "unique_a").expect("get").map(|v| v.value).is_some());
+    assert!(kv.get(&run_a, "unique_b").expect("get").map(|v| v.value).is_none()); // Not in run_a
+    assert!(kv.get(&run_b, "unique_b").expect("get").map(|v| v.value).is_some());
+    assert!(kv.get(&run_b, "unique_a").expect("get").map(|v| v.value).is_none()); // Not in run_b
 }

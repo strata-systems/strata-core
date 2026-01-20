@@ -25,6 +25,7 @@ pub mod primitive_ext;
 pub mod registry;
 pub mod sharded;
 pub mod snapshot;
+pub mod stored_value;
 pub mod ttl;
 pub mod unified;
 

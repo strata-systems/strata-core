@@ -575,7 +575,7 @@ mod first_committer_wins {
         let key = kv_key(&ns, "cas_contested");
 
         db.put(run_id, key.clone(), values::int(0)).unwrap();
-        let initial_version = db.get(&key).unwrap().unwrap().version;
+        let initial_version = db.get(&key).unwrap().unwrap().version.as_u64();
 
         let barrier = Arc::new(Barrier::new(5));
         let results = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -825,7 +825,7 @@ mod conflict_detection {
 
         // Initial value at version V
         db.put(run_id, key.clone(), values::int(0)).unwrap();
-        let initial_version = db.get(&key).unwrap().unwrap().version;
+        let initial_version = db.get(&key).unwrap().unwrap().version.as_u64();
 
         let db1 = Arc::clone(&db);
         let db2 = Arc::clone(&db);
@@ -922,7 +922,7 @@ mod version_semantics {
 
         // Now the key exists with version > 0
         let value = tdb.db.get(&never_existed_key).unwrap().unwrap();
-        assert!(value.version > 0, "Created key should have version > 0");
+        assert!(value.version.as_u64() > 0, "Created key should have version > 0");
 
         // CAS with version 0 should now FAIL (key exists)
         let cas_result2 = tdb.db.cas(

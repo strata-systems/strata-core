@@ -101,11 +101,15 @@ fn test_interleaved_operations() {
     let kv = test_db.kv();
 
     // Each run should have consistent state
-    if let Some(Value::String(v1)) = kv.get(&run_id1, "key").unwrap() {
-        assert!(v1 == "run1_v1" || v1 == "run1_v2");
+    if let Some(versioned) = kv.get(&run_id1, "key").unwrap() {
+        if let Value::String(v1) = versioned.value {
+            assert!(v1 == "run1_v1" || v1 == "run1_v2");
+        }
     }
-    if let Some(Value::String(v2)) = kv.get(&run_id2, "key").unwrap() {
-        assert!(v2 == "run2_v1" || v2 == "run2_v2");
+    if let Some(versioned) = kv.get(&run_id2, "key").unwrap() {
+        if let Value::String(v2) = versioned.value {
+            assert!(v2 == "run2_v1" || v2 == "run2_v2");
+        }
     }
 }
 
@@ -162,11 +166,15 @@ fn test_cross_run_isolation() {
     let kv = test_db.kv();
 
     // Runs should be isolated
-    if let Some(Value::String(v1)) = kv.get(&run_id1, "isolated").unwrap() {
-        assert_eq!(v1, "run1_data");
+    if let Some(versioned) = kv.get(&run_id1, "isolated").unwrap() {
+        if let Value::String(v1) = versioned.value {
+            assert_eq!(v1, "run1_data");
+        }
     }
-    if let Some(Value::String(v2)) = kv.get(&run_id2, "isolated").unwrap() {
-        assert_eq!(v2, "run2_data");
+    if let Some(versioned) = kv.get(&run_id2, "isolated").unwrap() {
+        if let Value::String(v2) = versioned.value {
+            assert_eq!(v2, "run2_data");
+        }
     }
 }
 
@@ -195,8 +203,10 @@ fn test_delete_in_atomic_batch() {
     let delete_present = kv.get(&run_id, "delete").unwrap().is_some();
 
     // If keep is modified, delete should be gone
-    if let Some(Value::I64(10)) = kv.get(&run_id, "keep").unwrap() {
-        assert!(!delete_present, "Delete not atomic with update");
+    if let Some(versioned) = kv.get(&run_id, "keep").unwrap() {
+        if let Value::I64(10) = versioned.value {
+            assert!(!delete_present, "Delete not atomic with update");
+        }
     }
 }
 

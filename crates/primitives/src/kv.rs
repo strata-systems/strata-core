@@ -31,6 +31,7 @@ use in_mem_concurrency::TransactionContext;
 use in_mem_core::error::Result;
 use in_mem_core::types::{Key, Namespace, RunId};
 use in_mem_core::value::Value;
+use in_mem_core::{Version, Versioned};
 use in_mem_engine::Database;
 use std::sync::Arc;
 use std::time::Duration;
@@ -87,6 +88,8 @@ impl KVStore {
 
     /// Get a value by key (FAST PATH)
     ///
+    /// Returns `Versioned<Value>` containing the value, its version, and timestamp.
+    ///
     /// Bypasses full transaction overhead:
     /// - No transaction object allocation
     /// - No read-set recording
@@ -107,14 +110,27 @@ impl KVStore {
     /// at the same moment would return.
     ///
     /// Returns `None` if the key doesn't exist.
-    pub fn get(&self, run_id: &RunId, key: &str) -> Result<Option<Value>> {
+    ///
+    /// # M9 Contract
+    /// - Returns `Versioned<Value>` with version information
+    /// - Version is `Version::TxnId(commit_version)` from storage
+    pub fn get(&self, run_id: &RunId, key: &str) -> Result<Option<Versioned<Value>>> {
         use in_mem_core::traits::SnapshotView;
 
         // Fast path: direct snapshot read
         let snapshot = self.db.storage().create_snapshot();
         let storage_key = self.key_for(run_id, key);
 
-        Ok(snapshot.get(&storage_key)?.map(|vv| vv.value))
+        // M9: Return full Versioned<Value> instead of just value
+        Ok(snapshot.get(&storage_key)?)
+    }
+
+    /// Get value only, discarding version (DEPRECATED)
+    ///
+    /// For backwards compatibility. New code should use `get()` and access `.value`.
+    #[deprecated(since = "0.9.0", note = "Use get() and access .value directly")]
+    pub fn get_value(&self, run_id: &RunId, key: &str) -> Result<Option<Value>> {
+        Ok(self.get(run_id, key)?.map(|v| v.value))
     }
 
     /// Get a value using full transaction (for comparison/fallback)
@@ -124,35 +140,56 @@ impl KVStore {
     /// - When you need read-set tracking for conflict detection
     ///
     /// For simple reads, prefer `get()` which is faster.
-    pub fn get_in_transaction(&self, run_id: &RunId, key: &str) -> Result<Option<Value>> {
+    pub fn get_in_transaction(&self, run_id: &RunId, key: &str) -> Result<Option<Versioned<Value>>> {
         self.db.transaction(*run_id, |txn| {
             let storage_key = self.key_for(run_id, key);
-            txn.get(&storage_key)
+            let result = txn.get(&storage_key)?;
+            // M9: Wrap in Versioned with transaction snapshot version
+            Ok(result.map(|v| Versioned::new(v, Version::TxnId(txn.start_version))))
         })
     }
 
-    /// Put a value
+    /// Put a value (M9: Returns version)
     ///
     /// Creates the key if it doesn't exist, overwrites if it does.
-    pub fn put(&self, run_id: &RunId, key: &str, value: Value) -> Result<()> {
+    /// Returns the version created by this write operation.
+    ///
+    /// # M9 Contract
+    /// - Returns `Version::TxnId(commit_version)` on success
+    pub fn put(&self, run_id: &RunId, key: &str, value: Value) -> Result<Version> {
+        let ((), commit_version) = self.db.transaction_with_version(*run_id, |txn| {
+            let storage_key = self.key_for(run_id, key);
+            txn.put(storage_key, value)
+        })?;
+        Ok(Version::TxnId(commit_version))
+    }
+
+    /// Put a value without returning version (DEPRECATED)
+    ///
+    /// For backwards compatibility. New code should use `put()` which returns Version.
+    #[deprecated(since = "0.9.0", note = "Use put() which returns Version")]
+    pub fn put_no_version(&self, run_id: &RunId, key: &str, value: Value) -> Result<()> {
         self.db.transaction(*run_id, |txn| {
             let storage_key = self.key_for(run_id, key);
             txn.put(storage_key, value)
         })
     }
 
-    /// Put a value with TTL
+    /// Put a value with TTL (M9: Returns version)
     ///
     /// Note: TTL metadata is stored but cleanup is deferred to M4 background tasks.
     /// Reads will return expired values until cleanup runs.
+    ///
+    /// # M9 Contract
+    /// - Returns `Version::TxnId(commit_version)` on success
     pub fn put_with_ttl(
         &self,
         run_id: &RunId,
         key: &str,
         value: Value,
         ttl: Duration,
-    ) -> Result<()> {
-        self.db.transaction(*run_id, |txn| {
+    ) -> Result<Version> {
+        let ((), commit_version) = self.db.transaction_with_version(*run_id, |txn| {
             let storage_key = self.key_for(run_id, key);
             let expires_at = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -167,7 +204,8 @@ impl KVStore {
             ]));
 
             txn.put(storage_key, value_with_ttl)
-        })
+        })?;
+        Ok(Version::TxnId(commit_version))
     }
 
     /// Delete a key
@@ -199,7 +237,7 @@ impl KVStore {
 
     // ========== Batch Operations (Fast Path) ==========
 
-    /// Get multiple values in a single snapshot (FAST PATH)
+    /// Get multiple values in a single snapshot (FAST PATH) (M9: Returns versioned)
     ///
     /// Uses a single snapshot acquisition for all keys, ensuring:
     /// - Consistent point-in-time view across all keys
@@ -211,9 +249,12 @@ impl KVStore {
     /// vs N * (snapshot_time + lookup_time) for individual gets
     ///
     /// # Returns
-    /// Vec of Option<Value> in same order as input keys.
+    /// Vec of Option<Versioned<Value>> in same order as input keys.
     /// None for keys that don't exist.
-    pub fn get_many(&self, run_id: &RunId, keys: &[&str]) -> Result<Vec<Option<Value>>> {
+    ///
+    /// # M9 Contract
+    /// Returns `Versioned<Value>` with version information for each key.
+    pub fn get_many(&self, run_id: &RunId, keys: &[&str]) -> Result<Vec<Option<Versioned<Value>>>> {
         use in_mem_core::traits::SnapshotView;
 
         // Single snapshot for consistency
@@ -223,24 +264,28 @@ impl KVStore {
         keys.iter()
             .map(|key| {
                 let storage_key = Key::new_kv(ns.clone(), key);
-                Ok(snapshot.get(&storage_key)?.map(|vv| vv.value))
+                // M9: Return full Versioned<Value>
+                Ok(snapshot.get(&storage_key)?)
             })
             .collect()
     }
 
-    /// Get multiple values as a HashMap (FAST PATH)
+    /// Get multiple values as a HashMap (FAST PATH) (M9: Returns versioned)
     ///
     /// Like get_many(), but returns a HashMap for easier lookup.
     /// Only includes keys that exist (missing keys are omitted).
     ///
     /// # Returns
-    /// HashMap mapping key strings to their values.
+    /// HashMap mapping key strings to their versioned values.
     /// Keys that don't exist are not included.
+    ///
+    /// # M9 Contract
+    /// Returns `Versioned<Value>` with version information for each key.
     pub fn get_many_map(
         &self,
         run_id: &RunId,
         keys: &[&str],
-    ) -> Result<std::collections::HashMap<String, Value>> {
+    ) -> Result<std::collections::HashMap<String, Versioned<Value>>> {
         use in_mem_core::traits::SnapshotView;
 
         let snapshot = self.db.storage().create_snapshot();
@@ -250,7 +295,8 @@ impl KVStore {
         for key in keys {
             let storage_key = Key::new_kv(ns.clone(), *key);
             if let Some(vv) = snapshot.get(&storage_key)? {
-                result.insert((*key).to_string(), vv.value);
+                // M9: Return full Versioned<Value>
+                result.insert((*key).to_string(), vv);
             }
         }
         Ok(result)
@@ -280,23 +326,30 @@ impl KVStore {
         })
     }
 
-    /// List key-value pairs with optional prefix filter
+    /// List key-value pairs with optional prefix filter (M9: Returns versioned)
     ///
     /// Returns all key-value pairs matching the prefix (or all if prefix is None).
+    ///
+    /// # M9 Contract
+    /// Returns `Vec<(String, Versioned<Value>)>` with version information.
     pub fn list_with_values(
         &self,
         run_id: &RunId,
         prefix: Option<&str>,
-    ) -> Result<Vec<(String, Value)>> {
+    ) -> Result<Vec<(String, Versioned<Value>)>> {
         self.db.transaction(*run_id, |txn| {
             let ns = self.namespace_for_run(run_id);
             let scan_prefix = Key::new_kv(ns, prefix.unwrap_or(""));
 
             let results = txn.scan_prefix(&scan_prefix)?;
 
+            // M9: Return Versioned<Value> with version from scan
             Ok(results
                 .into_iter()
-                .filter_map(|(key, value)| key.user_key_string().map(|k| (k, value)))
+                .filter_map(|(key, value)| {
+                    key.user_key_string()
+                        .map(|k| (k, Versioned::new(value, Version::TxnId(txn.start_version))))
+                })
                 .collect())
         })
     }
@@ -350,7 +403,7 @@ impl KVStore {
 
             // Time range filter
             if let Some((start_ts, end_ts)) = req.time_range {
-                let ts = versioned_value.timestamp as u64;
+                let ts = versioned_value.timestamp.as_micros();
                 if ts < start_ts || ts > end_ts {
                     continue;
                 }
@@ -359,10 +412,13 @@ impl KVStore {
             // Extract searchable text
             let text = self.extract_search_text(&key, &versioned_value.value);
 
+            // Extract user key as string for DocRef
+            let user_key_str = String::from_utf8_lossy(&key.user_key).to_string();
+
             candidates.push(SearchCandidate::new(
-                DocRef::Kv { key: key.clone() },
+                DocRef::Kv { run_id: req.run_id, key: user_key_str },
                 text,
-                Some(versioned_value.timestamp as u64),
+                Some(versioned_value.timestamp.as_micros()),
             ));
         }
 
@@ -493,8 +549,8 @@ impl crate::searchable::Searchable for KVStore {
         self.search(req)
     }
 
-    fn primitive_kind(&self) -> in_mem_core::search_types::PrimitiveKind {
-        in_mem_core::search_types::PrimitiveKind::Kv
+    fn primitive_kind(&self) -> in_mem_core::PrimitiveType {
+        in_mem_core::PrimitiveType::Kv
     }
 }
 
@@ -571,7 +627,7 @@ mod tests {
         kv.put(&run_id, "key1", Value::String("value1".into()))
             .unwrap();
         let result = kv.get(&run_id, "key1").unwrap();
-        assert_eq!(result, Some(Value::String("value1".into())));
+        assert_eq!(result.map(|v| v.value), Some(Value::String("value1".into())));
     }
 
     #[test]
@@ -594,7 +650,7 @@ mod tests {
             .unwrap();
 
         let result = kv.get(&run_id, "key1").unwrap();
-        assert_eq!(result, Some(Value::String("value2".into())));
+        assert_eq!(result.map(|v| v.value), Some(Value::String("value2".into())));
     }
 
     #[test]
@@ -643,11 +699,11 @@ mod tests {
 
         // Each run sees its own value
         assert_eq!(
-            kv.get(&run1, "shared-key").unwrap(),
+            kv.get(&run1, "shared-key").unwrap().map(|v| v.value),
             Some(Value::String("run1-value".into()))
         );
         assert_eq!(
-            kv.get(&run2, "shared-key").unwrap(),
+            kv.get(&run2, "shared-key").unwrap().map(|v| v.value),
             Some(Value::String("run2-value".into()))
         );
     }
@@ -670,11 +726,13 @@ mod tests {
         assert!(result.is_some());
 
         // Verify the value is wrapped with TTL metadata
-        if let Some(Value::Map(map)) = result {
-            assert!(map.contains_key("value"));
-            assert!(map.contains_key("expires_at"));
-        } else {
-            panic!("Expected Value::Map with TTL metadata");
+        if let Some(versioned) = result {
+            if let Value::Map(map) = versioned.value {
+                assert!(map.contains_key("value"));
+                assert!(map.contains_key("expires_at"));
+            } else {
+                panic!("Expected Value::Map with TTL metadata");
+            }
         }
     }
 
@@ -694,15 +752,15 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            kv.get(&run_id, "key1").unwrap(),
+            kv.get(&run_id, "key1").unwrap().map(|v| v.value),
             Some(Value::String("val1".into()))
         );
         assert_eq!(
-            kv.get(&run_id, "key2").unwrap(),
+            kv.get(&run_id, "key2").unwrap().map(|v| v.value),
             Some(Value::String("val2".into()))
         );
         assert_eq!(
-            kv.get(&run_id, "key3").unwrap(),
+            kv.get(&run_id, "key3").unwrap().map(|v| v.value),
             Some(Value::String("val3".into()))
         );
     }
@@ -807,8 +865,8 @@ mod tests {
         assert_eq!(pairs.len(), 2);
 
         let pairs_map: std::collections::HashMap<_, _> = pairs.into_iter().collect();
-        assert_eq!(pairs_map.get("key1"), Some(&Value::String("val1".into())));
-        assert_eq!(pairs_map.get("key2"), Some(&Value::String("val2".into())));
+        assert_eq!(pairs_map.get("key1").map(|v| &v.value), Some(&Value::String("val1".into())));
+        assert_eq!(pairs_map.get("key2").map(|v| &v.value), Some(&Value::String("val2".into())));
     }
 
     #[test]
@@ -879,31 +937,31 @@ mod tests {
         kv.put(&run_id, "string", Value::String("hello".into()))
             .unwrap();
         assert_eq!(
-            kv.get(&run_id, "string").unwrap(),
+            kv.get(&run_id, "string").unwrap().map(|v| v.value),
             Some(Value::String("hello".into()))
         );
 
         // Integer
         kv.put(&run_id, "int", Value::I64(42)).unwrap();
-        assert_eq!(kv.get(&run_id, "int").unwrap(), Some(Value::I64(42)));
+        assert_eq!(kv.get(&run_id, "int").unwrap().map(|v| v.value), Some(Value::I64(42)));
 
         // Float
         kv.put(&run_id, "float", Value::F64(3.14)).unwrap();
-        assert_eq!(kv.get(&run_id, "float").unwrap(), Some(Value::F64(3.14)));
+        assert_eq!(kv.get(&run_id, "float").unwrap().map(|v| v.value), Some(Value::F64(3.14)));
 
         // Boolean
         kv.put(&run_id, "bool", Value::Bool(true)).unwrap();
-        assert_eq!(kv.get(&run_id, "bool").unwrap(), Some(Value::Bool(true)));
+        assert_eq!(kv.get(&run_id, "bool").unwrap().map(|v| v.value), Some(Value::Bool(true)));
 
         // Null
         kv.put(&run_id, "null", Value::Null).unwrap();
-        assert_eq!(kv.get(&run_id, "null").unwrap(), Some(Value::Null));
+        assert_eq!(kv.get(&run_id, "null").unwrap().map(|v| v.value), Some(Value::Null));
 
         // Bytes
         kv.put(&run_id, "bytes", Value::Bytes(vec![1, 2, 3]))
             .unwrap();
         assert_eq!(
-            kv.get(&run_id, "bytes").unwrap(),
+            kv.get(&run_id, "bytes").unwrap().map(|v| v.value),
             Some(Value::Bytes(vec![1, 2, 3]))
         );
 
@@ -914,8 +972,9 @@ mod tests {
             Value::Array(vec![Value::I64(1), Value::I64(2)]),
         )
         .unwrap();
+        // M9: Extract value from Versioned wrapper
         assert_eq!(
-            kv.get(&run_id, "array").unwrap(),
+            kv.get(&run_id, "array").unwrap().map(|v| v.value),
             Some(Value::Array(vec![Value::I64(1), Value::I64(2)]))
         );
     }
@@ -930,7 +989,8 @@ mod tests {
         kv.put(&run_id, "key", Value::I64(42)).unwrap();
 
         let result = kv.get(&run_id, "key").unwrap();
-        assert_eq!(result, Some(Value::I64(42)));
+        // M9: get() now returns Versioned<Value>
+        assert_eq!(result.map(|v| v.value), Some(Value::I64(42)));
     }
 
     #[test]
@@ -952,7 +1012,12 @@ mod tests {
         let fast = kv.get(&run_id, "key").unwrap();
         let txn = kv.get_in_transaction(&run_id, "key").unwrap();
 
-        assert_eq!(fast, txn, "Fast path must equal transaction read");
+        // M9: Compare values extracted from Versioned wrappers
+        assert_eq!(
+            fast.map(|v| v.value),
+            txn.map(|v| v.value),
+            "Fast path must equal transaction read"
+        );
     }
 
     #[test]
@@ -975,9 +1040,9 @@ mod tests {
         let txn2 = kv.get_in_transaction(&run_id, "key2").unwrap();
         let txn_missing = kv.get_in_transaction(&run_id, "missing").unwrap();
 
-        // Must be identical
-        assert_eq!(fast1, txn1);
-        assert_eq!(fast2, txn2);
+        // M9: Compare values
+        assert_eq!(fast1.map(|v| v.value), txn1.map(|v| v.value));
+        assert_eq!(fast2.map(|v| v.value), txn2.map(|v| v.value));
         assert_eq!(fast_missing, txn_missing);
     }
 
@@ -1005,12 +1070,13 @@ mod tests {
             .unwrap();
 
         // Fast path should respect run isolation
+        // M9: Extract value from Versioned wrapper
         assert_eq!(
-            kv.get(&run1, "shared-key").unwrap(),
+            kv.get(&run1, "shared-key").unwrap().map(|v| v.value),
             Some(Value::String("run1-value".into()))
         );
         assert_eq!(
-            kv.get(&run2, "shared-key").unwrap(),
+            kv.get(&run2, "shared-key").unwrap().map(|v| v.value),
             Some(Value::String("run2-value".into()))
         );
     }
@@ -1028,9 +1094,10 @@ mod tests {
 
         let results = kv.get_many(&run_id, &["a", "b", "c", "missing"]).unwrap();
 
-        assert_eq!(results[0], Some(Value::I64(1)));
-        assert_eq!(results[1], Some(Value::I64(2)));
-        assert_eq!(results[2], Some(Value::I64(3)));
+        // M9: get_many returns Versioned<Value>
+        assert_eq!(results[0].as_ref().map(|v| &v.value), Some(&Value::I64(1)));
+        assert_eq!(results[1].as_ref().map(|v| &v.value), Some(&Value::I64(2)));
+        assert_eq!(results[2].as_ref().map(|v| &v.value), Some(&Value::I64(3)));
         assert_eq!(results[3], None);
     }
 
@@ -1046,9 +1113,10 @@ mod tests {
         // Order of results matches order of input keys
         let results = kv.get_many(&run_id, &["m", "z", "a"]).unwrap();
 
-        assert_eq!(results[0], Some(Value::I64(13))); // m
-        assert_eq!(results[1], Some(Value::I64(26))); // z
-        assert_eq!(results[2], Some(Value::I64(1))); // a
+        // M9: get_many returns Versioned<Value>
+        assert_eq!(results[0].as_ref().map(|v| &v.value), Some(&Value::I64(13))); // m
+        assert_eq!(results[1].as_ref().map(|v| &v.value), Some(&Value::I64(26))); // z
+        assert_eq!(results[2].as_ref().map(|v| &v.value), Some(&Value::I64(1))); // a
     }
 
     #[test]
@@ -1066,8 +1134,15 @@ mod tests {
             .unwrap();
 
         assert_eq!(map.len(), 2); // missing is not included
-        assert_eq!(map.get("key1"), Some(&Value::String("val1".into())));
-        assert_eq!(map.get("key2"), Some(&Value::String("val2".into())));
+        // M9: get_many_map returns Versioned<Value>
+        assert_eq!(
+            map.get("key1").map(|v| &v.value),
+            Some(&Value::String("val1".into()))
+        );
+        assert_eq!(
+            map.get("key2").map(|v| &v.value),
+            Some(&Value::String("val2".into()))
+        );
         assert_eq!(map.get("missing"), None);
     }
 
@@ -1107,8 +1182,138 @@ mod tests {
         let results1 = kv.get_many(&run1, &["key"]).unwrap();
         let results2 = kv.get_many(&run2, &["key"]).unwrap();
 
-        assert_eq!(results1[0], Some(Value::I64(1)));
-        assert_eq!(results2[0], Some(Value::I64(2)));
+        // M9: get_many returns Versioned<Value>
+        assert_eq!(results1[0].as_ref().map(|v| &v.value), Some(&Value::I64(1)));
+        assert_eq!(results2[0].as_ref().map(|v| &v.value), Some(&Value::I64(2)));
+    }
+
+    // ========== Search API Tests (M6) ==========
+
+    #[test]
+    fn test_kv_search_basic() {
+        use in_mem_core::SearchRequest;
+
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        kv.put(&run_id, "greeting", Value::String("hello world".into()))
+            .unwrap();
+        kv.put(&run_id, "farewell", Value::String("goodbye world".into()))
+            .unwrap();
+        kv.put(&run_id, "other", Value::String("something else".into()))
+            .unwrap();
+
+        let req = SearchRequest::new(run_id, "hello");
+        let response = kv.search(&req).unwrap();
+
+        assert_eq!(response.hits.len(), 1);
+        assert_eq!(response.hits[0].rank, 1);
+    }
+
+    #[test]
+    fn test_kv_search_by_key_name() {
+        use in_mem_core::SearchRequest;
+
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        kv.put(
+            &run_id,
+            "user_email",
+            Value::String("test@example.com".into()),
+        )
+        .unwrap();
+        kv.put(&run_id, "user_name", Value::String("John".into()))
+            .unwrap();
+
+        // Search should match key names too
+        let req = SearchRequest::new(run_id, "email");
+        let response = kv.search(&req).unwrap();
+
+        assert!(!response.hits.is_empty());
+    }
+
+    #[test]
+    fn test_kv_search_respects_k() {
+        use in_mem_core::SearchRequest;
+
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        // Create many matching entries
+        for i in 0..20 {
+            kv.put(
+                &run_id,
+                &format!("key{}", i),
+                Value::String(format!("hello document {}", i)),
+            )
+            .unwrap();
+        }
+
+        let req = SearchRequest::new(run_id, "hello").with_k(5);
+        let response = kv.search(&req).unwrap();
+
+        assert_eq!(response.hits.len(), 5);
+    }
+
+    #[test]
+    fn test_kv_search_run_isolation() {
+        use in_mem_core::SearchRequest;
+
+        let (_temp, _db, kv) = setup();
+        let run1 = RunId::new();
+        let run2 = RunId::new();
+
+        kv.put(&run1, "key", Value::String("hello from run1".into()))
+            .unwrap();
+        kv.put(&run2, "key", Value::String("hello from run2".into()))
+            .unwrap();
+
+        let req1 = SearchRequest::new(run1, "hello");
+        let response1 = kv.search(&req1).unwrap();
+        assert_eq!(response1.hits.len(), 1);
+
+        let req2 = SearchRequest::new(run2, "hello");
+        let response2 = kv.search(&req2).unwrap();
+        assert_eq!(response2.hits.len(), 1);
+    }
+
+    #[test]
+    fn test_kv_search_empty_results() {
+        use in_mem_core::SearchRequest;
+
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        kv.put(&run_id, "key", Value::String("hello world".into()))
+            .unwrap();
+
+        let req = SearchRequest::new(run_id, "nonexistent");
+        let response = kv.search(&req).unwrap();
+
+        assert!(response.hits.is_empty());
+    }
+
+    #[test]
+    fn test_kv_searchable_trait() {
+        use crate::searchable::Searchable;
+        use in_mem_core::search_types::PrimitiveKind;
+        use in_mem_core::SearchRequest;
+
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        // Test primitive_kind
+        assert_eq!(kv.primitive_kind(), PrimitiveKind::Kv);
+
+        // Test search via trait
+        kv.put(&run_id, "key", Value::String("searchable test".into()))
+            .unwrap();
+
+        let req = SearchRequest::new(run_id, "searchable");
+        let response = Searchable::search(&kv, &req).unwrap();
+
+        assert!(!response.hits.is_empty());
     }
 
     // ========== Search API Tests (M6) ==========

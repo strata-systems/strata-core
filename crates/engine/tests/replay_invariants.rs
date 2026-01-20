@@ -14,7 +14,7 @@
 
 use in_mem_core::types::{Key, Namespace, RunId};
 use in_mem_core::value::Value;
-use in_mem_engine::{diff_views, DiffPrimitiveKind, ReadOnlyView, RunDiff};
+use in_mem_engine::{diff_views, DiffPrimitiveKind, ReadOnlyView};
 use std::collections::HashMap;
 
 /// Helper to create a test namespace

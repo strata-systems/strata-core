@@ -4,7 +4,8 @@
 
 use crate::test_utils::*;
 use in_mem_core::json::JsonValue;
-use in_mem_core::search_types::{PrimitiveKind, SearchRequest};
+use in_mem_core::contract::PrimitiveType;
+use in_mem_core::search_types::SearchRequest;
 use in_mem_core::types::JsonDocId;
 use in_mem_primitives::Searchable;
 
@@ -33,14 +34,14 @@ fn test_primitive_kinds() {
     let test_db = TestDb::new();
     let p = test_db.all_primitives();
 
-    assert_eq!(p.kv.primitive_kind(), PrimitiveKind::Kv);
-    assert_eq!(p.json.primitive_kind(), PrimitiveKind::Json);
-    assert_eq!(p.event.primitive_kind(), PrimitiveKind::Event);
-    assert_eq!(p.state.primitive_kind(), PrimitiveKind::State);
-    assert_eq!(p.trace.primitive_kind(), PrimitiveKind::Trace);
+    assert_eq!(p.kv.primitive_kind(), PrimitiveType::Kv);
+    assert_eq!(p.json.primitive_kind(), PrimitiveType::Json);
+    assert_eq!(p.event.primitive_kind(), PrimitiveType::Event);
+    assert_eq!(p.state.primitive_kind(), PrimitiveType::State);
+    assert_eq!(p.trace.primitive_kind(), PrimitiveType::Trace);
 
     // When ISSUE-001 is fixed:
-    // assert_eq!(p.vector.primitive_kind(), PrimitiveKind::Vector);
+    // assert_eq!(p.vector.primitive_kind(), PrimitiveType::Vector);
 }
 
 /// Test search returns SearchResponse for all primitives.

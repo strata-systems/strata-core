@@ -3,8 +3,8 @@
 //! Tests for DocRef identity policies and deduplication behavior.
 
 use super::test_utils::*;
-use in_mem_core::search_types::{DocRef, PrimitiveKind, SearchRequest};
-use in_mem_core::types::{JsonDocId, Key, Namespace, RunId};
+use in_mem_core::search_types::{DocRef, PrimitiveType, SearchRequest};
+use in_mem_core::types::{JsonDocId, RunId};
 use in_mem_core::value::Value;
 use in_mem_primitives::{KVStore, RunIndex};
 use in_mem_search::DatabaseSearchExt;
@@ -18,16 +18,18 @@ use std::collections::HashSet;
 #[test]
 fn test_tier6_docrefs_different_primitives_never_equal() {
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
 
     let kv_ref = DocRef::Kv {
-        key: Key::new_kv(ns.clone(), "shared_name"),
+        run_id: run_id.clone(),
+        key: "shared_name".to_string(),
     };
     let json_ref = DocRef::Json {
-        key: Key::new_json(ns.clone(), &JsonDocId::new()),
+        run_id: run_id.clone(),
         doc_id: JsonDocId::new(),
     };
-    let run_ref = DocRef::Run { run_id };
+    let run_ref = DocRef::Run {
+        run_id: run_id.clone(),
+    };
 
     // POLICY: DocRefs from different primitives are NEVER equal
     assert_ne!(kv_ref, json_ref);
@@ -39,13 +41,14 @@ fn test_tier6_docrefs_different_primitives_never_equal() {
 #[test]
 fn test_tier6_docrefs_same_primitive_same_key_equal() {
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
 
     let ref1 = DocRef::Kv {
-        key: Key::new_kv(ns.clone(), "same_key"),
+        run_id: run_id.clone(),
+        key: "same_key".to_string(),
     };
     let ref2 = DocRef::Kv {
-        key: Key::new_kv(ns.clone(), "same_key"),
+        run_id: run_id.clone(),
+        key: "same_key".to_string(),
     };
 
     assert_eq!(ref1, ref2);
@@ -55,13 +58,14 @@ fn test_tier6_docrefs_same_primitive_same_key_equal() {
 #[test]
 fn test_tier6_docrefs_same_primitive_different_key_not_equal() {
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
 
     let ref1 = DocRef::Kv {
-        key: Key::new_kv(ns.clone(), "key1"),
+        run_id: run_id.clone(),
+        key: "key1".to_string(),
     };
     let ref2 = DocRef::Kv {
-        key: Key::new_kv(ns.clone(), "key2"),
+        run_id: run_id.clone(),
+        key: "key2".to_string(),
     };
 
     assert_ne!(ref1, ref2);
@@ -72,14 +76,14 @@ fn test_tier6_docrefs_same_primitive_different_key_not_equal() {
 fn test_tier6_docrefs_different_runs_not_equal() {
     let run1 = RunId::new();
     let run2 = RunId::new();
-    let ns1 = Namespace::for_run(run1);
-    let ns2 = Namespace::for_run(run2);
 
     let ref1 = DocRef::Kv {
-        key: Key::new_kv(ns1, "same_key"),
+        run_id: run1,
+        key: "same_key".to_string(),
     };
     let ref2 = DocRef::Kv {
-        key: Key::new_kv(ns2, "same_key"),
+        run_id: run2,
+        key: "same_key".to_string(),
     };
 
     // Same key name but different runs = NOT equal
@@ -94,16 +98,18 @@ fn test_tier6_docrefs_different_runs_not_equal() {
 #[test]
 fn test_tier6_docrefs_hashable() {
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
 
     let ref1 = DocRef::Kv {
-        key: Key::new_kv(ns.clone(), "key1"),
+        run_id: run_id.clone(),
+        key: "key1".to_string(),
     };
     let ref2 = DocRef::Kv {
-        key: Key::new_kv(ns.clone(), "key2"),
+        run_id: run_id.clone(),
+        key: "key2".to_string(),
     };
     let ref3 = DocRef::Kv {
-        key: Key::new_kv(ns.clone(), "key1"), // Duplicate of ref1
+        run_id: run_id.clone(),
+        key: "key1".to_string(), // Duplicate of ref1
     };
 
     let mut set = HashSet::new();
@@ -172,64 +178,69 @@ fn test_tier6_cross_primitive_no_deduplication() {
     // Results from different primitives may logically refer to the same
     // entity, but DocRefs are distinct (different variants)
     for hit in &response.hits {
-        // Each hit should have a valid primitive kind
-        let _kind = hit.doc_ref.primitive_kind();
+        // Each hit should have a valid primitive type
+        let _kind = hit.doc_ref.primitive_type();
     }
 }
 
 // ============================================================================
-// Primitive Kind Correctness Tests
+// Primitive Type Correctness Tests
 // ============================================================================
 
-/// DocRef.primitive_kind() returns correct variant
+/// DocRef.primitive_type() returns correct variant
 #[test]
-fn test_tier6_primitive_kind_correct() {
+fn test_tier6_primitive_type_correct() {
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
 
     let kv_ref = DocRef::Kv {
-        key: Key::new_kv(ns.clone(), "test"),
+        run_id: run_id.clone(),
+        key: "test".to_string(),
     };
-    assert_eq!(kv_ref.primitive_kind(), PrimitiveKind::Kv);
+    assert_eq!(kv_ref.primitive_type(), PrimitiveType::Kv);
 
     let json_ref = DocRef::Json {
-        key: Key::new_json(ns.clone(), &JsonDocId::new()),
+        run_id: run_id.clone(),
         doc_id: JsonDocId::new(),
     };
-    assert_eq!(json_ref.primitive_kind(), PrimitiveKind::Json);
+    assert_eq!(json_ref.primitive_type(), PrimitiveType::Json);
 
     let event_ref = DocRef::Event {
-        log_key: Key::new_event(ns.clone(), 0),
-        seq: 42,
+        run_id: run_id.clone(),
+        sequence: 42,
     };
-    assert_eq!(event_ref.primitive_kind(), PrimitiveKind::Event);
+    assert_eq!(event_ref.primitive_type(), PrimitiveType::Event);
 
     let state_ref = DocRef::State {
-        key: Key::new_state(ns.clone(), "cell"),
+        run_id: run_id.clone(),
+        name: "cell".to_string(),
     };
-    assert_eq!(state_ref.primitive_kind(), PrimitiveKind::State);
+    assert_eq!(state_ref.primitive_type(), PrimitiveType::State);
 
     let trace_ref = DocRef::Trace {
-        key: Key::new_trace(ns.clone(), 0),
-        span_id: 123,
+        run_id: run_id.clone(),
+        trace_id: "trace-123".to_string(),
     };
-    assert_eq!(trace_ref.primitive_kind(), PrimitiveKind::Trace);
+    assert_eq!(trace_ref.primitive_type(), PrimitiveType::Trace);
 
-    let run_ref = DocRef::Run { run_id };
-    assert_eq!(run_ref.primitive_kind(), PrimitiveKind::Run);
+    let run_ref = DocRef::Run {
+        run_id: run_id.clone(),
+    };
+    assert_eq!(run_ref.primitive_type(), PrimitiveType::Run);
 }
 
 /// DocRef.run_id() returns correct run
 #[test]
 fn test_tier6_run_id_correct() {
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
 
     let kv_ref = DocRef::Kv {
-        key: Key::new_kv(ns.clone(), "test"),
+        run_id: run_id.clone(),
+        key: "test".to_string(),
     };
     assert_eq!(kv_ref.run_id(), run_id);
 
-    let run_ref = DocRef::Run { run_id };
+    let run_ref = DocRef::Run {
+        run_id: run_id.clone(),
+    };
     assert_eq!(run_ref.run_id(), run_id);
 }

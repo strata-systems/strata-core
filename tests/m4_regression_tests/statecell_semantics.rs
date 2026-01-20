@@ -20,10 +20,10 @@ fn statecell_cas_basic_semantics() {
         let run_id = RunId::new();
 
         // Init cell
-        let v1 = state.init(&run_id, "cell", Value::I64(0)).unwrap();
+        let v1 = state.init(&run_id, "cell", Value::I64(0)).unwrap().value;
 
         // CAS with correct version should succeed
-        let v2 = state.cas(&run_id, "cell", v1, Value::I64(1)).unwrap();
+        let v2 = state.cas(&run_id, "cell", v1, Value::I64(1)).unwrap().value;
         assert!(v2 > v1, "Version should increase after CAS");
 
         // CAS with wrong (old) version should fail
@@ -32,8 +32,8 @@ fn statecell_cas_basic_semantics() {
 
         // Value should still be 1
         let current = state.read(&run_id, "cell").unwrap().unwrap();
-        assert_eq!(current.value, Value::I64(1));
-        assert_eq!(current.version, v2);
+        assert_eq!(current.value.value, Value::I64(1));
+        assert_eq!(current.value.version, v2);
 
         true
     });
@@ -48,18 +48,20 @@ fn statecell_cas_succeeds_with_correct_version() {
 
         let v1 = state
             .init(&run_id, "x", Value::String("A".to_string()))
-            .unwrap();
+            .unwrap()
+            .value;
         let read = state.read(&run_id, "x").unwrap().unwrap();
-        assert_eq!(read.version, v1);
+        assert_eq!(read.value.version, v1);
 
         let v2 = state
             .cas(&run_id, "x", v1, Value::String("B".to_string()))
-            .unwrap();
+            .unwrap()
+            .value;
         assert!(v2 > v1);
 
         let read2 = state.read(&run_id, "x").unwrap().unwrap();
-        assert_eq!(read2.value, Value::String("B".to_string()));
-        assert_eq!(read2.version, v2);
+        assert_eq!(read2.value.value, Value::String("B".to_string()));
+        assert_eq!(read2.value.version, v2);
 
         true
     });
@@ -72,7 +74,7 @@ fn statecell_cas_fails_with_wrong_version() {
         let state = StateCell::new(db);
         let run_id = RunId::new();
 
-        let v1 = state.init(&run_id, "x", Value::I64(0)).unwrap();
+        let v1 = state.init(&run_id, "x", Value::I64(0)).unwrap().value;
         let _v2 = state.cas(&run_id, "x", v1, Value::I64(1)).unwrap();
 
         // Try with old version
@@ -88,16 +90,16 @@ fn statecell_failed_cas_preserves_value() {
         let state = StateCell::new(db);
         let run_id = RunId::new();
 
-        let v1 = state.init(&run_id, "x", Value::I64(100)).unwrap();
-        let v2 = state.cas(&run_id, "x", v1, Value::I64(200)).unwrap();
+        let v1 = state.init(&run_id, "x", Value::I64(100)).unwrap().value;
+        let v2 = state.cas(&run_id, "x", v1, Value::I64(200)).unwrap().value;
 
         // Fail a CAS with stale version
         let _ = state.cas(&run_id, "x", v1, Value::I64(999));
 
         // Value should still be 200
         let current = state.read(&run_id, "x").unwrap().unwrap();
-        assert_eq!(current.value, Value::I64(200));
-        assert_eq!(current.version, v2);
+        assert_eq!(current.value.value, Value::I64(200));
+        assert_eq!(current.value.version, v2);
 
         true
     });
@@ -111,7 +113,7 @@ fn statecell_init_uniqueness() {
         let run_id = RunId::new();
 
         // First init succeeds
-        let v1 = state.init(&run_id, "unique", Value::I64(1)).unwrap();
+        let v1 = state.init(&run_id, "unique", Value::I64(1)).unwrap().value;
         assert!(v1 > 0);
 
         // Second init fails (cell exists)
@@ -120,7 +122,7 @@ fn statecell_init_uniqueness() {
 
         // Value should still be original
         let current = state.read(&run_id, "unique").unwrap().unwrap();
-        assert_eq!(current.value, Value::I64(1));
+        assert_eq!(current.value.value, Value::I64(1));
 
         true
     });
@@ -187,7 +189,7 @@ fn statecell_transition_atomicity() {
         }
 
         let final_val = state.read(&run_id, "counter").unwrap().unwrap();
-        match final_val.value {
+        match final_val.value.value {
             Value::I64(n) => n == 100,
             _ => false,
         }
@@ -236,7 +238,7 @@ fn statecell_concurrent_transitions_no_lost_updates() {
     let final_val = state.read(&run_id, "counter").unwrap().unwrap();
     let expected = (NUM_THREADS * INCREMENTS_PER_THREAD) as i64;
 
-    match final_val.value {
+    match final_val.value.value {
         Value::I64(n) => {
             assert_eq!(
                 n, expected,
@@ -259,12 +261,12 @@ fn statecell_set_always_succeeds() {
 
         // Multiple sets should all succeed
         for i in 1..=10 {
-            let v = state.set(&run_id, "x", Value::I64(i)).unwrap();
+            let v = state.set(&run_id, "x", Value::I64(i)).unwrap().value;
             assert!(v > 0);
         }
 
         let final_val = state.read(&run_id, "x").unwrap().unwrap();
-        assert_eq!(final_val.value, Value::I64(10));
+        assert_eq!(final_val.value.value, Value::I64(10));
 
         true
     });
@@ -277,12 +279,13 @@ fn statecell_version_increments() {
         let state = StateCell::new(db);
         let run_id = RunId::new();
 
-        let v1 = state.init(&run_id, "x", Value::I64(0)).unwrap();
-        let v2 = state.set(&run_id, "x", Value::I64(1)).unwrap();
-        let v3 = state.cas(&run_id, "x", v2, Value::I64(2)).unwrap();
+        let v1 = state.init(&run_id, "x", Value::I64(0)).unwrap().value;
+        let v2 = state.set(&run_id, "x", Value::I64(1)).unwrap().value;
+        let v3 = state.cas(&run_id, "x", v2, Value::I64(2)).unwrap().value;
         let (_, v4) = state
             .transition(&run_id, "x", |s| Ok((s.value.clone(), ())))
             .unwrap();
+        let v4 = v4.value;
 
         assert!(v1 < v2, "set should increment version");
         assert!(v2 < v3, "cas should increment version");
@@ -333,14 +336,14 @@ fn statecell_run_isolation() {
         let val_a = state.read(&run_a, "shared_name").unwrap().unwrap();
         let val_b = state.read(&run_b, "shared_name").unwrap().unwrap();
 
-        assert_eq!(val_a.value, Value::I64(100));
-        assert_eq!(val_b.value, Value::I64(200));
+        assert_eq!(val_a.value.value, Value::I64(100));
+        assert_eq!(val_b.value.value, Value::I64(200));
 
         // Modifying one doesn't affect other
         state.set(&run_a, "shared_name", Value::I64(999)).unwrap();
 
         let val_b_after = state.read(&run_b, "shared_name").unwrap().unwrap();
-        assert_eq!(val_b_after.value, Value::I64(200));
+        assert_eq!(val_b_after.value.value, Value::I64(200));
 
         true
     });
@@ -356,11 +359,11 @@ mod statecell_unit_tests {
         let state = StateCell::new(db);
         let run_id = RunId::new();
 
-        let v = state.init(&run_id, "test", Value::I64(42)).unwrap();
+        let v = state.init(&run_id, "test", Value::I64(42)).unwrap().value;
         let read = state.read(&run_id, "test").unwrap().unwrap();
 
-        assert_eq!(read.value, Value::I64(42));
-        assert_eq!(read.version, v);
+        assert_eq!(read.value.value, Value::I64(42));
+        assert_eq!(read.value.version, v);
     }
 
     #[test]

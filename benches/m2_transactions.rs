@@ -108,18 +108,15 @@ fn txn_commit_benchmarks(c: &mut Criterion) {
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
 
-        const MAX_KEYS: usize = 500_000;
-        let keys = pregenerate_keys(&ns, "single", MAX_KEYS);
         let counter = AtomicU64::new(0);
 
         group.bench_function("single_put", |b| {
             b.iter(|| {
-                let i = counter.fetch_add(1, Ordering::Relaxed) as usize;
-                if i >= MAX_KEYS {
-                    panic!("Benchmark exceeded pre-generated keys");
-                }
+                let i = counter.fetch_add(1, Ordering::Relaxed);
+                // Generate key in real-time to avoid exhaustion
+                let key = make_key(&ns, &format!("single_{}", i));
                 let result = db.transaction(run_id, |txn| {
-                    txn.put(keys[i].clone(), Value::I64(i as i64))?;
+                    txn.put(key, Value::I64(i as i64))?;
                     Ok(())
                 });
                 black_box(result.unwrap())
@@ -136,26 +133,18 @@ fn txn_commit_benchmarks(c: &mut Criterion) {
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
 
-        const MAX_BATCHES: usize = 100_000;
-        let all_keys: Vec<Vec<Key>> = (0..MAX_BATCHES)
-            .map(|batch| {
-                (0..num_keys)
-                    .map(|i| make_key(&ns, &format!("batch_{}_{}", batch, i)))
-                    .collect()
-            })
-            .collect();
         let counter = AtomicU64::new(0);
 
         group.bench_with_input(
             BenchmarkId::new("multi_put", num_keys),
             &num_keys,
-            |b, _| {
+            |b, &num_keys| {
                 b.iter(|| {
-                    let batch_idx = counter.fetch_add(1, Ordering::Relaxed) as usize;
-                    if batch_idx >= MAX_BATCHES {
-                        panic!("Benchmark exceeded pre-generated batches");
-                    }
-                    let keys = &all_keys[batch_idx];
+                    let batch_idx = counter.fetch_add(1, Ordering::Relaxed);
+                    // Generate keys in real-time to avoid exhaustion
+                    let keys: Vec<Key> = (0..num_keys)
+                        .map(|i| make_key(&ns, &format!("batch_{}_{}", batch_idx, i)))
+                        .collect();
                     let result = db.transaction(run_id, |txn| {
                         for (i, key) in keys.iter().enumerate() {
                             txn.put(key.clone(), Value::I64(i as i64))?;
@@ -306,19 +295,16 @@ fn txn_cas_benchmarks(c: &mut Criterion) {
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
 
-        const MAX_KEYS: usize = 500_000;
-        let keys = pregenerate_keys(&ns, "cas_create", MAX_KEYS);
         // Counter must be outside bench_function to persist across warm-up and measurement
         let counter = AtomicU64::new(0);
 
         group.bench_function("create_new_key", |b| {
             b.iter(|| {
-                let i = counter.fetch_add(1, Ordering::Relaxed) as usize;
-                if i >= MAX_KEYS {
-                    panic!("Benchmark exceeded pre-generated keys");
-                }
+                let i = counter.fetch_add(1, Ordering::Relaxed);
+                // Generate key in real-time to avoid exhaustion
+                let key = make_key(&ns, &format!("cas_create_{}", i));
                 black_box(
-                    db.cas(run_id, keys[i].clone(), 0, Value::I64(i as i64))
+                    db.cas(run_id, key, 0, Value::I64(i as i64))
                         .unwrap(),
                 )
             });
@@ -462,19 +448,16 @@ fn snapshot_benchmarks(c: &mut Criterion) {
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
 
-        const MAX_KEYS: usize = 100_000;
-        let keys = pregenerate_keys(&ns, "ryw", MAX_KEYS);
         let counter = AtomicU64::new(0);
 
         group.bench_function("read_your_writes", |b| {
             b.iter(|| {
-                let i = counter.fetch_add(1, Ordering::Relaxed) as usize;
-                if i >= MAX_KEYS {
-                    panic!("Benchmark exceeded pre-generated keys");
-                }
+                let i = counter.fetch_add(1, Ordering::Relaxed);
+                // Generate key in real-time to avoid exhaustion
+                let key = make_key(&ns, &format!("ryw_{}", i));
                 let result = db.transaction(run_id, |txn| {
-                    txn.put(keys[i].clone(), Value::I64(i as i64))?;
-                    let val = txn.get(&keys[i])?;
+                    txn.put(key.clone(), Value::I64(i as i64))?;
+                    let val = txn.get(&key)?;
                     Ok(val)
                 });
                 black_box(result.unwrap())

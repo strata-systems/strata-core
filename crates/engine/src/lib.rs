@@ -30,6 +30,7 @@ pub mod instrumentation;
 pub mod recovery_participant;
 pub mod replay; // Story #311-316: Run Lifecycle & Replay
 pub mod transaction;
+pub mod transaction_ops; // Story #473: TransactionOps Trait Definition
 
 pub use coordinator::{TransactionCoordinator, TransactionMetrics};
 pub use database::{Database, DatabaseBuilder, RetryConfig};
@@ -45,7 +46,8 @@ pub use replay::{
     diff_views, DiffEntry, DiffPrimitiveKind, ReadOnlyView, ReplayError, RunDiff, RunError,
     RunIndex,
 };
-pub use transaction::{TransactionPool, MAX_POOL_SIZE};
+pub use transaction::{Transaction, TransactionPool, MAX_POOL_SIZE};
+pub use transaction_ops::TransactionOps;
 
 #[cfg(feature = "perf-trace")]
 pub use instrumentation::{PerfBreakdown, PerfStats};

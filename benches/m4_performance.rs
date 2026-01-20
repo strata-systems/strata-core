@@ -11,8 +11,7 @@
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use in_mem_core::types::RunId;
-use in_mem_core::value::Value;
-use in_mem_core::Storage;
+use in_mem_core::value::{Value, VersionedValue};
 use in_mem_engine::Database;
 use in_mem_primitives::KVStore;
 use std::collections::HashMap;
@@ -268,7 +267,7 @@ fn facade_tax_benchmarks(c: &mut Criterion) {
         b.iter(|| {
             i += 1;
             let key = Key::new(ns.clone(), TypeTag::KV, format!("key{}", i).into_bytes());
-            let _ = db.storage().put(key, Value::I64(i as i64), None);
+            db.storage().put(key, VersionedValue::new(Value::I64(i as i64), i as u64, None));
         });
     });
 

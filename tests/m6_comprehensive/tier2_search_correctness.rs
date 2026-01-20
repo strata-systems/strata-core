@@ -3,7 +3,7 @@
 //! Validates search determinism, exhaustiveness, and filter behavior.
 
 use super::test_utils::*;
-use in_mem_core::search_types::{PrimitiveKind, SearchRequest};
+use in_mem_core::search_types::{PrimitiveType, SearchRequest};
 use in_mem_core::types::RunId;
 use in_mem_core::value::Value;
 use in_mem_primitives::{KVStore, RunIndex};
@@ -165,11 +165,11 @@ fn test_tier2_primitive_filter_works() {
     let hybrid = db.hybrid();
 
     // Search only KV primitive
-    let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveKind::Kv]);
+    let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveType::Kv]);
     let response = hybrid.search(&req).unwrap();
 
     // All results should be from KV only
-    assert_all_from_primitive(&response, PrimitiveKind::Kv);
+    assert_all_from_primitive(&response, PrimitiveType::Kv);
 }
 
 /// Empty primitive filter means no results

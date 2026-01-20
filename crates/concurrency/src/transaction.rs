@@ -13,6 +13,7 @@ use in_mem_core::json::{get_at_path, JsonPatch, JsonPath, JsonValue};
 use in_mem_core::traits::{SnapshotView, Storage};
 use in_mem_core::types::{Key, RunId};
 use in_mem_core::value::Value;
+use in_mem_core::StrataError;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant};
 
@@ -53,6 +54,22 @@ impl std::fmt::Display for CommitError {
 }
 
 impl std::error::Error for CommitError {}
+
+// M9: Conversion to StrataError
+impl From<CommitError> for StrataError {
+    fn from(e: CommitError) -> Self {
+        match e {
+            CommitError::ValidationFailed(result) => StrataError::TransactionAborted {
+                reason: format!("Validation failed: {} conflict(s)", result.conflict_count()),
+            },
+            CommitError::InvalidState(msg) => StrataError::TransactionNotActive { state: msg },
+            CommitError::WALError(msg) => StrataError::Storage {
+                message: format!("WAL error: {}", msg),
+                source: None,
+            },
+        }
+    }
+}
 
 /// Result of applying transaction writes to storage
 ///
@@ -527,8 +544,8 @@ impl TransactionContext {
 
         // Track in read_set for conflict detection
         if let Some(ref vv) = versioned {
-            // Key exists - track its version
-            self.read_set.insert(key.clone(), vv.version);
+            // Key exists - track its version (as u64 for comparison)
+            self.read_set.insert(key.clone(), vv.version.as_u64());
             Ok(Some(vv.value.clone()))
         } else {
             // Key doesn't exist - track with version 0
@@ -587,8 +604,8 @@ impl TransactionContext {
         // Add snapshot results (excluding deleted keys, tracking in read_set)
         for (key, vv) in snapshot_results {
             if !self.delete_set.contains(&key) {
-                // Track in read_set
-                self.read_set.insert(key.clone(), vv.version);
+                // Track in read_set (as u64 for comparison)
+                self.read_set.insert(key.clone(), vv.version.as_u64());
                 results.insert(key, vv.value);
             }
             // Note: Deleted keys are NOT tracked in read_set from scan
@@ -1355,9 +1372,9 @@ impl JsonStoreExt for TransactionContext {
             return Ok(None);
         };
 
-        // Track the document version for conflict detection
-        self.record_json_snapshot_version(key.clone(), vv.version);
-        self.record_json_read(key.clone(), path.clone(), vv.version);
+        // Track the document version for conflict detection (as u64 for comparison)
+        self.record_json_snapshot_version(key.clone(), vv.version.as_u64());
+        self.record_json_read(key.clone(), path.clone(), vv.version.as_u64());
 
         // Deserialize the document
         let doc_bytes = match &vv.value {
@@ -1390,7 +1407,7 @@ impl JsonStoreExt for TransactionContext {
             // Try to get the document version from snapshot
             if let Some(snapshot) = &self.snapshot {
                 if let Ok(Some(vv)) = snapshot.get(key) {
-                    self.record_json_snapshot_version(key.clone(), vv.version);
+                    self.record_json_snapshot_version(key.clone(), vv.version.as_u64());
                 }
             }
         }
@@ -1413,7 +1430,7 @@ impl JsonStoreExt for TransactionContext {
         {
             if let Some(snapshot) = &self.snapshot {
                 if let Ok(Some(vv)) = snapshot.get(key) {
-                    self.record_json_snapshot_version(key.clone(), vv.version);
+                    self.record_json_snapshot_version(key.clone(), vv.version.as_u64());
                 }
             }
         }
@@ -1450,7 +1467,8 @@ mod tests {
     use super::*;
     use crate::snapshot::ClonedSnapshotView;
     use in_mem_core::types::{Namespace, TypeTag};
-    use in_mem_core::value::VersionedValue;
+    use in_mem_core::Version;
+    use in_mem_core::VersionedValue;
 
     // === Test Helpers ===
 
@@ -1473,7 +1491,7 @@ mod tests {
     }
 
     fn create_versioned_value(data: &[u8], version: u64) -> VersionedValue {
-        VersionedValue::new(Value::Bytes(data.to_vec()), version, None)
+        VersionedValue::new(Value::Bytes(data.to_vec()), Version::txn(version))
     }
 
     fn create_txn_with_test_data() -> (TransactionContext, Namespace, Key, Key, Key) {
@@ -2590,7 +2608,7 @@ mod tests {
             store
                 .put(key.clone(), Value::I64(0), None)
                 .expect("put failed");
-            let v1 = store.get(&key).expect("get failed").unwrap().version;
+            let v1 = store.get(&key).expect("get failed").unwrap().version.as_u64();
 
             let mut txn = create_txn_with_store(&store);
             txn.cas(key.clone(), v1, Value::I64(1)).expect("cas failed");
@@ -2702,7 +2720,7 @@ mod tests {
             store
                 .put(key.clone(), Value::I64(0), None)
                 .expect("put failed");
-            let v1 = store.get(&key).expect("get failed").unwrap().version;
+            let v1 = store.get(&key).expect("get failed").unwrap().version.as_u64();
 
             let mut txn = create_txn_with_store(&store);
             txn.cas(key.clone(), v1, Value::I64(1)).expect("cas failed");
@@ -2829,7 +2847,7 @@ mod tests {
 
             // Verify key was written with correct version
             let stored = store.get(&key).expect("get failed").unwrap();
-            assert_eq!(stored.version, 100);
+            assert_eq!(stored.version.as_u64(), 100);
             assert_eq!(stored.value, Value::I64(42));
         }
 
@@ -2852,9 +2870,9 @@ mod tests {
             assert_eq!(result.puts_applied, 3);
 
             // All keys should have same commit version
-            assert_eq!(store.get(&key1).unwrap().unwrap().version, 50);
-            assert_eq!(store.get(&key2).unwrap().unwrap().version, 50);
-            assert_eq!(store.get(&key3).unwrap().unwrap().version, 50);
+            assert_eq!(store.get(&key1).unwrap().unwrap().version.as_u64(), 50);
+            assert_eq!(store.get(&key2).unwrap().unwrap().version.as_u64(), 50);
+            assert_eq!(store.get(&key3).unwrap().unwrap().version.as_u64(), 50);
         }
 
         #[test]
@@ -2887,7 +2905,7 @@ mod tests {
             store
                 .put(key.clone(), Value::I64(0), None)
                 .expect("put failed");
-            let v1 = store.get(&key).expect("get failed").unwrap().version;
+            let v1 = store.get(&key).expect("get failed").unwrap().version.as_u64();
 
             let mut txn = create_txn_with_store(&store);
             txn.cas(key.clone(), v1, Value::I64(1)).expect("cas failed");
@@ -2898,7 +2916,7 @@ mod tests {
             assert_eq!(result.cas_applied, 1);
 
             let stored = store.get(&key).expect("get failed").unwrap();
-            assert_eq!(stored.version, 50);
+            assert_eq!(stored.version.as_u64(), 50);
             assert_eq!(stored.value, Value::I64(1));
         }
 
@@ -2959,7 +2977,7 @@ mod tests {
             store
                 .put(key3.clone(), Value::I64(300), None)
                 .expect("put failed");
-            let v3 = store.get(&key3).expect("get failed").unwrap().version;
+            let v3 = store.get(&key3).expect("get failed").unwrap().version.as_u64();
 
             let mut txn = create_txn_with_store(&store);
             txn.put(key1.clone(), Value::I64(1)).expect("put failed");
@@ -3064,7 +3082,7 @@ mod tests {
             let key = create_key(&ns, "counter");
 
             store.put(key.clone(), Value::I64(0), None).unwrap();
-            let version = store.get(&key).unwrap().unwrap().version;
+            let version = store.get(&key).unwrap().unwrap().version.as_u64();
 
             let mut txn = create_txn_with_snapshot(&store);
             txn.cas(key.clone(), version, Value::I64(1)).unwrap();
@@ -3170,7 +3188,7 @@ mod tests {
 
             store.put(key2.clone(), Value::I64(100), None).unwrap();
             store.put(key3.clone(), Value::I64(0), None).unwrap();
-            let v3 = store.get(&key3).unwrap().unwrap().version;
+            let v3 = store.get(&key3).unwrap().unwrap().version.as_u64();
 
             let mut txn = create_txn_with_snapshot(&store);
             txn.put(key1.clone(), Value::I64(1)).unwrap();
@@ -3367,7 +3385,7 @@ mod tests {
             store
                 .put(key.clone(), Value::I64(0), None)
                 .expect("put failed");
-            let v1 = store.get(&key).expect("get failed").unwrap().version;
+            let v1 = store.get(&key).expect("get failed").unwrap().version.as_u64();
 
             let mut txn = create_txn_with_store(&store);
             txn.cas(key.clone(), v1, Value::I64(1)).expect("cas failed");
@@ -3437,7 +3455,7 @@ mod tests {
             store
                 .put(key3.clone(), Value::I64(300), None)
                 .expect("put failed");
-            let v3 = store.get(&key3).expect("get failed").unwrap().version;
+            let v3 = store.get(&key3).expect("get failed").unwrap().version.as_u64();
 
             let mut txn = create_txn_with_store(&store);
             txn.put(key1.clone(), Value::I64(1)).expect("put failed");

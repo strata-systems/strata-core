@@ -5,9 +5,10 @@
 
 use std::time::Duration;
 
+use crate::contract::VersionedValue;
 use crate::error::Result;
 use crate::types::{Key, RunId};
-use crate::value::{Value, VersionedValue};
+use crate::value::Value;
 
 /// Storage abstraction for unified backend
 ///

@@ -75,7 +75,7 @@ fn test_kv_primitive_operations() {
         .unwrap();
 
     // Get
-    let value = kv.get(&run_id, "key").unwrap();
+    let value = kv.get(&run_id, "key").unwrap().map(|v| v.value);
     assert_eq!(value, Some(Value::String("value".into())));
 
     // Delete
@@ -115,27 +115,29 @@ fn test_storage_value_types() {
     kv.put(&run_id, "str", Value::String("hello".into()))
         .unwrap();
     assert_eq!(
-        kv.get(&run_id, "str").unwrap(),
+        kv.get(&run_id, "str").unwrap().map(|v| v.value),
         Some(Value::String("hello".into()))
     );
 
     // Int
     kv.put(&run_id, "int", Value::I64(-42)).unwrap();
-    assert_eq!(kv.get(&run_id, "int").unwrap(), Some(Value::I64(-42)));
+    assert_eq!(kv.get(&run_id, "int").unwrap().map(|v| v.value), Some(Value::I64(-42)));
 
     // Float
     kv.put(&run_id, "float", Value::F64(3.14159)).unwrap();
-    if let Some(Value::F64(f)) = kv.get(&run_id, "float").unwrap() {
-        assert!((f - 3.14159).abs() < 0.0001);
+    if let Some(versioned) = kv.get(&run_id, "float").unwrap() {
+        if let Value::F64(f) = versioned.value {
+            assert!((f - 3.14159).abs() < 0.0001);
+        }
     }
 
     // Bool
     kv.put(&run_id, "bool", Value::Bool(true)).unwrap();
-    assert_eq!(kv.get(&run_id, "bool").unwrap(), Some(Value::Bool(true)));
+    assert_eq!(kv.get(&run_id, "bool").unwrap().map(|v| v.value), Some(Value::Bool(true)));
 
     // Null
     kv.put(&run_id, "null", Value::Null).unwrap();
-    assert_eq!(kv.get(&run_id, "null").unwrap(), Some(Value::Null));
+    assert_eq!(kv.get(&run_id, "null").unwrap().map(|v| v.value), Some(Value::Null));
 }
 
 /// Storage handles large values
@@ -151,8 +153,10 @@ fn test_storage_large_values() {
     kv.put(&run_id, "large", Value::String(large.clone()))
         .unwrap();
 
-    if let Some(Value::String(s)) = kv.get(&run_id, "large").unwrap() {
-        assert_eq!(s.len(), large.len());
+    if let Some(versioned) = kv.get(&run_id, "large").unwrap() {
+        if let Value::String(s) = versioned.value {
+            assert_eq!(s.len(), large.len());
+        }
     }
 }
 
@@ -172,7 +176,7 @@ fn test_storage_many_keys() {
 
     // All should be readable
     for i in 0..1000 {
-        let value = kv.get(&run_id, &format!("key_{:04}", i)).unwrap();
+        let value = kv.get(&run_id, &format!("key_{:04}", i)).unwrap().map(|v| v.value);
         assert_eq!(value, Some(Value::I64(i)));
     }
 }
@@ -194,11 +198,11 @@ fn test_storage_run_isolation() {
 
     // Reads are isolated
     assert_eq!(
-        kv.get(&run_id1, "shared_key").unwrap(),
+        kv.get(&run_id1, "shared_key").unwrap().map(|v| v.value),
         Some(Value::String("run1".into()))
     );
     assert_eq!(
-        kv.get(&run_id2, "shared_key").unwrap(),
+        kv.get(&run_id2, "shared_key").unwrap().map(|v| v.value),
         Some(Value::String("run2".into()))
     );
 }
@@ -215,7 +219,7 @@ fn test_storage_overwrite() {
     kv.put(&run_id, "key", Value::I64(2)).unwrap();
     kv.put(&run_id, "key", Value::I64(3)).unwrap();
 
-    assert_eq!(kv.get(&run_id, "key").unwrap(), Some(Value::I64(3)));
+    assert_eq!(kv.get(&run_id, "key").unwrap().map(|v| v.value), Some(Value::I64(3)));
 }
 
 /// Storage delete semantics
@@ -235,5 +239,5 @@ fn test_storage_delete_semantics() {
     assert!(kv.get(&run_id, "key").unwrap().is_none());
 
     kv.put(&run_id, "key", Value::I64(2)).unwrap();
-    assert_eq!(kv.get(&run_id, "key").unwrap(), Some(Value::I64(2)));
+    assert_eq!(kv.get(&run_id, "key").unwrap().map(|v| v.value), Some(Value::I64(2)));
 }

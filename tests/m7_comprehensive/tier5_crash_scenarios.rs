@@ -251,10 +251,10 @@ fn test_crash_during_overwrite() {
 
     // Value should be either 1 or 2 (never something else)
     let kv = test_db.kv();
-    if let Some(value) = kv.get(&run_id, "overwrite_key").unwrap() {
-        match value {
+    if let Some(versioned) = kv.get(&run_id, "overwrite_key").unwrap() {
+        match versioned.value {
             Value::I64(1) | Value::I64(2) => {} // OK
-            _ => panic!("Unexpected value after crash: {:?}", value),
+            _ => panic!("Unexpected value after crash: {:?}", versioned.value),
         }
     }
 }

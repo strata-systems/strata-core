@@ -656,7 +656,7 @@ mod version_edge_cases {
 
         // First put should have version > 0
         tdb.db.put(tdb.run_id, key.clone(), values::int(1)).unwrap();
-        let v = tdb.db.get(&key).unwrap().unwrap().version;
+        let v = tdb.db.get(&key).unwrap().unwrap().version.as_u64();
         assert!(v > 0);
 
         // CAS with version 0 should fail

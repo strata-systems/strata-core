@@ -5,7 +5,7 @@
 //!
 //! See `docs/architecture/M6_ARCHITECTURE.md` for authoritative specification.
 
-use in_mem_core::search_types::{PrimitiveKind, SearchRequest};
+use in_mem_core::search_types::{PrimitiveType, SearchRequest};
 use in_mem_core::types::RunId;
 use in_mem_core::value::Value;
 use in_mem_engine::Database;
@@ -132,7 +132,7 @@ fn test_rrf_fusion_deterministic() {
     kv.put(&run_id, "c", Value::String("test".into())).unwrap();
 
     let hybrid = HybridSearch::new(db.clone()).with_fuser(Arc::new(RRFFuser::default()));
-    let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveKind::Kv]);
+    let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveType::Kv]);
 
     // Execute same search multiple times
     let r1 = hybrid.search(&req).unwrap();
@@ -153,7 +153,7 @@ fn test_simple_fuser_deterministic() {
     populate_determinism_data(&db, &run_id);
 
     let hybrid = db.hybrid(); // Uses SimpleFuser by default
-    let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveKind::Kv]);
+    let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveType::Kv]);
 
     let r1 = hybrid.search(&req).unwrap();
     let r2 = hybrid.search(&req).unwrap();

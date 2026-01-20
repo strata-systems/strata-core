@@ -4,7 +4,7 @@
 //! These are sacred invariants that must never break.
 
 use super::test_utils::*;
-use in_mem_core::search_types::{PrimitiveKind, SearchRequest, SearchResponse};
+use in_mem_core::search_types::{PrimitiveType, SearchRequest, SearchResponse};
 use in_mem_core::types::RunId;
 use in_mem_core::value::Value;
 use in_mem_primitives::{KVStore, RunIndex};
@@ -31,8 +31,8 @@ fn test_tier1_rule1_search_returns_docref_not_data() {
     for hit in &response.hits {
         // DocRef should be small (just a reference)
         assert!(std::mem::size_of_val(&hit.doc_ref) < 256);
-        // Can get primitive kind from DocRef
-        let _ = hit.doc_ref.primitive_kind();
+        // Can get primitive type from DocRef
+        let _ = hit.doc_ref.primitive_type();
         // Can get run_id from DocRef
         let _ = hit.doc_ref.run_id();
     }
@@ -111,10 +111,10 @@ fn test_tier1_rule3_hybrid_orchestrates() {
     // Results should come from primitives
     assert!(!response.hits.is_empty());
 
-    // Results include primitive kind
+    // Results include primitive type
     for hit in &response.hits {
-        let kind = hit.doc_ref.primitive_kind();
-        assert!(PrimitiveKind::all().contains(&kind));
+        let kind = hit.doc_ref.primitive_type();
+        assert!(PrimitiveType::all().contains(&kind));
     }
 }
 
@@ -126,11 +126,11 @@ fn test_tier1_rule3_hybrid_respects_filter() {
     populate_test_data(&db, &run_id);
 
     let hybrid = db.hybrid();
-    let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveKind::Kv]);
+    let req = SearchRequest::new(run_id, "test").with_primitive_filter(vec![PrimitiveType::Kv]);
     let response = hybrid.search(&req).unwrap();
 
     // All results should be from KV only
-    assert_all_from_primitive(&response, PrimitiveKind::Kv);
+    assert_all_from_primitive(&response, PrimitiveType::Kv);
 }
 
 // ============================================================================
@@ -183,14 +183,13 @@ fn test_tier1_rule5_index_disabled_by_default() {
 #[test]
 fn test_tier1_rule5_no_overhead_when_disabled() {
     use in_mem_core::search_types::DocRef;
-    use in_mem_core::types::{Key, Namespace};
     use in_mem_search::InvertedIndex;
 
     let index = InvertedIndex::new();
     let run_id = RunId::new();
-    let ns = Namespace::for_run(run_id);
     let doc_ref = DocRef::Kv {
-        key: Key::new_kv(ns, "test"),
+        run_id,
+        key: "test".to_string(),
     };
 
     // Adding documents when disabled should be a no-op
@@ -242,24 +241,24 @@ fn test_tier1_rule6_can_swap_fuser() {
 // Additional Invariants
 // ============================================================================
 
-/// PrimitiveKind has exactly 6 variants
+/// PrimitiveType has exactly 7 variants
 #[test]
-fn test_tier1_primitive_kind_count() {
-    let all = PrimitiveKind::all();
-    assert_eq!(all.len(), 6, "Should have exactly 6 primitives");
+fn test_tier1_primitive_type_count() {
+    let all = PrimitiveType::all();
+    assert_eq!(all.len(), 7, "Should have exactly 7 primitives");
 }
 
-/// All primitive kinds are distinct
+/// All primitive types are distinct
 #[test]
-fn test_tier1_primitive_kinds_distinct() {
-    let all = PrimitiveKind::all();
+fn test_tier1_primitive_types_distinct() {
+    let all = PrimitiveType::all();
     let set: HashSet<_> = all.iter().collect();
-    assert_eq!(set.len(), 6, "All primitive kinds should be distinct");
+    assert_eq!(set.len(), 7, "All primitive types should be distinct");
 }
 
-/// DocRef correctly reports primitive kind
+/// DocRef correctly reports primitive type
 #[test]
-fn test_tier1_docref_primitive_kind_correct() {
+fn test_tier1_docref_primitive_type_correct() {
     let db = create_test_db();
     let run_id = test_run_id();
     populate_test_data(&db, &run_id);
@@ -270,9 +269,9 @@ fn test_tier1_docref_primitive_kind_correct() {
 
     for hit in &response.hits {
         assert_eq!(
-            hit.doc_ref.primitive_kind(),
-            PrimitiveKind::Kv,
-            "DocRef from KV should report Kv primitive kind"
+            hit.doc_ref.primitive_type(),
+            PrimitiveType::Kv,
+            "DocRef from KV should report Kv primitive type"
         );
     }
 }

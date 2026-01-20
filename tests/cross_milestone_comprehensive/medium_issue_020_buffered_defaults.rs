@@ -13,7 +13,7 @@ use crate::test_utils::*;
 /// Test default buffered parameters.
 #[test]
 fn test_default_buffered_params() {
-    let test_db = TestDb::new();
+    let _test_db = TestDb::new();
 
     // Default should be 100ms flush interval, 1000 write threshold
     // When ISSUE-020 is addressed:

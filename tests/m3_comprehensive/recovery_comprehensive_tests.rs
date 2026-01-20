@@ -8,6 +8,7 @@
 //! - Multiple recovery cycles
 
 use crate::test_utils::{values, PersistentTestPrimitives};
+use in_mem_core::contract::Version;
 use in_mem_core::value::Value;
 use in_mem_primitives::TraceType;
 
@@ -63,23 +64,23 @@ mod multi_primitive_recovery {
 
             // KV recovered
             assert_eq!(
-                prims.kv.get(&run_id, "key1").unwrap(),
+                prims.kv.get(&run_id, "key1").unwrap().map(|v| v.value),
                 Some(values::int(100))
             );
             assert_eq!(
-                prims.kv.get(&run_id, "key2").unwrap(),
+                prims.kv.get(&run_id, "key2").unwrap().map(|v| v.value),
                 Some(values::string("hello"))
             );
 
             // EventLog recovered
             let events = prims.event_log.read_range(&run_id, 0, 10).unwrap();
             assert_eq!(events.len(), 2);
-            assert_eq!(events[0].payload, values::int(1));
-            assert_eq!(events[1].payload, values::int(2));
+            assert_eq!(events[0].value.payload, values::int(1));
+            assert_eq!(events[1].value.payload, values::int(2));
 
             // StateCell recovered
             let state = prims.state_cell.read(&run_id, "cell").unwrap().unwrap();
-            assert_eq!(state.value, values::int(42));
+            assert_eq!(state.value.value, values::int(42));
 
             // TraceStore recovered
             let traces = prims.trace_store.query_by_type(&run_id, "Thought").unwrap();
@@ -110,7 +111,7 @@ mod multi_primitive_recovery {
         {
             let prims = ptp.open_strict();
             assert_eq!(
-                prims.kv.get(&run_id, "strict_key").unwrap(),
+                prims.kv.get(&run_id, "strict_key").unwrap().map(|v| v.value),
                 Some(values::int(999))
             );
             assert_eq!(prims.event_log.len(&run_id).unwrap(), 1);
@@ -133,18 +134,21 @@ mod sequence_continuity {
         // Session 1: Append events 0, 1, 2
         {
             let prims = ptp.open();
-            let (seq0, _) = prims
+            let version0 = prims
                 .event_log
                 .append(&run_id, "event", values::int(0))
                 .unwrap();
-            let (seq1, _) = prims
+            let Version::Sequence(seq0) = version0 else { panic!("Expected Sequence version") };
+            let version1 = prims
                 .event_log
                 .append(&run_id, "event", values::int(1))
                 .unwrap();
-            let (seq2, _) = prims
+            let Version::Sequence(seq1) = version1 else { panic!("Expected Sequence version") };
+            let version2 = prims
                 .event_log
                 .append(&run_id, "event", values::int(2))
                 .unwrap();
+            let Version::Sequence(seq2) = version2 else { panic!("Expected Sequence version") };
 
             assert_eq!(seq0, 0);
             assert_eq!(seq1, 1);
@@ -154,10 +158,11 @@ mod sequence_continuity {
         // Session 2: Recover and continue appending
         {
             let prims = ptp.open();
-            let (seq3, _) = prims
+            let version3 = prims
                 .event_log
                 .append(&run_id, "event", values::int(3))
                 .unwrap();
+            let Version::Sequence(seq3) = version3 else { panic!("Expected Sequence version") };
 
             // Sequence continues from 3, not 0
             assert_eq!(seq3, 3);
@@ -202,9 +207,9 @@ mod sequence_continuity {
             assert_eq!(events.len(), 10);
             for (i, event) in events.iter().enumerate() {
                 assert_eq!(
-                    event.sequence, i as u64,
+                    event.value.sequence, i as u64,
                     "Gap at index {}: expected {}, got {}",
-                    i, i, event.sequence
+                    i, i, event.value.sequence
                 );
             }
         }
@@ -246,8 +251,8 @@ mod cas_version_continuity {
                 .unwrap();
 
             let state = prims.state_cell.read(&run_id, "cell").unwrap().unwrap();
-            version_after_session_1 = state.version;
-            assert_eq!(state.version, 4);
+            version_after_session_1 = state.value.version;
+            assert_eq!(state.value.version, 4);
         }
 
         // Session 2: Recover and verify version
@@ -255,8 +260,8 @@ mod cas_version_continuity {
             let prims = ptp.open();
             let state = prims.state_cell.read(&run_id, "cell").unwrap().unwrap();
 
-            assert_eq!(state.value, values::int(3));
-            assert_eq!(state.version, version_after_session_1);
+            assert_eq!(state.value.value, values::int(3));
+            assert_eq!(state.value.version, version_after_session_1);
 
             // CAS with old version fails
             let result = prims.state_cell.cas(&run_id, "cell", 3, values::int(999));
@@ -266,11 +271,12 @@ mod cas_version_continuity {
             let new_version = prims
                 .state_cell
                 .cas(&run_id, "cell", 4, values::int(4))
-                .unwrap();
+                .unwrap()
+                .value;
             assert_eq!(new_version, 5);
 
             let state = prims.state_cell.read(&run_id, "cell").unwrap().unwrap();
-            assert_eq!(state.version, 5);
+            assert_eq!(state.value.version, 5);
         }
     }
 
@@ -304,7 +310,7 @@ mod cas_version_continuity {
 
             // Value should be 10
             let state = prims.state_cell.read(&run_id, "counter").unwrap().unwrap();
-            assert_eq!(state.value, values::int(10));
+            assert_eq!(state.value.value, values::int(10));
 
             // Transition again
             prims
@@ -319,7 +325,7 @@ mod cas_version_continuity {
                 .unwrap();
 
             let state = prims.state_cell.read(&run_id, "counter").unwrap().unwrap();
-            assert_eq!(state.value, values::int(15));
+            assert_eq!(state.value.value, values::int(15));
         }
     }
 }
@@ -437,7 +443,8 @@ mod index_recovery {
                     vec![],
                     values::null(),
                 )
-                .unwrap();
+                .unwrap()
+                .value;
             prims
                 .trace_store
                 .record_child(
@@ -538,7 +545,7 @@ mod multiple_recovery_cycles {
         {
             let prims = ptp.open();
             assert_eq!(
-                prims.kv.get(&run_id, "cycle").unwrap(),
+                prims.kv.get(&run_id, "cycle").unwrap().map(|v| v.value),
                 Some(values::int(1))
             );
             assert_eq!(prims.event_log.len(&run_id).unwrap(), 1);
@@ -554,7 +561,7 @@ mod multiple_recovery_cycles {
         {
             let prims = ptp.open();
             assert_eq!(
-                prims.kv.get(&run_id, "cycle").unwrap(),
+                prims.kv.get(&run_id, "cycle").unwrap().map(|v| v.value),
                 Some(values::int(2))
             );
             assert_eq!(prims.event_log.len(&run_id).unwrap(), 2);
@@ -570,14 +577,14 @@ mod multiple_recovery_cycles {
         {
             let prims = ptp.open();
             assert_eq!(
-                prims.kv.get(&run_id, "cycle").unwrap(),
+                prims.kv.get(&run_id, "cycle").unwrap().map(|v| v.value),
                 Some(values::int(3))
             );
             let events = prims.event_log.read_range(&run_id, 0, 10).unwrap();
             assert_eq!(events.len(), 3);
-            assert_eq!(events[0].event_type, "cycle_1");
-            assert_eq!(events[1].event_type, "cycle_2");
-            assert_eq!(events[2].event_type, "cycle_3");
+            assert_eq!(events[0].value.event_type, "cycle_1");
+            assert_eq!(events[1].value.event_type, "cycle_2");
+            assert_eq!(events[2].value.event_type, "cycle_3");
         }
     }
 
@@ -593,7 +600,7 @@ mod multiple_recovery_cycles {
                 // Verify previous cycles
                 if cycle > 1 {
                     assert_eq!(
-                        prims.kv.get(&run_id, "counter").unwrap(),
+                        prims.kv.get(&run_id, "counter").unwrap().map(|v| v.value),
                         Some(values::int(cycle - 1))
                     );
                     assert_eq!(prims.event_log.len(&run_id).unwrap(), (cycle - 1) as u64);
@@ -632,12 +639,12 @@ mod multiple_recovery_cycles {
         {
             let prims = ptp.open();
             assert_eq!(
-                prims.kv.get(&run_id, "counter").unwrap(),
+                prims.kv.get(&run_id, "counter").unwrap().map(|v| v.value),
                 Some(values::int(5))
             );
             assert_eq!(prims.event_log.len(&run_id).unwrap(), 5);
             let state = prims.state_cell.read(&run_id, "state").unwrap().unwrap();
-            assert_eq!(state.value, values::int(5));
+            assert_eq!(state.value.value, values::int(5));
         }
     }
 }
@@ -659,7 +666,7 @@ mod runindex_recovery {
         {
             let prims = ptp.open();
             let meta = prims.run_index.create_run("test-run").unwrap();
-            run_name = meta.name.clone();
+            run_name = meta.value.name.clone();
             prims
                 .run_index
                 .update_status(&run_name, RunStatus::Paused)
@@ -670,7 +677,7 @@ mod runindex_recovery {
         {
             let prims = ptp.open();
             let run_info = prims.run_index.get_run(&run_name).unwrap().unwrap();
-            assert_eq!(run_info.status, RunStatus::Paused);
+            assert_eq!(run_info.value.status, RunStatus::Paused);
         }
     }
 
@@ -691,15 +698,15 @@ mod runindex_recovery {
                     values::null(),
                 )
                 .unwrap();
-            run_name = meta.name.clone();
+            run_name = meta.value.name.clone();
         }
 
         // Session 2: Verify metadata
         {
             let prims = ptp.open();
             let run_info = prims.run_index.get_run(&run_name).unwrap().unwrap();
-            assert!(run_info.tags.contains(&"tag1".to_string()));
-            assert!(run_info.tags.contains(&"tag2".to_string()));
+            assert!(run_info.value.tags.contains(&"tag1".to_string()));
+            assert!(run_info.value.tags.contains(&"tag2".to_string()));
         }
     }
 
@@ -715,7 +722,7 @@ mod runindex_recovery {
             let meta1 = prims.run_index.create_run("run-1").unwrap();
             let meta2 = prims.run_index.create_run("run-2").unwrap();
 
-            run_names = vec![meta0.name.clone(), meta1.name.clone(), meta2.name.clone()];
+            run_names = vec![meta0.value.name.clone(), meta1.value.name.clone(), meta2.value.name.clone()];
 
             prims
                 .run_index
@@ -729,13 +736,13 @@ mod runindex_recovery {
             let prims = ptp.open();
 
             let run0 = prims.run_index.get_run(&run_names[0]).unwrap().unwrap();
-            assert_eq!(run0.status, RunStatus::Active);
+            assert_eq!(run0.value.status, RunStatus::Active);
 
             let run1 = prims.run_index.get_run(&run_names[1]).unwrap().unwrap();
-            assert_eq!(run1.status, RunStatus::Paused);
+            assert_eq!(run1.value.status, RunStatus::Paused);
 
             let run2 = prims.run_index.get_run(&run_names[2]).unwrap().unwrap();
-            assert_eq!(run2.status, RunStatus::Completed);
+            assert_eq!(run2.value.status, RunStatus::Completed);
         }
     }
 }
@@ -800,7 +807,7 @@ mod chain_integrity_after_recovery {
             // Check prev_hash linkage
             let events = prims.event_log.read_range(&run_id, 0, 10).unwrap();
             assert_eq!(events.len(), 2);
-            assert_eq!(events[1].prev_hash, events[0].hash);
+            assert_eq!(events[1].value.prev_hash, events[0].value.hash);
         }
     }
 }

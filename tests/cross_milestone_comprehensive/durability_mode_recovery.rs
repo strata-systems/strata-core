@@ -20,7 +20,7 @@ fn test_strict_mode_recovery() {
     test_db.reopen();
 
     let kv = test_db.kv();
-    let value = kv.get(&run_id, "strict_data").expect("get");
+    let value = kv.get(&run_id, "strict_data").expect("get").map(|v| v.value);
     assert!(value.is_some(), "Data should survive restart in strict mode");
 }
 
@@ -39,7 +39,7 @@ fn test_buffered_mode_recovery() {
     test_db.reopen();
 
     let kv = test_db.kv();
-    let value = kv.get(&run_id, "buffered_data").expect("get");
+    let value = kv.get(&run_id, "buffered_data").expect("get").map(|v| v.value);
     assert!(value.is_some(), "Data should survive restart after flush");
 }
 
@@ -54,7 +54,7 @@ fn test_inmemory_no_recovery() {
     kv.put(&run_id, "ephemeral", Value::I64(42)).expect("put");
 
     // Data exists while database is open
-    assert!(kv.get(&run_id, "ephemeral").expect("get").is_some());
+    assert!(kv.get(&run_id, "ephemeral").expect("get").map(|v| v.value).is_some());
 
     // After drop, data is gone (can't really test this without reopening)
 }

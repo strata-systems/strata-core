@@ -1,5 +1,6 @@
 //! Error types for the Vector primitive
 
+use in_mem_core::{EntityRef, RunId, StrataError};
 use thiserror::Error;
 
 /// Errors specific to the Vector primitive
@@ -132,6 +133,69 @@ impl VectorError {
 
 /// Result type alias for Vector operations
 pub type VectorResult<T> = Result<T, VectorError>;
+
+// =============================================================================
+// Conversion to StrataError (M9)
+// =============================================================================
+
+impl From<VectorError> for StrataError {
+    fn from(e: VectorError) -> Self {
+        // Use a placeholder run_id since VectorError doesn't have run context
+        let placeholder_run_id = RunId::new();
+
+        match e {
+            VectorError::CollectionNotFound { name } => StrataError::NotFound {
+                entity_ref: EntityRef::vector(placeholder_run_id, name, ""),
+            },
+            VectorError::CollectionAlreadyExists { name } => StrataError::InvalidOperation {
+                entity_ref: EntityRef::vector(placeholder_run_id, name, ""),
+                reason: "Collection already exists".to_string(),
+            },
+            VectorError::DimensionMismatch { expected, got } => {
+                StrataError::DimensionMismatch { expected, got }
+            }
+            VectorError::InvalidDimension { dimension } => StrataError::InvalidInput {
+                message: format!("Invalid dimension: {} (must be > 0)", dimension),
+            },
+            VectorError::VectorNotFound { key } => StrataError::NotFound {
+                entity_ref: EntityRef::vector(placeholder_run_id, "unknown", key),
+            },
+            VectorError::EmptyEmbedding => StrataError::InvalidInput {
+                message: "Empty embedding".to_string(),
+            },
+            VectorError::InvalidCollectionName { name, reason } => StrataError::InvalidInput {
+                message: format!("Invalid collection name '{}': {}", name, reason),
+            },
+            VectorError::InvalidKey { key, reason } => StrataError::InvalidInput {
+                message: format!("Invalid key '{}': {}", key, reason),
+            },
+            VectorError::ConfigMismatch { collection, field } => StrataError::InvalidOperation {
+                entity_ref: EntityRef::vector(placeholder_run_id, collection, ""),
+                reason: format!("Config field '{}' cannot be changed", field),
+            },
+            VectorError::SearchLimitExceeded { requested, max } => StrataError::CapacityExceeded {
+                resource: "search results".to_string(),
+                limit: max,
+                requested,
+            },
+            VectorError::Storage(msg) => StrataError::Storage {
+                message: msg,
+                source: None,
+            },
+            VectorError::Transaction(msg) => StrataError::TransactionAborted { reason: msg },
+            VectorError::Serialization(msg) => StrataError::Serialization { message: msg },
+            VectorError::Internal(msg) => StrataError::Internal { message: msg },
+            VectorError::Io(msg) => StrataError::Storage {
+                message: format!("IO error: {}", msg),
+                source: None,
+            },
+            VectorError::Database(msg) => StrataError::Storage {
+                message: format!("Database error: {}", msg),
+                source: None,
+            },
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

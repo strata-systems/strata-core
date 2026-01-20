@@ -86,12 +86,12 @@ mod isolation_guarantees {
         // T1's snapshot should still see version 1 value
         let value_in_snapshot = snapshot_t1.get(&key).unwrap().unwrap();
         assert_eq!(value_in_snapshot.value, Value::I64(100));
-        assert_eq!(value_in_snapshot.version, 1);
+        assert_eq!(value_in_snapshot.version.as_u64(), 1);
 
         // Current storage should see version 2
         let current_value = store.get(&key).unwrap().unwrap();
         assert_eq!(current_value.value, Value::I64(200));
-        assert_eq!(current_value.version, 2);
+        assert_eq!(current_value.version.as_u64(), 2);
     }
 
     /// Per spec: "No dirty reads - Never see uncommitted data from other transactions"
@@ -468,7 +468,7 @@ mod conflict_detection {
         // Get the version from snapshot for CAS
         let snapshot = store.create_snapshot();
         let current = snapshot.get(&key).unwrap().unwrap();
-        txn1.cas(key.clone(), current.version, Value::I64(200))
+        txn1.cas(key.clone(), current.version.as_u64(), Value::I64(200))
             .unwrap();
 
         // Both read_set and cas_set should contain the key

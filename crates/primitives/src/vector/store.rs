@@ -24,12 +24,15 @@
 //! All VectorStore instances for the same Database share backend state
 //! through `Database::extension::<VectorBackendState>()`.
 
+use crate::extensions::VectorStoreExt;
 use crate::vector::collection::{validate_collection_name, validate_vector_key};
 use crate::vector::{
     CollectionId, CollectionInfo, CollectionRecord, IndexBackendFactory, MetadataFilter,
     VectorConfig, VectorEntry, VectorError, VectorId, VectorIndexBackend, VectorMatch,
     VectorRecord, VectorResult,
 };
+use in_mem_concurrency::TransactionContext;
+use in_mem_core::contract::{Timestamp, Version, Versioned};
 use in_mem_core::search_types::{DocRef, SearchBudget, SearchHit, SearchResponse, SearchStats};
 use in_mem_core::types::{Key, Namespace, RunId};
 use in_mem_core::value::Value;
@@ -387,7 +390,7 @@ impl VectorStore {
         run_id: RunId,
         name: &str,
         config: VectorConfig,
-    ) -> VectorResult<CollectionInfo> {
+    ) -> VectorResult<Versioned<CollectionInfo>> {
         // Validate name
         validate_collection_name(name)?;
 
@@ -435,12 +438,18 @@ impl VectorStore {
             version: 1, // TODO: Get proper version from coordinator
         })?;
 
-        Ok(CollectionInfo {
+        let info = CollectionInfo {
             name: name.to_string(),
             config,
             count: 0,
             created_at: now,
-        })
+        };
+
+        Ok(Versioned::with_timestamp(
+            info,
+            Version::counter(1),
+            Timestamp::from_micros(now),
+        ))
     }
 
     /// Delete a collection and all its vectors
@@ -547,7 +556,7 @@ impl VectorStore {
         &self,
         run_id: RunId,
         name: &str,
-    ) -> VectorResult<Option<CollectionInfo>> {
+    ) -> VectorResult<Option<Versioned<CollectionInfo>>> {
         let config_key = Key::new_vector_config(Namespace::for_run(run_id), name);
 
         // Read from snapshot
@@ -576,12 +585,18 @@ impl VectorStore {
         let collection_id = CollectionId::new(run_id, name);
         let count = self.get_collection_count(&collection_id, run_id, name)?;
 
-        Ok(Some(CollectionInfo {
+        let info = CollectionInfo {
             name: name.to_string(),
             config,
             count,
             created_at: record.created_at,
-        }))
+        };
+
+        Ok(Some(Versioned::with_timestamp(
+            info,
+            versioned_value.version,
+            versioned_value.timestamp,
+        )))
     }
 
     /// Check if a collection exists
@@ -617,7 +632,7 @@ impl VectorStore {
         key: &str,
         embedding: &[f32],
         metadata: Option<JsonValue>,
-    ) -> VectorResult<()> {
+    ) -> VectorResult<Version> {
         // Validate key
         validate_vector_key(key)?;
 
@@ -683,6 +698,7 @@ impl VectorStore {
         }
 
         // Store record in KV
+        let record_version = record.version;
         let record_bytes = record.to_bytes()?;
         self.db
             .transaction(run_id, |txn| {
@@ -701,7 +717,7 @@ impl VectorStore {
             version: 1, // TODO: Get proper version from coordinator
         })?;
 
-        Ok(())
+        Ok(Version::counter(record_version))
     }
 
     /// Get a vector by key
@@ -713,18 +729,33 @@ impl VectorStore {
         run_id: RunId,
         collection: &str,
         key: &str,
-    ) -> VectorResult<Option<VectorEntry>> {
+    ) -> VectorResult<Option<Versioned<VectorEntry>>> {
         // Ensure collection is loaded
         self.ensure_collection_loaded(run_id, collection)?;
 
         let collection_id = CollectionId::new(run_id, collection);
         let kv_key = Key::new_vector(Namespace::for_run(run_id), collection, key);
 
-        // Get record from KV
-        let Some(record) = self.get_vector_record_by_key(&kv_key)? else {
+        // Get record from KV with version info
+        use in_mem_core::traits::SnapshotView;
+        let snapshot = self.db.storage().create_snapshot();
+        let Some(versioned_value) = snapshot
+            .get(&kv_key)
+            .map_err(|e| VectorError::Storage(e.to_string()))?
+        else {
             return Ok(None);
         };
 
+        let bytes = match &versioned_value.value {
+            Value::Bytes(b) => b,
+            _ => {
+                return Err(VectorError::Serialization(
+                    "Expected Bytes value for vector record".to_string(),
+                ))
+            }
+        };
+
+        let record = VectorRecord::from_bytes(bytes)?;
         let vector_id = VectorId(record.vector_id);
 
         // Get embedding from backend
@@ -741,13 +772,19 @@ impl VectorStore {
             .get(vector_id)
             .ok_or_else(|| VectorError::Internal("Embedding missing from backend".to_string()))?;
 
-        Ok(Some(VectorEntry {
+        let entry = VectorEntry {
             key: key.to_string(),
             embedding: embedding.to_vec(),
             metadata: record.metadata,
             vector_id,
             version: record.version,
-        }))
+        };
+
+        Ok(Some(Versioned::with_timestamp(
+            entry,
+            versioned_value.version,
+            versioned_value.timestamp,
+        )))
     }
 
     /// Delete a vector by key
@@ -1530,8 +1567,8 @@ impl crate::searchable::Searchable for VectorStore {
         }
     }
 
-    fn primitive_kind(&self) -> in_mem_core::search_types::PrimitiveKind {
-        in_mem_core::search_types::PrimitiveKind::Vector
+    fn primitive_kind(&self) -> in_mem_core::PrimitiveType {
+        in_mem_core::PrimitiveType::Vector
     }
 }
 
@@ -1618,6 +1655,63 @@ fn now_micros() -> u64 {
         .as_micros() as u64
 }
 
+// =============================================================================
+// VectorStoreExt Implementation (Story #477)
+// =============================================================================
+//
+// Extension trait implementation for cross-primitive transactions.
+//
+// LIMITATION: VectorStore operations in transactions have limited support
+// because embeddings are stored in in-memory backends (VectorHeap/HNSW)
+// which are not accessible through TransactionContext. Full vector operations
+// require access to the VectorBackendState which is Database-scoped.
+//
+// Future enhancement: Could add pending_vector_ops to TransactionContext
+// and apply them at commit time, but this requires significant infrastructure.
+
+impl VectorStoreExt for TransactionContext {
+    fn vector_get(&mut self, collection: &str, key: &str) -> in_mem_core::Result<Option<Vec<f32>>> {
+        // VectorStore embeddings are stored in VectorHeap (in-memory backend),
+        // which is not accessible from TransactionContext.
+        //
+        // The VectorRecord in KV storage only contains vector_id (index into heap),
+        // not the actual embedding data.
+        //
+        // To properly support this, TransactionContext would need access to
+        // Database::extension::<VectorBackendState>().
+        let _ = (collection, key); // Mark as intentionally unused
+        Err(in_mem_core::error::Error::InvalidOperation(
+            "VectorStore get operations are not supported in cross-primitive transactions. \
+             Embeddings are stored in in-memory backends not accessible from TransactionContext. \
+             Use VectorStore::get() directly outside of transactions."
+                .to_string(),
+        ))
+    }
+
+    fn vector_insert(
+        &mut self,
+        collection: &str,
+        key: &str,
+        embedding: &[f32],
+    ) -> in_mem_core::Result<Version> {
+        // VectorStore inserts require:
+        // 1. Adding embedding to VectorHeap (in-memory)
+        // 2. Getting a VectorId from the backend's allocator
+        // 3. Creating/updating VectorRecord in KV storage
+        // 4. Updating the search index
+        //
+        // Steps 1, 2, and 4 require access to VectorBackendState which is
+        // not available from TransactionContext.
+        let _ = (collection, key, embedding); // Mark as intentionally unused
+        Err(in_mem_core::error::Error::InvalidOperation(
+            "VectorStore insert operations are not supported in cross-primitive transactions. \
+             Vector operations require access to in-memory backends not accessible from \
+             TransactionContext. Use VectorStore::insert() directly outside of transactions."
+                .to_string(),
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1641,9 +1735,10 @@ mod tests {
         let run_id = RunId::new();
 
         let config = VectorConfig::for_minilm();
-        let info = store
+        let versioned = store
             .create_collection(run_id, "test", config.clone())
             .unwrap();
+        let info = versioned.value;
 
         assert_eq!(info.name, "test");
         assert_eq!(info.count, 0);
@@ -1746,7 +1841,7 @@ mod tests {
             .create_collection(run_id, "embeddings", config)
             .unwrap();
 
-        let info = store.get_collection(run_id, "embeddings").unwrap().unwrap();
+        let info = store.get_collection(run_id, "embeddings").unwrap().unwrap().value;
         assert_eq!(info.name, "embeddings");
         assert_eq!(info.config.dimension, 768);
         assert_eq!(info.config.metric, DistanceMetric::Euclidean);
@@ -1808,7 +1903,7 @@ mod tests {
             .unwrap();
 
         // Get collection and verify config
-        let info = store.get_collection(run_id, "test").unwrap().unwrap();
+        let info = store.get_collection(run_id, "test").unwrap().unwrap().value;
         assert_eq!(info.config.dimension, config.dimension);
         assert_eq!(info.config.metric, config.metric);
     }
@@ -1834,7 +1929,7 @@ mod tests {
             let db = Arc::new(Database::open(temp_dir.path()).unwrap());
             let store = VectorStore::new(db);
 
-            let info = store.get_collection(run_id, "persistent").unwrap().unwrap();
+            let info = store.get_collection(run_id, "persistent").unwrap().unwrap().value;
             assert_eq!(info.config.dimension, 512);
             assert_eq!(info.config.metric, DistanceMetric::DotProduct);
         }
@@ -1931,7 +2026,7 @@ mod tests {
             .unwrap();
 
         // Get vector
-        let entry = store.get(run_id, "test", "doc1").unwrap().unwrap();
+        let entry = store.get(run_id, "test", "doc1").unwrap().unwrap().value;
         assert_eq!(entry.key, "doc1");
         assert_eq!(entry.embedding, embedding);
         assert!(entry.metadata.is_none());
@@ -1956,7 +2051,7 @@ mod tests {
             )
             .unwrap();
 
-        let entry = store.get(run_id, "test", "doc1").unwrap().unwrap();
+        let entry = store.get(run_id, "test", "doc1").unwrap().unwrap().value;
         assert_eq!(entry.metadata, Some(metadata));
     }
 
@@ -1978,7 +2073,7 @@ mod tests {
             .insert(run_id, "test", "doc1", &[0.0, 1.0, 0.0], None)
             .unwrap();
 
-        let entry = store.get(run_id, "test", "doc1").unwrap().unwrap();
+        let entry = store.get(run_id, "test", "doc1").unwrap().unwrap().value;
         assert_eq!(entry.embedding, vec![0.0, 1.0, 0.0]);
     }
 

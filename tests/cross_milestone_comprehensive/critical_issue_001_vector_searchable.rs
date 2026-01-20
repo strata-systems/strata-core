@@ -22,7 +22,7 @@
 //! 4. Verify HybridSearch workaround for VectorStore
 
 use crate::test_utils::*;
-use in_mem_core::search_types::PrimitiveKind;
+use in_mem_core::contract::PrimitiveType;
 use in_mem_primitives::Searchable;
 
 /// Test that VectorStore implements the Searchable trait.
@@ -41,7 +41,7 @@ fn test_vector_store_implements_searchable() {
     assert_searchable(&vector_store);
 
     // Verify primitive_kind returns Vector
-    assert_eq!(vector_store.primitive_kind(), PrimitiveKind::Vector);
+    assert_eq!(vector_store.primitive_kind(), PrimitiveType::Vector);
 }
 
 /// Test that VectorStore::search returns proper results directly.
@@ -78,18 +78,18 @@ fn test_vector_store_direct_search_works() {
     assert!(results.len() <= 3, "Should respect k limit");
 }
 
-/// Test that VectorStore primitive_kind would return PrimitiveKind::Vector.
+/// Test that VectorStore primitive_kind would return PrimitiveType::Vector.
 ///
-/// When ISSUE-001 is fixed, VectorStore.primitive_kind() should return PrimitiveKind::Vector.
+/// When ISSUE-001 is fixed, VectorStore.primitive_kind() should return PrimitiveType::Vector.
 #[test]
 fn test_vector_primitive_kind_exists() {
-    // Verify the PrimitiveKind::Vector variant exists
-    let _kind = PrimitiveKind::Vector;
+    // Verify the PrimitiveType::Vector variant exists
+    let _kind = PrimitiveType::Vector;
 
     // When ISSUE-001 is fixed, this should work:
     // let test_db = TestDb::new();
     // let vector_store = test_db.vector();
-    // assert_eq!(vector_store.primitive_kind(), PrimitiveKind::Vector);
+    // assert_eq!(vector_store.primitive_kind(), PrimitiveType::Vector);
 }
 
 /// Test that all 6 primitives can be collected as Searchable.
@@ -118,12 +118,12 @@ fn test_all_primitives_as_searchable() {
         assert!(
             matches!(
                 kind,
-                PrimitiveKind::Kv
-                    | PrimitiveKind::Json
-                    | PrimitiveKind::Event
-                    | PrimitiveKind::State
-                    | PrimitiveKind::Trace
-                    | PrimitiveKind::Vector
+                PrimitiveType::Kv
+                    | PrimitiveType::Json
+                    | PrimitiveType::Event
+                    | PrimitiveType::State
+                    | PrimitiveType::Trace
+                    | PrimitiveType::Vector
             ),
             "Primitive kind should be one of the expected types"
         );

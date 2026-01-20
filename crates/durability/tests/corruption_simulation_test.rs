@@ -10,14 +10,15 @@
 //! All tests use real file I/O to catch platform-specific issues.
 
 use in_mem_core::types::RunId;
+use in_mem_core::Timestamp;
 use in_mem_durability::wal::{DurabilityMode, WALEntry, WAL};
 use std::fs::{File, OpenOptions};
 use std::io::{Seek, SeekFrom, Write};
 use tempfile::TempDir;
 
 /// Helper to get current timestamp
-fn now() -> i64 {
-    chrono::Utc::now().timestamp()
+fn now() -> Timestamp {
+    Timestamp::now()
 }
 
 /// Helper: Write N valid entries to WAL

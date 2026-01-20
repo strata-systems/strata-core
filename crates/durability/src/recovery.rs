@@ -697,7 +697,9 @@ fn apply_transaction<S: Storage + ?Sized>(
                 })?;
 
                 // Create the document
-                let doc = RecoveryJsonDoc::new(*doc_id, value, *version, *timestamp);
+                // Convert Timestamp (u64 microseconds) to i64 seconds for recovery format
+                let timestamp_secs = (timestamp.as_micros() / 1_000_000) as i64;
+                let doc = RecoveryJsonDoc::new(*doc_id, value, *version, timestamp_secs);
                 let doc_bytes = doc.to_bytes()?;
 
                 // Store using JSON key
@@ -843,16 +845,16 @@ fn apply_transaction<S: Storage + ?Sized>(
 mod tests {
     use super::*;
     use crate::wal::DurabilityMode;
-    use chrono::Utc;
     use in_mem_core::types::{Key, Namespace};
     use in_mem_core::value::Value;
+    use in_mem_core::Timestamp;
     use in_mem_core::Storage; // Need trait in scope for .get() and .current_version()
     use in_mem_storage::UnifiedStore; // Used in tests (still implements Storage)
     use tempfile::TempDir;
 
     /// Helper to get current timestamp
-    fn now() -> i64 {
-        Utc::now().timestamp()
+    fn now() -> Timestamp {
+        Timestamp::now()
     }
 
     #[test]
@@ -932,12 +934,12 @@ mod tests {
         let key1 = Key::new_kv(ns.clone(), "key1");
         let val1 = store.get(&key1).unwrap().unwrap();
         assert_eq!(val1.value, Value::Bytes(b"value1".to_vec()));
-        assert_eq!(val1.version, 1);
+        assert_eq!(val1.version.as_u64(), 1);
 
         let key2 = Key::new_kv(ns.clone(), "key2");
         let val2 = store.get(&key2).unwrap().unwrap();
         assert_eq!(val2.value, Value::String("value2".to_string()));
-        assert_eq!(val2.version, 2);
+        assert_eq!(val2.version.as_u64(), 2);
     }
 
     #[test]
@@ -1251,15 +1253,15 @@ mod tests {
         // Verify versions are preserved exactly
         let key1 = Key::new_kv(ns.clone(), "key1");
         let val1 = store.get(&key1).unwrap().unwrap();
-        assert_eq!(val1.version, 100); // Version preserved, not re-allocated
+        assert_eq!(val1.version.as_u64(), 100); // Version preserved, not re-allocated
 
         let key2 = Key::new_kv(ns.clone(), "key2");
         let val2 = store.get(&key2).unwrap().unwrap();
-        assert_eq!(val2.version, 200);
+        assert_eq!(val2.version.as_u64(), 200);
 
         let key3 = Key::new_kv(ns.clone(), "key3");
         let val3 = store.get(&key3).unwrap().unwrap();
-        assert_eq!(val3.version, 300);
+        assert_eq!(val3.version.as_u64(), 300);
 
         // Global version should reflect max version from WAL
         assert_eq!(store.current_version(), 300);
@@ -2301,7 +2303,454 @@ mod tests {
         // Final value should be "final" with version 30
         let stored = store.get(&key).unwrap().unwrap();
         assert_eq!(stored.value, Value::String("final".to_string()));
-        assert_eq!(stored.version, 30);
+        assert_eq!(stored.version.as_u64(), 30);
+    }
+
+    // ========================================================================
+    // JSON Crash Recovery Tests (Story #281)
+    // ========================================================================
+
+    use in_mem_core::json::{JsonPath, JsonValue};
+    use in_mem_core::types::JsonDocId;
+
+    /// Serialize a JsonValue to msgpack bytes (for WAL entry construction)
+    fn json_to_msgpack(value: &JsonValue) -> Vec<u8> {
+        rmp_serde::to_vec(value).unwrap()
+    }
+
+    #[test]
+    fn test_json_create_recovery() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("json_create.wal");
+
+        let run_id = RunId::new();
+        let doc_id = JsonDocId::new();
+        let initial_value: JsonValue = serde_json::json!({
+            "name": "Alice",
+            "age": 30
+        })
+        .into();
+
+        // Write WAL entries
+        {
+            let mut wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
+
+            wal.append(&WALEntry::BeginTxn {
+                txn_id: 1,
+                run_id,
+                timestamp: now(),
+            })
+            .unwrap();
+
+            wal.append(&WALEntry::JsonCreate {
+                run_id,
+                doc_id,
+                value_bytes: json_to_msgpack(&initial_value),
+                version: 1,
+                timestamp: now(),
+            })
+            .unwrap();
+
+            wal.append(&WALEntry::CommitTxn { txn_id: 1, run_id })
+                .unwrap();
+        }
+
+        // Replay to storage (simulating recovery)
+        let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
+        let store = UnifiedStore::new();
+        let stats = replay_wal(&wal, &store).unwrap();
+
+        assert_eq!(stats.txns_applied, 1);
+        assert_eq!(stats.json_creates_applied, 1);
+        assert_eq!(stats.final_version, 1);
+
+        // Verify document exists in storage
+        let key = Key::new_json(Namespace::for_run(run_id), &doc_id);
+        let stored = store.get(&key).unwrap().expect("Document should exist");
+
+        // Deserialize and verify
+        let doc = match &stored.value {
+            Value::Bytes(bytes) => RecoveryJsonDoc::from_bytes(bytes).unwrap(),
+            _ => panic!("Expected bytes"),
+        };
+        assert_eq!(doc.id, doc_id);
+        assert_eq!(doc.version, 1);
+        assert_eq!(doc.value.as_object().unwrap().get("name").unwrap(), "Alice");
+    }
+
+    #[test]
+    fn test_json_set_recovery() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("json_set.wal");
+
+        let run_id = RunId::new();
+        let doc_id = JsonDocId::new();
+        let initial_value: JsonValue = serde_json::json!({ "count": 0 }).into();
+        let new_value: JsonValue = serde_json::json!(42).into();
+
+        // Write WAL entries: create, then set
+        {
+            let mut wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
+
+            // Transaction 1: Create
+            wal.append(&WALEntry::BeginTxn {
+                txn_id: 1,
+                run_id,
+                timestamp: now(),
+            })
+            .unwrap();
+            wal.append(&WALEntry::JsonCreate {
+                run_id,
+                doc_id,
+                value_bytes: json_to_msgpack(&initial_value),
+                version: 1,
+                timestamp: now(),
+            })
+            .unwrap();
+            wal.append(&WALEntry::CommitTxn { txn_id: 1, run_id })
+                .unwrap();
+
+            // Transaction 2: Set
+            wal.append(&WALEntry::BeginTxn {
+                txn_id: 2,
+                run_id,
+                timestamp: now(),
+            })
+            .unwrap();
+            wal.append(&WALEntry::JsonSet {
+                run_id,
+                doc_id,
+                path: "count".parse::<JsonPath>().unwrap(),
+                value_bytes: json_to_msgpack(&new_value),
+                version: 2,
+            })
+            .unwrap();
+            wal.append(&WALEntry::CommitTxn { txn_id: 2, run_id })
+                .unwrap();
+        }
+
+        // Replay
+        let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
+        let store = UnifiedStore::new();
+        let stats = replay_wal(&wal, &store).unwrap();
+
+        assert_eq!(stats.txns_applied, 2);
+        assert_eq!(stats.json_creates_applied, 1);
+        assert_eq!(stats.json_sets_applied, 1);
+        assert_eq!(stats.final_version, 2);
+
+        // Verify document has updated value
+        let key = Key::new_json(Namespace::for_run(run_id), &doc_id);
+        let stored = store.get(&key).unwrap().expect("Document should exist");
+        let doc = match &stored.value {
+            Value::Bytes(bytes) => RecoveryJsonDoc::from_bytes(bytes).unwrap(),
+            _ => panic!("Expected bytes"),
+        };
+        assert_eq!(doc.version, 2);
+        assert_eq!(doc.value.as_object().unwrap().get("count").unwrap(), 42);
+    }
+
+    #[test]
+    fn test_json_delete_recovery() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("json_delete.wal");
+
+        let run_id = RunId::new();
+        let doc_id = JsonDocId::new();
+        let initial_value: JsonValue = serde_json::json!({
+            "name": "Bob",
+            "temp": "to_be_deleted"
+        })
+        .into();
+
+        // Write WAL entries: create, then delete field
+        {
+            let mut wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
+
+            // Create
+            wal.append(&WALEntry::BeginTxn {
+                txn_id: 1,
+                run_id,
+                timestamp: now(),
+            })
+            .unwrap();
+            wal.append(&WALEntry::JsonCreate {
+                run_id,
+                doc_id,
+                value_bytes: json_to_msgpack(&initial_value),
+                version: 1,
+                timestamp: now(),
+            })
+            .unwrap();
+            wal.append(&WALEntry::CommitTxn { txn_id: 1, run_id })
+                .unwrap();
+
+            // Delete field
+            wal.append(&WALEntry::BeginTxn {
+                txn_id: 2,
+                run_id,
+                timestamp: now(),
+            })
+            .unwrap();
+            wal.append(&WALEntry::JsonDelete {
+                run_id,
+                doc_id,
+                path: "temp".parse::<JsonPath>().unwrap(),
+                version: 2,
+            })
+            .unwrap();
+            wal.append(&WALEntry::CommitTxn { txn_id: 2, run_id })
+                .unwrap();
+        }
+
+        // Replay
+        let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
+        let store = UnifiedStore::new();
+        let stats = replay_wal(&wal, &store).unwrap();
+
+        assert_eq!(stats.txns_applied, 2);
+        assert_eq!(stats.json_creates_applied, 1);
+        assert_eq!(stats.json_deletes_applied, 1);
+        assert_eq!(stats.final_version, 2);
+
+        // Verify temp field is deleted but name remains
+        let key = Key::new_json(Namespace::for_run(run_id), &doc_id);
+        let stored = store.get(&key).unwrap().expect("Document should exist");
+        let doc = match &stored.value {
+            Value::Bytes(bytes) => RecoveryJsonDoc::from_bytes(bytes).unwrap(),
+            _ => panic!("Expected bytes"),
+        };
+        assert_eq!(doc.version, 2);
+        assert_eq!(doc.value.as_object().unwrap().get("name").unwrap(), "Bob");
+        assert!(doc.value.as_object().unwrap().get("temp").is_none());
+    }
+
+    #[test]
+    fn test_json_destroy_recovery() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("json_destroy.wal");
+
+        let run_id = RunId::new();
+        let doc_id = JsonDocId::new();
+        let initial_value: JsonValue = serde_json::json!({ "data": "test" }).into();
+
+        // Write WAL entries: create, then destroy
+        {
+            let mut wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
+
+            // Create
+            wal.append(&WALEntry::BeginTxn {
+                txn_id: 1,
+                run_id,
+                timestamp: now(),
+            })
+            .unwrap();
+            wal.append(&WALEntry::JsonCreate {
+                run_id,
+                doc_id,
+                value_bytes: json_to_msgpack(&initial_value),
+                version: 1,
+                timestamp: now(),
+            })
+            .unwrap();
+            wal.append(&WALEntry::CommitTxn { txn_id: 1, run_id })
+                .unwrap();
+
+            // Destroy
+            wal.append(&WALEntry::BeginTxn {
+                txn_id: 2,
+                run_id,
+                timestamp: now(),
+            })
+            .unwrap();
+            wal.append(&WALEntry::JsonDestroy { run_id, doc_id })
+                .unwrap();
+            wal.append(&WALEntry::CommitTxn { txn_id: 2, run_id })
+                .unwrap();
+        }
+
+        // Replay
+        let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
+        let store = UnifiedStore::new();
+        let stats = replay_wal(&wal, &store).unwrap();
+
+        assert_eq!(stats.txns_applied, 2);
+        assert_eq!(stats.json_creates_applied, 1);
+        assert_eq!(stats.json_destroys_applied, 1);
+
+        // Document should not exist
+        let key = Key::new_json(Namespace::for_run(run_id), &doc_id);
+        assert!(store.get(&key).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_json_incomplete_transaction_discarded() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("json_incomplete.wal");
+
+        let run_id = RunId::new();
+        let doc_id = JsonDocId::new();
+        let initial_value: JsonValue = serde_json::json!({ "status": "initial" }).into();
+
+        // Simulate crash: begin transaction but no commit
+        {
+            let mut wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
+
+            wal.append(&WALEntry::BeginTxn {
+                txn_id: 1,
+                run_id,
+                timestamp: now(),
+            })
+            .unwrap();
+
+            wal.append(&WALEntry::JsonCreate {
+                run_id,
+                doc_id,
+                value_bytes: json_to_msgpack(&initial_value),
+                version: 1,
+                timestamp: now(),
+            })
+            .unwrap();
+
+            // NO CommitTxn - simulating crash
+        }
+
+        // Replay
+        let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
+        let store = UnifiedStore::new();
+        let stats = replay_wal(&wal, &store).unwrap();
+
+        // Transaction should be discarded (incomplete)
+        assert_eq!(stats.txns_applied, 0);
+        assert_eq!(stats.json_creates_applied, 0);
+        assert_eq!(stats.incomplete_txns, 1);
+
+        // Document should NOT exist
+        let key = Key::new_json(Namespace::for_run(run_id), &doc_id);
+        assert!(store.get(&key).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_json_idempotent_replay() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("json_idempotent.wal");
+
+        let run_id = RunId::new();
+        let doc_id = JsonDocId::new();
+        let value: JsonValue = serde_json::json!({ "count": 1 }).into();
+
+        // Write WAL entries
+        {
+            let mut wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
+
+            wal.append(&WALEntry::BeginTxn {
+                txn_id: 1,
+                run_id,
+                timestamp: now(),
+            })
+            .unwrap();
+            wal.append(&WALEntry::JsonCreate {
+                run_id,
+                doc_id,
+                value_bytes: json_to_msgpack(&value),
+                version: 1,
+                timestamp: now(),
+            })
+            .unwrap();
+            wal.append(&WALEntry::CommitTxn { txn_id: 1, run_id })
+                .unwrap();
+        }
+
+        // First replay
+        let store = UnifiedStore::new();
+        {
+            let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
+            let stats = replay_wal(&wal, &store).unwrap();
+            assert_eq!(stats.json_creates_applied, 1);
+        }
+
+        // Second replay (idempotent - should just overwrite)
+        {
+            let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
+            let stats = replay_wal(&wal, &store).unwrap();
+            assert_eq!(stats.json_creates_applied, 1);
+        }
+
+        // Document should still have correct value
+        let key = Key::new_json(Namespace::for_run(run_id), &doc_id);
+        let stored = store.get(&key).unwrap().expect("Document should exist");
+        let doc = match &stored.value {
+            Value::Bytes(bytes) => RecoveryJsonDoc::from_bytes(bytes).unwrap(),
+            _ => panic!("Expected bytes"),
+        };
+        assert_eq!(doc.value.as_object().unwrap().get("count").unwrap(), 1);
+    }
+
+    #[test]
+    fn test_json_mixed_with_kv_recovery() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_path = temp_dir.path().join("json_mixed.wal");
+
+        let run_id = RunId::new();
+        let ns = Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            run_id,
+        );
+        let doc_id = JsonDocId::new();
+        let json_value: JsonValue = serde_json::json!({ "type": "json" }).into();
+
+        // Write mixed KV and JSON operations
+        {
+            let mut wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
+
+            wal.append(&WALEntry::BeginTxn {
+                txn_id: 1,
+                run_id,
+                timestamp: now(),
+            })
+            .unwrap();
+
+            // KV write
+            wal.append(&WALEntry::Write {
+                run_id,
+                key: Key::new_kv(ns.clone(), "kv_key"),
+                value: Value::String("kv_value".to_string()),
+                version: 1,
+            })
+            .unwrap();
+
+            // JSON create
+            wal.append(&WALEntry::JsonCreate {
+                run_id,
+                doc_id,
+                value_bytes: json_to_msgpack(&json_value),
+                version: 2,
+                timestamp: now(),
+            })
+            .unwrap();
+
+            wal.append(&WALEntry::CommitTxn { txn_id: 1, run_id })
+                .unwrap();
+        }
+
+        // Replay
+        let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
+        let store = UnifiedStore::new();
+        let stats = replay_wal(&wal, &store).unwrap();
+
+        assert_eq!(stats.txns_applied, 1);
+        assert_eq!(stats.writes_applied, 1);
+        assert_eq!(stats.json_creates_applied, 1);
+        assert_eq!(stats.final_version, 2);
+
+        // Verify both exist
+        let kv_key = Key::new_kv(ns.clone(), "kv_key");
+        assert!(store.get(&kv_key).unwrap().is_some());
+
+        let json_key = Key::new_json(Namespace::for_run(run_id), &doc_id);
+        assert!(store.get(&json_key).unwrap().is_some());
     }
 
     // ========================================================================

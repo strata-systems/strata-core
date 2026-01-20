@@ -10,8 +10,6 @@
 //! **Impact**: Durability mode selection may not take effect as expected.
 
 use crate::test_utils::*;
-use std::thread;
-use std::time::Duration;
 
 /// Test in-memory mode behavior.
 #[test]
@@ -23,7 +21,7 @@ fn test_in_memory_mode() {
         .expect("put");
 
     // In-memory mode should not create WAL files
-    let wal_dir = test_db.db_path().join("wal");
+    let _wal_dir = test_db.db_path().join("wal");
     // Note: wal_dir might still be created but empty
 }
 
@@ -57,6 +55,6 @@ fn test_strict_mode() {
 
     // Data should survive restart
     let kv = test_db.kv();
-    let value = kv.get(&run_id, "strict_key").expect("get");
+    let value = kv.get(&run_id, "strict_key").expect("get").map(|v| v.value);
     assert!(value.is_some(), "Data should survive restart in strict mode");
 }
