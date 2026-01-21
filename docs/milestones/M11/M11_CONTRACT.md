@@ -969,6 +969,13 @@ strata xrange stream
 # Vectors
 strata vset doc1 "[0.1, 0.2, 0.3]" '{"tag":"test"}'
 strata vget doc1
+strata vdel doc1               # prints: (integer) 1
+
+# State (CAS)
+strata cas.set mykey null 123  # prints: (integer) 1 (created)
+strata cas.get mykey           # prints: 123
+strata cas.set mykey 123 456   # prints: (integer) 1 (updated)
+strata cas.set mykey 999 0     # prints: (integer) 0 (mismatch)
 
 # History
 strata history mykey

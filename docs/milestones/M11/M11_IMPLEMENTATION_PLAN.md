@@ -4,7 +4,7 @@
 
 This document provides the high-level implementation plan for M11 (Public API & SDK Contract).
 
-**Total Scope**: 8 Epics, 48 Stories
+**Total Scope**: 8 Epics, 50 Stories
 
 **References**:
 - [M11 Architecture Specification](../../architecture/M11_ARCHITECTURE.md) - Authoritative architectural spec
@@ -144,7 +144,7 @@ The default run has the canonical name `"default"` (literal string, not UUID). I
 | 82 | Substrate API Implementation | 7 | Epic 80 | Pending |
 | 83 | Wire Encoding Contract | 6 | Epic 80 | Pending |
 | 84 | Error Model Finalization | 5 | Epic 80 | Pending |
-| 85 | CLI Implementation | 6 | Epic 81, 83 | Pending |
+| 85 | CLI Implementation | 8 | Epic 81, 83 | Pending |
 | 86 | SDK Foundation | 5 | Epic 81, 83, 84 | Pending |
 | 87 | Contract Validation Suite | 5 | All above | Pending |
 
@@ -332,8 +332,10 @@ The default run has the canonical name `"default"` (literal string, not UUID). I
 | #588 | KV Commands (set, get, mget, mset, delete, exists, incr) | CRITICAL |
 | #589 | JSON Commands (json.set, json.get, json.del, json.merge) | CRITICAL |
 | #590 | Event Commands (xadd, xrange) | HIGH |
-| #591 | History Commands (history) | HIGH |
-| #592 | Output Formatting | CRITICAL |
+| #591 | Vector Commands (vset, vget, vdel) | HIGH |
+| #592 | State Commands (cas.set, cas.get) | HIGH |
+| #593 | History Commands (history) | HIGH |
+| #594 | Output Formatting | CRITICAL |
 
 **Acceptance Criteria**:
 - [ ] CLI command interface: `strata <command> [args...]`
@@ -357,6 +359,13 @@ The default run has the canonical name `"default"` (literal string, not UUID). I
   - Bytes: `{"$bytes": "<base64>"}`
   - Error: JSON on stderr, non-zero exit
 - [ ] Run scoping: `--run=<run_id>` option (default is `"default"`)
+- [ ] Vector commands working:
+  - `strata vset <key> <vector> <metadata>` → success
+  - `strata vget <key>` → Versioned output or `(nil)`
+  - `strata vdel <key>` → `(integer) 0` or `(integer) 1`
+- [ ] State/CAS commands working:
+  - `strata cas.set <key> <expected> <new>` → `(integer) 0` or `(integer) 1`
+  - `strata cas.get <key>` → value or `(nil)`
 - [ ] CLI is facade-only (no substrate operations exposed)
 
 ---
@@ -367,11 +376,11 @@ The default run has the canonical name `"default"` (literal string, not UUID). I
 
 | Story | Description | Priority |
 |-------|-------------|----------|
-| #594 | SDK Value Mapping Specification | FOUNDATION |
-| #595 | Rust SDK Implementation | CRITICAL |
-| #596 | Python SDK Mapping Definition | HIGH |
-| #597 | JavaScript SDK Mapping Definition | HIGH |
-| #598 | SDK Conformance Test Harness | CRITICAL |
+| #596 | SDK Value Mapping Specification | FOUNDATION |
+| #597 | Rust SDK Implementation | CRITICAL |
+| #598 | Python SDK Mapping Definition | HIGH |
+| #599 | JavaScript SDK Mapping Definition | HIGH |
+| #600 | SDK Conformance Test Harness | CRITICAL |
 
 **Acceptance Criteria**:
 - [ ] Python mapping defined:
@@ -410,11 +419,11 @@ The default run has the canonical name `"default"` (literal string, not UUID). I
 
 | Story | Description | Priority |
 |-------|-------------|----------|
-| #600 | Facade-Substrate Parity Tests | CRITICAL |
-| #601 | Value Round-Trip Tests | CRITICAL |
-| #602 | Wire Encoding Conformance Tests | CRITICAL |
-| #603 | Error Model Validation Tests | CRITICAL |
-| #604 | Determinism Verification Tests | HIGH |
+| #602 | Facade-Substrate Parity Tests | CRITICAL |
+| #603 | Value Round-Trip Tests | CRITICAL |
+| #604 | Wire Encoding Conformance Tests | CRITICAL |
+| #605 | Error Model Validation Tests | CRITICAL |
+| #606 | Determinism Verification Tests | HIGH |
 
 **Acceptance Criteria**:
 - [ ] Facade-Substrate parity: every facade operation produces same result as desugared substrate
@@ -470,6 +479,8 @@ The default run has the canonical name `"default"` (literal string, not UUID). I
 | `crates/cli/src/commands/kv.rs` | KV commands |
 | `crates/cli/src/commands/json.rs` | JSON commands |
 | `crates/cli/src/commands/event.rs` | Event commands |
+| `crates/cli/src/commands/vector.rs` | Vector commands |
+| `crates/cli/src/commands/state.rs` | State/CAS commands |
 | `crates/cli/src/commands/history.rs` | History commands |
 | `crates/cli/src/output.rs` | Output formatting |
 | **Error Module** | |

@@ -658,6 +658,16 @@ strata json.get doc $.name      # prints: "Alice"
 # Events
 strata xadd stream '{"type":"login"}'  # prints: {"type":"sequence","value":1}
 
+# Vectors
+strata vset doc1 "[0.1, 0.2, 0.3]" '{"tag":"test"}'
+strata vget doc1
+strata vdel doc1               # prints: (integer) 1
+
+# State (CAS)
+strata cas.set mykey null 123  # prints: (integer) 1 (created)
+strata cas.get mykey           # prints: 123
+strata cas.set mykey 123 456   # prints: (integer) 1 (updated)
+
 # History
 strata history mykey --limit 10
 ```

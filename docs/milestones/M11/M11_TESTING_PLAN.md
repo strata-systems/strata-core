@@ -939,8 +939,14 @@ These tests verify that the facade is a true lossless projection of the substrat
 | CLI-C-008 | `strata json.set doc $.x 1` | Success |
 | CLI-C-009 | `strata json.get doc $.x` | Value |
 | CLI-C-010 | `strata xadd stream '{"type":"test"}'` | Version |
-| CLI-C-011 | `strata history mykey` | Version list |
-| CLI-C-012 | `strata history mykey --limit 5` | Limited list |
+| CLI-C-011 | `strata vset doc1 "[0.1,0.2]" '{}'` | Success |
+| CLI-C-012 | `strata vget doc1` | Versioned output |
+| CLI-C-013 | `strata vdel doc1` | `(integer) 0/1` |
+| CLI-C-014 | `strata cas.set k null 123` | `(integer) 0/1` |
+| CLI-C-015 | `strata cas.get k` | Value or `(nil)` |
+| CLI-C-016 | `strata cas.set k 123 456` | `(integer) 0/1` |
+| CLI-C-017 | `strata history mykey` | Version list |
+| CLI-C-018 | `strata history mykey --limit 5` | Limited list |
 
 ### 7.4 Run Scoping Tests
 
@@ -1484,7 +1490,7 @@ jobs:
 | Error Model | 30+ | CRITICAL | Unit |
 | CLI Parsing | 16 | CRITICAL | Unit |
 | CLI Output | 11 | CRITICAL | Unit |
-| CLI Commands | 12 | CRITICAL | Integration |
+| CLI Commands | 18 | CRITICAL | Integration |
 | Versioned<T> | 20+ | CRITICAL | Unit |
 | Run Semantics | 15+ | CRITICAL | Integration |
 | Transaction Semantics | 15+ | CRITICAL | Integration |
