@@ -45,6 +45,7 @@ pub mod database;
 pub mod disk_snapshot;
 pub mod format;
 pub mod recovery;
+pub mod testing;
 pub mod wal;
 
 // In-memory storage re-exports
@@ -62,36 +63,72 @@ pub use unified::UnifiedStore;
 
 // Disk storage re-exports (M10)
 pub use codec::{get_codec, CodecError, IdentityCodec, StorageCodec};
-pub use format::{
-    // Snapshot format
-    find_latest_snapshot, list_snapshots, parse_snapshot_id, primitive_tags, snapshot_path,
-    SectionHeader, SnapshotHeader, SnapshotHeaderError, SNAPSHOT_FORMAT_VERSION,
-    SNAPSHOT_HEADER_SIZE, SNAPSHOT_MAGIC,
-    // Primitive serialization
-    EventSnapshotEntry, JsonSnapshotEntry, KvSnapshotEntry, PrimitiveSerializeError,
-    RunSnapshotEntry, SnapshotSerializer, SpanSnapshotEntry, StateSnapshotEntry,
-    TraceSnapshotEntry, VectorCollectionSnapshotEntry, VectorSnapshotEntry,
-    // Watermark tracking
-    CheckpointInfo, SnapshotWatermark, WatermarkError,
-    // WAL format
-    Mutation, SegmentHeader, WalRecord, WalRecordError, WalSegment, Writeset, WritesetError,
-    SEGMENT_FORMAT_VERSION, SEGMENT_HEADER_SIZE, SEGMENT_MAGIC, WAL_RECORD_FORMAT_VERSION,
-    // MANIFEST format
-    Manifest, ManifestError, ManifestManager, MANIFEST_FORMAT_VERSION, MANIFEST_MAGIC,
-};
-pub use wal::{
-    DurabilityMode, TruncateInfo, WalConfig, WalConfigError, WalReadResult, WalReader,
-    WalReaderError, WalWriter,
+pub use database::{
+    export_database, import_database, ConfigError, DatabaseConfig, DatabaseHandle,
+    DatabaseHandleError, DatabasePathError, DatabasePaths, ExportInfo,
 };
 pub use disk_snapshot::{
     CheckpointCoordinator, CheckpointData, CheckpointError, LoadedSection, LoadedSnapshot,
     SnapshotInfo, SnapshotReadError, SnapshotReader, SnapshotSection, SnapshotWriter,
 };
+pub use format::{
+    // Snapshot format
+    find_latest_snapshot,
+    list_snapshots,
+    parse_snapshot_id,
+    primitive_tags,
+    snapshot_path,
+    // Watermark tracking
+    CheckpointInfo,
+    // Primitive serialization
+    EventSnapshotEntry,
+    JsonSnapshotEntry,
+    KvSnapshotEntry,
+    // MANIFEST format
+    Manifest,
+    ManifestError,
+    ManifestManager,
+    // WAL format
+    Mutation,
+    PrimitiveSerializeError,
+    RunSnapshotEntry,
+    SectionHeader,
+    SegmentHeader,
+    SnapshotHeader,
+    SnapshotHeaderError,
+    SnapshotSerializer,
+    SnapshotWatermark,
+    SpanSnapshotEntry,
+    StateSnapshotEntry,
+    TraceSnapshotEntry,
+    VectorCollectionSnapshotEntry,
+    VectorSnapshotEntry,
+    WalRecord,
+    WalRecordError,
+    WalSegment,
+    WatermarkError,
+    Writeset,
+    WritesetError,
+    MANIFEST_FORMAT_VERSION,
+    MANIFEST_MAGIC,
+    SEGMENT_FORMAT_VERSION,
+    SEGMENT_HEADER_SIZE,
+    SEGMENT_MAGIC,
+    SNAPSHOT_FORMAT_VERSION,
+    SNAPSHOT_HEADER_SIZE,
+    SNAPSHOT_MAGIC,
+    WAL_RECORD_FORMAT_VERSION,
+};
 pub use recovery::{
     RecoveryCoordinator, RecoveryError, RecoveryPlan, RecoveryResult, RecoverySnapshot,
     ReplayStats, WalReplayError, WalReplayer,
 };
-pub use database::{
-    export_database, import_database, ConfigError, DatabaseConfig, DatabaseHandle,
-    DatabaseHandleError, DatabasePathError, DatabasePaths, ExportInfo,
+pub use testing::{
+    CorruptionResult, CrashConfig, CrashPoint, CrashTestError, CrashTestResult, CrashType,
+    DataState, GarbageResult, Operation, RecoveryVerification, ReferenceModel, StateMismatch,
+    TruncationResult, VerificationResult, WalCorruptionTester,
+};
+pub use wal::{
+    DurabilityMode, TruncateInfo, WalConfig, WalConfigError, WalReadResult, WalReader,
+    WalReaderError, WalWriter,
 };

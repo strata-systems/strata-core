@@ -138,7 +138,7 @@ impl RecoveryCoordinator {
 
         // Load snapshot if exists
         if let Some(snapshot_path) = &plan.snapshot_path {
-            let snapshot_reader = SnapshotReader::new(clone_codec(&self.codec));
+            let snapshot_reader = SnapshotReader::new(clone_codec(self.codec.as_ref()));
             let loaded = snapshot_reader.load(snapshot_path)?;
 
             on_snapshot(RecoverySnapshot {
@@ -149,7 +149,7 @@ impl RecoveryCoordinator {
         }
 
         // Replay WAL
-        let replayer = WalReplayer::new(plan.wal_dir.clone(), clone_codec(&self.codec));
+        let replayer = WalReplayer::new(plan.wal_dir.clone(), clone_codec(self.codec.as_ref()));
         let replay_stats = replayer.replay_after(plan.watermark, |record| {
             on_record(record).map_err(|e| WalReplayError::Apply(e.to_string()))
         })?;
@@ -172,7 +172,7 @@ impl RecoveryCoordinator {
     /// - In Strict mode, committed transactions are fsynced
     /// - In Buffered mode, some data loss is expected on crash
     pub fn truncate_partial_records(&self, wal_dir: &Path) -> Result<u64, RecoveryError> {
-        let reader = crate::wal::WalReader::new(clone_codec(&self.codec));
+        let reader = crate::wal::WalReader::new(clone_codec(self.codec.as_ref()));
 
         // Get all segments
         let segments = reader.list_segments(wal_dir)?;
@@ -285,7 +285,7 @@ impl RecoveryError {
 }
 
 /// Helper to clone a boxed codec
-fn clone_codec(codec: &Box<dyn StorageCodec>) -> Box<dyn StorageCodec> {
+fn clone_codec(codec: &dyn StorageCodec) -> Box<dyn StorageCodec> {
     crate::codec::get_codec(codec.codec_id()).unwrap()
 }
 
@@ -307,12 +307,8 @@ mod tests {
     }
 
     fn setup_manifest(db_dir: &Path) {
-        ManifestManager::create(
-            db_dir.join("MANIFEST"),
-            test_uuid(),
-            "identity".to_string(),
-        )
-        .unwrap();
+        ManifestManager::create(db_dir.join("MANIFEST"), test_uuid(), "identity".to_string())
+            .unwrap();
     }
 
     fn setup_wal(db_dir: &Path, records: &[WalRecord]) {
@@ -340,7 +336,9 @@ mod tests {
 
         // Create simple snapshot with KV section
         let sections = vec![SnapshotSection::new(primitive_tags::KV, vec![0u8; 4])];
-        writer.create_snapshot(snapshot_id, watermark, sections).unwrap();
+        writer
+            .create_snapshot(snapshot_id, watermark, sections)
+            .unwrap();
     }
 
     #[test]
@@ -389,12 +387,9 @@ mod tests {
         let db_dir = dir.path().to_path_buf();
 
         // Create manifest with snapshot info
-        let mut manager = ManifestManager::create(
-            db_dir.join("MANIFEST"),
-            test_uuid(),
-            "identity".to_string(),
-        )
-        .unwrap();
+        let mut manager =
+            ManifestManager::create(db_dir.join("MANIFEST"), test_uuid(), "identity".to_string())
+                .unwrap();
         manager.set_snapshot_watermark(1, 100).unwrap();
 
         setup_snapshot(&db_dir, 1, 100);
@@ -463,12 +458,9 @@ mod tests {
         let db_dir = dir.path().to_path_buf();
 
         // Setup manifest with snapshot
-        let mut manager = ManifestManager::create(
-            db_dir.join("MANIFEST"),
-            test_uuid(),
-            "identity".to_string(),
-        )
-        .unwrap();
+        let mut manager =
+            ManifestManager::create(db_dir.join("MANIFEST"), test_uuid(), "identity".to_string())
+                .unwrap();
         manager.set_snapshot_watermark(1, 50).unwrap();
 
         // Create snapshot
@@ -561,10 +553,13 @@ mod tests {
             let mut applied = Vec::new();
 
             let result = coordinator
-                .recover(|_| Ok(()), |record| {
-                    applied.push(record.txn_id);
-                    Ok(())
-                })
+                .recover(
+                    |_| Ok(()),
+                    |record| {
+                        applied.push(record.txn_id);
+                        Ok(())
+                    },
+                )
                 .unwrap();
 
             results.push((result.replay_stats.records_applied, applied));
