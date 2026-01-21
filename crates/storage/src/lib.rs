@@ -41,6 +41,7 @@ pub mod unified;
 
 // Disk storage (M10)
 pub mod codec;
+pub mod compaction;
 pub mod database;
 pub mod disk_snapshot;
 pub mod format;
@@ -125,6 +126,10 @@ pub use recovery::{
     ReplayStats, WalReplayError, WalReplayer,
 };
 pub use retention::{CompositeBuilder, RetentionPolicy, RetentionPolicyError};
+pub use compaction::{
+    CompactInfo, CompactMode, CompactionError, Tombstone, TombstoneError, TombstoneIndex,
+    TombstoneReason, WalOnlyCompactor,
+};
 pub use testing::{
     CorruptionResult, CrashConfig, CrashPoint, CrashTestError, CrashTestResult, CrashType,
     DataState, GarbageResult, Operation, RecoveryVerification, ReferenceModel, StateMismatch,
