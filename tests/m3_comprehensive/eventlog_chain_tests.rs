@@ -484,7 +484,7 @@ mod total_order_under_concurrency {
             .unwrap()
             .iter()
             .map(|e| {
-                if let strata_core::value::Value::I64(v) = e.value.payload {
+                if let strata_core::value::Value::Int(v) = e.value.payload {
                     v
                 } else {
                     panic!("Wrong type")
@@ -498,7 +498,7 @@ mod total_order_under_concurrency {
             .unwrap()
             .iter()
             .map(|e| {
-                if let strata_core::value::Value::I64(v) = e.value.payload {
+                if let strata_core::value::Value::Int(v) = e.value.payload {
                     v
                 } else {
                     panic!("Wrong type")

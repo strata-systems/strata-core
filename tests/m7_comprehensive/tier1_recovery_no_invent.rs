@@ -102,8 +102,8 @@ fn test_r4_value_integrity_preserved() {
     // Write specific values
     let test_values = vec![
         ("str", Value::String("hello world".into())),
-        ("int", Value::I64(12345)),
-        ("float", Value::F64(3.14159)),
+        ("int", Value::Int(12345)),
+        ("float", Value::Float(3.14159)),
         ("bool_t", Value::Bool(true)),
         ("bool_f", Value::Bool(false)),
         ("null", Value::Null),
@@ -166,7 +166,7 @@ fn test_r4_only_final_keys_exist() {
 
     // Complex sequence
     for i in 0..50 {
-        kv.put(&run_id, &format!("key_{}", i), Value::I64(i))
+        kv.put(&run_id, &format!("key_{}", i), Value::Int(i))
             .unwrap();
     }
     for i in 0..25 {
@@ -202,7 +202,7 @@ fn test_r4_no_wrong_prefix_keys() {
 
     // Write keys with specific prefix
     for i in 0..20 {
-        kv.put(&run_id, &format!("user_{}", i), Value::I64(i))
+        kv.put(&run_id, &format!("user_{}", i), Value::Int(i))
             .unwrap();
     }
 

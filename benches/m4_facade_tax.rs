@@ -65,7 +65,7 @@ fn bench_a1_storage(c: &mut Criterion) {
     // Warmup
     for i in 0..100 {
         let key = Key::new(ns.clone(), TypeTag::KV, format!("warmup{}", i).into_bytes());
-        db.storage().put(key, VersionedValue::new(Value::I64(i as i64), i as u64, None));
+        db.storage().put(key, VersionedValue::new(Value::Int(i as i64), i as u64, None));
     }
 
     group.bench_function("storage_put", |b| {
@@ -73,7 +73,7 @@ fn bench_a1_storage(c: &mut Criterion) {
         b.iter(|| {
             i += 1;
             let key = Key::new(ns.clone(), TypeTag::KV, format!("key{}", i).into_bytes());
-            db.storage().put(key, VersionedValue::new(Value::I64(i as i64), i as u64, None));
+            db.storage().put(key, VersionedValue::new(Value::Int(i as i64), i as u64, None));
         });
     });
 
@@ -84,7 +84,7 @@ fn bench_a1_storage(c: &mut Criterion) {
             TypeTag::KV,
             format!("read_key{}", i).into_bytes(),
         );
-        db.storage().put(key, VersionedValue::new(Value::I64(i as i64), i as u64, None));
+        db.storage().put(key, VersionedValue::new(Value::Int(i as i64), i as u64, None));
     }
 
     group.bench_function("storage_get", |b| {
@@ -114,7 +114,7 @@ fn bench_b_kvstore(c: &mut Criterion) {
 
     // Warmup
     for i in 0..100 {
-        kv.put(&run_id, &format!("warmup{}", i), Value::I64(i as i64))
+        kv.put(&run_id, &format!("warmup{}", i), Value::Int(i as i64))
             .unwrap();
     }
 
@@ -122,14 +122,14 @@ fn bench_b_kvstore(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| {
             i += 1;
-            kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+            kv.put(&run_id, &format!("key{}", i), Value::Int(i as i64))
                 .unwrap();
         });
     });
 
     // Pre-populate for reads
     for i in 0..10000 {
-        kv.put(&run_id, &format!("read_key{}", i), Value::I64(i as i64))
+        kv.put(&run_id, &format!("read_key{}", i), Value::Int(i as i64))
             .unwrap();
     }
 
@@ -178,7 +178,7 @@ fn bench_layer_comparison(c: &mut Criterion) {
         b.iter(|| {
             i += 1;
             let key = Key::new(ns.clone(), TypeTag::KV, format!("key{}", i).into_bytes());
-            db.storage().put(key, VersionedValue::new(Value::I64(i as i64), i as u64, None));
+            db.storage().put(key, VersionedValue::new(Value::Int(i as i64), i as u64, None));
         });
     });
 
@@ -188,7 +188,7 @@ fn bench_layer_comparison(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| {
             i += 1;
-            kv.put(&run_id, &format!("kvkey{}", i), Value::I64(i as i64))
+            kv.put(&run_id, &format!("kvkey{}", i), Value::Int(i as i64))
                 .unwrap();
         });
     });

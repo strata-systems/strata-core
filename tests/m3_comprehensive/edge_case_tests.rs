@@ -447,7 +447,7 @@ mod concurrent_edge_cases {
 
         // Final value is from one of the threads
         let final_value = tp.kv.get(&run_id, "contended_key").unwrap().unwrap().value;
-        if let Value::I64(n) = final_value {
+        if let Value::Int(n) = final_value {
             assert!(n >= 0 && n < num_threads as i64);
         } else {
             panic!("Expected I64");
@@ -541,7 +541,7 @@ mod concurrent_edge_cases {
                 let mut successes = 0;
                 for _ in 0..increments_per_thread {
                     let result = tp.state_cell.transition(run_id, "counter", |state| {
-                        let current = if let Value::I64(n) = &state.value {
+                        let current = if let Value::Int(n) = &state.value {
                             *n
                         } else {
                             0

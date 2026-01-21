@@ -27,7 +27,7 @@ fn test_disjoint_key_scaling() {
         let kv = strata_primitives::KVStore::new(db.clone());
         let run_id = strata_core::types::RunId::new();
         for i in 0..iterations {
-            kv.put(&run_id, &format!("single_key_{}", i), strata_core::value::Value::I64(i))
+            kv.put(&run_id, &format!("single_key_{}", i), strata_core::value::Value::Int(i))
                 .expect("put");
         }
     }
@@ -43,7 +43,7 @@ fn test_disjoint_key_scaling() {
             let run_id = strata_core::types::RunId::new();
             for i in 0..(iterations / 4) {
                 let key = format!("thread{}_key_{}", t, i);
-                kv.put(&run_id, &key, strata_core::value::Value::I64(i as i64))
+                kv.put(&run_id, &key, strata_core::value::Value::Int(i as i64))
                     .expect("put");
             }
         });

@@ -149,7 +149,7 @@ fn tier_a0_benchmarks(c: &mut Criterion) {
         let key = Key::new_kv(ns, "hot_key");
 
         // Pre-populate
-        store.put(key.clone(), Value::I64(42), None).unwrap();
+        store.put(key.clone(), Value::Int(42), None).unwrap();
 
         group.bench_function("get_hot", |b| {
             b.iter(|| {
@@ -173,7 +173,7 @@ fn tier_a0_benchmarks(c: &mut Criterion) {
                 let i = counter.fetch_add(1, Ordering::Relaxed);
                 // Pre-create key outside of hot path in real usage
                 let key = Key::new_kv(ns.clone(), format!("key_{}", i));
-                let result = store.put(key, Value::I64(i as i64), None);
+                let result = store.put(key, Value::Int(i as i64), None);
                 black_box(result.unwrap())
             });
         });
@@ -196,7 +196,7 @@ fn tier_a0_benchmarks(c: &mut Criterion) {
         group.bench_function("put_hot_prealloc", |b| {
             b.iter(|| {
                 let i = (counter.fetch_add(1, Ordering::Relaxed) as usize) % keys.len();
-                let result = store.put(keys[i].clone(), Value::I64(i as i64), None);
+                let result = store.put(keys[i].clone(), Value::Int(i as i64), None);
                 black_box(result.unwrap())
             });
         });
@@ -209,7 +209,7 @@ fn tier_a0_benchmarks(c: &mut Criterion) {
         let ns = test_namespace(run_id);
         let key = Key::new_kv(ns, "versioned_key");
 
-        store.put(key.clone(), Value::I64(42), None).unwrap();
+        store.put(key.clone(), Value::Int(42), None).unwrap();
         let version = store.current_version();
 
         group.bench_function("get_versioned", |b| {
@@ -229,7 +229,7 @@ fn tier_a0_benchmarks(c: &mut Criterion) {
         // Pre-populate with 100 keys
         for i in 0..100 {
             let key = Key::new_kv(ns.clone(), format!("scan_{}", i));
-            store.put(key, Value::I64(i), None).unwrap();
+            store.put(key, Value::Int(i), None).unwrap();
         }
 
         let prefix = Key::new_kv(ns.clone(), "scan_");
@@ -266,7 +266,7 @@ fn tier_a1_benchmarks(c: &mut Criterion) {
 
         // Pre-populate via transaction
         db.transaction(run_id, |txn| {
-            txn.put(key.clone(), Value::I64(42))?;
+            txn.put(key.clone(), Value::Int(42))?;
             Ok(())
         })
         .unwrap();
@@ -296,7 +296,7 @@ fn tier_a1_benchmarks(c: &mut Criterion) {
                 let i = counter.fetch_add(1, Ordering::Relaxed);
                 let key = Key::new_kv(ns.clone(), format!("put_{}", i));
                 let result = db.transaction(run_id, |txn| {
-                    txn.put(key, Value::I64(i as i64))?;
+                    txn.put(key, Value::Int(i as i64))?;
                     Ok(())
                 });
                 black_box(result.unwrap())
@@ -313,17 +313,17 @@ fn tier_a1_benchmarks(c: &mut Criterion) {
         let key = Key::new_kv(ns, "cas_key");
 
         // Initialize
-        db.put(run_id, key.clone(), Value::I64(0)).unwrap();
+        db.put(run_id, key.clone(), Value::Int(0)).unwrap();
 
         group.bench_function("cas_direct", |b| {
             b.iter(|| {
                 // Get current version
                 let current = db.get(&key).unwrap().unwrap();
                 let new_val = match current.value {
-                    Value::I64(n) => n + 1,
+                    Value::Int(n) => n + 1,
                     _ => 1,
                 };
-                let result = db.cas(run_id, key.clone(), current.version, Value::I64(new_val));
+                let result = db.cas(run_id, key.clone(), current.version, Value::Int(new_val));
                 black_box(result.unwrap())
             });
         });
@@ -371,7 +371,7 @@ fn tier_a1_benchmarks(c: &mut Criterion) {
                 let i = counter.fetch_add(1, Ordering::Relaxed);
                 let key = Key::new_kv(ns.clone(), format!("ryw_{}", i));
                 let result = db.transaction(run_id, |txn| {
-                    txn.put(key.clone(), Value::I64(i as i64))?;
+                    txn.put(key.clone(), Value::Int(i as i64))?;
                     let val = txn.get(&key)?;
                     Ok(val)
                 });
@@ -403,7 +403,7 @@ fn eventlog_benchmarks(c: &mut Criterion) {
         group.bench_function("append", |b| {
             b.iter(|| {
                 let i = counter.fetch_add(1, Ordering::Relaxed);
-                let result = log.append(&run_id, "test_event", Value::I64(i as i64));
+                let result = log.append(&run_id, "test_event", Value::Int(i as i64));
                 black_box(result.unwrap())
             });
         });
@@ -420,10 +420,10 @@ fn eventlog_benchmarks(c: &mut Criterion) {
         group.bench_function("append_with_payload", |b| {
             b.iter(|| {
                 let i = counter.fetch_add(1, Ordering::Relaxed);
-                let payload = Value::Map(HashMap::from([
+                let payload = Value::Object(HashMap::from([
                     ("tool".to_string(), Value::String("search".into())),
                     ("query".to_string(), Value::String(format!("query_{}", i))),
-                    ("results".to_string(), Value::I64(42)),
+                    ("results".to_string(), Value::Int(42)),
                 ]));
                 let result = log.append(&run_id, "tool_call", payload);
                 black_box(result.unwrap())
@@ -439,7 +439,7 @@ fn eventlog_benchmarks(c: &mut Criterion) {
         let run_id = RunId::new();
 
         for i in 0..1000 {
-            log.append(&run_id, "test", Value::I64(i)).unwrap();
+            log.append(&run_id, "test", Value::Int(i)).unwrap();
         }
 
         let mut rng_state = BENCH_SEED;
@@ -461,7 +461,7 @@ fn eventlog_benchmarks(c: &mut Criterion) {
         let run_id = RunId::new();
 
         for i in 0..1000 {
-            log.append(&run_id, "test", Value::I64(i)).unwrap();
+            log.append(&run_id, "test", Value::Int(i)).unwrap();
         }
 
         group.bench_with_input(
@@ -486,7 +486,7 @@ fn eventlog_benchmarks(c: &mut Criterion) {
         let run_id = RunId::new();
 
         for i in 0..chain_length {
-            log.append(&run_id, "test", Value::I64(i as i64)).unwrap();
+            log.append(&run_id, "test", Value::Int(i as i64)).unwrap();
         }
 
         group.bench_with_input(
@@ -521,7 +521,7 @@ fn statecell_benchmarks(c: &mut Criterion) {
             b.iter(|| {
                 let i = counter.fetch_add(1, Ordering::Relaxed);
                 let name = format!("cell_{}", i);
-                let result = sc.init(&run_id, &name, Value::I64(0));
+                let result = sc.init(&run_id, &name, Value::Int(0));
                 black_box(result.unwrap())
             });
         });
@@ -534,7 +534,7 @@ fn statecell_benchmarks(c: &mut Criterion) {
         let sc = StateCell::new(db);
         let run_id = RunId::new();
 
-        sc.init(&run_id, "test_cell", Value::I64(0)).unwrap();
+        sc.init(&run_id, "test_cell", Value::Int(0)).unwrap();
 
         group.bench_function("read", |b| {
             b.iter(|| {
@@ -551,16 +551,16 @@ fn statecell_benchmarks(c: &mut Criterion) {
         let sc = StateCell::new(db);
         let run_id = RunId::new();
 
-        sc.init(&run_id, "counter", Value::I64(0)).unwrap();
+        sc.init(&run_id, "counter", Value::Int(0)).unwrap();
 
         group.bench_function("cas", |b| {
             b.iter(|| {
                 let state = sc.read(&run_id, "counter").unwrap().unwrap();
                 let new_val = match state.value {
-                    Value::I64(n) => n + 1,
+                    Value::Int(n) => n + 1,
                     _ => 1,
                 };
-                let result = sc.cas(&run_id, "counter", state.version, Value::I64(new_val));
+                let result = sc.cas(&run_id, "counter", state.version, Value::Int(new_val));
                 black_box(result.unwrap())
             });
         });
@@ -573,16 +573,16 @@ fn statecell_benchmarks(c: &mut Criterion) {
         let sc = StateCell::new(db);
         let run_id = RunId::new();
 
-        sc.init(&run_id, "counter", Value::I64(0)).unwrap();
+        sc.init(&run_id, "counter", Value::Int(0)).unwrap();
 
         group.bench_function("transition", |b| {
             b.iter(|| {
                 let result = sc.transition(&run_id, "counter", |state| {
                     let current = match &state.value {
-                        Value::I64(n) => *n,
+                        Value::Int(n) => *n,
                         _ => 0,
                     };
-                    Ok((Value::I64(current + 1), current + 1))
+                    Ok((Value::Int(current + 1), current + 1))
                 });
                 black_box(result.unwrap())
             });
@@ -595,14 +595,14 @@ fn statecell_benchmarks(c: &mut Criterion) {
         let sc = StateCell::new(db);
         let run_id = RunId::new();
 
-        sc.init(&run_id, "cell", Value::I64(0)).unwrap();
+        sc.init(&run_id, "cell", Value::Int(0)).unwrap();
 
         let counter = AtomicU64::new(0);
 
         group.bench_function("set", |b| {
             b.iter(|| {
                 let i = counter.fetch_add(1, Ordering::Relaxed);
-                let result = sc.set(&run_id, "cell", Value::I64(i as i64));
+                let result = sc.set(&run_id, "cell", Value::Int(i as i64));
                 black_box(result.unwrap())
             });
         });
@@ -628,7 +628,7 @@ fn kvstore_benchmarks(c: &mut Criterion) {
             b.iter(|| {
                 let i = counter.fetch_add(1, Ordering::Relaxed);
                 let key = format!("key_{}", i);
-                let result = kv.put(&run_id, &key, Value::I64(i as i64));
+                let result = kv.put(&run_id, &key, Value::Int(i as i64));
                 black_box(result.unwrap())
             });
         });
@@ -642,7 +642,7 @@ fn kvstore_benchmarks(c: &mut Criterion) {
         let run_id = RunId::new();
 
         for i in 0..1000 {
-            kv.put(&run_id, &format!("key_{}", i), Value::I64(i))
+            kv.put(&run_id, &format!("key_{}", i), Value::Int(i))
                 .unwrap();
         }
 
@@ -690,7 +690,7 @@ fn kvstore_benchmarks(c: &mut Criterion) {
                 let i = counter.fetch_add(1, Ordering::Relaxed);
                 let key = format!("del_{}", i);
                 // Create the key first, then delete it
-                kv.put(&run_id, &key, Value::I64(i as i64)).unwrap();
+                kv.put(&run_id, &key, Value::Int(i as i64)).unwrap();
                 let result = kv.delete(&run_id, &key);
                 black_box(result.unwrap())
             });
@@ -994,10 +994,10 @@ fn cross_primitive_benchmarks(c: &mut Criterion) {
             b.iter(|| {
                 let i = counter.fetch_add(1, Ordering::Relaxed);
                 // KV put
-                kv.put(&run_id, &format!("key_{}", i), Value::I64(i as i64))
+                kv.put(&run_id, &format!("key_{}", i), Value::Int(i as i64))
                     .unwrap();
                 // EventLog append
-                let result = log.append(&run_id, "kv_written", Value::I64(i as i64));
+                let result = log.append(&run_id, "kv_written", Value::Int(i as i64));
                 black_box(result.unwrap())
             });
         });
@@ -1013,7 +1013,7 @@ fn cross_primitive_benchmarks(c: &mut Criterion) {
         let sc = StateCell::new(Arc::clone(&db));
 
         // Initialize state cell
-        sc.init(&run_id, "counter", Value::I64(0)).unwrap();
+        sc.init(&run_id, "counter", Value::Int(0)).unwrap();
 
         group.bench_function("kv_event_state", |b| {
             b.iter(|| {
@@ -1021,19 +1021,19 @@ fn cross_primitive_benchmarks(c: &mut Criterion) {
                 let (i, _version) = sc
                     .transition(&run_id, "counter", |state| {
                         let current = match &state.value {
-                            Value::I64(n) => *n,
+                            Value::Int(n) => *n,
                             _ => 0,
                         };
-                        Ok((Value::I64(current + 1), current + 1))
+                        Ok((Value::Int(current + 1), current + 1))
                     })
                     .unwrap();
 
                 // KV put
-                kv.put(&run_id, &format!("key_{}", i), Value::I64(i))
+                kv.put(&run_id, &format!("key_{}", i), Value::Int(i))
                     .unwrap();
 
                 // EventLog append
-                let result = log.append(&run_id, "step_complete", Value::I64(i));
+                let result = log.append(&run_id, "step_complete", Value::Int(i));
                 black_box(result.unwrap())
             });
         });
@@ -1048,8 +1048,8 @@ fn cross_primitive_benchmarks(c: &mut Criterion) {
         let sc = StateCell::new(Arc::clone(&db));
 
         // Pre-populate
-        kv.put(&run_id, "key1", Value::I64(42)).unwrap();
-        sc.init(&run_id, "state1", Value::I64(100)).unwrap();
+        kv.put(&run_id, "key1", Value::Int(42)).unwrap();
+        sc.init(&run_id, "state1", Value::Int(100)).unwrap();
 
         group.bench_function("snapshot_read", |b| {
             b.iter(|| {
@@ -1126,7 +1126,7 @@ fn cache_locality_benchmarks(c: &mut Criterion) {
             .collect();
 
         for key in &keys {
-            store.put(key.clone(), Value::I64(42), None).unwrap();
+            store.put(key.clone(), Value::Int(42), None).unwrap();
         }
 
         let mut rng_state = BENCH_SEED;
@@ -1165,7 +1165,7 @@ fn branch_predictor_benchmarks(c: &mut Criterion) {
         .collect();
 
     for key in &keys {
-        store.put(key.clone(), Value::I64(42), None).unwrap();
+        store.put(key.clone(), Value::Int(42), None).unwrap();
     }
 
     // Sequential access (most predictable)
@@ -1230,7 +1230,7 @@ fn contention_benchmarks(c: &mut Criterion) {
                     let sc = Arc::new(StateCell::new(db));
                     let run_id = RunId::new();
 
-                    sc.init(&run_id, "counter", Value::I64(0)).unwrap();
+                    sc.init(&run_id, "counter", Value::Int(0)).unwrap();
 
                     let barrier = Arc::new(Barrier::new(num_threads + 1));
                     let total_transitions = Arc::new(AtomicU64::new(0));
@@ -1250,10 +1250,10 @@ fn contention_benchmarks(c: &mut Criterion) {
                                 while stop_flag.load(Ordering::Relaxed) == 0 {
                                     let result = sc.transition(&run_id, "counter", |state| {
                                         let current = match &state.value {
-                                            Value::I64(n) => *n,
+                                            Value::Int(n) => *n,
                                             _ => 0,
                                         };
-                                        Ok((Value::I64(current + 1), ()))
+                                        Ok((Value::Int(current + 1), ()))
                                     });
                                     if result.is_ok() {
                                         local_transitions += 1;
@@ -1279,7 +1279,7 @@ fn contention_benchmarks(c: &mut Criterion) {
                     // Verify invariant: final count == transitions
                     let final_state = sc.read(&run_id, "counter").unwrap().unwrap();
                     let final_count = match final_state.value {
-                        Value::I64(n) => n as u64,
+                        Value::Int(n) => n as u64,
                         _ => 0,
                     };
 
@@ -1334,7 +1334,7 @@ fn contention_benchmarks(c: &mut Criterion) {
                                         .append(
                                             &run_id,
                                             "thread_event",
-                                            Value::I64(thread_id as i64),
+                                            Value::Int(thread_id as i64),
                                         )
                                         .is_ok()
                                     {
@@ -1386,7 +1386,7 @@ fn contention_benchmarks(c: &mut Criterion) {
 
                     // Initialize separate counter for each thread
                     for i in 0..num_threads {
-                        sc.init(&run_id, &format!("counter_{}", i), Value::I64(0))
+                        sc.init(&run_id, &format!("counter_{}", i), Value::Int(0))
                             .unwrap();
                     }
 
@@ -1409,10 +1409,10 @@ fn contention_benchmarks(c: &mut Criterion) {
                                 while stop_flag.load(Ordering::Relaxed) == 0 {
                                     let result = sc.transition(&run_id, &cell_name, |state| {
                                         let current = match &state.value {
-                                            Value::I64(n) => *n,
+                                            Value::Int(n) => *n,
                                             _ => 0,
                                         };
-                                        Ok((Value::I64(current + 1), ()))
+                                        Ok((Value::Int(current + 1), ()))
                                     });
                                     if result.is_ok() {
                                         local_ops += 1;
@@ -1483,7 +1483,7 @@ fn memory_overhead_benchmarks(c: &mut Criterion) {
                 // Insert 1000 entries and measure
                 for i in 0..1000 {
                     let key = Key::new_kv(ns.clone(), format!("key_{}", i));
-                    store.put(key, Value::I64(i), None).unwrap();
+                    store.put(key, Value::Int(i), None).unwrap();
                 }
 
                 black_box(store.current_version())

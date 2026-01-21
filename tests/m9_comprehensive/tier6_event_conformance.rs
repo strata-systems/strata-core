@@ -124,9 +124,9 @@ fn event_invariant1_sequence_is_unique_identity() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Append multiple events
-    txn.event_append("e1", Value::I64(1)).unwrap();
-    txn.event_append("e2", Value::I64(2)).unwrap();
-    txn.event_append("e3", Value::I64(3)).unwrap();
+    txn.event_append("e1", Value::Int(1)).unwrap();
+    txn.event_append("e2", Value::Int(2)).unwrap();
+    txn.event_append("e3", Value::Int(3)).unwrap();
 
     // Each has a unique identity by sequence
     let ref0 = EntityRef::event(run_id, 0);
@@ -174,9 +174,9 @@ fn event_invariant2_append_returns_sequence_version() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Append returns Version::Sequence
-    let v0 = txn.event_append("e0", Value::I64(0)).unwrap();
-    let v1 = txn.event_append("e1", Value::I64(1)).unwrap();
-    let v2 = txn.event_append("e2", Value::I64(2)).unwrap();
+    let v0 = txn.event_append("e0", Value::Int(0)).unwrap();
+    let v1 = txn.event_append("e1", Value::Int(1)).unwrap();
+    let v2 = txn.event_append("e2", Value::Int(2)).unwrap();
 
     assert_eq!(v0, Version::Sequence(0));
     assert_eq!(v1, Version::Sequence(1));
@@ -192,7 +192,7 @@ fn event_invariant2_sequence_is_monotonic() {
 
     // Append multiple events
     let versions: Vec<Version> = (0..10)
-        .map(|i| txn.event_append(&format!("e{}", i), Value::I64(i)).unwrap())
+        .map(|i| txn.event_append(&format!("e{}", i), Value::Int(i)).unwrap())
         .collect();
 
     // Sequences should be monotonically increasing
@@ -245,17 +245,17 @@ fn event_invariant3_read_your_writes() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Append events and read them back immediately
-    txn.event_append("first", Value::I64(100)).unwrap();
-    txn.event_append("second", Value::I64(200)).unwrap();
+    txn.event_append("first", Value::Int(100)).unwrap();
+    txn.event_append("second", Value::Int(200)).unwrap();
 
     // Read sees the writes
     let first = txn.event_read(0).unwrap().unwrap();
     let second = txn.event_read(1).unwrap().unwrap();
 
     assert_eq!(first.value.event_type, "first");
-    assert_eq!(first.value.payload, Value::I64(100));
+    assert_eq!(first.value.payload, Value::Int(100));
     assert_eq!(second.value.event_type, "second");
-    assert_eq!(second.value.payload, Value::I64(200));
+    assert_eq!(second.value.payload, Value::Int(200));
 }
 
 #[test]
@@ -269,10 +269,10 @@ fn event_invariant3_event_len_reflects_pending() {
     assert_eq!(txn.event_len().unwrap(), 0);
 
     // Append events
-    txn.event_append("e1", Value::I64(1)).unwrap();
+    txn.event_append("e1", Value::Int(1)).unwrap();
     assert_eq!(txn.event_len().unwrap(), 1);
 
-    txn.event_append("e2", Value::I64(2)).unwrap();
+    txn.event_append("e2", Value::Int(2)).unwrap();
     assert_eq!(txn.event_len().unwrap(), 2);
 }
 
@@ -285,7 +285,7 @@ fn event_invariant3_range_includes_pending() {
 
     // Append several events
     for i in 0..5 {
-        txn.event_append(&format!("event_{}", i), Value::I64(i)).unwrap();
+        txn.event_append(&format!("event_{}", i), Value::Int(i)).unwrap();
     }
 
     // Range sees all pending events
@@ -352,9 +352,9 @@ fn event_invariant4_sequence_never_reused() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Append events
-    let v1 = txn.event_append("e1", Value::I64(1)).unwrap();
-    let v2 = txn.event_append("e2", Value::I64(2)).unwrap();
-    let v3 = txn.event_append("e3", Value::I64(3)).unwrap();
+    let v1 = txn.event_append("e1", Value::Int(1)).unwrap();
+    let v2 = txn.event_append("e2", Value::Int(2)).unwrap();
+    let v3 = txn.event_append("e3", Value::Int(3)).unwrap();
 
     // Sequences are unique and never reused
     let sequences: HashSet<u64> = vec![v1.as_u64(), v2.as_u64(), v3.as_u64()]
@@ -382,10 +382,10 @@ fn event_invariant5_isolated_between_runs() {
     let mut txn2 = Transaction::new(&mut ctx2, ns2.clone());
 
     // Append to run1
-    txn1.event_append("run1_event", Value::I64(1)).unwrap();
+    txn1.event_append("run1_event", Value::Int(1)).unwrap();
 
     // Append to run2 (gets its own sequence starting at 0)
-    let v = txn2.event_append("run2_event", Value::I64(2)).unwrap();
+    let v = txn2.event_append("run2_event", Value::Int(2)).unwrap();
     assert_eq!(v, Version::Sequence(0)); // Independent sequence
 
     // Run2 doesn't see run1's event
@@ -424,8 +424,8 @@ fn event_invariant5_each_run_has_independent_sequence() {
     let mut txn2 = Transaction::new(&mut ctx2, ns2.clone());
 
     // Both runs start at sequence 0
-    let v1 = txn1.event_append("e", Value::I64(1)).unwrap();
-    let v2 = txn2.event_append("e", Value::I64(2)).unwrap();
+    let v1 = txn1.event_append("e", Value::Int(1)).unwrap();
+    let v2 = txn2.event_append("e", Value::Int(2)).unwrap();
 
     assert_eq!(v1, Version::Sequence(0));
     assert_eq!(v2, Version::Sequence(0));
@@ -446,7 +446,7 @@ fn event_invariant6_existence_via_read() {
     assert!(txn.event_read(0).unwrap().is_none());
 
     // Append
-    txn.event_append("test", Value::I64(1)).unwrap();
+    txn.event_append("test", Value::Int(1)).unwrap();
 
     // Now exists
     assert!(txn.event_read(0).unwrap().is_some());
@@ -462,9 +462,9 @@ fn event_invariant6_can_get_length() {
     // Can check how many events exist
     assert_eq!(txn.event_len().unwrap(), 0);
 
-    txn.event_append("e1", Value::I64(1)).unwrap();
-    txn.event_append("e2", Value::I64(2)).unwrap();
-    txn.event_append("e3", Value::I64(3)).unwrap();
+    txn.event_append("e1", Value::Int(1)).unwrap();
+    txn.event_append("e2", Value::Int(2)).unwrap();
+    txn.event_append("e3", Value::Int(3)).unwrap();
 
     assert_eq!(txn.event_len().unwrap(), 3);
 }
@@ -478,7 +478,7 @@ fn event_invariant6_can_read_range() {
 
     // Append events
     for i in 0..10 {
-        txn.event_append(&format!("e{}", i), Value::I64(i)).unwrap();
+        txn.event_append(&format!("e{}", i), Value::Int(i)).unwrap();
     }
 
     // Can introspect a range
@@ -522,9 +522,9 @@ fn event_invariant7_append_always_produces_version() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Every append produces a version
-    let v1 = txn.event_append("e1", Value::I64(1)).unwrap();
-    let v2 = txn.event_append("e2", Value::I64(2)).unwrap();
-    let v3 = txn.event_append("e3", Value::I64(3)).unwrap();
+    let v1 = txn.event_append("e1", Value::Int(1)).unwrap();
+    let v2 = txn.event_append("e2", Value::Int(2)).unwrap();
+    let v3 = txn.event_append("e3", Value::Int(3)).unwrap();
 
     // All are valid sequence versions
     assert!(v1.is_sequence());
@@ -539,7 +539,7 @@ fn event_invariant7_length_read_does_not_modify() {
     let mut ctx = create_context(&ns);
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
-    txn.event_append("test", Value::I64(1)).unwrap();
+    txn.event_append("test", Value::Int(1)).unwrap();
 
     // Multiple length reads
     let len1 = txn.event_len().unwrap();
@@ -563,9 +563,9 @@ fn event_hash_chain_integrity() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Append events
-    txn.event_append("first", Value::I64(1)).unwrap();
-    txn.event_append("second", Value::I64(2)).unwrap();
-    txn.event_append("third", Value::I64(3)).unwrap();
+    txn.event_append("first", Value::Int(1)).unwrap();
+    txn.event_append("second", Value::Int(2)).unwrap();
+    txn.event_append("third", Value::Int(3)).unwrap();
 
     let e0 = txn.event_read(0).unwrap().unwrap();
     let e1 = txn.event_read(1).unwrap().unwrap();

@@ -14,7 +14,7 @@ fn test_explicit_flush() {
 
     {
         let kv = test_db.kv();
-        kv.put(&run_id, "flush_test", strata_core::value::Value::I64(42)).expect("put");
+        kv.put(&run_id, "flush_test", strata_core::value::Value::Int(42)).expect("put");
     }
 
     // Explicit flush
@@ -33,7 +33,7 @@ fn test_auto_flush_after_interval() {
     let kv = test_db.kv();
     let run_id = test_db.run_id;
 
-    kv.put(&run_id, "auto_flush", strata_core::value::Value::I64(1)).expect("put");
+    kv.put(&run_id, "auto_flush", strata_core::value::Value::Int(1)).expect("put");
 
     // Wait for auto-flush interval (default 100ms)
     thread::sleep(Duration::from_millis(200));

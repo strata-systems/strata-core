@@ -44,7 +44,7 @@ fn test_crash_between_operations() {
     let kv = test_db.kv();
 
     // First operation
-    kv.put(&run_id, "op1", Value::I64(1)).unwrap();
+    kv.put(&run_id, "op1", Value::Int(1)).unwrap();
 
     // Crash (simulated by reopen)
     test_db.reopen();
@@ -65,7 +65,7 @@ fn test_crash_during_batch() {
 
     // Batch of writes
     for i in 0..100 {
-        kv.put(&run_id, &format!("batch_{}", i), Value::I64(i))
+        kv.put(&run_id, &format!("batch_{}", i), Value::Int(i))
             .unwrap();
     }
 
@@ -123,7 +123,7 @@ fn test_crash_corrupted_wal_tail() {
 
     let kv = test_db.kv();
     for i in 0..50 {
-        kv.put(&run_id, &format!("k{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("k{}", i), Value::Int(i)).unwrap();
     }
 
     let wal_path = test_db.wal_path();
@@ -217,7 +217,7 @@ fn test_recovery_sequence() {
 
     // Write significant data
     for i in 0..200 {
-        kv.put(&run_id, &format!("seq_{}", i), Value::I64(i))
+        kv.put(&run_id, &format!("seq_{}", i), Value::Int(i))
             .unwrap();
     }
 
@@ -241,10 +241,10 @@ fn test_crash_during_overwrite() {
     let kv = test_db.kv();
 
     // Initial value
-    kv.put(&run_id, "overwrite_key", Value::I64(1)).unwrap();
+    kv.put(&run_id, "overwrite_key", Value::Int(1)).unwrap();
 
     // Overwrite
-    kv.put(&run_id, "overwrite_key", Value::I64(2)).unwrap();
+    kv.put(&run_id, "overwrite_key", Value::Int(2)).unwrap();
 
     // Crash
     test_db.reopen();
@@ -253,7 +253,7 @@ fn test_crash_during_overwrite() {
     let kv = test_db.kv();
     if let Some(versioned) = kv.get(&run_id, "overwrite_key").unwrap() {
         match versioned.value {
-            Value::I64(1) | Value::I64(2) => {} // OK
+            Value::Int(1) | Value::Int(2) => {} // OK
             _ => panic!("Unexpected value after crash: {:?}", versioned.value),
         }
     }

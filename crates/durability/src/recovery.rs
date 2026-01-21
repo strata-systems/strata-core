@@ -1218,7 +1218,7 @@ mod tests {
             wal.append(&WALEntry::Write {
                 run_id,
                 key: Key::new_kv(ns.clone(), "key1"),
-                value: Value::I64(100),
+                value: Value::Int(100),
                 version: 100, // Non-sequential version
             })
             .unwrap();
@@ -1226,7 +1226,7 @@ mod tests {
             wal.append(&WALEntry::Write {
                 run_id,
                 key: Key::new_kv(ns.clone(), "key2"),
-                value: Value::I64(200),
+                value: Value::Int(200),
                 version: 200,
             })
             .unwrap();
@@ -1234,7 +1234,7 @@ mod tests {
             wal.append(&WALEntry::Write {
                 run_id,
                 key: Key::new_kv(ns.clone(), "key3"),
-                value: Value::I64(300),
+                value: Value::Int(300),
                 version: 300,
             })
             .unwrap();
@@ -1426,7 +1426,7 @@ mod tests {
             WALEntry::Write {
                 run_id,
                 key: Key::new_kv(ns.clone(), "orphan1"),
-                value: Value::I64(1),
+                value: Value::Int(1),
                 version: 1,
             },
             // Valid complete transaction
@@ -1438,7 +1438,7 @@ mod tests {
             WALEntry::Write {
                 run_id,
                 key: Key::new_kv(ns.clone(), "valid"),
-                value: Value::I64(2),
+                value: Value::Int(2),
                 version: 2,
             },
             WALEntry::CommitTxn { txn_id: 1, run_id },
@@ -1451,7 +1451,7 @@ mod tests {
             WALEntry::Write {
                 run_id,
                 key: Key::new_kv(ns.clone(), "incomplete"),
-                value: Value::I64(3),
+                value: Value::Int(3),
                 version: 3,
             },
             // No CommitTxn for txn 2
@@ -1509,7 +1509,7 @@ mod tests {
             wal.append(&WALEntry::Write {
                 run_id: run_id_1,
                 key: Key::new_kv(ns1.clone(), "key1"),
-                value: Value::I64(1),
+                value: Value::Int(1),
                 version: 1,
             })
             .unwrap();
@@ -1529,7 +1529,7 @@ mod tests {
             wal.append(&WALEntry::Write {
                 run_id: run_id_2,
                 key: Key::new_kv(ns2.clone(), "key2"),
-                value: Value::I64(2),
+                value: Value::Int(2),
                 version: 2,
             })
             .unwrap();
@@ -1549,7 +1549,7 @@ mod tests {
             wal.append(&WALEntry::Write {
                 run_id: run_id_1,
                 key: Key::new_kv(ns1.clone(), "key3"),
-                value: Value::I64(3),
+                value: Value::Int(3),
                 version: 3,
             })
             .unwrap();
@@ -1612,7 +1612,7 @@ mod tests {
             wal.append(&WALEntry::Write {
                 run_id,
                 key: Key::new_kv(ns.clone(), "key1"),
-                value: Value::I64(1),
+                value: Value::Int(1),
                 version: 10,
             })
             .unwrap();
@@ -1629,7 +1629,7 @@ mod tests {
             wal.append(&WALEntry::Write {
                 run_id,
                 key: Key::new_kv(ns.clone(), "key2"),
-                value: Value::I64(2),
+                value: Value::Int(2),
                 version: 20,
             })
             .unwrap();
@@ -1646,7 +1646,7 @@ mod tests {
             wal.append(&WALEntry::Write {
                 run_id,
                 key: Key::new_kv(ns.clone(), "key3"),
-                value: Value::I64(3),
+                value: Value::Int(3),
                 version: 30,
             })
             .unwrap();
@@ -1710,7 +1710,7 @@ mod tests {
                 wal.append(&WALEntry::Write {
                     run_id,
                     key: Key::new_kv(ns.clone(), format!("key{}", i)),
-                    value: Value::I64(i as i64),
+                    value: Value::Int(i as i64),
                     version: i,
                 })
                 .unwrap();
@@ -1793,7 +1793,7 @@ mod tests {
             wal.append(&WALEntry::Write {
                 run_id: run_id_target,
                 key: Key::new_kv(ns_target.clone(), "key1"),
-                value: Value::I64(1),
+                value: Value::Int(1),
                 version: 10,
             })
             .unwrap();
@@ -1813,7 +1813,7 @@ mod tests {
             wal.append(&WALEntry::Write {
                 run_id: run_id_other,
                 key: Key::new_kv(ns_other.clone(), "key2"),
-                value: Value::I64(2),
+                value: Value::Int(2),
                 version: 15,
             })
             .unwrap();
@@ -1833,7 +1833,7 @@ mod tests {
             wal.append(&WALEntry::Write {
                 run_id: run_id_target,
                 key: Key::new_kv(ns_target.clone(), "key3"),
-                value: Value::I64(3),
+                value: Value::Int(3),
                 version: 20,
             })
             .unwrap();
@@ -1853,7 +1853,7 @@ mod tests {
             wal.append(&WALEntry::Write {
                 run_id: run_id_target,
                 key: Key::new_kv(ns_target.clone(), "key4"),
-                value: Value::I64(4),
+                value: Value::Int(4),
                 version: 30,
             })
             .unwrap();
@@ -1937,21 +1937,21 @@ mod tests {
             wal.append(&WALEntry::Write {
                 run_id,
                 key: Key::new_kv(ns.clone(), "from_txn1"),
-                value: Value::I64(1),
+                value: Value::Int(1),
                 version: 100,
             })
             .unwrap();
             wal.append(&WALEntry::Write {
                 run_id,
                 key: Key::new_kv(ns.clone(), "from_txn2"),
-                value: Value::I64(2),
+                value: Value::Int(2),
                 version: 200,
             })
             .unwrap();
             wal.append(&WALEntry::Write {
                 run_id,
                 key: Key::new_kv(ns.clone(), "also_from_txn1"),
-                value: Value::I64(11),
+                value: Value::Int(11),
                 version: 100,
             })
             .unwrap();
@@ -2176,14 +2176,14 @@ mod tests {
             wal.append(&WALEntry::Write {
                 run_id: run_complete,
                 key: Key::new_kv(ns_complete.clone(), "complete_txn_key"),
-                value: Value::I64(100),
+                value: Value::Int(100),
                 version: 100,
             })
             .unwrap();
             wal.append(&WALEntry::Write {
                 run_id: run_incomplete,
                 key: Key::new_kv(ns_incomplete.clone(), "incomplete_txn_key"),
-                value: Value::I64(200),
+                value: Value::Int(200),
                 version: 200,
             })
             .unwrap();

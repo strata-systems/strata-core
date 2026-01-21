@@ -174,8 +174,8 @@ fn test_r1_deterministic_value_types() {
     // Various value types
     kv.put(&run_id, "string", Value::String("hello".into()))
         .unwrap();
-    kv.put(&run_id, "int", Value::I64(42)).unwrap();
-    kv.put(&run_id, "float", Value::F64(3.14)).unwrap();
+    kv.put(&run_id, "int", Value::Int(42)).unwrap();
+    kv.put(&run_id, "float", Value::Float(3.14)).unwrap();
     kv.put(&run_id, "bool", Value::Bool(true)).unwrap();
     kv.put(&run_id, "null", Value::Null).unwrap();
 

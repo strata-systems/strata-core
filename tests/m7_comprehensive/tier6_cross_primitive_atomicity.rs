@@ -56,12 +56,12 @@ fn test_transaction_boundary() {
     let kv = test_db.kv();
 
     // First batch
-    kv.put(&run_id, "batch1_a", Value::I64(1)).unwrap();
-    kv.put(&run_id, "batch1_b", Value::I64(2)).unwrap();
+    kv.put(&run_id, "batch1_a", Value::Int(1)).unwrap();
+    kv.put(&run_id, "batch1_b", Value::Int(2)).unwrap();
 
     // Second batch
-    kv.put(&run_id, "batch2_a", Value::I64(3)).unwrap();
-    kv.put(&run_id, "batch2_b", Value::I64(4)).unwrap();
+    kv.put(&run_id, "batch2_a", Value::Int(3)).unwrap();
+    kv.put(&run_id, "batch2_b", Value::Int(4)).unwrap();
 
     test_db.reopen();
 
@@ -123,7 +123,7 @@ fn test_large_atomic_batch() {
 
     // Large batch of related data
     for i in 0..100 {
-        kv.put(&run_id, &format!("item_{}", i), Value::I64(i))
+        kv.put(&run_id, &format!("item_{}", i), Value::Int(i))
             .unwrap();
     }
 
@@ -187,12 +187,12 @@ fn test_delete_in_atomic_batch() {
     let kv = test_db.kv();
 
     // Create keys
-    kv.put(&run_id, "keep", Value::I64(1)).unwrap();
-    kv.put(&run_id, "delete", Value::I64(2)).unwrap();
+    kv.put(&run_id, "keep", Value::Int(1)).unwrap();
+    kv.put(&run_id, "delete", Value::Int(2)).unwrap();
 
     // Batch: delete one, modify another
     kv.delete(&run_id, "delete").unwrap();
-    kv.put(&run_id, "keep", Value::I64(10)).unwrap();
+    kv.put(&run_id, "keep", Value::Int(10)).unwrap();
 
     test_db.reopen();
 
@@ -204,7 +204,7 @@ fn test_delete_in_atomic_batch() {
 
     // If keep is modified, delete should be gone
     if let Some(versioned) = kv.get(&run_id, "keep").unwrap() {
-        if let Value::I64(10) = versioned.value {
+        if let Value::Int(10) = versioned.value {
             assert!(!delete_present, "Delete not atomic with update");
         }
     }

@@ -136,7 +136,7 @@ mod extreme_values {
                 .unwrap();
 
             let val = tdb.db.get(&key).unwrap().unwrap();
-            if let Value::F64(stored) = val.value {
+            if let Value::Float(stored) = val.value {
                 if float.is_nan() {
                     assert!(stored.is_nan());
                 } else {

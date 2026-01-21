@@ -22,8 +22,8 @@ fn test_p5_replay_deterministic_100_times() {
     let kv = test_db.kv();
     kv.put(&run_id, "key1", Value::String("value1".into()))
         .unwrap();
-    kv.put(&run_id, "key2", Value::I64(42)).unwrap();
-    kv.put(&run_id, "key3", Value::F64(3.14)).unwrap();
+    kv.put(&run_id, "key2", Value::Int(42)).unwrap();
+    kv.put(&run_id, "key3", Value::Float(3.14)).unwrap();
 
     // Replay 100 times
     let mut hashes = Vec::new();
@@ -70,13 +70,13 @@ fn test_p5_deterministic_complex_ops() {
 
     // Complex sequence
     for i in 0..50 {
-        kv.put(&run_id, &format!("k{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("k{}", i), Value::Int(i)).unwrap();
     }
     for i in (0..50).step_by(2) {
         kv.delete(&run_id, &format!("k{}", i)).unwrap();
     }
     for i in 0..25 {
-        kv.put(&run_id, &format!("k{}", i * 2), Value::I64(i * 100))
+        kv.put(&run_id, &format!("k{}", i * 2), Value::Int(i * 100))
             .unwrap();
     }
 
@@ -102,8 +102,8 @@ fn test_p5_deterministic_value_types() {
 
     kv.put(&run_id, "string", Value::String("hello".into()))
         .unwrap();
-    kv.put(&run_id, "int", Value::I64(-999)).unwrap();
-    kv.put(&run_id, "float", Value::F64(2.718281828)).unwrap();
+    kv.put(&run_id, "int", Value::Int(-999)).unwrap();
+    kv.put(&run_id, "float", Value::Float(2.718281828)).unwrap();
     kv.put(&run_id, "bool_t", Value::Bool(true)).unwrap();
     kv.put(&run_id, "bool_f", Value::Bool(false)).unwrap();
     kv.put(&run_id, "null", Value::Null).unwrap();
@@ -155,7 +155,7 @@ fn test_p5_deterministic_across_threads() {
 
     let kv = test_db.kv();
     for i in 0..50 {
-        kv.put(&run_id, &format!("k{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("k{}", i), Value::Int(i)).unwrap();
     }
 
     let db = test_db.db.clone();
@@ -189,7 +189,7 @@ fn test_p5_deterministic_after_churn() {
 
     // Create churn
     for i in 0..100 {
-        kv.put(&run_id, &format!("churn{}", i % 10), Value::I64(i))
+        kv.put(&run_id, &format!("churn{}", i % 10), Value::Int(i))
             .unwrap();
     }
 

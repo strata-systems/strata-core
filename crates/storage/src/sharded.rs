@@ -1044,7 +1044,7 @@ mod tests {
         let store = ShardedStore::new();
         let run_id = RunId::new();
         let key = create_test_key(run_id, "test_key");
-        let value = create_stored_value(Value::I64(42), 1);
+        let value = create_stored_value(Value::Int(42), 1);
 
         // Put
         store.put(key.clone(), value);
@@ -1052,7 +1052,7 @@ mod tests {
         // Get (Storage trait returns Result<Option<...>>)
         let retrieved = store.get(&key).unwrap();
         assert!(retrieved.is_some());
-        assert_eq!(retrieved.unwrap().value, Value::I64(42));
+        assert_eq!(retrieved.unwrap().value, Value::Int(42));
     }
 
     #[test]
@@ -1071,7 +1071,7 @@ mod tests {
         let store = ShardedStore::new();
         let run_id = RunId::new();
         let key = create_test_key(run_id, "to_delete");
-        let value = create_stored_value(Value::I64(42), 1);
+        let value = create_stored_value(Value::Int(42), 1);
 
         store.put(key.clone(), value);
         assert!(store.get(&key).unwrap().is_some());
@@ -1098,7 +1098,7 @@ mod tests {
         let store = ShardedStore::new();
         let run_id = RunId::new();
         let key = create_test_key(run_id, "exists");
-        let value = create_stored_value(Value::I64(42), 1);
+        let value = create_stored_value(Value::Int(42), 1);
 
         assert!(!store.contains(&key));
         store.put(key.clone(), value);
@@ -1113,11 +1113,11 @@ mod tests {
         let run_id = RunId::new();
         let key = create_test_key(run_id, "overwrite");
 
-        store.put(key.clone(), create_stored_value(Value::I64(1), 1));
-        store.put(key.clone(), create_stored_value(Value::I64(2), 2));
+        store.put(key.clone(), create_stored_value(Value::Int(1), 1));
+        store.put(key.clone(), create_stored_value(Value::Int(2), 2));
 
         let retrieved = store.get(&key).unwrap().unwrap();
-        assert_eq!(retrieved.value, Value::I64(2));
+        assert_eq!(retrieved.value, Value::Int(2));
         assert_eq!(retrieved.version, Version::txn(2));
     }
 
@@ -1132,12 +1132,12 @@ mod tests {
         let key1 = create_test_key(run1, "key");
         let key2 = create_test_key(run2, "key");
 
-        store.put(key1.clone(), create_stored_value(Value::I64(1), 1));
-        store.put(key2.clone(), create_stored_value(Value::I64(2), 1));
+        store.put(key1.clone(), create_stored_value(Value::Int(1), 1));
+        store.put(key2.clone(), create_stored_value(Value::Int(2), 1));
 
         // Different runs, same key name, different values
-        assert_eq!(store.get(&key1).unwrap().unwrap().value, Value::I64(1));
-        assert_eq!(store.get(&key2).unwrap().unwrap().value, Value::I64(2));
+        assert_eq!(store.get(&key1).unwrap().unwrap().value, Value::Int(1));
+        assert_eq!(store.get(&key2).unwrap().unwrap().value, Value::Int(2));
         assert_eq!(store.shard_count(), 2);
     }
 
@@ -1153,17 +1153,17 @@ mod tests {
         let key3 = create_test_key(run_id, "batch3");
 
         // First, put key3 so we can delete it
-        store.put(key3.clone(), create_stored_value(Value::I64(999), 1));
+        store.put(key3.clone(), create_stored_value(Value::Int(999), 1));
 
         // Apply batch
-        let writes = vec![(key1.clone(), Value::I64(1)), (key2.clone(), Value::I64(2))];
+        let writes = vec![(key1.clone(), Value::Int(1)), (key2.clone(), Value::Int(2))];
         let deletes = vec![key3.clone()];
 
         store.apply_batch(&writes, &deletes, 2).unwrap();
 
-        assert_eq!(store.get(&key1).unwrap().unwrap().value, Value::I64(1));
+        assert_eq!(store.get(&key1).unwrap().unwrap().value, Value::Int(1));
         assert_eq!(store.get(&key1).unwrap().unwrap().version, Version::txn(2));
-        assert_eq!(store.get(&key2).unwrap().unwrap().value, Value::I64(2));
+        assert_eq!(store.get(&key2).unwrap().unwrap().value, Value::Int(2));
         assert!(store.get(&key3).unwrap().is_none());
     }
 
@@ -1178,7 +1178,7 @@ mod tests {
 
         for i in 0..5 {
             let key = create_test_key(run_id, &format!("key{}", i));
-            store.put(key, create_stored_value(Value::I64(i), 1));
+            store.put(key, create_stored_value(Value::Int(i), 1));
         }
 
         assert_eq!(store.run_entry_count(&run_id), 5);
@@ -1200,7 +1200,7 @@ mod tests {
                     let run_id = RunId::new();
                     for i in 0..100 {
                         let key = create_test_key(run_id, &format!("key{}", i));
-                        store.put(key, create_stored_value(Value::I64(i), 1));
+                        store.put(key, create_stored_value(Value::Int(i), 1));
                     }
                     run_id
                 })
@@ -1241,7 +1241,7 @@ mod tests {
         // Insert some keys
         for i in 0..5 {
             let key = create_test_key(run_id, &format!("key{}", i));
-            store.put(key, create_stored_value(Value::I64(i), 1));
+            store.put(key, create_stored_value(Value::Int(i), 1));
         }
 
         let results = store.list_run(&run_id);
@@ -1270,15 +1270,15 @@ mod tests {
         // Insert keys with different prefixes
         store.put(
             Key::new_kv(ns.clone(), "user:alice"),
-            create_stored_value(Value::I64(1), 1),
+            create_stored_value(Value::Int(1), 1),
         );
         store.put(
             Key::new_kv(ns.clone(), "user:bob"),
-            create_stored_value(Value::I64(2), 1),
+            create_stored_value(Value::Int(2), 1),
         );
         store.put(
             Key::new_kv(ns.clone(), "config:timeout"),
-            create_stored_value(Value::I64(3), 1),
+            create_stored_value(Value::Int(3), 1),
         );
 
         // Query with "user:" prefix
@@ -1307,7 +1307,7 @@ mod tests {
 
         store.put(
             Key::new_kv(ns.clone(), "data:foo"),
-            create_stored_value(Value::I64(1), 1),
+            create_stored_value(Value::Int(1), 1),
         );
 
         // Query with non-matching prefix
@@ -1334,23 +1334,23 @@ mod tests {
         // Insert KV entries
         store.put(
             Key::new_kv(ns.clone(), "kv1"),
-            create_stored_value(Value::I64(1), 1),
+            create_stored_value(Value::Int(1), 1),
         );
         store.put(
             Key::new_kv(ns.clone(), "kv2"),
-            create_stored_value(Value::I64(2), 1),
+            create_stored_value(Value::Int(2), 1),
         );
 
         // Insert Event entries
         store.put(
             Key::new_event(ns.clone(), 1),
-            create_stored_value(Value::I64(10), 1),
+            create_stored_value(Value::Int(10), 1),
         );
 
         // Insert State entries
         store.put(
             Key::new_state(ns.clone(), "state1"),
-            create_stored_value(Value::I64(20), 1),
+            create_stored_value(Value::Int(20), 1),
         );
 
         // Query by type
@@ -1385,13 +1385,13 @@ mod tests {
         for i in 0..5 {
             store.put(
                 Key::new_kv(ns.clone(), &format!("kv{}", i)),
-                create_stored_value(Value::I64(i), 1),
+                create_stored_value(Value::Int(i), 1),
             );
         }
         for i in 0..3 {
             store.put(
                 Key::new_event(ns.clone(), i as u64),
-                create_stored_value(Value::I64(i), 1),
+                create_stored_value(Value::Int(i), 1),
             );
         }
 
@@ -1412,15 +1412,15 @@ mod tests {
         // Insert data for 3 runs
         store.put(
             create_test_key(run1, "k1"),
-            create_stored_value(Value::I64(1), 1),
+            create_stored_value(Value::Int(1), 1),
         );
         store.put(
             create_test_key(run2, "k1"),
-            create_stored_value(Value::I64(2), 1),
+            create_stored_value(Value::Int(2), 1),
         );
         store.put(
             create_test_key(run3, "k1"),
-            create_stored_value(Value::I64(3), 1),
+            create_stored_value(Value::Int(3), 1),
         );
 
         let run_ids = store.run_ids();
@@ -1440,7 +1440,7 @@ mod tests {
         // Insert some data
         for i in 0..5 {
             let key = create_test_key(run_id, &format!("key{}", i));
-            store.put(key, create_stored_value(Value::I64(i), 1));
+            store.put(key, create_stored_value(Value::Int(i), 1));
         }
 
         assert_eq!(store.run_entry_count(&run_id), 5);
@@ -1535,7 +1535,7 @@ mod tests {
 
         // Put some data (version=1)
         let key = create_test_key(run_id, "test_key");
-        store.put(key.clone(), create_stored_value(Value::I64(42), 1));
+        store.put(key.clone(), create_stored_value(Value::Int(42), 1));
         // Update store version so snapshot can see data at version 1
         store.set_version(1);
 
@@ -1545,7 +1545,7 @@ mod tests {
         // Read through snapshot (SnapshotView returns Result<Option<...>>)
         let value = snapshot.get(&key).unwrap();
         assert!(value.is_some());
-        assert_eq!(value.unwrap().value, Value::I64(42));
+        assert_eq!(value.unwrap().value, Value::Int(42));
 
         // contains works
         assert!(snapshot.contains(&key));
@@ -1561,7 +1561,7 @@ mod tests {
         // Put some data
         for i in 0..5 {
             let key = create_test_key(run_id, &format!("key{}", i));
-            store.put(key, create_stored_value(Value::I64(i), 1));
+            store.put(key, create_stored_value(Value::Int(i), 1));
         }
 
         let snapshot = store.snapshot();
@@ -1590,7 +1590,7 @@ mod tests {
 
         // Add data and increment version
         let key1 = create_test_key(run_id, "key1");
-        store.put(key1.clone(), create_stored_value(Value::I64(1), 1));
+        store.put(key1.clone(), create_stored_value(Value::Int(1), 1));
         store.next_version();
 
         // Create second snapshot at version 1
@@ -1599,7 +1599,7 @@ mod tests {
 
         // Add more data
         let key2 = create_test_key(run_id, "key2");
-        store.put(key2.clone(), create_stored_value(Value::I64(2), 2));
+        store.put(key2.clone(), create_stored_value(Value::Int(2), 2));
         store.next_version();
 
         // Create third snapshot at version 2
@@ -1686,7 +1686,7 @@ mod tests {
             let key = create_test_key(run_id, &format!("key{}", i));
             store.put(
                 key,
-                create_stored_value(strata_core::value::Value::I64(i), 1),
+                create_stored_value(strata_core::value::Value::Int(i), 1),
             );
         }
 
@@ -1725,13 +1725,13 @@ mod tests {
         let key = Key::new_kv(ns, "test_key");
 
         // Put via Storage trait
-        let version = Storage::put(&store, key.clone(), Value::I64(42), None).unwrap();
+        let version = Storage::put(&store, key.clone(), Value::Int(42), None).unwrap();
         assert_eq!(version, 1);
 
         // Get via Storage trait
         let result = Storage::get(&store, &key).unwrap();
         assert!(result.is_some());
-        assert_eq!(result.unwrap().value, Value::I64(42));
+        assert_eq!(result.unwrap().value, Value::Int(42));
     }
 
     #[test]
@@ -1746,7 +1746,7 @@ mod tests {
         let key = Key::new_kv(ns, "test_key");
 
         // Put with version 1
-        Storage::put(&store, key.clone(), Value::I64(42), None).unwrap();
+        Storage::put(&store, key.clone(), Value::Int(42), None).unwrap();
 
         // Get with max_version 1 - should return value
         let result = Storage::get_versioned(&store, &key, 1).unwrap();
@@ -1768,7 +1768,7 @@ mod tests {
         let ns = Namespace::for_run(run_id);
         let key = Key::new_kv(ns, "test_key");
 
-        Storage::put(&store, key.clone(), Value::I64(42), None).unwrap();
+        Storage::put(&store, key.clone(), Value::Int(42), None).unwrap();
         assert!(Storage::get(&store, &key).unwrap().is_some());
 
         // Delete via Storage trait
@@ -1791,21 +1791,21 @@ mod tests {
         Storage::put(
             &store,
             Key::new_kv(ns.clone(), "user:alice"),
-            Value::I64(1),
+            Value::Int(1),
             None,
         )
         .unwrap();
         Storage::put(
             &store,
             Key::new_kv(ns.clone(), "user:bob"),
-            Value::I64(2),
+            Value::Int(2),
             None,
         )
         .unwrap();
         Storage::put(
             &store,
             Key::new_kv(ns.clone(), "config:timeout"),
-            Value::I64(3),
+            Value::Int(3),
             None,
         )
         .unwrap();
@@ -1834,21 +1834,21 @@ mod tests {
         Storage::put(
             &store,
             Key::new_kv(ns1.clone(), "key1"),
-            Value::I64(1),
+            Value::Int(1),
             None,
         )
         .unwrap();
         Storage::put(
             &store,
             Key::new_kv(ns1.clone(), "key2"),
-            Value::I64(2),
+            Value::Int(2),
             None,
         )
         .unwrap();
         Storage::put(
             &store,
             Key::new_kv(ns2.clone(), "key1"),
-            Value::I64(3),
+            Value::Int(3),
             None,
         )
         .unwrap();
@@ -1874,7 +1874,7 @@ mod tests {
         let key = Key::new_kv(ns, "test_key");
 
         // Put with specific version 42
-        Storage::put_with_version(&store, key.clone(), Value::I64(100), 42, None).unwrap();
+        Storage::put_with_version(&store, key.clone(), Value::Int(100), 42, None).unwrap();
 
         // Verify version is 42
         let result = Storage::get(&store, &key).unwrap().unwrap();
@@ -1896,7 +1896,7 @@ mod tests {
 
         // Put at version 1
         let key1 = Key::new_kv(ns.clone(), "key1");
-        Storage::put(&*store, key1.clone(), Value::I64(1), None).unwrap();
+        Storage::put(&*store, key1.clone(), Value::Int(1), None).unwrap();
 
         // Create snapshot at version 1
         let snapshot = store.snapshot();
@@ -1904,7 +1904,7 @@ mod tests {
 
         // Put at version 2
         let key2 = Key::new_kv(ns.clone(), "key2");
-        Storage::put(&*store, key2.clone(), Value::I64(2), None).unwrap();
+        Storage::put(&*store, key2.clone(), Value::Int(2), None).unwrap();
 
         // Snapshot should only see key1 (version 1) via MVCC filtering
         let snap_key1 = SnapshotView::get(&snapshot, &key1).unwrap();
@@ -1935,14 +1935,14 @@ mod tests {
         Storage::put(
             &*store,
             Key::new_kv(ns.clone(), "user:alice"),
-            Value::I64(1),
+            Value::Int(1),
             None,
         )
         .unwrap();
         Storage::put(
             &*store,
             Key::new_kv(ns.clone(), "user:bob"),
-            Value::I64(2),
+            Value::Int(2),
             None,
         )
         .unwrap();
@@ -1953,7 +1953,7 @@ mod tests {
         Storage::put(
             &*store,
             Key::new_kv(ns.clone(), "user:charlie"),
-            Value::I64(3),
+            Value::Int(3),
             None,
         )
         .unwrap();

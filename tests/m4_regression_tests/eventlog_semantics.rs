@@ -21,7 +21,7 @@ fn eventlog_sequence_monotonicity() {
 
         // Append 100 events
         for i in 0..100 {
-            events.append(&run_id, "test", Value::I64(i)).unwrap();
+            events.append(&run_id, "test", Value::Int(i)).unwrap();
         }
 
         // Read all and verify sequence
@@ -51,7 +51,7 @@ fn eventlog_hash_chain_integrity() {
         // Append events
         for i in 0..50 {
             events
-                .append(&run_id, &format!("type_{}", i % 5), Value::I64(i))
+                .append(&run_id, &format!("type_{}", i % 5), Value::Int(i))
                 .unwrap();
         }
 
@@ -94,7 +94,7 @@ fn eventlog_concurrent_append_integrity() {
                         .append(
                             &run_id,
                             &format!("thread_{}", thread_id),
-                            Value::I64(i as i64),
+                            Value::Int(i as i64),
                         )
                         .unwrap();
                 }
@@ -145,7 +145,7 @@ fn eventlog_append_returns_sequence() {
 
         let mut sequences = Vec::new();
         for i in 0..10 {
-            let version = events.append(&run_id, "test", Value::I64(i)).unwrap();
+            let version = events.append(&run_id, "test", Value::Int(i)).unwrap();
             if let Version::Sequence(seq) = version {
                 sequences.push(seq);
             }
@@ -170,7 +170,7 @@ fn eventlog_read_by_sequence() {
         // Append events with distinct payloads
         for i in 0..20 {
             events
-                .append(&run_id, "numbered", Value::I64(i * 100))
+                .append(&run_id, "numbered", Value::Int(i * 100))
                 .unwrap();
         }
 
@@ -178,7 +178,7 @@ fn eventlog_read_by_sequence() {
         for i in 0..20 {
             let event = events.read(&run_id, i).unwrap().unwrap();
             assert_eq!(event.value.sequence, i);
-            assert_eq!(event.value.payload, Value::I64(i as i64 * 100));
+            assert_eq!(event.value.payload, Value::Int(i as i64 * 100));
         }
 
         true
@@ -193,7 +193,7 @@ fn eventlog_read_range() {
         let run_id = RunId::new();
 
         for i in 0..100 {
-            events.append(&run_id, "range_test", Value::I64(i)).unwrap();
+            events.append(&run_id, "range_test", Value::Int(i)).unwrap();
         }
 
         // Read middle slice
@@ -205,7 +205,7 @@ fn eventlog_read_range() {
 
         for (i, event) in slice.iter().enumerate() {
             assert_eq!(event.value.sequence, (25 + i) as u64);
-            assert_eq!(event.value.payload, Value::I64((25 + i) as i64));
+            assert_eq!(event.value.payload, Value::Int((25 + i) as i64));
         }
 
         true
@@ -224,11 +224,11 @@ fn eventlog_head() {
 
         // After appends, head is latest
         for i in 0..10 {
-            events.append(&run_id, "test", Value::I64(i)).unwrap();
+            events.append(&run_id, "test", Value::Int(i)).unwrap();
 
             let head = events.head(&run_id).unwrap().unwrap();
             assert_eq!(head.value.sequence, i as u64);
-            assert_eq!(head.value.payload, Value::I64(i));
+            assert_eq!(head.value.payload, Value::Int(i));
         }
 
         true
@@ -242,9 +242,9 @@ fn eventlog_event_type_preserved() {
         let events = EventLog::new(db);
         let run_id = RunId::new();
 
-        events.append(&run_id, "type_a", Value::I64(1)).unwrap();
-        events.append(&run_id, "type_b", Value::I64(2)).unwrap();
-        events.append(&run_id, "type_a", Value::I64(3)).unwrap();
+        events.append(&run_id, "type_a", Value::Int(1)).unwrap();
+        events.append(&run_id, "type_b", Value::Int(2)).unwrap();
+        events.append(&run_id, "type_a", Value::Int(3)).unwrap();
 
         let all = events.read_range(&run_id, 0, 3).unwrap();
 
@@ -270,7 +270,7 @@ fn eventlog_read_by_type() {
                 1 => "beta",
                 _ => "gamma",
             };
-            events.append(&run_id, event_type, Value::I64(i)).unwrap();
+            events.append(&run_id, event_type, Value::Int(i)).unwrap();
         }
 
         let alphas = events.read_by_type(&run_id, "alpha").unwrap();
@@ -300,12 +300,12 @@ fn eventlog_run_isolation() {
 
         // Append to run A
         for i in 0..10 {
-            events.append(&run_a, "run_a", Value::I64(i)).unwrap();
+            events.append(&run_a, "run_a", Value::Int(i)).unwrap();
         }
 
         // Append to run B
         for i in 0..5 {
-            events.append(&run_b, "run_b", Value::I64(i * 100)).unwrap();
+            events.append(&run_b, "run_b", Value::Int(i * 100)).unwrap();
         }
 
         // Verify isolation
@@ -335,7 +335,7 @@ fn eventlog_timestamp_ordering() {
         let run_id = RunId::new();
 
         for i in 0..20 {
-            events.append(&run_id, "timed", Value::I64(i)).unwrap();
+            events.append(&run_id, "timed", Value::Int(i)).unwrap();
         }
 
         let all = events.read_range(&run_id, 0, 20).unwrap();
@@ -403,9 +403,9 @@ mod eventlog_unit_tests {
         let events = EventLog::new(db);
         let run_id = RunId::new();
 
-        let version0 = events.append(&run_id, "a", Value::I64(0)).unwrap();
-        let version1 = events.append(&run_id, "b", Value::I64(1)).unwrap();
-        let version2 = events.append(&run_id, "c", Value::I64(2)).unwrap();
+        let version0 = events.append(&run_id, "a", Value::Int(0)).unwrap();
+        let version1 = events.append(&run_id, "b", Value::Int(1)).unwrap();
+        let version2 = events.append(&run_id, "c", Value::Int(2)).unwrap();
 
         // Sequences should be monotonic
         assert!(matches!(version0, Version::Sequence(0)));

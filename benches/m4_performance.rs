@@ -31,7 +31,7 @@ fn latency_benchmarks(c: &mut Criterion) {
 
         // Warmup
         for i in 0..100 {
-            kv.put(&run_id, &format!("warmup{}", i), Value::I64(i as i64))
+            kv.put(&run_id, &format!("warmup{}", i), Value::Int(i as i64))
                 .unwrap();
         }
 
@@ -39,7 +39,7 @@ fn latency_benchmarks(c: &mut Criterion) {
             let mut i = 0;
             b.iter(|| {
                 i += 1;
-                kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+                kv.put(&run_id, &format!("key{}", i), Value::Int(i as i64))
                     .unwrap();
             });
         });
@@ -59,7 +59,7 @@ fn latency_benchmarks(c: &mut Criterion) {
 
         // Warmup
         for i in 0..100 {
-            kv.put(&run_id, &format!("warmup{}", i), Value::I64(i as i64))
+            kv.put(&run_id, &format!("warmup{}", i), Value::Int(i as i64))
                 .unwrap();
         }
 
@@ -67,7 +67,7 @@ fn latency_benchmarks(c: &mut Criterion) {
             let mut i = 0;
             b.iter(|| {
                 i += 1;
-                kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+                kv.put(&run_id, &format!("key{}", i), Value::Int(i as i64))
                     .unwrap();
             });
         });
@@ -87,7 +87,7 @@ fn latency_benchmarks(c: &mut Criterion) {
 
         // Warmup (less iterations due to slow fsync)
         for i in 0..10 {
-            kv.put(&run_id, &format!("warmup{}", i), Value::I64(i as i64))
+            kv.put(&run_id, &format!("warmup{}", i), Value::Int(i as i64))
                 .unwrap();
         }
 
@@ -95,7 +95,7 @@ fn latency_benchmarks(c: &mut Criterion) {
             let mut i = 0;
             b.iter(|| {
                 i += 1;
-                kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+                kv.put(&run_id, &format!("key{}", i), Value::Int(i as i64))
                     .unwrap();
             });
         });
@@ -128,7 +128,7 @@ fn throughput_benchmarks(c: &mut Criterion) {
                 kv.put(
                     &run_id,
                     &format!("batch{}key{}", batch, i),
-                    Value::I64(i as i64),
+                    Value::Int(i as i64),
                 )
                 .unwrap();
             }
@@ -137,7 +137,7 @@ fn throughput_benchmarks(c: &mut Criterion) {
 
     // Warmup for gets
     for i in 0..1000 {
-        kv.put(&run_id, &format!("getkey{}", i), Value::I64(i as i64))
+        kv.put(&run_id, &format!("getkey{}", i), Value::Int(i as i64))
             .unwrap();
     }
 
@@ -163,7 +163,7 @@ fn snapshot_benchmarks(c: &mut Criterion) {
     let kv = KVStore::new(db.clone());
     let run_id = RunId::new();
     for i in 0..1000 {
-        kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+        kv.put(&run_id, &format!("key{}", i), Value::Int(i as i64))
             .unwrap();
     }
 
@@ -208,7 +208,7 @@ fn read_path_benchmarks(c: &mut Criterion) {
 
     // Populate
     for i in 0..100 {
-        kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+        kv.put(&run_id, &format!("key{}", i), Value::Int(i as i64))
             .unwrap();
     }
 
@@ -267,7 +267,7 @@ fn facade_tax_benchmarks(c: &mut Criterion) {
         b.iter(|| {
             i += 1;
             let key = Key::new(ns.clone(), TypeTag::KV, format!("key{}", i).into_bytes());
-            db.storage().put(key, VersionedValue::new(Value::I64(i as i64), i as u64, None));
+            db.storage().put(key, VersionedValue::new(Value::Int(i as i64), i as u64, None));
         });
     });
 
@@ -277,7 +277,7 @@ fn facade_tax_benchmarks(c: &mut Criterion) {
         let mut i = 0;
         b.iter(|| {
             i += 1;
-            kv.put(&run_id, &format!("kvkey{}", i), Value::I64(i as i64))
+            kv.put(&run_id, &format!("kvkey{}", i), Value::Int(i as i64))
                 .unwrap();
         });
     });
@@ -302,7 +302,7 @@ fn contention_benchmarks(c: &mut Criterion) {
                             let kv = KVStore::new(db);
                             let run_id = RunId::new(); // Different run per thread
                             for i in 0..1000 {
-                                kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+                                kv.put(&run_id, &format!("key{}", i), Value::Int(i as i64))
                                     .unwrap();
                             }
                         })

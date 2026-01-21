@@ -313,7 +313,7 @@ mod tests {
         let key = create_test_key(&ns, "key");
 
         let mut txn = create_txn_with_store(&store, &manager);
-        txn.put(key.clone(), Value::I64(42)).unwrap();
+        txn.put(key.clone(), Value::Int(42)).unwrap();
 
         let result = manager.commit(&mut txn, &store, &mut wal);
 
@@ -325,7 +325,7 @@ mod tests {
 
         // Verify storage was updated
         let stored = store.get(&key).unwrap().unwrap();
-        assert_eq!(stored.value, Value::I64(42));
+        assert_eq!(stored.value, Value::Int(42));
         assert_eq!(stored.version.as_u64(), commit_version);
 
         // Verify WAL was written
@@ -341,7 +341,7 @@ mod tests {
         let run_id = RunId::new();
 
         // Pre-existing key
-        store.put(key.clone(), Value::I64(100), None).unwrap();
+        store.put(key.clone(), Value::Int(100), None).unwrap();
 
         let mut txn = TransactionContext::with_snapshot(
             manager.current_version(),
@@ -349,10 +349,10 @@ mod tests {
             Box::new(store.create_snapshot()),
         );
         let _ = txn.get(&key).unwrap(); // Read adds to read_set
-        txn.put(key.clone(), Value::I64(200)).unwrap();
+        txn.put(key.clone(), Value::Int(200)).unwrap();
 
         // Concurrent modification
-        store.put(key.clone(), Value::I64(300), None).unwrap();
+        store.put(key.clone(), Value::Int(300), None).unwrap();
 
         let result = manager.commit(&mut txn, &store, &mut wal);
 
@@ -375,12 +375,12 @@ mod tests {
 
         // First transaction
         let mut txn1 = create_txn_with_store(&store, &manager);
-        txn1.put(key1.clone(), Value::I64(1)).unwrap();
+        txn1.put(key1.clone(), Value::Int(1)).unwrap();
         let v1 = manager.commit(&mut txn1, &store, &mut wal).unwrap();
 
         // Second transaction
         let mut txn2 = create_txn_with_store(&store, &manager);
-        txn2.put(key2.clone(), Value::I64(2)).unwrap();
+        txn2.put(key2.clone(), Value::Int(2)).unwrap();
         let v2 = manager.commit(&mut txn2, &store, &mut wal).unwrap();
 
         // Versions should be monotonically increasing
@@ -397,9 +397,9 @@ mod tests {
         let key3 = create_test_key(&ns, "key3");
 
         let mut txn = create_txn_with_store(&store, &manager);
-        txn.put(key1.clone(), Value::I64(1)).unwrap();
-        txn.put(key2.clone(), Value::I64(2)).unwrap();
-        txn.put(key3.clone(), Value::I64(3)).unwrap();
+        txn.put(key1.clone(), Value::Int(1)).unwrap();
+        txn.put(key2.clone(), Value::Int(2)).unwrap();
+        txn.put(key3.clone(), Value::Int(3)).unwrap();
 
         let commit_version = manager.commit(&mut txn, &store, &mut wal).unwrap();
 
@@ -485,11 +485,11 @@ mod tests {
         let ns = create_test_namespace();
         let key = create_test_key(&ns, "counter");
 
-        store.put(key.clone(), Value::I64(0), None).unwrap();
+        store.put(key.clone(), Value::Int(0), None).unwrap();
         let v1 = store.get(&key).unwrap().unwrap().version.as_u64();
 
         let mut txn = create_txn_with_store(&store, &manager);
-        txn.cas(key.clone(), v1, Value::I64(1)).unwrap();
+        txn.cas(key.clone(), v1, Value::Int(1)).unwrap();
 
         let result = manager.commit(&mut txn, &store, &mut wal);
 
@@ -497,7 +497,7 @@ mod tests {
 
         // Verify CAS was applied
         let stored = store.get(&key).unwrap().unwrap();
-        assert_eq!(stored.value, Value::I64(1));
+        assert_eq!(stored.value, Value::Int(1));
     }
 
     #[test]
@@ -506,7 +506,7 @@ mod tests {
         let ns = create_test_namespace();
         let key = create_test_key(&ns, "to_delete");
 
-        store.put(key.clone(), Value::I64(100), None).unwrap();
+        store.put(key.clone(), Value::Int(100), None).unwrap();
 
         let mut txn = create_txn_with_store(&store, &manager);
         txn.delete(key.clone()).unwrap();
@@ -526,7 +526,7 @@ mod tests {
         let key = create_test_key(&ns, "key");
 
         let mut txn = create_txn_with_store(&store, &manager);
-        txn.put(key.clone(), Value::I64(42)).unwrap();
+        txn.put(key.clone(), Value::Int(42)).unwrap();
 
         manager
             .abort(&mut txn, "User requested".to_string())
@@ -546,7 +546,7 @@ mod tests {
         let key = create_test_key(&ns, "key");
 
         let mut txn = create_txn_with_store(&store, &manager);
-        txn.put(key.clone(), Value::I64(42)).unwrap();
+        txn.put(key.clone(), Value::Int(42)).unwrap();
 
         let result = manager.commit_or_rollback(&mut txn, &store, &mut wal);
 
@@ -561,7 +561,7 @@ mod tests {
         let key = create_test_key(&ns, "key");
         let run_id = RunId::new();
 
-        store.put(key.clone(), Value::I64(100), None).unwrap();
+        store.put(key.clone(), Value::Int(100), None).unwrap();
 
         let mut txn = TransactionContext::with_snapshot(
             manager.current_version(),
@@ -569,10 +569,10 @@ mod tests {
             Box::new(store.create_snapshot()),
         );
         let _ = txn.get(&key).unwrap();
-        txn.put(key.clone(), Value::I64(200)).unwrap();
+        txn.put(key.clone(), Value::Int(200)).unwrap();
 
         // Concurrent modification causes conflict
-        store.put(key.clone(), Value::I64(300), None).unwrap();
+        store.put(key.clone(), Value::Int(300), None).unwrap();
 
         let result = manager.commit_or_rollback(&mut txn, &store, &mut wal);
 
@@ -589,7 +589,7 @@ mod tests {
         let key = create_test_key(&ns, "key");
 
         let mut txn = create_txn_with_store(&store, &manager);
-        txn.put(key.clone(), Value::I64(42)).unwrap();
+        txn.put(key.clone(), Value::Int(42)).unwrap();
 
         let commit_version = manager.commit(&mut txn, &store, &mut wal).unwrap();
 
@@ -619,11 +619,11 @@ mod tests {
 
         // T1 writes key1
         let mut txn1 = create_txn_with_store(&store, &manager);
-        txn1.put(key1.clone(), Value::I64(1)).unwrap();
+        txn1.put(key1.clone(), Value::Int(1)).unwrap();
 
         // T2 writes key2
         let mut txn2 = create_txn_with_store(&store, &manager);
-        txn2.put(key2.clone(), Value::I64(2)).unwrap();
+        txn2.put(key2.clone(), Value::Int(2)).unwrap();
 
         // Both should succeed (no conflict - different keys)
         let result1 = manager.commit(&mut txn1, &store, &mut wal);
@@ -633,8 +633,8 @@ mod tests {
         assert!(result2.is_ok());
 
         // Both values should be in storage
-        assert_eq!(store.get(&key1).unwrap().unwrap().value, Value::I64(1));
-        assert_eq!(store.get(&key2).unwrap().unwrap().value, Value::I64(2));
+        assert_eq!(store.get(&key1).unwrap().unwrap().value, Value::Int(1));
+        assert_eq!(store.get(&key2).unwrap().unwrap().value, Value::Int(2));
     }
 
     #[test]
@@ -643,15 +643,15 @@ mod tests {
         let ns = create_test_namespace();
         let key = create_test_key(&ns, "shared");
 
-        store.put(key.clone(), Value::I64(0), None).unwrap();
+        store.put(key.clone(), Value::Int(0), None).unwrap();
 
         // T1 blind writes (no read)
         let mut txn1 = create_txn_with_store(&store, &manager);
-        txn1.put(key.clone(), Value::I64(1)).unwrap();
+        txn1.put(key.clone(), Value::Int(1)).unwrap();
 
         // T2 also blind writes
         let mut txn2 = create_txn_with_store(&store, &manager);
-        txn2.put(key.clone(), Value::I64(2)).unwrap();
+        txn2.put(key.clone(), Value::Int(2)).unwrap();
 
         // T1 commits first
         let result1 = manager.commit(&mut txn1, &store, &mut wal);
@@ -663,6 +663,6 @@ mod tests {
         assert!(result2.is_ok());
 
         // Final value is T2's write (last writer wins for blind writes)
-        assert_eq!(store.get(&key).unwrap().unwrap().value, Value::I64(2));
+        assert_eq!(store.get(&key).unwrap().unwrap().value, Value::Int(2));
     }
 }

@@ -22,9 +22,9 @@ fn test_readonly_view_from_eventlog() {
 
     // Create events
     let event = test_db.event();
-    event.append(&run_id, "type1", Value::I64(1))
+    event.append(&run_id, "type1", Value::Int(1))
         .expect("append");
-    event.append(&run_id, "type2", Value::I64(2))
+    event.append(&run_id, "type2", Value::Int(2))
         .expect("append");
 
     test_db.db.flush().expect("flush");
@@ -46,7 +46,7 @@ fn test_readonly_view_includes_wal() {
 
     // Write data to WAL
     let kv = test_db.kv();
-    kv.put(&run_id, "wal_data", strata_core::value::Value::I64(42))
+    kv.put(&run_id, "wal_data", strata_core::value::Value::Int(42))
         .expect("put");
 
     test_db.db.flush().expect("flush");
@@ -54,7 +54,7 @@ fn test_readonly_view_includes_wal() {
     // When ISSUE-009 is fixed:
     // let view = test_db.db.replay_run(run_id)?;
     // let value = view.kv_get("wal_data");
-    // assert_eq!(value, Some(Value::I64(42)));
+    // assert_eq!(value, Some(Value::Int(42)));
 }
 
 /// Test ReadOnlyView includes snapshot data.
@@ -66,7 +66,7 @@ fn test_readonly_view_includes_snapshot() {
     // Create data that will be in snapshot
     let kv = test_db.kv();
     for i in 0..100 {
-        kv.put(&run_id, &format!("snap_key_{}", i), strata_core::value::Value::I64(i))
+        kv.put(&run_id, &format!("snap_key_{}", i), strata_core::value::Value::Int(i))
             .expect("put");
     }
 
@@ -86,17 +86,17 @@ fn test_replay_determinism() {
     let kv = test_db.kv();
 
     // Write, delete, write again
-    kv.put(&run_id, "key", strata_core::value::Value::I64(1)).expect("put");
+    kv.put(&run_id, "key", strata_core::value::Value::Int(1)).expect("put");
     kv.delete(&run_id, "key").expect("delete");
-    kv.put(&run_id, "key", strata_core::value::Value::I64(2)).expect("put");
+    kv.put(&run_id, "key", strata_core::value::Value::Int(2)).expect("put");
 
     test_db.db.flush().expect("flush");
 
     // Final state should be value=2 regardless of intermediate states
     let value = kv.get(&run_id, "key").expect("get").map(|v| v.value);
-    assert_eq!(value, Some(strata_core::value::Value::I64(2)));
+    assert_eq!(value, Some(strata_core::value::Value::Int(2)));
 
     // When ISSUE-009 is fixed:
     // let view = test_db.db.replay_run(run_id)?;
-    // assert_eq!(view.kv_get("key"), Some(Value::I64(2)));
+    // assert_eq!(view.kv_get("key"), Some(Value::Int(2)));
 }

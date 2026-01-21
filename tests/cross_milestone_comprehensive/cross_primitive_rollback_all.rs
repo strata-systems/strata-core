@@ -13,13 +13,13 @@ fn test_rollback_all_primitives() {
     let p = test_db.all_primitives();
 
     // Setup: create initial state
-    p.kv.put(&run_id, "rollback_test", Value::I64(0)).expect("initial");
+    p.kv.put(&run_id, "rollback_test", Value::Int(0)).expect("initial");
     test_db.db.flush().expect("flush");
 
     // Verify initial state
     assert_eq!(
         p.kv.get(&run_id, "rollback_test").expect("get").map(|v| v.value),
-        Some(Value::I64(0))
+        Some(Value::Int(0))
     );
 
     // Transaction that should rollback:
@@ -27,10 +27,10 @@ fn test_rollback_all_primitives() {
     // failure in any primitive should rollback all changes
 
     // For now, verify consistent state after operations
-    p.kv.put(&run_id, "rollback_test", Value::I64(1)).expect("put");
+    p.kv.put(&run_id, "rollback_test", Value::Int(1)).expect("put");
     assert_eq!(
         p.kv.get(&run_id, "rollback_test").expect("get").map(|v| v.value),
-        Some(Value::I64(1))
+        Some(Value::Int(1))
     );
 }
 
@@ -42,7 +42,7 @@ fn test_partial_failure_rollback() {
     let p = test_db.all_primitives();
 
     // Create base data
-    p.kv.put(&run_id, "base_key", Value::I64(100)).expect("base");
+    p.kv.put(&run_id, "base_key", Value::Int(100)).expect("base");
 
     // Attempt operation that might fail
     // If vector dimension mismatch occurs, transaction should rollback
@@ -50,7 +50,7 @@ fn test_partial_failure_rollback() {
     // Verify base data unchanged on rollback
     assert_eq!(
         p.kv.get(&run_id, "base_key").expect("get").map(|v| v.value),
-        Some(Value::I64(100))
+        Some(Value::Int(100))
     );
 }
 

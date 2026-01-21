@@ -72,8 +72,8 @@ fn state_invariant1_identity_stable_across_updates() {
     let entity_ref = EntityRef::state(run_id, "counter");
 
     // Perform an update
-    txn.state_init("counter", Value::I64(0)).unwrap();
-    txn.state_cas("counter", 1, Value::I64(1)).unwrap();
+    txn.state_init("counter", Value::Int(0)).unwrap();
+    txn.state_cas("counter", 1, Value::Int(1)).unwrap();
 
     // The EntityRef is still the same (identity is stable)
     let entity_ref2 = EntityRef::state(run_id, "counter");
@@ -125,7 +125,7 @@ fn state_invariant2_read_returns_versioned() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Initialize a state cell
-    txn.state_init("counter", Value::I64(42)).unwrap();
+    txn.state_init("counter", Value::Int(42)).unwrap();
 
     // Read returns Versioned<State>
     let result = txn.state_read("counter").unwrap();
@@ -137,7 +137,7 @@ fn state_invariant2_read_returns_versioned() {
     // Has timestamp
     assert!(versioned.timestamp.as_micros() > 0);
     // Has value
-    assert_eq!(versioned.value.value, Value::I64(42));
+    assert_eq!(versioned.value.value, Value::Int(42));
 }
 
 #[test]
@@ -148,7 +148,7 @@ fn state_invariant2_init_returns_version() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Init returns Version::Counter(1) for new state
-    let version = txn.state_init("counter", Value::I64(0)).unwrap();
+    let version = txn.state_init("counter", Value::Int(0)).unwrap();
     assert!(version.is_counter());
     assert_eq!(version, Version::counter(1));
 }
@@ -161,14 +161,14 @@ fn state_invariant2_cas_returns_incremented_version() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Initialize
-    let v1 = txn.state_init("counter", Value::I64(0)).unwrap();
+    let v1 = txn.state_init("counter", Value::Int(0)).unwrap();
     assert_eq!(v1, Version::counter(1));
 
     // CAS returns incremented version
-    let v2 = txn.state_cas("counter", 1, Value::I64(1)).unwrap();
+    let v2 = txn.state_cas("counter", 1, Value::Int(1)).unwrap();
     assert_eq!(v2, Version::counter(2));
 
-    let v3 = txn.state_cas("counter", 2, Value::I64(2)).unwrap();
+    let v3 = txn.state_cas("counter", 2, Value::Int(2)).unwrap();
     assert_eq!(v3, Version::counter(3));
 }
 
@@ -180,11 +180,11 @@ fn state_invariant2_version_monotonically_increasing() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Track versions
-    let v1 = txn.state_init("counter", Value::I64(0)).unwrap();
+    let v1 = txn.state_init("counter", Value::Int(0)).unwrap();
 
     let mut prev_version = v1.as_u64();
     for i in 1..5 {
-        let v = txn.state_cas("counter", prev_version, Value::I64(i)).unwrap();
+        let v = txn.state_cas("counter", prev_version, Value::Int(i)).unwrap();
         assert!(v.as_u64() > prev_version, "Version should be monotonically increasing");
         prev_version = v.as_u64();
     }
@@ -202,8 +202,8 @@ fn state_invariant3_operations_in_transaction() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // All state operations happen within a transaction context
-    txn.state_init("counter", Value::I64(0)).unwrap();
-    txn.state_cas("counter", 1, Value::I64(1)).unwrap();
+    txn.state_init("counter", Value::Int(0)).unwrap();
+    txn.state_cas("counter", 1, Value::Int(1)).unwrap();
     let _ = txn.state_read("counter").unwrap();
     let _ = txn.state_exists("counter").unwrap();
     txn.state_delete("counter").unwrap();
@@ -220,11 +220,11 @@ fn state_invariant3_read_your_writes() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Write within transaction
-    txn.state_init("counter", Value::I64(100)).unwrap();
+    txn.state_init("counter", Value::Int(100)).unwrap();
 
     // Read sees uncommitted write (read-your-writes)
     let result = txn.state_read("counter").unwrap().unwrap();
-    assert_eq!(result.value.value, Value::I64(100));
+    assert_eq!(result.value.value, Value::Int(100));
 }
 
 #[test]
@@ -235,15 +235,15 @@ fn state_invariant3_cas_atomic() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Initialize
-    txn.state_init("counter", Value::I64(0)).unwrap();
+    txn.state_init("counter", Value::Int(0)).unwrap();
 
     // CAS with wrong version fails atomically
-    let result = txn.state_cas("counter", 99, Value::I64(100));
+    let result = txn.state_cas("counter", 99, Value::Int(100));
     assert!(result.is_err());
 
     // Original value unchanged
     let current = txn.state_read("counter").unwrap().unwrap();
-    assert_eq!(current.value.value, Value::I64(0));
+    assert_eq!(current.value.value, Value::Int(0));
     assert_eq!(current.value.version, 1);
 }
 
@@ -259,20 +259,20 @@ fn state_invariant4_full_lifecycle() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Create
-    let v1 = txn.state_init("counter", Value::I64(0)).unwrap();
+    let v1 = txn.state_init("counter", Value::Int(0)).unwrap();
     assert_eq!(v1, Version::counter(1));
 
     // Read
     let read1 = txn.state_read("counter").unwrap().unwrap();
-    assert_eq!(read1.value.value, Value::I64(0));
+    assert_eq!(read1.value.value, Value::Int(0));
 
     // Update (CAS)
-    let v2 = txn.state_cas("counter", 1, Value::I64(42)).unwrap();
+    let v2 = txn.state_cas("counter", 1, Value::Int(42)).unwrap();
     assert_eq!(v2, Version::counter(2));
 
     // Read updated
     let read2 = txn.state_read("counter").unwrap().unwrap();
-    assert_eq!(read2.value.value, Value::I64(42));
+    assert_eq!(read2.value.value, Value::Int(42));
 
     // Delete
     let existed = txn.state_delete("counter").unwrap();
@@ -291,10 +291,10 @@ fn state_invariant4_init_fails_on_existing() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Initialize once
-    txn.state_init("counter", Value::I64(0)).unwrap();
+    txn.state_init("counter", Value::Int(0)).unwrap();
 
     // Initialize again should fail
-    let result = txn.state_init("counter", Value::I64(1));
+    let result = txn.state_init("counter", Value::Int(1));
     assert!(result.is_err());
 }
 
@@ -306,7 +306,7 @@ fn state_invariant4_cas_fails_on_nonexistent() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // CAS on non-existent state should fail
-    let result = txn.state_cas("missing", 1, Value::I64(100));
+    let result = txn.state_cas("missing", 1, Value::Int(100));
     assert!(result.is_err());
 }
 
@@ -322,7 +322,7 @@ fn state_invariant4_delete_returns_existed() {
     assert!(!existed1);
 
     // Create and delete returns true
-    txn.state_init("counter", Value::I64(0)).unwrap();
+    txn.state_init("counter", Value::Int(0)).unwrap();
     let existed2 = txn.state_delete("counter").unwrap();
     assert!(existed2);
 }
@@ -347,17 +347,17 @@ fn state_invariant5_isolated_by_run() {
     let mut txn2 = Transaction::new(&mut ctx2, ns2.clone());
 
     // Write to run1
-    txn1.state_init("counter", Value::I64(100)).unwrap();
+    txn1.state_init("counter", Value::Int(100)).unwrap();
 
     // Write to run2 with same name
-    txn2.state_init("counter", Value::I64(200)).unwrap();
+    txn2.state_init("counter", Value::Int(200)).unwrap();
 
     // Each run sees its own value
     let v1 = txn1.state_read("counter").unwrap().unwrap();
     let v2 = txn2.state_read("counter").unwrap().unwrap();
 
-    assert_eq!(v1.value.value, Value::I64(100));
-    assert_eq!(v2.value.value, Value::I64(200));
+    assert_eq!(v1.value.value, Value::Int(100));
+    assert_eq!(v2.value.value, Value::Int(200));
 }
 
 #[test]
@@ -389,7 +389,7 @@ fn state_invariant6_exists_check() {
     assert!(!txn.state_exists("counter").unwrap());
 
     // After creation
-    txn.state_init("counter", Value::I64(0)).unwrap();
+    txn.state_init("counter", Value::Int(0)).unwrap();
     assert!(txn.state_exists("counter").unwrap());
 
     // After delete
@@ -421,7 +421,7 @@ fn state_invariant7_read_does_not_modify() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Initialize
-    txn.state_init("counter", Value::I64(42)).unwrap();
+    txn.state_init("counter", Value::Int(42)).unwrap();
 
     // Multiple reads
     let v1 = txn.state_read("counter").unwrap().unwrap();
@@ -442,10 +442,10 @@ fn state_invariant7_write_produces_version() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Each write produces a version
-    let v1 = txn.state_init("counter", Value::I64(0)).unwrap();
+    let v1 = txn.state_init("counter", Value::Int(0)).unwrap();
     assert!(v1.as_u64() > 0);
 
-    let v2 = txn.state_cas("counter", 1, Value::I64(1)).unwrap();
+    let v2 = txn.state_cas("counter", 1, Value::Int(1)).unwrap();
     assert!(v2.as_u64() > v1.as_u64());
 }
 
@@ -457,7 +457,7 @@ fn state_invariant7_version_is_counter_type() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // State uses Counter version (per-entity mutation counter)
-    let version = txn.state_init("counter", Value::I64(0)).unwrap();
+    let version = txn.state_init("counter", Value::Int(0)).unwrap();
     assert!(version.is_counter(), "State should use Counter version type");
 }
 
@@ -469,7 +469,7 @@ fn state_invariant7_exists_does_not_modify() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Initialize
-    txn.state_init("counter", Value::I64(42)).unwrap();
+    txn.state_init("counter", Value::Int(42)).unwrap();
 
     // Get version before exists checks
     let v1 = txn.state_read("counter").unwrap().unwrap();

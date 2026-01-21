@@ -172,7 +172,7 @@ fn run_mixed_workload(
                 let runs = RunIndex::new(db.clone());
 
                 // Initialize StateCell for this run
-                let _ = state.init(&run_id, "counter", Value::I64(0));
+                let _ = state.init(&run_id, "counter", Value::Int(0));
 
                 for i in 0..ops_per_primitive {
                     let op_start = Instant::now();
@@ -182,20 +182,20 @@ fn run_mixed_workload(
                         0 => {
                             // KVStore: put + get
                             let key = format!("key_{}_{}", thread_id, i);
-                            kv.put(&run_id, &key, Value::I64(i as i64))
+                            kv.put(&run_id, &key, Value::Int(i as i64))
                                 .and_then(|_| kv.get(&run_id, &key))
                                 .map(|_| ())
                         }
                         1 => {
                             // EventLog: append
                             events
-                                .append(&run_id, "test_event", Value::I64(i as i64))
+                                .append(&run_id, "test_event", Value::Int(i as i64))
                                 .map(|_| ())
                         }
                         2 => {
                             // StateCell: set (simpler than transition for stress test)
                             state
-                                .set(&run_id, "counter", Value::I64(i as i64))
+                                .set(&run_id, "counter", Value::Int(i as i64))
                                 .map(|_| ())
                         }
                         3 => {
@@ -208,7 +208,7 @@ fn run_mixed_workload(
                                         confidence: None,
                                     },
                                     vec![],
-                                    Value::I64(i as i64),
+                                    Value::Int(i as i64),
                                 )
                                 .map(|_| ())
                         }

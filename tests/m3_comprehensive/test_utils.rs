@@ -144,11 +144,11 @@ pub mod values {
     use super::*;
 
     pub fn int(n: i64) -> Value {
-        Value::I64(n)
+        Value::Int(n)
     }
 
     pub fn float(f: f64) -> Value {
-        Value::F64(f)
+        Value::Float(f)
     }
 
     pub fn string(s: &str) -> Value {
@@ -176,7 +176,7 @@ pub mod values {
         for (k, v) in pairs {
             map.insert(k.to_string(), v);
         }
-        Value::Map(map)
+        Value::Object(map)
     }
 }
 

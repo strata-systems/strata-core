@@ -295,7 +295,7 @@ mod cas_version_continuity {
             prims
                 .state_cell
                 .transition(&run_id, "counter", |state| {
-                    if let Value::I64(n) = &state.value {
+                    if let Value::Int(n) = &state.value {
                         Ok((values::int(n + 10), ()))
                     } else {
                         Ok((values::int(10), ()))
@@ -316,7 +316,7 @@ mod cas_version_continuity {
             prims
                 .state_cell
                 .transition(&run_id, "counter", |state| {
-                    if let Value::I64(n) = &state.value {
+                    if let Value::Int(n) = &state.value {
                         Ok((values::int(n + 5), ()))
                     } else {
                         Ok((values::int(5), ()))
@@ -625,7 +625,7 @@ mod multiple_recovery_cycles {
                 prims
                     .state_cell
                     .transition(&run_id, "state", |state| {
-                        if let Value::I64(n) = &state.value {
+                        if let Value::Int(n) = &state.value {
                             Ok((values::int(n + 1), ()))
                         } else {
                             Ok((values::int(1), ()))

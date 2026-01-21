@@ -301,7 +301,7 @@ mod statecell_stress {
                 let mut successes = 0;
                 for _ in 0..increments_per_thread {
                     let result = tp.state_cell.transition(run_id, "counter", |state| {
-                        if let Value::I64(n) = &state.value {
+                        if let Value::Int(n) = &state.value {
                             Ok((values::int(n + 1), ()))
                         } else {
                             Ok((values::int(1), ()))
@@ -352,7 +352,7 @@ mod statecell_stress {
                 for j in 0..ops_per_thread {
                     let cell_name = format!("cell_{}", (i + j) % num_cells);
                     let result = tp.state_cell.transition(run_id, &cell_name, |state| {
-                        if let Value::I64(n) = &state.value {
+                        if let Value::Int(n) = &state.value {
                             Ok((values::int(n + 1), ()))
                         } else {
                             Ok((values::int(1), ()))
@@ -475,7 +475,7 @@ mod cross_primitive_stress {
                     if tp
                         .state_cell
                         .transition(run_id, "state", |state| {
-                            if let Value::I64(n) = &state.value {
+                            if let Value::Int(n) = &state.value {
                                 Ok((values::int(n + 1), ()))
                             } else {
                                 Ok((values::int(1), ()))

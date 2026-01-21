@@ -40,7 +40,7 @@ fn test_cross_primitive_multiple_reopens() {
 
         for i in 0..5 {
             let kv = test_db.kv();
-            kv.put(&run_id, &format!("key_{}", i), strata_core::value::Value::I64(i)).unwrap();
+            kv.put(&run_id, &format!("key_{}", i), strata_core::value::Value::Int(i)).unwrap();
 
             vector.insert(run_id, "embeddings", &format!("vec_{}", i), &seeded_random_vector(384, i as u64), None).unwrap();
         }
@@ -72,7 +72,7 @@ fn test_cross_primitive_incremental_writes() {
         vector.create_collection(run_id, "embeddings", config_minilm()).unwrap();
 
         let kv = test_db.kv();
-        kv.put(&run_id, "batch", strata_core::value::Value::I64(1)).unwrap();
+        kv.put(&run_id, "batch", strata_core::value::Value::Int(1)).unwrap();
         vector.insert(run_id, "embeddings", "vec_0", &random_vector(384), None).unwrap();
     }
 
@@ -81,7 +81,7 @@ fn test_cross_primitive_incremental_writes() {
     // Add more data
     {
         let kv = test_db.kv();
-        kv.put(&run_id, "batch", strata_core::value::Value::I64(2)).unwrap();
+        kv.put(&run_id, "batch", strata_core::value::Value::Int(2)).unwrap();
 
         let vector = test_db.vector();
         vector.insert(run_id, "embeddings", "vec_1", &random_vector(384), None).unwrap();
@@ -94,7 +94,7 @@ fn test_cross_primitive_incremental_writes() {
     let vector = test_db.vector();
 
     if let Some(versioned) = kv.get(&run_id, "batch").unwrap() {
-        if let strata_core::value::Value::I64(v) = versioned.value {
+        if let strata_core::value::Value::Int(v) = versioned.value {
             assert_eq!(v, 2);
         }
     }

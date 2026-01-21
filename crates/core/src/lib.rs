@@ -20,6 +20,8 @@
 pub mod contract; // M9 contract types
 pub mod error; // Story #10
 pub mod json; // M5 JSON types
+pub mod key; // M11 key validation
+pub mod limits; // M11 size limits
 pub mod primitives; // M9 primitive types (Event, State, Trace, Vector types)
 pub mod run_types; // Run lifecycle types
 pub mod search_types; // M6 search types
@@ -35,10 +37,18 @@ pub use json::{
     MAX_DOCUMENT_SIZE, MAX_NESTING_DEPTH, MAX_PATH_LENGTH,
 };
 pub use run_types::{RunEventOffsets, RunMetadata, RunStatus};
-pub use search_types::{SearchBudget, SearchHit, SearchMode, SearchRequest, SearchResponse, SearchStats};
+pub use search_types::{
+    SearchBudget, SearchHit, SearchMode, SearchRequest, SearchResponse, SearchStats,
+};
 pub use traits::{SnapshotView, Storage};
 pub use types::{JsonDocId, Key, Namespace, RunId, TypeTag};
-pub use value::Value;
+pub use value::{SpecialFloatKind, Value};
+
+// Re-export key validation types
+pub use key::{validate_key, validate_key_with_limits, KeyError, RESERVED_PREFIX};
+
+// Re-export limits types
+pub use limits::{LimitError as ValueLimitError, Limits};
 
 // Re-export contract types at crate root for convenience
 pub use contract::{

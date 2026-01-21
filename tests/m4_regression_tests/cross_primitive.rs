@@ -21,7 +21,7 @@ fn cross_primitive_transaction_atomicity() {
         let run_id = RunId::new();
 
         // Setup: Initialize state
-        state.init(&run_id, "cell", Value::I64(0)).unwrap();
+        state.init(&run_id, "cell", Value::Int(0)).unwrap();
 
         // Transaction touching all three primitives
         // Note: KVStore.transaction creates a single transaction context
@@ -30,7 +30,7 @@ fn cross_primitive_transaction_atomicity() {
 
             // KV write
             let kv_key = Key::new(Namespace::for_run(run_id), TypeTag::KV, b"txn_key".to_vec());
-            txn.put(kv_key, Value::I64(42))?;
+            txn.put(kv_key, Value::Int(42))?;
 
             Ok(())
         });
@@ -59,9 +59,9 @@ fn cross_run_complete_isolation() {
         let run_b = RunId::new();
 
         // Populate run A
-        kv.put(&run_a, "key", Value::I64(100)).unwrap();
-        events.append(&run_a, "event", Value::I64(100)).unwrap();
-        state.init(&run_a, "cell", Value::I64(100)).unwrap();
+        kv.put(&run_a, "key", Value::Int(100)).unwrap();
+        events.append(&run_a, "event", Value::Int(100)).unwrap();
+        state.init(&run_a, "cell", Value::Int(100)).unwrap();
         traces
             .record(
                 &run_a,
@@ -70,14 +70,14 @@ fn cross_run_complete_isolation() {
                     confidence: None,
                 },
                 vec![],
-                Value::I64(100),
+                Value::Int(100),
             )
             .unwrap();
 
         // Populate run B with different values
-        kv.put(&run_b, "key", Value::I64(200)).unwrap();
-        events.append(&run_b, "event", Value::I64(200)).unwrap();
-        state.init(&run_b, "cell", Value::I64(200)).unwrap();
+        kv.put(&run_b, "key", Value::Int(200)).unwrap();
+        events.append(&run_b, "event", Value::Int(200)).unwrap();
+        state.init(&run_b, "cell", Value::Int(200)).unwrap();
         traces
             .record(
                 &run_b,
@@ -86,21 +86,21 @@ fn cross_run_complete_isolation() {
                     confidence: None,
                 },
                 vec![],
-                Value::I64(200),
+                Value::Int(200),
             )
             .unwrap();
 
         // Verify isolation
-        assert_eq!(kv.get(&run_a, "key").unwrap().map(|v| v.value), Some(Value::I64(100)));
-        assert_eq!(kv.get(&run_b, "key").unwrap().map(|v| v.value), Some(Value::I64(200)));
+        assert_eq!(kv.get(&run_a, "key").unwrap().map(|v| v.value), Some(Value::Int(100)));
+        assert_eq!(kv.get(&run_b, "key").unwrap().map(|v| v.value), Some(Value::Int(200)));
 
         assert_eq!(events.len(&run_a).unwrap(), 1);
         assert_eq!(events.len(&run_b).unwrap(), 1);
 
         let state_a = state.read(&run_a, "cell").unwrap().unwrap();
         let state_b = state.read(&run_b, "cell").unwrap().unwrap();
-        assert_eq!(state_a.value.value, Value::I64(100));
-        assert_eq!(state_b.value.value, Value::I64(200));
+        assert_eq!(state_a.value.value, Value::Int(100));
+        assert_eq!(state_b.value.value, Value::Int(200));
 
         assert_eq!(traces.count(&run_a).unwrap(), 1);
         assert_eq!(traces.count(&run_b).unwrap(), 1);
@@ -120,15 +120,15 @@ fn primitives_no_implicit_coupling() {
         let run_id = RunId::new();
 
         // KV put should not create events
-        kv.put(&run_id, "key", Value::I64(1)).unwrap();
+        kv.put(&run_id, "key", Value::Int(1)).unwrap();
         assert_eq!(events.len(&run_id).unwrap(), 0);
 
         // Event append should not create KV entries
-        events.append(&run_id, "event", Value::I64(2)).unwrap();
+        events.append(&run_id, "event", Value::Int(2)).unwrap();
         assert!(kv.get(&run_id, "event").unwrap().is_none());
 
         // StateCell should not create traces
-        state.init(&run_id, "cell", Value::I64(3)).unwrap();
+        state.init(&run_id, "cell", Value::Int(3)).unwrap();
         assert_eq!(traces.count(&run_id).unwrap(), 0);
 
         // Trace should not affect StateCell
@@ -140,7 +140,7 @@ fn primitives_no_implicit_coupling() {
                     confidence: None,
                 },
                 vec![],
-                Value::I64(4),
+                Value::Int(4),
             )
             .unwrap();
         assert!(state.read(&run_id, "trace").unwrap().is_none());
@@ -174,14 +174,14 @@ fn concurrent_runs_no_interference() {
                     kv.put(
                         &run_id,
                         &format!("key_{}", i),
-                        Value::I64(run_idx as i64 * 1000 + i as i64),
+                        Value::Int(run_idx as i64 * 1000 + i as i64),
                     )
                     .unwrap();
                 }
 
                 // Verify own data
                 for i in 0..OPS_PER_RUN {
-                    let expected = Value::I64(run_idx as i64 * 1000 + i as i64);
+                    let expected = Value::Int(run_idx as i64 * 1000 + i as i64);
                     let actual = kv.get(&run_id, &format!("key_{}", i)).unwrap().map(|v| v.value);
                     assert_eq!(actual, Some(expected), "Run {} key {} mismatch", run_idx, i);
                 }
@@ -196,7 +196,7 @@ fn concurrent_runs_no_interference() {
     // Verify no cross-contamination
     for (run_idx, run_id) in run_ids.iter().enumerate() {
         let sample_key = "key_50";
-        let expected = Value::I64(run_idx as i64 * 1000 + 50);
+        let expected = Value::Int(run_idx as i64 * 1000 + 50);
         let actual = kv.get(run_id, sample_key).unwrap().map(|v| v.value);
         assert_eq!(
             actual,
@@ -219,13 +219,13 @@ fn mixed_primitive_sequence() {
         let run_id = RunId::new();
 
         // Interleaved operations
-        kv.put(&run_id, "step", Value::I64(1)).unwrap();
-        events.append(&run_id, "log", Value::I64(1)).unwrap();
+        kv.put(&run_id, "step", Value::Int(1)).unwrap();
+        events.append(&run_id, "log", Value::Int(1)).unwrap();
 
-        kv.put(&run_id, "step", Value::I64(2)).unwrap();
-        state.init(&run_id, "progress", Value::I64(2)).unwrap();
+        kv.put(&run_id, "step", Value::Int(2)).unwrap();
+        state.init(&run_id, "progress", Value::Int(2)).unwrap();
 
-        kv.put(&run_id, "step", Value::I64(3)).unwrap();
+        kv.put(&run_id, "step", Value::Int(3)).unwrap();
         traces
             .record(
                 &run_id,
@@ -234,19 +234,19 @@ fn mixed_primitive_sequence() {
                     confidence: None,
                 },
                 vec![],
-                Value::I64(3),
+                Value::Int(3),
             )
             .unwrap();
 
-        kv.put(&run_id, "step", Value::I64(4)).unwrap();
-        events.append(&run_id, "log", Value::I64(4)).unwrap();
+        kv.put(&run_id, "step", Value::Int(4)).unwrap();
+        events.append(&run_id, "log", Value::Int(4)).unwrap();
 
         // Verify all state is correct
-        assert_eq!(kv.get(&run_id, "step").unwrap().map(|v| v.value), Some(Value::I64(4)));
+        assert_eq!(kv.get(&run_id, "step").unwrap().map(|v| v.value), Some(Value::Int(4)));
         assert_eq!(events.len(&run_id).unwrap(), 2);
         assert_eq!(
             state.read(&run_id, "progress").unwrap().unwrap().value.value,
-            Value::I64(2)
+            Value::Int(2)
         );
         assert_eq!(traces.count(&run_id).unwrap(), 1);
 
@@ -320,9 +320,9 @@ fn data_survives_facade_recreation() {
             let events = EventLog::new(db.clone());
             let state = StateCell::new(db.clone());
 
-            kv.put(&run_id, "persistent", Value::I64(999)).unwrap();
-            events.append(&run_id, "recorded", Value::I64(888)).unwrap();
-            state.init(&run_id, "saved", Value::I64(777)).unwrap();
+            kv.put(&run_id, "persistent", Value::Int(999)).unwrap();
+            events.append(&run_id, "recorded", Value::Int(888)).unwrap();
+            state.init(&run_id, "saved", Value::Int(777)).unwrap();
         }
 
         // Create new facades
@@ -333,12 +333,12 @@ fn data_survives_facade_recreation() {
         // Data should still be there
         assert_eq!(
             kv2.get(&run_id, "persistent").unwrap().map(|v| v.value),
-            Some(Value::I64(999))
+            Some(Value::Int(999))
         );
         assert_eq!(events2.len(&run_id).unwrap(), 1);
         assert_eq!(
             state2.read(&run_id, "saved").unwrap().unwrap().value.value,
-            Value::I64(777)
+            Value::Int(777)
         );
 
         true

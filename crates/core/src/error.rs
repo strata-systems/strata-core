@@ -342,7 +342,6 @@ pub enum StrataError {
     // =========================================================================
     // Not Found Errors
     // =========================================================================
-
     /// Entity not found
     ///
     /// The referenced entity does not exist. This could be a key, document,
@@ -377,7 +376,6 @@ pub enum StrataError {
     // =========================================================================
     // Conflict Errors
     // =========================================================================
-
     /// Version conflict
     ///
     /// The operation failed because the entity's version doesn't match
@@ -424,7 +422,6 @@ pub enum StrataError {
     // =========================================================================
     // Transaction Errors
     // =========================================================================
-
     /// Transaction aborted
     ///
     /// The transaction was aborted due to a conflict, timeout, or other
@@ -476,7 +473,6 @@ pub enum StrataError {
     // =========================================================================
     // Validation Errors
     // =========================================================================
-
     /// Invalid operation
     ///
     /// The operation is not valid for the current state of the entity.
@@ -551,7 +547,6 @@ pub enum StrataError {
     // =========================================================================
     // Storage Errors
     // =========================================================================
-
     /// Storage error
     ///
     /// Low-level storage operation failed.
@@ -603,7 +598,6 @@ pub enum StrataError {
     // =========================================================================
     // Resource Errors
     // =========================================================================
-
     /// Capacity exceeded
     ///
     /// A resource limit was exceeded.
@@ -645,7 +639,6 @@ pub enum StrataError {
     // =========================================================================
     // Internal Errors
     // =========================================================================
-
     /// Internal error
     ///
     /// An unexpected internal error occurred. This is a **serious** error

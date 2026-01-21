@@ -138,7 +138,7 @@ fn cross_kv_json(c: &mut Criterion) {
     // Pre-populate
     let keys = pregenerate_keys(1000);
     for (i, key) in keys.iter().enumerate() {
-        kv.put(&run_id, key, Value::I64(i as i64)).expect("kv put");
+        kv.put(&run_id, key, Value::Int(i as i64)).expect("kv put");
         let doc_id = JsonDocId::new();
         let doc = JsonValue::from_value(serde_json::json!({
             "index": i,
@@ -171,7 +171,7 @@ fn cross_kv_json(c: &mut Criterion) {
             counter += 1;
 
             // Write to KV
-            kv.put(&run_id, &key, Value::I64(counter as i64))
+            kv.put(&run_id, &key, Value::Int(counter as i64))
                 .expect("kv put");
 
             // Write to JSON
@@ -241,7 +241,7 @@ fn cross_workflow(c: &mut Criterion) {
 
     // Initialize
     state
-        .set(&run_id, "counter", Value::I64(0))
+        .set(&run_id, "counter", Value::Int(0))
         .expect("init state");
 
     // Benchmark: Complete workflow using multiple primitives
@@ -260,7 +260,7 @@ fn cross_workflow(c: &mut Criterion) {
             let current = state.read(&run_id, "counter").expect("read state");
             let val = match current {
                 Some(s) => match s.value {
-                    Value::I64(v) => v,
+                    Value::Int(v) => v,
                     _ => 0,
                 },
                 _ => 0,
@@ -271,16 +271,16 @@ fn cross_workflow(c: &mut Criterion) {
 
             // 3. Store in KV
             let key = format!("result_{}", counter);
-            kv.put(&run_id, &key, Value::I64(new_val)).expect("kv put");
+            kv.put(&run_id, &key, Value::Int(new_val)).expect("kv put");
 
             // 4. Update state
             state
-                .set(&run_id, "counter", Value::I64(new_val))
+                .set(&run_id, "counter", Value::Int(new_val))
                 .expect("update state");
 
             // 5. Log event
             event
-                .append(&run_id, "computed", Value::I64(new_val))
+                .append(&run_id, "computed", Value::Int(new_val))
                 .expect("log event");
 
             // 6. Record trace
@@ -319,7 +319,7 @@ fn workload_read_heavy(c: &mut Criterion) {
     // Pre-populate
     let keys = pregenerate_keys(10000);
     for (i, key) in keys.iter().enumerate() {
-        kv.put(&run_id, key, Value::I64(i as i64)).expect("populate");
+        kv.put(&run_id, key, Value::Int(i as i64)).expect("populate");
     }
 
     group.bench_function(format!("kv_90r_10w/{}", dur), |b| {
@@ -337,7 +337,7 @@ fn workload_read_heavy(c: &mut Criterion) {
                     // Write (10%)
                     let key = format!("write_{}", write_counter);
                     write_counter += 1;
-                    kv.put(&run_id, &key, Value::I64(write_counter as i64))
+                    kv.put(&run_id, &key, Value::Int(write_counter as i64))
                         .expect("put");
                 }
             }
@@ -361,7 +361,7 @@ fn workload_write_heavy(c: &mut Criterion) {
     // Pre-populate some keys for reads
     let keys = pregenerate_keys(1000);
     for (i, key) in keys.iter().enumerate() {
-        kv.put(&run_id, key, Value::I64(i as i64)).expect("populate");
+        kv.put(&run_id, key, Value::Int(i as i64)).expect("populate");
     }
 
     group.bench_function(format!("kv_10r_90w/{}", dur), |b| {
@@ -379,7 +379,7 @@ fn workload_write_heavy(c: &mut Criterion) {
                     // Write (90%)
                     let key = format!("write_{}", write_counter);
                     write_counter += 1;
-                    kv.put(&run_id, &key, Value::I64(write_counter as i64))
+                    kv.put(&run_id, &key, Value::Int(write_counter as i64))
                         .expect("put");
                 }
             }
@@ -403,7 +403,7 @@ fn workload_mixed(c: &mut Criterion) {
     // Pre-populate
     let keys = pregenerate_keys(5000);
     for (i, key) in keys.iter().enumerate() {
-        kv.put(&run_id, key, Value::I64(i as i64)).expect("populate");
+        kv.put(&run_id, key, Value::Int(i as i64)).expect("populate");
     }
 
     group.bench_function(format!("kv_50r_50w/{}", dur), |b| {
@@ -421,7 +421,7 @@ fn workload_mixed(c: &mut Criterion) {
                     // Write (50%)
                     let key = format!("write_{}", write_counter);
                     write_counter += 1;
-                    kv.put(&run_id, &key, Value::I64(write_counter as i64))
+                    kv.put(&run_id, &key, Value::Int(write_counter as i64))
                         .expect("put");
                 }
             }
@@ -450,10 +450,10 @@ fn shared_database(c: &mut Criterion) {
     // Pre-populate
     for i in 0..1000 {
         let key = format!("key_{}", i);
-        kv.put(&run_id, &key, Value::I64(i)).expect("populate kv");
+        kv.put(&run_id, &key, Value::Int(i)).expect("populate kv");
     }
     state
-        .set(&run_id, "counter", Value::I64(0))
+        .set(&run_id, "counter", Value::Int(0))
         .expect("init state");
 
     // Benchmark: Interleaved operations on multiple primitives
@@ -475,13 +475,13 @@ fn shared_database(c: &mut Criterion) {
                 1 => {
                     // Event operation
                     event
-                        .append(&run_id, "interleaved", Value::I64(counter as i64))
+                        .append(&run_id, "interleaved", Value::Int(counter as i64))
                         .expect("event append");
                 }
                 _ => {
                     // State operation
                     state
-                        .set(&run_id, "counter", Value::I64(counter as i64))
+                        .set(&run_id, "counter", Value::Int(counter as i64))
                         .expect("state set");
                 }
             }

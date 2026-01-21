@@ -50,7 +50,7 @@ fn test_p6_concurrent_replays_safe() {
 
     let kv = test_db.kv();
     for i in 0..20 {
-        kv.put(&run_id, &format!("k{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("k{}", i), Value::Int(i)).unwrap();
     }
 
     let db = test_db.db.clone();
@@ -111,7 +111,7 @@ fn test_p6_heavy_concurrent_load() {
 
     let kv = test_db.kv();
     for i in 0..50 {
-        kv.put(&run_id, &format!("k{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("k{}", i), Value::Int(i)).unwrap();
     }
 
     let db = test_db.db.clone();
@@ -148,7 +148,7 @@ fn test_p6_replay_doesnt_affect_subsequent() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "stable", Value::I64(42)).unwrap();
+    kv.put(&run_id, "stable", Value::Int(42)).unwrap();
 
     // Many replays
     for i in 0..100 {
@@ -174,7 +174,7 @@ fn test_p6_any_order_replay() {
     let kv = test_db.kv();
 
     for (i, run_id) in run_ids.iter().enumerate() {
-        kv.put(run_id, "key", Value::I64(i as i64)).unwrap();
+        kv.put(run_id, "key", Value::Int(i as i64)).unwrap();
     }
 
     // Replay in forward order
@@ -232,12 +232,12 @@ fn test_p6_replay_after_write_independent() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "key1", Value::I64(1)).unwrap();
+    kv.put(&run_id, "key1", Value::Int(1)).unwrap();
 
     let state1 = CapturedState::capture(&test_db.db, &run_id);
 
     // Write more
-    kv.put(&run_id, "key2", Value::I64(2)).unwrap();
+    kv.put(&run_id, "key2", Value::Int(2)).unwrap();
 
     // New replay should include new data
     let state2 = CapturedState::capture(&test_db.db, &run_id);
