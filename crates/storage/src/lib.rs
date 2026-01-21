@@ -15,10 +15,20 @@
 //! - Lock-free reads via DashMap
 //! - Per-RunId sharding (no cross-run contention)
 //! - FxHashMap for O(1) lookups
+//!
+//! # M10 Disk Storage
+//!
+//! The storage layer includes disk-based persistence:
+//! - **WAL**: Write-ahead log with durability modes and segment rotation
+//! - **Format**: On-disk byte formats for WAL records, writesets
+//! - **Codec**: Codec seam for future encryption-at-rest
+//!
+//! See the `wal`, `format`, and `codec` modules for disk storage.
 
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
+// In-memory storage (M3/M4)
 pub mod cleaner;
 pub mod index;
 pub mod primitive_ext;
@@ -29,6 +39,12 @@ pub mod stored_value;
 pub mod ttl;
 pub mod unified;
 
+// Disk storage (M10)
+pub mod codec;
+pub mod format;
+pub mod wal;
+
+// In-memory storage re-exports
 pub use cleaner::TTLCleaner;
 pub use index::{RunIndex, TypeIndex};
 pub use primitive_ext::{
@@ -40,3 +56,14 @@ pub use sharded::{Shard, ShardedSnapshot, ShardedStore};
 pub use snapshot::ClonedSnapshotView;
 pub use ttl::TTLIndex;
 pub use unified::UnifiedStore;
+
+// Disk storage re-exports (M10)
+pub use codec::{get_codec, CodecError, IdentityCodec, StorageCodec};
+pub use format::{
+    Mutation, SegmentHeader, WalRecord, WalRecordError, WalSegment, Writeset, WritesetError,
+    SEGMENT_FORMAT_VERSION, SEGMENT_HEADER_SIZE, SEGMENT_MAGIC, WAL_RECORD_FORMAT_VERSION,
+};
+pub use wal::{
+    DurabilityMode, TruncateInfo, WalConfig, WalConfigError, WalReadResult, WalReader,
+    WalReaderError, WalWriter,
+};
