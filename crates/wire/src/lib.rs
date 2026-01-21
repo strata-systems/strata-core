@@ -45,7 +45,7 @@ pub mod json;
 // Re-export main types
 pub use json::{
     decode_json, decode_request, decode_response, decode_version, decode_versioned, encode_absent,
-    encode_json, encode_request, encode_response, encode_string, encode_version, encode_versioned,
-    is_absent, parse_json_object, ApiError, DecodeError, Request, RequestParams, Response, Version,
-    Versioned,
+    encode_api_error, encode_json, encode_request, encode_response, encode_string, encode_version,
+    encode_versioned, encode_wire_error, is_absent, parse_json_object, ApiError, DecodeError,
+    Request, RequestParams, Response, Version, Versioned,
 };

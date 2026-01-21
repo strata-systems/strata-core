@@ -30,7 +30,9 @@ pub mod types; // Story #7, #8
 pub mod value; // Story #9
 
 // Re-export commonly used types and traits
-pub use error::{Error, Result, StrataError, StrataResult};
+pub use error::{
+    constraint_reasons, ApiError, ApiResult, Error, Result, StrataError, StrataResult, WireError,
+};
 pub use json::{
     apply_patches, delete_at_path, get_at_path, get_at_path_mut, set_at_path, JsonPatch, JsonPath,
     JsonPathError, JsonValue, LimitError, PathParseError, PathSegment, MAX_ARRAY_SIZE,

@@ -10,6 +10,7 @@
 mod decode;
 mod encode;
 mod envelope;
+mod error;
 mod version;
 
 pub use decode::{decode_json, parse_json_object, DecodeError};
@@ -18,6 +19,7 @@ pub use envelope::{
     decode_request, decode_response, encode_request, encode_response, ApiError, Request,
     RequestParams, Response,
 };
+pub use error::{encode_api_error, encode_wire_error};
 pub use version::{decode_version, decode_versioned, encode_version, encode_versioned, Version, Versioned};
 
 /// Encode the absent marker for CAS operations
