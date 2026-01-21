@@ -108,7 +108,7 @@ impl Manifest {
         }
 
         // Check magic
-        if &bytes[0..4] != MANIFEST_MAGIC {
+        if bytes[0..4] != MANIFEST_MAGIC {
             return Err(ManifestError::InvalidMagic);
         }
 
@@ -147,8 +147,7 @@ impl Manifest {
         cursor += codec_id_len;
 
         // Active WAL segment
-        let active_wal_segment =
-            u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap());
+        let active_wal_segment = u64::from_le_bytes(bytes[cursor..cursor + 8].try_into().unwrap());
         cursor += 8;
 
         // Snapshot watermark
@@ -395,7 +394,10 @@ mod tests {
         bytes[10] ^= 0xFF;
 
         let result = Manifest::from_bytes(&bytes);
-        assert!(matches!(result, Err(ManifestError::ChecksumMismatch { .. })));
+        assert!(matches!(
+            result,
+            Err(ManifestError::ChecksumMismatch { .. })
+        ));
     }
 
     #[test]

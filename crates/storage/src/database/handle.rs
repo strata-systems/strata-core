@@ -70,25 +70,22 @@ impl DatabaseHandle {
         let codec = get_codec(&config.codec_id)?;
 
         // Create MANIFEST
-        let manifest = ManifestManager::create(
-            paths.manifest(),
-            database_uuid,
-            config.codec_id.clone(),
-        )?;
+        let manifest =
+            ManifestManager::create(paths.manifest(), database_uuid, config.codec_id.clone())?;
 
         // Create WAL writer
         let wal_writer = WalWriter::new(
             paths.wal_dir(),
             database_uuid,
-            config.durability.clone(),
+            config.durability,
             config.wal_config.clone(),
-            clone_codec(&codec),
+            clone_codec(codec.as_ref()),
         )?;
 
         // Create checkpoint coordinator
         let checkpoint_coordinator = CheckpointCoordinator::new(
             paths.snapshots_dir(),
-            clone_codec(&codec),
+            clone_codec(codec.as_ref()),
             database_uuid,
         )?;
 
@@ -136,9 +133,9 @@ impl DatabaseHandle {
         let wal_writer = WalWriter::new(
             paths.wal_dir(),
             database_uuid,
-            config.durability.clone(),
+            config.durability,
             config.wal_config.clone(),
-            clone_codec(&codec),
+            clone_codec(codec.as_ref()),
         )?;
 
         // Create checkpoint coordinator with existing watermark
@@ -154,7 +151,7 @@ impl DatabaseHandle {
 
         let checkpoint_coordinator = CheckpointCoordinator::with_watermark(
             paths.snapshots_dir(),
-            clone_codec(&codec),
+            clone_codec(codec.as_ref()),
             database_uuid,
             watermark,
         )?;
@@ -199,7 +196,7 @@ impl DatabaseHandle {
     {
         let coordinator = RecoveryCoordinator::new(
             self.paths.root().to_path_buf(),
-            clone_codec(&self.codec),
+            clone_codec(self.codec.as_ref()),
         );
 
         coordinator.recover(on_snapshot, on_record)
@@ -369,7 +366,7 @@ fn generate_uuid() -> [u8; 16] {
 }
 
 /// Clone a boxed codec
-fn clone_codec(codec: &Box<dyn StorageCodec>) -> Box<dyn StorageCodec> {
+fn clone_codec(codec: &dyn StorageCodec) -> Box<dyn StorageCodec> {
     get_codec(codec.codec_id()).unwrap()
 }
 
