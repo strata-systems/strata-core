@@ -53,7 +53,7 @@ fn test_all_seven_primitives_atomic_commit() {
 
     // 4. State
     p.state
-        .init(&run_id, "seven_state", Value::I64(7))
+        .init(&run_id, "seven_state", Value::Int(7))
         .expect("state init");
 
     // 5. Trace
@@ -106,7 +106,7 @@ fn test_all_seven_primitives_atomic_rollback() {
     let p = test_db.all_primitives();
 
     // Create initial state
-    p.kv.put(&run_id, "initial", Value::I64(1)).expect("initial");
+    p.kv.put(&run_id, "initial", Value::Int(1)).expect("initial");
     p.vector
         .create_collection(run_id, "rollback_test", config_small())
         .expect("create");
@@ -170,7 +170,7 @@ fn test_cross_primitive_run_isolation() {
         .expect("create b");
 
     // Create data in run_a
-    p.kv.put(&run_a, "iso_key", Value::I64(1)).expect("put a");
+    p.kv.put(&run_a, "iso_key", Value::Int(1)).expect("put a");
     let doc_a = JsonDocId::new();
     p.json
         .create(&run_a, &doc_a, JsonValue::from(serde_json::json!({"run": "a"})))
@@ -180,7 +180,7 @@ fn test_cross_primitive_run_isolation() {
         .expect("insert a");
 
     // Create different data in run_b
-    p.kv.put(&run_b, "iso_key", Value::I64(2)).expect("put b");
+    p.kv.put(&run_b, "iso_key", Value::Int(2)).expect("put b");
     let doc_b = JsonDocId::new();
     p.json
         .create(&run_b, &doc_b, JsonValue::from(serde_json::json!({"run": "b"})))
@@ -245,7 +245,7 @@ fn test_all_seven_primitives_recovery() {
         p.event
             .append(&run_id, "recover", Value::Null)
             .expect("event");
-        p.state.init(&run_id, "recover_state", Value::I64(42)).expect("state");
+        p.state.init(&run_id, "recover_state", Value::Int(42)).expect("state");
         p.trace
             .record(
                 &run_id,

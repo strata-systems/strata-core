@@ -43,7 +43,7 @@ fn test_replay_run_is_public() {
     let kv = test_db.kv();
     kv.put(&run_id, "key1", Value::String("value1".into()))
         .expect("Should put");
-    kv.put(&run_id, "key2", Value::I64(42))
+    kv.put(&run_id, "key2", Value::Int(42))
         .expect("Should put");
 
     // Flush to ensure data is persisted
@@ -76,13 +76,13 @@ fn test_diff_runs_is_public() {
     // Run A data
     kv.put(&run_a, "shared_key", Value::String("value_a".into()))
         .expect("Should put");
-    kv.put(&run_a, "unique_a", Value::I64(1))
+    kv.put(&run_a, "unique_a", Value::Int(1))
         .expect("Should put");
 
     // Run B data
     kv.put(&run_b, "shared_key", Value::String("value_b".into()))
         .expect("Should put");
-    kv.put(&run_b, "unique_b", Value::I64(2))
+    kv.put(&run_b, "unique_b", Value::Int(2))
         .expect("Should put");
 
     // Flush to ensure data is persisted
@@ -110,7 +110,7 @@ fn test_replay_run_returns_readonly_view() {
     // Create some data
     let kv = test_db.kv();
     for i in 0..10 {
-        kv.put(&run_id, &format!("key_{}", i), Value::I64(i as i64))
+        kv.put(&run_id, &format!("key_{}", i), Value::Int(i as i64))
             .expect("Should put");
     }
 
@@ -125,7 +125,7 @@ fn test_replay_run_returns_readonly_view() {
     // // View should contain all the data
     // for i in 0..10 {
     //     let value = view.kv_get(&format!("key_{}", i)).expect("Should exist");
-    //     assert_eq!(value, Value::I64(i as i64));
+    //     assert_eq!(value, Value::Int(i as i64));
     // }
 
     // For now, verify data exists in the database
@@ -151,14 +151,14 @@ fn test_diff_runs_returns_run_diff() {
     let run_a = RunId::new();
     kv.put(&run_a, "common", Value::String("value".into()))
         .expect("Should put");
-    kv.put(&run_a, "only_a", Value::I64(1))
+    kv.put(&run_a, "only_a", Value::Int(1))
         .expect("Should put");
 
     // Create run B with different data
     let run_b = RunId::new();
     kv.put(&run_b, "common", Value::String("modified".into()))
         .expect("Should put");
-    kv.put(&run_b, "only_b", Value::I64(2))
+    kv.put(&run_b, "only_b", Value::Int(2))
         .expect("Should put");
 
     test_db.db.flush().expect("Should flush");
@@ -195,7 +195,7 @@ fn test_replay_determinism() {
     // Create data with a known pattern
     let kv = test_db.kv();
     for i in 0..5 {
-        kv.put(&run_id, &format!("det_key_{}", i), Value::I64(i as i64 * 100))
+        kv.put(&run_id, &format!("det_key_{}", i), Value::Int(i as i64 * 100))
             .expect("Should put");
     }
 
@@ -271,12 +271,12 @@ fn test_diff_runs_overlapping_data() {
     let run_b = RunId::new();
 
     // Shared keys with same values
-    kv.put(&run_a, "same", Value::I64(100)).expect("put");
-    kv.put(&run_b, "same", Value::I64(100)).expect("put");
+    kv.put(&run_a, "same", Value::Int(100)).expect("put");
+    kv.put(&run_b, "same", Value::Int(100)).expect("put");
 
     // Shared keys with different values
-    kv.put(&run_a, "modified", Value::I64(1)).expect("put");
-    kv.put(&run_b, "modified", Value::I64(2)).expect("put");
+    kv.put(&run_a, "modified", Value::Int(1)).expect("put");
+    kv.put(&run_b, "modified", Value::Int(2)).expect("put");
 
     // Unique keys
     kv.put(&run_a, "unique_a", Value::Bool(true)).expect("put");

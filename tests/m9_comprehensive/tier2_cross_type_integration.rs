@@ -210,11 +210,11 @@ fn versioned_value_works_with_all_value_variants() {
     let values = vec![
         Value::Null,
         Value::Bool(true),
-        Value::I64(42),
-        Value::F64(3.14),
+        Value::Int(42),
+        Value::Float(3.14),
         Value::String("test".to_string()),
         Value::Bytes(vec![1, 2, 3]),
-        Value::Array(vec![Value::I64(1), Value::I64(2)]),
+        Value::Array(vec![Value::Int(1), Value::Int(2)]),
     ];
 
     for version in &versions {
@@ -228,11 +228,11 @@ fn versioned_value_works_with_all_value_variants() {
 
 #[test]
 fn versioned_value_map_extracts_inner_type() {
-    let vv: VersionedValue = Versioned::new(Value::I64(42), Version::txn(1));
+    let vv: VersionedValue = Versioned::new(Value::Int(42), Version::txn(1));
 
     let mapped: Versioned<Option<i64>> = vv.map(|v| {
         match v {
-            Value::I64(n) => Some(n),
+            Value::Int(n) => Some(n),
             _ => None,
         }
     });
@@ -327,12 +327,12 @@ fn versioned_entity_ref_serialization_roundtrip() {
 #[test]
 fn versioned_of_versioned_value() {
     // Edge case: Versioned containing a VersionedValue
-    let inner: VersionedValue = Versioned::new(Value::I64(42), Version::txn(1));
+    let inner: VersionedValue = Versioned::new(Value::Int(42), Version::txn(1));
     let outer = Versioned::new(inner, Version::txn(2));
 
     assert_eq!(outer.version().as_u64(), 2);
     assert_eq!(outer.value().version().as_u64(), 1);
-    assert_eq!(outer.value().value(), &Value::I64(42));
+    assert_eq!(outer.value().value(), &Value::Int(42));
 }
 
 #[test]

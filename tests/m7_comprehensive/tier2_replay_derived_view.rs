@@ -49,9 +49,9 @@ fn test_p3_view_reflects_events() {
     let kv = test_db.kv();
 
     // Sequence of events
-    kv.put(&run_id, "counter", Value::I64(1)).unwrap();
-    kv.put(&run_id, "counter", Value::I64(2)).unwrap();
-    kv.put(&run_id, "counter", Value::I64(3)).unwrap();
+    kv.put(&run_id, "counter", Value::Int(1)).unwrap();
+    kv.put(&run_id, "counter", Value::Int(2)).unwrap();
+    kv.put(&run_id, "counter", Value::Int(3)).unwrap();
 
     // View should show computed final state
     let state = CapturedState::capture(&test_db.db, &run_id);
@@ -126,7 +126,7 @@ fn test_p3_view_from_all_events() {
 
     // Many events
     for i in 0..100 {
-        kv.put(&run_id, &format!("key_{}", i), Value::I64(i))
+        kv.put(&run_id, &format!("key_{}", i), Value::Int(i))
             .unwrap();
     }
 
@@ -188,7 +188,7 @@ fn test_p3_overwrite_computation() {
 
     // Many overwrites
     for i in 0..50 {
-        kv.put(&run_id, "overwritten", Value::I64(i)).unwrap();
+        kv.put(&run_id, "overwritten", Value::Int(i)).unwrap();
     }
 
     let state = CapturedState::capture(&test_db.db, &run_id);

@@ -91,7 +91,7 @@ fn test_p1_consistent_over_calls() {
 
     let kv = test_db.kv();
     for i in 0..20 {
-        kv.put(&run_id, &format!("k{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("k{}", i), Value::Int(i)).unwrap();
     }
 
     // Call many times
@@ -186,9 +186,9 @@ fn test_p1_view_reflects_final_state() {
     let kv = test_db.kv();
 
     // Multiple writes to same key
-    kv.put(&run_id, "counter", Value::I64(1)).unwrap();
-    kv.put(&run_id, "counter", Value::I64(2)).unwrap();
-    kv.put(&run_id, "counter", Value::I64(3)).unwrap();
+    kv.put(&run_id, "counter", Value::Int(1)).unwrap();
+    kv.put(&run_id, "counter", Value::Int(2)).unwrap();
+    kv.put(&run_id, "counter", Value::Int(3)).unwrap();
 
     let state = CapturedState::capture(&test_db.db, &run_id);
 

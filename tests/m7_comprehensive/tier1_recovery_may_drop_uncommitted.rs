@@ -105,7 +105,7 @@ fn test_r6_database_healthy_after_potential_loss() {
 
     // Write data
     for i in 0..10 {
-        kv.put(&run_id, &format!("key_{}", i), Value::I64(i))
+        kv.put(&run_id, &format!("key_{}", i), Value::Int(i))
             .unwrap();
     }
 
@@ -165,7 +165,7 @@ fn test_r6_multiple_uncommitted_batches() {
             kv.put(
                 &run_id,
                 &format!("batch_{}_{}", batch, i),
-                Value::I64((batch * 10 + i) as i64),
+                Value::Int((batch * 10 + i) as i64),
             )
             .unwrap();
         }
@@ -213,12 +213,12 @@ fn test_r6_interleaved_committed_uncommitted() {
     let kv = test_db.kv();
 
     // Write committed data
-    kv.put(&run_id, "committed_1", Value::I64(1)).unwrap();
-    kv.put(&run_id, "committed_2", Value::I64(2)).unwrap();
+    kv.put(&run_id, "committed_1", Value::Int(1)).unwrap();
+    kv.put(&run_id, "committed_2", Value::Int(2)).unwrap();
 
     // More writes (may be uncommitted)
-    kv.put(&run_id, "maybe_1", Value::I64(3)).unwrap();
-    kv.put(&run_id, "maybe_2", Value::I64(4)).unwrap();
+    kv.put(&run_id, "maybe_1", Value::Int(3)).unwrap();
+    kv.put(&run_id, "maybe_2", Value::Int(4)).unwrap();
 
     test_db.reopen();
 
@@ -241,9 +241,9 @@ fn test_r6_read_consistency() {
     let kv = test_db.kv();
 
     // Write related data
-    kv.put(&run_id, "count", Value::I64(5)).unwrap();
+    kv.put(&run_id, "count", Value::Int(5)).unwrap();
     for i in 0..5 {
-        kv.put(&run_id, &format!("item_{}", i), Value::I64(i))
+        kv.put(&run_id, &format!("item_{}", i), Value::Int(i))
             .unwrap();
     }
 
@@ -253,7 +253,7 @@ fn test_r6_read_consistency() {
 
     // If count exists, all items should exist (or none)
     if let Some(versioned) = kv.get(&run_id, "count").unwrap() {
-        if let Value::I64(count) = versioned.value {
+        if let Value::Int(count) = versioned.value {
             for i in 0..count {
                 // Note: This is a consistency check, not an R6 violation
                 // If count is present, items should be too (prefix consistency R3)

@@ -89,7 +89,7 @@ mod snapshot_immutability {
             db1.transaction(run_id, |txn| {
                 let first_read = txn.get(&key1)?.expect("Key should exist");
                 let first_value = match first_read {
-                    Value::I64(n) => n,
+                    Value::Int(n) => n,
                     _ => panic!("Expected I64"),
                 };
 
@@ -102,7 +102,7 @@ mod snapshot_immutability {
                 // Second read - must be same as first
                 let second_read = txn.get(&key1)?.expect("Key should exist");
                 let second_value = match second_read {
-                    Value::I64(n) => n,
+                    Value::Int(n) => n,
                     _ => panic!("Expected I64"),
                 };
 
@@ -176,7 +176,7 @@ mod snapshot_immutability {
             db1.transaction(run_id, |txn| {
                 // Read A
                 let a = match txn.get(&keys1.0)?.unwrap() {
-                    Value::I64(n) => n,
+                    Value::Int(n) => n,
                     _ => panic!("Expected I64"),
                 };
 
@@ -188,11 +188,11 @@ mod snapshot_immutability {
 
                 // Read B and C (T2 might be modifying them)
                 let b = match txn.get(&keys1.1)?.unwrap() {
-                    Value::I64(n) => n,
+                    Value::Int(n) => n,
                     _ => panic!("Expected I64"),
                 };
                 let c = match txn.get(&keys1.2)?.unwrap() {
-                    Value::I64(n) => n,
+                    Value::Int(n) => n,
                     _ => panic!("Expected I64"),
                 };
 
@@ -216,11 +216,11 @@ mod snapshot_immutability {
 
             db2.transaction(run_id, |txn| {
                 let a = match txn.get(&keys2.0)?.unwrap() {
-                    Value::I64(n) => n,
+                    Value::Int(n) => n,
                     _ => 0,
                 };
                 let b = match txn.get(&keys2.1)?.unwrap() {
-                    Value::I64(n) => n,
+                    Value::Int(n) => n,
                     _ => 0,
                 };
 
@@ -297,7 +297,7 @@ mod no_dirty_reads {
             barrier2.wait();
 
             let val = db2.get(&key2).unwrap().unwrap();
-            if let Value::I64(n) = val.value {
+            if let Value::Int(n) = val.value {
                 t2_read_value_clone.store(n as u64, Ordering::Relaxed);
             }
         });
@@ -358,7 +358,7 @@ mod no_dirty_reads {
 
             for _ in 0..10 {
                 let val = db2.get(&key2).unwrap().unwrap();
-                if let Value::I64(n) = val.value {
+                if let Value::Int(n) = val.value {
                     observed_values_clone.lock().unwrap().push(n);
                 }
                 thread::sleep(Duration::from_millis(5));
@@ -670,7 +670,7 @@ mod conflict_detection {
         // T1 should have failed with conflict (or succeeded if it committed first)
         // The invariant is: the final state is consistent
         let final_value = match db.get(&key).unwrap().unwrap().value {
-            Value::I64(n) => n,
+            Value::Int(n) => n,
             _ => panic!("Expected I64"),
         };
 
@@ -799,7 +799,7 @@ mod conflict_detection {
 
         // Last writer wins
         let final_value = match db.get(&key).unwrap().unwrap().value {
-            Value::I64(n) => n,
+            Value::Int(n) => n,
             _ => -1,
         };
 
@@ -1110,7 +1110,7 @@ mod write_skew {
             let result: Result<(), Error> = db1.transaction(run_id, |txn| {
                 // Read Bob's status
                 let bob_status = match txn.get(&bob1)?.unwrap() {
-                    Value::I64(n) => n,
+                    Value::Int(n) => n,
                     _ => 0,
                 };
 
@@ -1134,7 +1134,7 @@ mod write_skew {
             let result: Result<(), Error> = db2.transaction(run_id, |txn| {
                 // Read Alice's status
                 let alice_status = match txn.get(&alice2)?.unwrap() {
-                    Value::I64(n) => n,
+                    Value::Int(n) => n,
                     _ => 0,
                 };
 
@@ -1156,11 +1156,11 @@ mod write_skew {
 
         // Check final state
         let alice_final = match db.get(&alice_key).unwrap().unwrap().value {
-            Value::I64(n) => n,
+            Value::Int(n) => n,
             _ => -1,
         };
         let bob_final = match db.get(&bob_key).unwrap().unwrap().value {
-            Value::I64(n) => n,
+            Value::Int(n) => n,
             _ => -1,
         };
 
@@ -1224,7 +1224,7 @@ mod lost_update_prevention {
                     let result: Result<(), Error> = db.transaction(run_id, |txn| {
                         // Read current value
                         let current = match txn.get(&key)?.unwrap() {
-                            Value::I64(n) => n,
+                            Value::Int(n) => n,
                             _ => 0,
                         };
 
@@ -1248,7 +1248,7 @@ mod lost_update_prevention {
         }
 
         let final_value = match db.get(&counter_key).unwrap().unwrap().value {
-            Value::I64(n) => n,
+            Value::Int(n) => n,
             _ => -1,
         };
 
@@ -1306,7 +1306,7 @@ mod lost_update_prevention {
                     for _ in 0..5 {
                         let result: Result<(), Error> = db.transaction(run_id, |txn| {
                             let current = match txn.get(&key)?.unwrap() {
-                                Value::I64(n) => n,
+                                Value::Int(n) => n,
                                 _ => 0,
                             };
                             txn.put(key.clone(), values::int(current + 1))?;
@@ -1329,7 +1329,7 @@ mod lost_update_prevention {
         }
 
         let final_value = match db.get(&counter_key).unwrap().unwrap().value {
-            Value::I64(n) => n,
+            Value::Int(n) => n,
             _ => -1,
         };
 
@@ -1392,7 +1392,7 @@ mod snapshot_multi_key_consistency {
                     // Read all keys with delays between
                     for key in &keys1 {
                         let val = match txn.get(key)?.unwrap() {
-                            Value::I64(n) => n,
+                            Value::Int(n) => n,
                             _ => -1,
                         };
                         generations.push(val);
@@ -1485,7 +1485,7 @@ mod snapshot_multi_key_consistency {
                     let mut sum = 0i64;
                     for account in &accounts_checker {
                         let balance = match txn.get(account)?.unwrap() {
-                            Value::I64(n) => n,
+                            Value::Int(n) => n,
                             _ => 0,
                         };
                         sum += balance;
@@ -1513,11 +1513,11 @@ mod snapshot_multi_key_consistency {
 
                 let _ = db_transfer.transaction(run_id, |txn| {
                     let from_balance = match txn.get(&accounts_transfer[from])?.unwrap() {
-                        Value::I64(n) => n,
+                        Value::Int(n) => n,
                         _ => 0,
                     };
                     let to_balance = match txn.get(&accounts_transfer[to])?.unwrap() {
-                        Value::I64(n) => n,
+                        Value::Int(n) => n,
                         _ => 0,
                     };
 
@@ -1547,7 +1547,7 @@ mod snapshot_multi_key_consistency {
         let final_sum: i64 = accounts
             .iter()
             .map(|a| match db.get(a).unwrap().unwrap().value {
-                Value::I64(n) => n,
+                Value::Int(n) => n,
                 _ => 0,
             })
             .sum();

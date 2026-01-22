@@ -62,13 +62,13 @@ fn test_newer_snapshots_preferred() {
     let kv = test_db.kv();
 
     // Write initial data
-    kv.put(&run_id, "v1", Value::I64(1)).unwrap();
+    kv.put(&run_id, "v1", Value::Int(1)).unwrap();
 
     // Write more data
-    kv.put(&run_id, "v2", Value::I64(2)).unwrap();
+    kv.put(&run_id, "v2", Value::Int(2)).unwrap();
 
     // Write even more
-    kv.put(&run_id, "v3", Value::I64(3)).unwrap();
+    kv.put(&run_id, "v3", Value::Int(3)).unwrap();
 
     let state_before = CapturedState::capture(&test_db.db, &run_id);
 

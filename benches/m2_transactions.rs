@@ -116,7 +116,7 @@ fn txn_commit_benchmarks(c: &mut Criterion) {
                 // Generate key in real-time to avoid exhaustion
                 let key = make_key(&ns, &format!("single_{}", i));
                 let result = db.transaction(run_id, |txn| {
-                    txn.put(key, Value::I64(i as i64))?;
+                    txn.put(key, Value::Int(i as i64))?;
                     Ok(())
                 });
                 black_box(result.unwrap())
@@ -147,7 +147,7 @@ fn txn_commit_benchmarks(c: &mut Criterion) {
                         .collect();
                     let result = db.transaction(run_id, |txn| {
                         for (i, key) in keys.iter().enumerate() {
-                            txn.put(key.clone(), Value::I64(i as i64))?;
+                            txn.put(key.clone(), Value::Int(i as i64))?;
                         }
                         Ok(())
                     });
@@ -166,17 +166,17 @@ fn txn_commit_benchmarks(c: &mut Criterion) {
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
         let key = make_key(&ns, "rmw_counter");
-        db.put(run_id, key.clone(), Value::I64(0)).unwrap();
+        db.put(run_id, key.clone(), Value::Int(0)).unwrap();
 
         group.bench_function("read_modify_write", |b| {
             b.iter(|| {
                 let result = db.transaction(run_id, |txn| {
                     let val = txn.get(&key)?;
                     let n = match val {
-                        Some(Value::I64(n)) => n,
+                        Some(Value::Int(n)) => n,
                         _ => 0,
                     };
-                    txn.put(key.clone(), Value::I64(n + 1))?;
+                    txn.put(key.clone(), Value::Int(n + 1))?;
                     Ok(())
                 });
                 black_box(result.unwrap())
@@ -197,12 +197,12 @@ fn txn_commit_benchmarks(c: &mut Criterion) {
         // Pre-populate read keys
         let read_keys = pregenerate_keys(&ns, "read", num_reads);
         for (i, key) in read_keys.iter().enumerate() {
-            db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
+            db.put(run_id, key.clone(), Value::Int(i as i64)).unwrap();
         }
 
         // Write key (will be overwritten each iteration)
         let write_key = make_key(&ns, "write_target");
-        db.put(run_id, write_key.clone(), Value::I64(0)).unwrap();
+        db.put(run_id, write_key.clone(), Value::Int(0)).unwrap();
 
         let counter = AtomicU64::new(0);
 
@@ -218,7 +218,7 @@ fn txn_commit_benchmarks(c: &mut Criterion) {
                             txn.get(key)?;
                         }
                         // Write phase
-                        txn.put(write_key.clone(), Value::I64(i as i64))?;
+                        txn.put(write_key.clone(), Value::Int(i as i64))?;
                         Ok(())
                     });
                     black_box(result.unwrap())
@@ -249,17 +249,17 @@ fn txn_cas_benchmarks(c: &mut Criterion) {
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
         let key = make_key(&ns, "cas_seq");
-        db.put(run_id, key.clone(), Value::I64(0)).unwrap();
+        db.put(run_id, key.clone(), Value::Int(0)).unwrap();
 
         group.bench_function("success_sequential", |b| {
             b.iter(|| {
                 let current = db.get(&key).unwrap().unwrap();
                 let new_val = match current.value {
-                    Value::I64(n) => n + 1,
+                    Value::Int(n) => n + 1,
                     _ => 1,
                 };
                 black_box(
-                    db.cas(run_id, key.clone(), current.version, Value::I64(new_val))
+                    db.cas(run_id, key.clone(), current.version, Value::Int(new_val))
                         .unwrap(),
                 )
             });
@@ -275,12 +275,12 @@ fn txn_cas_benchmarks(c: &mut Criterion) {
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
         let key = make_key(&ns, "cas_fail");
-        db.put(run_id, key.clone(), Value::I64(0)).unwrap();
+        db.put(run_id, key.clone(), Value::Int(0)).unwrap();
 
         group.bench_function("failure_version_mismatch", |b| {
             b.iter(|| {
                 // Always use wrong version - should fail fast
-                let result = db.cas(run_id, key.clone(), 999999, Value::I64(1));
+                let result = db.cas(run_id, key.clone(), 999999, Value::Int(1));
                 black_box(result.is_err())
             });
         });
@@ -304,7 +304,7 @@ fn txn_cas_benchmarks(c: &mut Criterion) {
                 // Generate key in real-time to avoid exhaustion
                 let key = make_key(&ns, &format!("cas_create_{}", i));
                 black_box(
-                    db.cas(run_id, key, 0, Value::I64(i as i64))
+                    db.cas(run_id, key, 0, Value::Int(i as i64))
                         .unwrap(),
                 )
             });
@@ -320,7 +320,7 @@ fn txn_cas_benchmarks(c: &mut Criterion) {
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
         let key = make_key(&ns, "cas_retry");
-        db.put(run_id, key.clone(), Value::I64(0)).unwrap();
+        db.put(run_id, key.clone(), Value::Int(0)).unwrap();
 
         group.bench_function("retry_until_success", |b| {
             b.iter(|| {
@@ -328,10 +328,10 @@ fn txn_cas_benchmarks(c: &mut Criterion) {
                 loop {
                     let current = db.get(&key).unwrap().unwrap();
                     let new_val = match current.value {
-                        Value::I64(n) => n + 1,
+                        Value::Int(n) => n + 1,
                         _ => 1,
                     };
-                    let result = db.cas(run_id, key.clone(), current.version, Value::I64(new_val));
+                    let result = db.cas(run_id, key.clone(), current.version, Value::Int(new_val));
                     if result.is_ok() {
                         break black_box(attempts);
                     }
@@ -369,7 +369,7 @@ fn snapshot_benchmarks(c: &mut Criterion) {
         // Pre-populate with 1000 keys
         let keys = pregenerate_keys(&ns, "snap", 1000);
         for (i, key) in keys.iter().enumerate() {
-            db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
+            db.put(run_id, key.clone(), Value::Int(i as i64)).unwrap();
         }
 
         let lookup_key = keys[500].clone();
@@ -393,7 +393,7 @@ fn snapshot_benchmarks(c: &mut Criterion) {
 
         let keys = pregenerate_keys(&ns, "multi", 1000);
         for (i, key) in keys.iter().enumerate() {
-            db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
+            db.put(run_id, key.clone(), Value::Int(i as i64)).unwrap();
         }
 
         // Read 10 keys per transaction
@@ -424,7 +424,7 @@ fn snapshot_benchmarks(c: &mut Criterion) {
 
         // Create version history
         for v in 0..num_versions {
-            db.put(run_id, key.clone(), Value::I64(v as i64)).unwrap();
+            db.put(run_id, key.clone(), Value::Int(v as i64)).unwrap();
         }
 
         group.bench_with_input(
@@ -456,7 +456,7 @@ fn snapshot_benchmarks(c: &mut Criterion) {
                 // Generate key in real-time to avoid exhaustion
                 let key = make_key(&ns, &format!("ryw_{}", i));
                 let result = db.transaction(run_id, |txn| {
-                    txn.put(key.clone(), Value::I64(i as i64))?;
+                    txn.put(key.clone(), Value::Int(i as i64))?;
                     let val = txn.get(&key)?;
                     Ok(val)
                 });
@@ -476,7 +476,7 @@ fn snapshot_benchmarks(c: &mut Criterion) {
 
         let keys = pregenerate_keys(&ns, "ro", 10_000);
         for (i, key) in keys.iter().enumerate() {
-            db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
+            db.put(run_id, key.clone(), Value::Int(i as i64)).unwrap();
         }
 
         let read_keys: Vec<_> = keys.iter().take(10).cloned().collect();
@@ -553,7 +553,7 @@ fn conflict_benchmarks(c: &mut Criterion) {
 
                                     if db
                                         .transaction(run_id, |txn| {
-                                            txn.put(key, Value::I64(local_commits as i64))?;
+                                            txn.put(key, Value::Int(local_commits as i64))?;
                                             Ok(())
                                         })
                                         .is_ok()
@@ -609,7 +609,7 @@ fn conflict_benchmarks(c: &mut Criterion) {
                     let ns = create_namespace(run_id);
                     let contested_key = make_key(&ns, "contested");
 
-                    db.put(run_id, contested_key.clone(), Value::I64(0))
+                    db.put(run_id, contested_key.clone(), Value::Int(0))
                         .unwrap();
 
                     let barrier = Arc::new(Barrier::new(num_threads + 1));
@@ -636,10 +636,10 @@ fn conflict_benchmarks(c: &mut Criterion) {
                                     let result = db.transaction(run_id, |txn| {
                                         let val = txn.get(&key)?;
                                         let n = match val {
-                                            Some(Value::I64(n)) => n,
+                                            Some(Value::Int(n)) => n,
                                             _ => 0,
                                         };
-                                        txn.put(key.clone(), Value::I64(n + 1))?;
+                                        txn.put(key.clone(), Value::Int(n + 1))?;
                                         Ok(())
                                     });
 
@@ -706,7 +706,7 @@ fn conflict_benchmarks(c: &mut Criterion) {
                 let ns = create_namespace(run_id);
                 let key = make_key(&ns, "cas_contest");
 
-                db.put(run_id, key.clone(), Value::I64(0)).unwrap();
+                db.put(run_id, key.clone(), Value::Int(0)).unwrap();
                 let initial_version = db.get(&key).unwrap().unwrap().version;
 
                 let num_threads: usize = 4;
@@ -725,7 +725,7 @@ fn conflict_benchmarks(c: &mut Criterion) {
                         thread::spawn(move || {
                             barrier.wait();
                             let result =
-                                db.cas(run_id, key, initial_version, Value::I64(id as i64));
+                                db.cas(run_id, key, initial_version, Value::Int(id as i64));
                             if result.is_ok() {
                                 winners.fetch_add(1, Ordering::Relaxed);
                             } else {

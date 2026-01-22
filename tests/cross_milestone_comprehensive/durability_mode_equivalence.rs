@@ -13,7 +13,7 @@ fn test_inmemory_strict_equivalence() {
     let kv_inmem = inmem_db.kv();
     let run_id = inmem_db.run_id;
 
-    kv_inmem.put(&run_id, "test", Value::I64(42)).expect("put");
+    kv_inmem.put(&run_id, "test", Value::Int(42)).expect("put");
     let inmem_value = kv_inmem.get(&run_id, "test").expect("get").map(|v| v.value);
 
     // Strict mode
@@ -21,7 +21,7 @@ fn test_inmemory_strict_equivalence() {
     let kv_strict = strict_db.kv();
     let run_id_strict = strict_db.run_id;
 
-    kv_strict.put(&run_id_strict, "test", Value::I64(42)).expect("put");
+    kv_strict.put(&run_id_strict, "test", Value::Int(42)).expect("put");
     let strict_value = kv_strict.get(&run_id_strict, "test").expect("get").map(|v| v.value);
 
     // Should produce same results
@@ -36,7 +36,7 @@ fn test_buffered_strict_equivalence() {
     let kv_buffered = buffered_db.kv();
     let run_id_buf = buffered_db.run_id;
 
-    kv_buffered.put(&run_id_buf, "test", Value::I64(42)).expect("put");
+    kv_buffered.put(&run_id_buf, "test", Value::Int(42)).expect("put");
     buffered_db.db.flush().expect("flush");
     let buffered_value = kv_buffered.get(&run_id_buf, "test").expect("get").map(|v| v.value);
 
@@ -45,7 +45,7 @@ fn test_buffered_strict_equivalence() {
     let kv_strict = strict_db.kv();
     let run_id_strict = strict_db.run_id;
 
-    kv_strict.put(&run_id_strict, "test", Value::I64(42)).expect("put");
+    kv_strict.put(&run_id_strict, "test", Value::Int(42)).expect("put");
     let strict_value = kv_strict.get(&run_id_strict, "test").expect("get").map(|v| v.value);
 
     // Should produce same results

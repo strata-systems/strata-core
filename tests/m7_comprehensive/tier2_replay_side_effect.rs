@@ -48,7 +48,7 @@ fn test_p2_read_does_not_affect_write() {
     let kv = test_db.kv();
 
     // Write
-    kv.put(&run_id, "key1", Value::I64(1)).unwrap();
+    kv.put(&run_id, "key1", Value::Int(1)).unwrap();
 
     // Read multiple times
     for _ in 0..10 {
@@ -56,7 +56,7 @@ fn test_p2_read_does_not_affect_write() {
     }
 
     // Write again
-    kv.put(&run_id, "key2", Value::I64(2)).unwrap();
+    kv.put(&run_id, "key2", Value::Int(2)).unwrap();
 
     // Read shouldn't have affected the write
     let state = CapturedState::capture(&test_db.db, &run_id);
@@ -72,7 +72,7 @@ fn test_p2_multiple_captures_identical() {
 
     let kv = test_db.kv();
     for i in 0..20 {
-        kv.put(&run_id, &format!("k{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("k{}", i), Value::Int(i)).unwrap();
     }
 
     // Capture multiple states
@@ -185,11 +185,11 @@ fn test_p2_empty_run_no_side_effects() {
 
     // Write something
     let kv = test_db.kv();
-    kv.put(&run_id, "new_key", Value::I64(42)).unwrap();
+    kv.put(&run_id, "new_key", Value::Int(42)).unwrap();
 
     // Verify the write succeeded (previous captures didn't interfere)
     let value = kv.get(&run_id, "new_key").unwrap().map(|v| v.value);
-    assert_eq!(value, Some(Value::I64(42)));
+    assert_eq!(value, Some(Value::Int(42)));
 }
 
 /// P2: Concurrent reads don't interfere

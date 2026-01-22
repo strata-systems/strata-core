@@ -439,7 +439,7 @@ fn kv_put_inmemory_benchmark(c: &mut Criterion) {
 
     // Warmup
     for i in 0..100 {
-        kv.put(&run_id, &format!("warmup{}", i), Value::I64(i as i64))
+        kv.put(&run_id, &format!("warmup{}", i), Value::Int(i as i64))
             .unwrap();
     }
 
@@ -449,7 +449,7 @@ fn kv_put_inmemory_benchmark(c: &mut Criterion) {
         b.iter(|| {
             counter += 1;
             let key = format!("key_{}", counter);
-            kv.put(&run_id, &key, Value::I64(counter as i64)).unwrap()
+            kv.put(&run_id, &key, Value::Int(counter as i64)).unwrap()
         });
     });
 
@@ -467,7 +467,7 @@ fn kv_get_fast_path_benchmark(c: &mut Criterion) {
     // Pre-populate
     for i in 0..1000 {
         let key = format!("key_{}", i);
-        kv.put(&run_id, &key, Value::I64(i as i64)).unwrap();
+        kv.put(&run_id, &key, Value::Int(i as i64)).unwrap();
     }
 
     let mut counter = 0u64;

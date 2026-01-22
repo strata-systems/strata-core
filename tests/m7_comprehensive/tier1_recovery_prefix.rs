@@ -126,16 +126,16 @@ fn test_r3_commit_order_preserved() {
     let kv = test_db.kv();
 
     // Write in specific order
-    kv.put(&run_id, "counter", Value::I64(1)).unwrap();
-    kv.put(&run_id, "counter", Value::I64(2)).unwrap();
-    kv.put(&run_id, "counter", Value::I64(3)).unwrap();
+    kv.put(&run_id, "counter", Value::Int(1)).unwrap();
+    kv.put(&run_id, "counter", Value::Int(2)).unwrap();
+    kv.put(&run_id, "counter", Value::Int(3)).unwrap();
 
     test_db.reopen();
 
     // Final value should reflect last commit
     let kv = test_db.kv();
     let value = kv.get(&run_id, "counter").unwrap().map(|v| v.value);
-    assert_eq!(value, Some(Value::I64(3)), "R3: Commit order not preserved");
+    assert_eq!(value, Some(Value::Int(3)), "R3: Commit order not preserved");
 }
 
 /// R3: Prefix consistency with interleaved keys
@@ -148,8 +148,8 @@ fn test_r3_prefix_consistent_interleaved() {
 
     // Interleaved writes to different keys
     for i in 0..10 {
-        kv.put(&run_id, &format!("a_{}", i), Value::I64(i)).unwrap();
-        kv.put(&run_id, &format!("b_{}", i), Value::I64(i * 10))
+        kv.put(&run_id, &format!("a_{}", i), Value::Int(i)).unwrap();
+        kv.put(&run_id, &format!("b_{}", i), Value::Int(i * 10))
             .unwrap();
     }
 
@@ -208,7 +208,7 @@ fn test_r3_no_gaps_in_sequence() {
 
     // Sequential writes
     for i in 0..100 {
-        kv.put(&run_id, &format!("seq_{:03}", i), Value::I64(i))
+        kv.put(&run_id, &format!("seq_{:03}", i), Value::Int(i))
             .unwrap();
     }
 
@@ -249,7 +249,7 @@ fn test_r3_prefix_after_many_operations() {
     for i in 0..500 {
         match i % 3 {
             0 => {
-                kv.put(&run_id, &format!("k{}", i), Value::I64(i)).unwrap();
+                kv.put(&run_id, &format!("k{}", i), Value::Int(i)).unwrap();
             }
             1 => {
                 kv.put(

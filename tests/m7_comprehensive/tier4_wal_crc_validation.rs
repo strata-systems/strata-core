@@ -43,7 +43,7 @@ fn test_truncated_wal_handled() {
 
     let kv = test_db.kv();
     for i in 0..50 {
-        kv.put(&run_id, &format!("k{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("k{}", i), Value::Int(i)).unwrap();
     }
 
     let wal_path = test_db.wal_path();
@@ -94,7 +94,7 @@ fn test_valid_wal_passes_crc() {
 
     let kv = test_db.kv();
     for i in 0..20 {
-        kv.put(&run_id, &format!("k{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("k{}", i), Value::Int(i)).unwrap();
     }
 
     let state_before = CapturedState::capture(&test_db.db, &run_id);
@@ -115,7 +115,7 @@ fn test_multiple_restarts_valid_wal() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "persistent", Value::I64(42)).unwrap();
+    kv.put(&run_id, "persistent", Value::Int(42)).unwrap();
 
     let original_state = CapturedState::capture(&test_db.db, &run_id);
 
@@ -140,7 +140,7 @@ fn test_corruption_preserves_earlier_entries() {
 
     // Write more data
     for i in 0..50 {
-        kv.put(&run_id, &format!("later_{}", i), Value::I64(i))
+        kv.put(&run_id, &format!("later_{}", i), Value::Int(i))
             .unwrap();
     }
 

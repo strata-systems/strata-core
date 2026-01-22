@@ -41,7 +41,7 @@ mod snapshot_isolation {
                 for i in 0..10 {
                     let key = kv_key(&tdb.ns, &format!("snapshot_{}", i));
                     if let Some(v) = txn.get(&key)? {
-                        if let Value::I64(n) = v {
+                        if let Value::Int(n) = v {
                             sum_at_start += n;
                         }
                     }
@@ -51,7 +51,7 @@ mod snapshot_isolation {
                 for i in 0..10 {
                     let key = kv_key(&tdb.ns, &format!("snapshot_{}", i));
                     if let Some(v) = txn.get(&key)? {
-                        if let Value::I64(n) = v {
+                        if let Value::Int(n) = v {
                             sum_at_end += n;
                         }
                     }
@@ -115,7 +115,7 @@ mod snapshot_isolation {
                 Ok(val)
             });
 
-            if let Ok(Some(Value::I64(n))) = result {
+            if let Ok(Some(Value::Int(n))) = result {
                 read_value_clone.store(n as u64, Ordering::Relaxed);
             }
         });
@@ -362,7 +362,7 @@ mod retry_workflows {
                         RetryConfig::new().with_max_retries(20),
                         |txn| {
                             let current = match txn.get(&key)? {
-                                Some(Value::I64(n)) => n,
+                                Some(Value::Int(n)) => n,
                                 _ => 0,
                             };
                             txn.put(key.clone(), values::int(current + 1))?;
@@ -416,11 +416,11 @@ mod retry_workflows {
                         RetryConfig::new().with_max_retries(50),
                         |txn| {
                             let balance_a = match txn.get(&account_a)? {
-                                Some(Value::I64(n)) => n,
+                                Some(Value::Int(n)) => n,
                                 _ => return Err(Error::InvalidState("No balance A".to_string())),
                             };
                             let balance_b = match txn.get(&account_b)? {
-                                Some(Value::I64(n)) => n,
+                                Some(Value::Int(n)) => n,
                                 _ => return Err(Error::InvalidState("No balance B".to_string())),
                             };
 
@@ -443,11 +443,11 @@ mod retry_workflows {
 
         // Total should still be 1000
         let final_a = match db.get(&account_a).unwrap().unwrap().value {
-            Value::I64(n) => n,
+            Value::Int(n) => n,
             _ => panic!("Expected I64"),
         };
         let final_b = match db.get(&account_b).unwrap().unwrap().value {
-            Value::I64(n) => n,
+            Value::Int(n) => n,
             _ => panic!("Expected I64"),
         };
 
@@ -487,11 +487,11 @@ mod retry_workflows {
                         RetryConfig::new().with_max_retries(30),
                         |txn| {
                             let from_val = match txn.get(&keys[from])? {
-                                Some(Value::I64(n)) => n,
+                                Some(Value::Int(n)) => n,
                                 _ => 0,
                             };
                             let to_val = match txn.get(&keys[to])? {
-                                Some(Value::I64(n)) => n,
+                                Some(Value::Int(n)) => n,
                                 _ => 0,
                             };
 
@@ -516,7 +516,7 @@ mod retry_workflows {
         let sum: i64 = keys
             .iter()
             .map(|key| match db.get(key).unwrap().unwrap().value {
-                Value::I64(n) => n,
+                Value::Int(n) => n,
                 _ => 0,
             })
             .sum();
@@ -691,7 +691,7 @@ mod multi_key {
                 let mut sum = 0i64;
                 for i in 0..50 {
                     let key = kv_key(&tdb.ns, &format!("read_{}", i));
-                    if let Some(Value::I64(n)) = txn.get(&key)? {
+                    if let Some(Value::Int(n)) = txn.get(&key)? {
                         sum += n;
                     }
                 }
@@ -896,7 +896,7 @@ mod transaction_boundaries {
             match val {
                 None => seen_value_clone.store(0, Ordering::Relaxed),
                 Some(v) => {
-                    if let Value::I64(n) = v.value {
+                    if let Value::Int(n) = v.value {
                         seen_value_clone.store(n as u64, Ordering::Relaxed);
                     }
                 }
@@ -976,7 +976,7 @@ mod real_world_scenarios {
                         RetryConfig::new().with_max_retries(30),
                         |txn| {
                             let stock = match txn.get(&inventory_key)? {
-                                Some(Value::I64(n)) => n,
+                                Some(Value::Int(n)) => n,
                                 _ => return Err(Error::InvalidState("No inventory".to_string())),
                             };
 

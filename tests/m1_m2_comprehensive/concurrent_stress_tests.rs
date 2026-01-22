@@ -101,7 +101,7 @@ mod high_concurrency {
                             RetryConfig::new().with_max_retries(50),
                             |txn| {
                                 let current = match txn.get(&key)? {
-                                    Some(Value::I64(n)) => n,
+                                    Some(Value::Int(n)) => n,
                                     _ => 0,
                                 };
                                 txn.put(key.clone(), values::int(current + 1))?;
@@ -177,7 +177,7 @@ mod high_concurrency {
                                 RetryConfig::new().with_max_retries(20),
                                 |txn| {
                                     let current = match txn.get(&key)? {
-                                        Some(Value::I64(n)) => n,
+                                        Some(Value::Int(n)) => n,
                                         _ => 0,
                                     };
                                     txn.put(key.clone(), values::int(current + 1))?;
@@ -607,8 +607,8 @@ mod contention_patterns {
                 thread::spawn(move || {
                     for _ in 0..TXN_PER_THREAD_LIGHT {
                         let result: Result<(), Error> = db.transaction(run_id, |txn| {
-                            let v = txn.get(&hot_key)?.unwrap_or(Value::I64(0));
-                            if let Value::I64(n) = v {
+                            let v = txn.get(&hot_key)?.unwrap_or(Value::Int(0));
+                            if let Value::Int(n) = v {
                                 txn.put(hot_key.clone(), values::int(n + 1))?;
                             }
                             Ok(())
@@ -638,7 +638,7 @@ mod contention_patterns {
 
         // Final value should equal success count
         let final_val = match db.get(&hot_key).unwrap().unwrap().value {
-            Value::I64(n) => n,
+            Value::Int(n) => n,
             _ => panic!("Expected I64"),
         };
         assert_eq!(final_val, s as i64);
@@ -677,8 +677,8 @@ mod contention_patterns {
                             run_id,
                             RetryConfig::new().with_max_retries(30),
                             |txn| {
-                                let v = txn.get(key)?.unwrap_or(Value::I64(0));
-                                if let Value::I64(n) = v {
+                                let v = txn.get(key)?.unwrap_or(Value::Int(0));
+                                if let Value::Int(n) = v {
                                     txn.put(key.clone(), values::int(n + 1))?;
                                 }
                                 Ok(())
@@ -705,7 +705,7 @@ mod contention_patterns {
         let sum: i64 = hot_keys
             .iter()
             .map(|key| match db.get(key).unwrap().unwrap().value {
-                Value::I64(n) => n,
+                Value::Int(n) => n,
                 _ => 0,
             })
             .sum();
@@ -742,8 +742,8 @@ mod contention_patterns {
                             run_id,
                             RetryConfig::new().with_max_retries(20),
                             |txn| {
-                                let v = txn.get(&key)?.unwrap_or(Value::I64(0));
-                                if let Value::I64(n) = v {
+                                let v = txn.get(&key)?.unwrap_or(Value::Int(0));
+                                if let Value::Int(n) = v {
                                     txn.put(key.clone(), values::int(n + 1))?;
                                 }
                                 Ok(())
@@ -763,11 +763,11 @@ mod contention_patterns {
         let key_99 = kv_key(&ns, "zipf_99");
 
         let val_0 = match db.get(&key_0).unwrap().unwrap().value {
-            Value::I64(n) => n,
+            Value::Int(n) => n,
             _ => 0,
         };
         let val_99 = match db.get(&key_99).unwrap().unwrap().value {
-            Value::I64(n) => n,
+            Value::Int(n) => n,
             _ => 0,
         };
 
@@ -819,7 +819,7 @@ mod data_integrity {
                             RetryConfig::new().with_max_retries(100),
                             |txn| {
                                 let current = match txn.get(&key)? {
-                                    Some(Value::I64(n)) => n,
+                                    Some(Value::Int(n)) => n,
                                     _ => 0,
                                 };
                                 txn.put(key.clone(), values::int(current + 1))?;
@@ -841,7 +841,7 @@ mod data_integrity {
 
         let total_succeeded = increments_succeeded.load(Ordering::Relaxed);
         let final_value = match db.get(&key).unwrap().unwrap().value {
-            Value::I64(n) => n as u64,
+            Value::Int(n) => n as u64,
             _ => panic!("Expected I64"),
         };
 
@@ -884,11 +884,11 @@ mod data_integrity {
                             RetryConfig::new().with_max_retries(50),
                             |txn| {
                                 let from_val = match txn.get(&keys[from_idx])? {
-                                    Some(Value::I64(n)) => n,
+                                    Some(Value::Int(n)) => n,
                                     _ => 0,
                                 };
                                 let to_val = match txn.get(&keys[to_idx])? {
-                                    Some(Value::I64(n)) => n,
+                                    Some(Value::Int(n)) => n,
                                     _ => 0,
                                 };
 
@@ -913,7 +913,7 @@ mod data_integrity {
         let sum: i64 = keys
             .iter()
             .map(|key| match db.get(key).unwrap().unwrap().value {
-                Value::I64(n) => n,
+                Value::Int(n) => n,
                 _ => 0,
             })
             .sum();
@@ -1022,8 +1022,8 @@ mod resource_usage {
                 return Err(Error::TransactionConflict("simulated".to_string()));
             }
 
-            let v = txn.get(&key)?.unwrap_or(Value::I64(0));
-            if let Value::I64(n) = v {
+            let v = txn.get(&key)?.unwrap_or(Value::Int(0));
+            if let Value::Int(n) = v {
                 txn.put(key.clone(), values::int(n + 1))?;
             }
             Ok(())

@@ -113,7 +113,7 @@ fn engine_get_benchmarks(c: &mut Criterion) {
 
     // Populate database
     for (i, key) in keys.iter().enumerate() {
-        db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
+        db.put(run_id, key.clone(), Value::Int(i as i64)).unwrap();
     }
 
     let hot_key = keys[NUM_KEYS / 2].clone();
@@ -189,7 +189,7 @@ fn engine_put_benchmarks(c: &mut Criterion) {
                 let i = counter.fetch_add(1, Ordering::Relaxed);
                 // Generate key in real-time - includes key creation cost which is realistic
                 let key = make_key(&ns, &format!("insert_{}", i));
-                black_box(db.put(run_id, key, Value::I64(i as i64)).unwrap())
+                black_box(db.put(run_id, key, Value::Int(i as i64)).unwrap())
             });
         });
     }
@@ -203,14 +203,14 @@ fn engine_put_benchmarks(c: &mut Criterion) {
         let run_id = RunId::new();
         let ns = create_namespace(run_id);
         let key = make_key(&ns, "hot_overwrite");
-        db.put(run_id, key.clone(), Value::I64(0)).unwrap();
+        db.put(run_id, key.clone(), Value::Int(0)).unwrap();
 
         let counter = AtomicU64::new(0);
 
         group.bench_function("overwrite/dur_strict/hot_key", |b| {
             b.iter(|| {
                 let i = counter.fetch_add(1, Ordering::Relaxed);
-                black_box(db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap())
+                black_box(db.put(run_id, key.clone(), Value::Int(i as i64)).unwrap())
             });
         });
     }
@@ -229,7 +229,7 @@ fn engine_put_benchmarks(c: &mut Criterion) {
 
         // Pre-populate
         for (i, key) in keys.iter().enumerate() {
-            db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
+            db.put(run_id, key.clone(), Value::Int(i as i64)).unwrap();
         }
 
         let counter = AtomicU64::new(0);
@@ -240,7 +240,7 @@ fn engine_put_benchmarks(c: &mut Criterion) {
                 let idx = (lcg_next(&mut rng_state) as usize) % NUM_KEYS;
                 let i = counter.fetch_add(1, Ordering::Relaxed);
                 black_box(
-                    db.put(run_id, keys[idx].clone(), Value::I64(i as i64))
+                    db.put(run_id, keys[idx].clone(), Value::Int(i as i64))
                         .unwrap(),
                 )
             });
@@ -280,7 +280,7 @@ fn engine_delete_benchmarks(c: &mut Criterion) {
 
             // Create keys to delete
             for (i, key) in keys.iter().enumerate() {
-                db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
+                db.put(run_id, key.clone(), Value::Int(i as i64)).unwrap();
             }
 
             // Timed: delete only
@@ -373,7 +373,7 @@ fn key_scaling_benchmarks(c: &mut Criterion) {
         // Populate (outside timing)
         let keys = pregenerate_keys(&ns, "scale", num_keys);
         for (i, key) in keys.iter().enumerate() {
-            db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
+            db.put(run_id, key.clone(), Value::Int(i as i64)).unwrap();
         }
 
         // Rotating sequence of reads - NOT hot key
@@ -418,7 +418,7 @@ fn wal_recovery_benchmarks(c: &mut Criterion) {
             let keys = pregenerate_keys(&ns, "insert", num_ops);
 
             for (i, key) in keys.iter().enumerate() {
-                db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
+                db.put(run_id, key.clone(), Value::Int(i as i64)).unwrap();
             }
             db.flush().unwrap();
         }
@@ -449,7 +449,7 @@ fn wal_recovery_benchmarks(c: &mut Criterion) {
 
             for v in 0..VERSIONS_PER_KEY {
                 for (i, key) in keys.iter().enumerate() {
-                    db.put(run_id, key.clone(), Value::I64((v * NUM_KEYS + i) as i64))
+                    db.put(run_id, key.clone(), Value::Int((v * NUM_KEYS + i) as i64))
                         .unwrap();
                 }
             }
@@ -478,7 +478,7 @@ fn wal_recovery_benchmarks(c: &mut Criterion) {
 
             // Insert all
             for (i, key) in keys.iter().enumerate() {
-                db.put(run_id, key.clone(), Value::I64(i as i64)).unwrap();
+                db.put(run_id, key.clone(), Value::Int(i as i64)).unwrap();
             }
             // Delete 80%
             for key in keys.iter().take(NUM_KEYS * 8 / 10) {

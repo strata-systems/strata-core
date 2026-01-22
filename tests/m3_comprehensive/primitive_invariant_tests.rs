@@ -400,8 +400,8 @@ mod value_type_safety {
         let values_to_test = vec![0i64, 1, -1, i64::MAX, i64::MIN, 42];
         for val in values_to_test {
             let key = unique_key("i64");
-            tp.kv.put(&run_id, &key, Value::I64(val)).unwrap();
-            assert_eq!(tp.kv.get(&run_id, &key).unwrap().map(|v| v.value), Some(Value::I64(val)));
+            tp.kv.put(&run_id, &key, Value::Int(val)).unwrap();
+            assert_eq!(tp.kv.get(&run_id, &key).unwrap().map(|v| v.value), Some(Value::Int(val)));
         }
     }
 
@@ -413,8 +413,8 @@ mod value_type_safety {
         let values_to_test = vec![0.0f64, 1.0, -1.0, 3.14159, f64::MAX, f64::MIN];
         for val in values_to_test {
             let key = unique_key("f64");
-            tp.kv.put(&run_id, &key, Value::F64(val)).unwrap();
-            assert_eq!(tp.kv.get(&run_id, &key).unwrap().map(|v| v.value), Some(Value::F64(val)));
+            tp.kv.put(&run_id, &key, Value::Float(val)).unwrap();
+            assert_eq!(tp.kv.get(&run_id, &key).unwrap().map(|v| v.value), Some(Value::Float(val)));
         }
     }
 

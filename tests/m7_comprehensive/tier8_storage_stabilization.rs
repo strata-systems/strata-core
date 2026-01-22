@@ -95,7 +95,7 @@ fn test_kv_primitive_list() {
 
     // Write multiple keys
     for i in 0..10 {
-        kv.put(&run_id, &format!("k{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("k{}", i), Value::Int(i)).unwrap();
     }
 
     // List
@@ -120,13 +120,13 @@ fn test_storage_value_types() {
     );
 
     // Int
-    kv.put(&run_id, "int", Value::I64(-42)).unwrap();
-    assert_eq!(kv.get(&run_id, "int").unwrap().map(|v| v.value), Some(Value::I64(-42)));
+    kv.put(&run_id, "int", Value::Int(-42)).unwrap();
+    assert_eq!(kv.get(&run_id, "int").unwrap().map(|v| v.value), Some(Value::Int(-42)));
 
     // Float
-    kv.put(&run_id, "float", Value::F64(3.14159)).unwrap();
+    kv.put(&run_id, "float", Value::Float(3.14159)).unwrap();
     if let Some(versioned) = kv.get(&run_id, "float").unwrap() {
-        if let Value::F64(f) = versioned.value {
+        if let Value::Float(f) = versioned.value {
             assert!((f - 3.14159).abs() < 0.0001);
         }
     }
@@ -170,14 +170,14 @@ fn test_storage_many_keys() {
 
     // Write many keys
     for i in 0..1000 {
-        kv.put(&run_id, &format!("key_{:04}", i), Value::I64(i))
+        kv.put(&run_id, &format!("key_{:04}", i), Value::Int(i))
             .unwrap();
     }
 
     // All should be readable
     for i in 0..1000 {
         let value = kv.get(&run_id, &format!("key_{:04}", i)).unwrap().map(|v| v.value);
-        assert_eq!(value, Some(Value::I64(i)));
+        assert_eq!(value, Some(Value::Int(i)));
     }
 }
 
@@ -215,11 +215,11 @@ fn test_storage_overwrite() {
 
     let kv = test_db.kv();
 
-    kv.put(&run_id, "key", Value::I64(1)).unwrap();
-    kv.put(&run_id, "key", Value::I64(2)).unwrap();
-    kv.put(&run_id, "key", Value::I64(3)).unwrap();
+    kv.put(&run_id, "key", Value::Int(1)).unwrap();
+    kv.put(&run_id, "key", Value::Int(2)).unwrap();
+    kv.put(&run_id, "key", Value::Int(3)).unwrap();
 
-    assert_eq!(kv.get(&run_id, "key").unwrap().map(|v| v.value), Some(Value::I64(3)));
+    assert_eq!(kv.get(&run_id, "key").unwrap().map(|v| v.value), Some(Value::Int(3)));
 }
 
 /// Storage delete semantics
@@ -234,10 +234,10 @@ fn test_storage_delete_semantics() {
     kv.delete(&run_id, "nonexistent").unwrap();
 
     // Create, delete, recreate
-    kv.put(&run_id, "key", Value::I64(1)).unwrap();
+    kv.put(&run_id, "key", Value::Int(1)).unwrap();
     kv.delete(&run_id, "key").unwrap();
     assert!(kv.get(&run_id, "key").unwrap().is_none());
 
-    kv.put(&run_id, "key", Value::I64(2)).unwrap();
-    assert_eq!(kv.get(&run_id, "key").unwrap().map(|v| v.value), Some(Value::I64(2)));
+    kv.put(&run_id, "key", Value::Int(2)).unwrap();
+    assert_eq!(kv.get(&run_id, "key").unwrap().map(|v| v.value), Some(Value::Int(2)));
 }

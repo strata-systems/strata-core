@@ -14,7 +14,7 @@ fn test_100k_events() {
 
     for i in 0..100_000 {
         event
-            .append(&run_id, "mega_event", Value::I64(i))
+            .append(&run_id, "mega_event", Value::Int(i))
             .expect("append");
 
         if i % 10_000 == 0 {
@@ -43,7 +43,7 @@ fn test_many_event_types() {
         let event_type = format!("type_{}", log);
         for i in 0..100 {
             event
-                .append(&run_id, &event_type, Value::I64(i))
+                .append(&run_id, &event_type, Value::Int(i))
                 .expect("append");
         }
     }
@@ -63,7 +63,7 @@ fn test_chain_integrity_at_scale() {
     // Append 1000 events
     for i in 0..1000 {
         event
-            .append(&run_id, "chain_type", Value::I64(i))
+            .append(&run_id, "chain_type", Value::Int(i))
             .expect("append");
     }
 

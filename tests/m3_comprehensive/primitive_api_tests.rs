@@ -524,7 +524,7 @@ mod statecell_api {
         let result = tp
             .state_cell
             .transition(&tp.run_id, "counter", |state| {
-                let current = if let Value::I64(n) = &state.value {
+                let current = if let Value::Int(n) = &state.value {
                     *n
                 } else {
                     0
@@ -547,7 +547,7 @@ mod statecell_api {
         let (result, _version) = tp
             .state_cell
             .transition_or_init(&tp.run_id, "counter", values::int(0), |state| {
-                let current = if let Value::I64(n) = &state.value {
+                let current = if let Value::Int(n) = &state.value {
                     *n
                 } else {
                     0

@@ -116,11 +116,11 @@ fn test_multiple_snapshots_coexist() {
     let kv = test_db.kv();
 
     // Write data
-    kv.put(&run_id, "key1", Value::I64(1)).unwrap();
+    kv.put(&run_id, "key1", Value::Int(1)).unwrap();
     let state1 = CapturedState::capture(&test_db.db, &run_id);
 
     // Write more data
-    kv.put(&run_id, "key2", Value::I64(2)).unwrap();
+    kv.put(&run_id, "key2", Value::Int(2)).unwrap();
     let state2 = CapturedState::capture(&test_db.db, &run_id);
 
     // Both states should be valid

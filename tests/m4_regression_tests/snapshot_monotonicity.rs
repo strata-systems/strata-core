@@ -23,7 +23,7 @@ fn kv_repeated_read_consistency() {
         let run_id = RunId::new();
 
         // Write initial value
-        kv.put(&run_id, "key", Value::I64(42)).unwrap();
+        kv.put(&run_id, "key", Value::Int(42)).unwrap();
 
         // Read multiple times - should always get same value
         let mut values = Vec::new();
@@ -54,7 +54,7 @@ fn kv_no_version_regression_under_writes() {
     let run_id = RunId::new();
 
     // Initialize
-    kv.put(&run_id, "counter", Value::I64(0)).unwrap();
+    kv.put(&run_id, "counter", Value::Int(0)).unwrap();
 
     let running = Arc::new(AtomicBool::new(true));
     let regression_detected = Arc::new(AtomicBool::new(false));
@@ -68,7 +68,7 @@ fn kv_no_version_regression_under_writes() {
         let mut counter = 0i64;
         while writer_running.load(Ordering::Relaxed) {
             counter += 1;
-            let _ = writer_kv.put(&writer_run_id, "counter", Value::I64(counter));
+            let _ = writer_kv.put(&writer_run_id, "counter", Value::Int(counter));
             // Small sleep to not completely saturate
             thread::sleep(Duration::from_micros(10));
         }
@@ -85,7 +85,7 @@ fn kv_no_version_regression_under_writes() {
 
         for _ in 0..1000 {
             if let Ok(Some(versioned)) = reader_kv.get(&reader_run_id, "counter") {
-                if let Value::I64(current) = versioned.value {
+                if let Value::Int(current) = versioned.value {
                     // Value should never decrease (version regression proxy)
                     if current < last_value {
                         reader_regression.store(true, Ordering::Relaxed);
@@ -129,7 +129,7 @@ fn statecell_repeated_read_stability() {
         let run_id = RunId::new();
 
         // Initialize
-        state.init(&run_id, "cell", Value::I64(100)).unwrap();
+        state.init(&run_id, "cell", Value::Int(100)).unwrap();
 
         // Read multiple times
         let mut versions = Vec::new();
@@ -169,7 +169,7 @@ fn statecell_version_monotonicity() {
     let state = StateCell::new(db.clone());
     let run_id = RunId::new();
 
-    state.init(&run_id, "counter", Value::I64(0)).unwrap();
+    state.init(&run_id, "counter", Value::Int(0)).unwrap();
 
     let running = Arc::new(AtomicBool::new(true));
     let monotonicity_violated = Arc::new(AtomicBool::new(false));
@@ -180,7 +180,7 @@ fn statecell_version_monotonicity() {
     let writer_run_id = run_id;
     let writer_handle = thread::spawn(move || {
         for i in 0..500 {
-            let _ = writer_state.set(&writer_run_id, "counter", Value::I64(i));
+            let _ = writer_state.set(&writer_run_id, "counter", Value::Int(i));
         }
         writer_running.store(false, Ordering::Relaxed);
     });
@@ -228,7 +228,7 @@ fn eventlog_sequence_stability() {
 
         // Append some events
         for i in 0..10 {
-            events.append(&run_id, "test", Value::I64(i)).unwrap();
+            events.append(&run_id, "test", Value::Int(i)).unwrap();
         }
 
         // Read range multiple times
@@ -272,7 +272,7 @@ fn eventlog_no_sequence_regression() {
             thread::spawn(move || {
                 barrier.wait();
                 for i in 0..100 {
-                    let _ = events.append(&run_id, &format!("writer_{}", writer_id), Value::I64(i));
+                    let _ = events.append(&run_id, &format!("writer_{}", writer_id), Value::Int(i));
                 }
             })
         })
@@ -321,9 +321,9 @@ fn transaction_read_stability() {
         let run_id = RunId::new();
 
         // Setup: write some data
-        kv.put(&run_id, "a", Value::I64(1)).unwrap();
-        kv.put(&run_id, "b", Value::I64(2)).unwrap();
-        kv.put(&run_id, "c", Value::I64(3)).unwrap();
+        kv.put(&run_id, "a", Value::Int(1)).unwrap();
+        kv.put(&run_id, "b", Value::Int(2)).unwrap();
+        kv.put(&run_id, "c", Value::Int(3)).unwrap();
 
         // Within a transaction, repeated reads should be identical
         let result = kv.transaction(&run_id, |txn| {
@@ -364,11 +364,11 @@ mod monotonicity_unit_tests {
         let kv = KVStore::new(db);
         let run_id = RunId::new();
 
-        kv.put(&run_id, "x", Value::I64(42)).unwrap();
+        kv.put(&run_id, "x", Value::Int(42)).unwrap();
 
         for _ in 0..10 {
             let v = kv.get(&run_id, "x").unwrap();
-            assert_eq!(v.map(|v| v.value), Some(Value::I64(42)));
+            assert_eq!(v.map(|v| v.value), Some(Value::Int(42)));
         }
     }
 
@@ -379,10 +379,10 @@ mod monotonicity_unit_tests {
         let run_id = RunId::new();
 
         let mut versions = Vec::new();
-        versions.push(state.init(&run_id, "x", Value::I64(0)).unwrap().value);
+        versions.push(state.init(&run_id, "x", Value::Int(0)).unwrap().value);
 
         for i in 1..10 {
-            let v = state.set(&run_id, "x", Value::I64(i)).unwrap().value;
+            let v = state.set(&run_id, "x", Value::Int(i)).unwrap().value;
             versions.push(v);
         }
 

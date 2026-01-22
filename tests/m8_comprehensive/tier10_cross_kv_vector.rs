@@ -103,7 +103,7 @@ fn test_kv_vector_delete_operations() {
 
         // Insert
         for i in 0..10 {
-            kv.put(&run_id, &format!("key_{}", i), strata_core::value::Value::I64(i)).unwrap();
+            kv.put(&run_id, &format!("key_{}", i), strata_core::value::Value::Int(i)).unwrap();
             vector.insert(run_id, "embeddings", &format!("vec_{}", i), &seeded_random_vector(384, i as u64), None).unwrap();
         }
 
