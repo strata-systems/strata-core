@@ -24,6 +24,9 @@
 //! - `state`: State cell convenience methods
 //! - `vector`: Vector store convenience methods
 //! - `trace`: Trace store convenience methods
+//! - `history`: History access methods
+//! - `run`: Run listing and scoping
+//! - `capabilities`: Capability discovery
 //!
 //! ## Desugaring Examples
 //!
@@ -40,14 +43,20 @@ pub mod event;
 pub mod state;
 pub mod vector;
 pub mod trace;
+pub mod history;
+pub mod run;
+pub mod capabilities;
 
 // Re-export facade types
 pub use types::{FacadeConfig, GetOptions, SetOptions};
 
 // Re-export facade traits
-pub use kv::{KVFacade, KVFacadeBatch};
+pub use kv::{KVFacade, KVFacadeBatch, Versioned};
 pub use json::JsonFacade;
 pub use event::EventFacade;
 pub use state::StateFacade;
 pub use vector::VectorFacade;
 pub use trace::TraceFacade;
+pub use history::HistoryFacade;
+pub use run::{RunFacade, ScopedFacade};
+pub use capabilities::{Capabilities, CapabilityLimits, SystemFacade};

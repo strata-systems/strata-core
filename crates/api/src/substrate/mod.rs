@@ -2,7 +2,7 @@
 //!
 //! The Substrate API is the canonical semantic contract for Strata. It exposes:
 //! - All primitives explicitly (KVStore, JsonStore, EventLog, StateCell, VectorStore, TraceStore)
-//! - All versioning (Versioned<T> returns on all reads, Version on all writes)
+//! - All versioning (`Versioned<T>` returns on all reads, Version on all writes)
 //! - All run scoping (explicit run_id on every operation)
 //! - All transactional semantics (begin/commit/rollback)
 //!
@@ -24,6 +24,7 @@
 //! - `trace`: TraceStore operations
 //! - `run`: RunIndex operations
 //! - `transaction`: Transaction control
+//! - `retention`: Retention policy operations
 //!
 //! ## Usage
 //!
@@ -31,7 +32,7 @@
 //! use strata_api::substrate::{
 //!     ApiRunId, RetentionPolicy, RunInfo, RunState,
 //!     KVStore, JsonStore, EventLog, StateCell, VectorStore, TraceStore,
-//!     RunIndex, TransactionControl,
+//!     RunIndex, TransactionControl, RetentionSubstrate,
 //! };
 //! ```
 
@@ -44,6 +45,7 @@ pub mod vector;
 pub mod trace;
 pub mod run;
 pub mod transaction;
+pub mod retention;
 
 // Re-export core types
 pub use types::{
@@ -60,3 +62,4 @@ pub use vector::{DistanceMetric, SearchFilter, VectorData, VectorMatch, VectorSt
 pub use trace::{TraceEntry, TraceStore, TraceType};
 pub use run::RunIndex;
 pub use transaction::{TransactionControl, TransactionSavepoint, TxnId, TxnInfo, TxnOptions, TxnStatus};
+pub use retention::{RetentionSubstrate, RetentionVersion, RetentionStats};

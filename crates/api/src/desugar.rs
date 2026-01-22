@@ -183,6 +183,9 @@ impl crate::facade::kv::KVFacade for () {
     fn get(&self, _: &str) -> strata_core::StrataResult<Option<strata_core::Value>> {
         unimplemented!("This is a documentation marker only")
     }
+    fn getv(&self, _: &str) -> strata_core::StrataResult<Option<crate::facade::kv::Versioned<strata_core::Value>>> {
+        unimplemented!("This is a documentation marker only")
+    }
     fn get_with_options(&self, _: &str, _: crate::facade::types::GetOptions)
         -> strata_core::StrataResult<Option<(strata_core::Value, Option<u64>)>> {
         unimplemented!("This is a documentation marker only")

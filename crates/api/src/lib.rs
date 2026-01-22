@@ -74,6 +74,8 @@ pub use substrate::{
     DistanceMetric, SearchFilter, VectorData, VectorMatch,
     // Trace types
     TraceEntry, TraceType,
+    // Retention types
+    RetentionSubstrate, RetentionVersion, RetentionStats,
 };
 
 // Re-export facade types at crate root for convenience
@@ -82,6 +84,7 @@ pub use facade::{
     FacadeConfig, GetOptions, SetOptions,
     // Facade traits
     KVFacade, KVFacadeBatch, JsonFacade, EventFacade, StateFacade, VectorFacade, TraceFacade,
+    HistoryFacade, RunFacade, ScopedFacade, SystemFacade, Capabilities, CapabilityLimits,
 };
 
 #[cfg(test)]

@@ -8,6 +8,7 @@
 //! | Facade | Substrate |
 //! |--------|-----------|
 //! | `get(key)` | `kv_get(default_run, key).map(\|v\| v.value)` |
+//! | `getv(key)` | `kv_get(default_run, key)` |
 //! | `set(key, val)` | `kv_put(default_run, key, val)` |
 //! | `del(key)` | `kv_delete(default_run, key)` |
 //! | `exists(key)` | `kv_exists(default_run, key)` |
@@ -16,6 +17,20 @@
 
 use super::types::{SetOptions, GetOptions, IncrOptions};
 use strata_core::{StrataResult, Value};
+
+/// A versioned value from the KV store
+///
+/// This type provides access to version information when needed.
+/// Use `getv` instead of `get` when you need version info.
+#[derive(Debug, Clone)]
+pub struct Versioned<T> {
+    /// The value
+    pub value: T,
+    /// The version number (transaction ID)
+    pub version: u64,
+    /// Timestamp when this version was created (microseconds)
+    pub timestamp: u64,
+}
 
 /// KV Facade - simplified key-value operations
 ///
@@ -51,6 +66,17 @@ pub trait KVFacade {
     /// kv_get(default_run, key).map(|v| v.value)
     /// ```
     fn get(&self, key: &str) -> StrataResult<Option<Value>>;
+
+    /// Get a versioned value by key
+    ///
+    /// Escape hatch to access version information.
+    /// Use this when you need the version number or timestamp.
+    ///
+    /// ## Desugars to
+    /// ```text
+    /// kv_get(default_run, key)
+    /// ```
+    fn getv(&self, key: &str) -> StrataResult<Option<Versioned<Value>>>;
 
     /// Get a value with options
     ///

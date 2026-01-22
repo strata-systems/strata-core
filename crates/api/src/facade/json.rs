@@ -7,10 +7,12 @@
 //! | Facade | Substrate |
 //! |--------|-----------|
 //! | `json_get(key, path)` | `json_get(default_run, key, path).map(\|v\| v.value)` |
+//! | `json_getv(key, path)` | `json_get(default_run, key, path)` (document-level version) |
 //! | `json_set(key, path, val)` | `json_set(default_run, key, path, val)` |
 //! | `json_del(key, path)` | `json_delete(default_run, key, path)` |
 
 use strata_core::{StrataResult, Value};
+use super::kv::Versioned;
 
 /// JSON Facade - simplified document operations
 ///
@@ -36,6 +38,27 @@ pub trait JsonFacade {
     /// let name = facade.json_get("user:1", "$.profile.name")?;
     /// ```
     fn json_get(&self, key: &str, path: &str) -> StrataResult<Option<Value>>;
+
+    /// Get versioned value at path
+    ///
+    /// Escape hatch to access version information.
+    ///
+    /// **Important**: Returns **document-level** version, not subpath version.
+    /// Modifying any part of the document updates its version.
+    ///
+    /// ## Desugars to
+    /// ```text
+    /// json_get(default_run, key, path)
+    /// ```
+    ///
+    /// ## Example
+    /// ```ignore
+    /// let versioned = facade.json_getv("user:1", "$.name")?;
+    /// if let Some(v) = versioned {
+    ///     println!("Value: {:?}, version: {}", v.value, v.version);
+    /// }
+    /// ```
+    fn json_getv(&self, key: &str, path: &str) -> StrataResult<Option<Versioned<Value>>>;
 
     /// Set value at path
     ///
