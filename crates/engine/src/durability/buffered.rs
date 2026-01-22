@@ -28,6 +28,7 @@ use strata_concurrency::TransactionWALWriter;
 use strata_core::error::Result;
 use strata_durability::wal::WAL;
 use parking_lot::{Condvar, Mutex};
+use tracing::{error, warn};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -216,7 +217,7 @@ impl BufferedDurability {
             if self.shutdown_flag.load(Ordering::SeqCst) {
                 // Final flush before exit
                 if let Err(e) = self.flush_sync() {
-                    eprintln!("BufferedDurability: final flush error: {}", e);
+                    error!(error = %e, "BufferedDurability: final flush error - data may not be durable");
                 }
                 break;
             }
@@ -227,7 +228,7 @@ impl BufferedDurability {
 
             if should_flush {
                 if let Err(e) = self.flush_sync() {
-                    eprintln!("BufferedDurability: flush error: {}", e);
+                    error!(error = %e, "BufferedDurability: flush error - data may not be durable");
                 }
             }
         }
@@ -334,8 +335,9 @@ impl Durability for BufferedDurability {
         // Wait for background thread to finish
         let mut thread_guard = self.flush_thread.lock();
         if let Some(handle) = thread_guard.take() {
-            // Ignore join errors (thread might have panicked)
-            let _ = handle.join();
+            if let Err(e) = handle.join() {
+                error!("BufferedDurability flush thread panicked: {:?}", e);
+            }
         }
 
         // Final synchronous flush to ensure all data is persisted
@@ -362,11 +364,11 @@ impl Drop for BufferedDurability {
         let thread_started = self.thread_started.load(Ordering::Relaxed);
 
         if !thread_started && pending > 0 {
-            eprintln!(
-                "WARNING: BufferedDurability dropped without starting flush thread! \
-                 {} pending writes may not have been flushed to disk. \
-                 Use BufferedDurability::threaded() instead of new() to avoid this issue.",
-                pending
+            warn!(
+                pending_writes = pending,
+                "BufferedDurability dropped without starting flush thread - \
+                 pending writes may not have been flushed to disk. \
+                 Use BufferedDurability::threaded() instead of new() to avoid this issue."
             );
         }
 
@@ -377,7 +379,9 @@ impl Drop for BufferedDurability {
         // Wait for thread to finish
         let mut thread_guard = self.flush_thread.lock();
         if let Some(handle) = thread_guard.take() {
-            let _ = handle.join();
+            if let Err(e) = handle.join() {
+                error!("BufferedDurability flush thread panicked on drop: {:?}", e);
+            }
         }
 
         // Note: We don't call flush_sync() in Drop because it could fail

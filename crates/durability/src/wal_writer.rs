@@ -34,7 +34,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-use tracing::{debug, info, trace};
+use tracing::{debug, error, info, trace};
 use uuid::Uuid;
 
 /// WAL Writer with transaction framing support
@@ -144,8 +144,12 @@ impl WalWriter {
                     }
 
                     if let Ok(mut w) = writer.lock() {
-                        let _ = w.flush();
-                        let _ = w.get_mut().sync_all();
+                        if let Err(e) = w.flush() {
+                            error!(error = %e, path = %path_for_log.display(), "WAL async flush failed");
+                        }
+                        if let Err(e) = w.get_mut().sync_all() {
+                            error!(error = %e, path = %path_for_log.display(), "WAL async sync_all failed");
+                        }
                         trace!(path = %path_for_log.display(), "Async fsync completed");
                     }
                 }
