@@ -158,7 +158,7 @@ impl VectorStore {
         }
 
         let wal = self.db.wal();
-        let mut wal_guard = wal.lock().unwrap();
+        let mut wal_guard = wal.lock();
         wal_guard
             .append(&entry)
             .map_err(|e| VectorError::Storage(format!("WAL write failed: {}", e)))?;
@@ -191,7 +191,7 @@ impl VectorStore {
         }
 
         let wal = self.db.wal();
-        let wal_guard = wal.lock().unwrap();
+        let wal_guard = wal.lock();
 
         // Read all WAL entries
         let entries = wal_guard

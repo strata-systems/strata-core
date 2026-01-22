@@ -57,7 +57,7 @@ fn recover_from_db(db: &Database) -> Result<()> {
 
     // Read all WAL entries
     let wal = db.wal();
-    let wal_guard = wal.lock().unwrap();
+    let wal_guard = wal.lock();
     let entries = wal_guard
         .read_all()
         .map_err(|e| Error::StorageError(format!("WAL read failed: {}", e)))?;
