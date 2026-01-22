@@ -85,7 +85,7 @@ fn test_database_lifecycle() {
             .unwrap()
             .expect("user:1 should exist");
         assert_eq!(user1.value, Value::String("Alice".to_string()));
-        assert_eq!(user1.version, Version::TxnId(1));
+        assert_eq!(user1.version, Version::Txn(1));
 
         let user2 = db
             .storage()
@@ -93,7 +93,7 @@ fn test_database_lifecycle() {
             .unwrap()
             .expect("user:2 should exist");
         assert_eq!(user2.value, Value::String("Bob".to_string()));
-        assert_eq!(user2.version, Version::TxnId(2));
+        assert_eq!(user2.version, Version::Txn(2));
 
         // Add more data
         let wal = db.wal();
@@ -183,7 +183,7 @@ fn test_crash_recovery() {
             .append(&WALEntry::Write {
                 run_id,
                 key: Key::new_kv(ns.clone(), "committed_key"),
-                value: Value::I64(42),
+                value: Value::Int(42),
                 version: 1,
             })
             .unwrap();
@@ -205,7 +205,7 @@ fn test_crash_recovery() {
             .append(&WALEntry::Write {
                 run_id,
                 key: Key::new_kv(ns.clone(), "uncommitted_key"),
-                value: Value::I64(999),
+                value: Value::Int(999),
                 version: 2,
             })
             .unwrap();
@@ -226,7 +226,7 @@ fn test_crash_recovery() {
             .get(&Key::new_kv(ns.clone(), "committed_key"))
             .unwrap();
         assert!(committed.is_some());
-        assert_eq!(committed.unwrap().value, Value::I64(42));
+        assert_eq!(committed.unwrap().value, Value::Int(42));
 
         // Uncommitted data should NOT be there
         let uncommitted = db
@@ -453,7 +453,7 @@ fn test_durability_modes() {
             .append(&WALEntry::Write {
                 run_id,
                 key: Key::new_kv(ns.clone(), "strict_key"),
-                value: Value::I64(1),
+                value: Value::Int(1),
                 version: 1,
             })
             .unwrap();
@@ -501,7 +501,7 @@ fn test_durability_modes() {
             .append(&WALEntry::Write {
                 run_id,
                 key: Key::new_kv(ns.clone(), "batched_key"),
-                value: Value::I64(2),
+                value: Value::Int(2),
                 version: 1,
             })
             .unwrap();
@@ -559,7 +559,7 @@ fn test_large_transaction() {
                 .append(&WALEntry::Write {
                     run_id,
                     key: Key::new_kv(ns.clone(), format!("key_{}", i)),
-                    value: Value::I64(i as i64),
+                    value: Value::Int(i as i64),
                     version: (i + 1) as u64,
                 })
                 .unwrap();
@@ -583,8 +583,8 @@ fn test_large_transaction() {
                 .get(&Key::new_kv(ns.clone(), format!("key_{}", i)))
                 .unwrap()
                 .unwrap_or_else(|| panic!("key_{} should exist", i));
-            assert_eq!(val.value, Value::I64(i as i64));
-            assert_eq!(val.version, Version::TxnId((i + 1) as u64));
+            assert_eq!(val.value, Value::Int(i as i64));
+            assert_eq!(val.version, Version::Txn((i + 1) as u64));
         }
 
         assert_eq!(db.storage().current_version(), NUM_ENTRIES as u64);
@@ -730,7 +730,7 @@ fn test_multiple_crash_cycles_with_high_level_api() {
 
             for i in 0..KEYS_PER_CYCLE {
                 let key = Key::new_kv(ns.clone(), format!("cycle{}_key{}", cycle, i));
-                let value = Value::I64((cycle * 100 + i) as i64);
+                let value = Value::Int((cycle * 100 + i) as i64);
                 db.put(run_id, key, value).expect("Put should succeed");
             }
             // Database is dropped here - simulates crash
@@ -757,7 +757,7 @@ fn test_multiple_crash_cycles_with_high_level_api() {
                     );
 
                     let vv = result.unwrap();
-                    let expected = Value::I64((prev_cycle * 100 + i) as i64);
+                    let expected = Value::Int((prev_cycle * 100 + i) as i64);
                     assert_eq!(
                         vv.value, expected,
                         "Key cycle{}_key{} has wrong value",
@@ -792,7 +792,7 @@ fn test_twenty_sequential_puts_recover() {
 
         for i in 0..NUM_PUTS {
             let key = Key::new_kv(ns.clone(), format!("key{}", i));
-            db.put(run_id, key, Value::I64(i as i64))
+            db.put(run_id, key, Value::Int(i as i64))
                 .expect("Put should succeed");
         }
 

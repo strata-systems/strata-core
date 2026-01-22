@@ -149,7 +149,7 @@ impl TraceStore {
     ///
     /// ## Returns
     /// `Versioned<String>` containing the generated trace ID with version metadata.
-    /// Uses `Version::TxnId` type per M9 spec.
+    /// Uses `Version::Txn` type per M9 spec.
     ///
     /// ## Errors
     /// - `SerializationError` if trace cannot be serialized
@@ -762,7 +762,7 @@ mod tests {
         let tt = TraceType::ToolCall {
             tool_name: "search".into(),
             arguments: Value::String("query".into()),
-            result: Some(Value::I64(42)),
+            result: Some(Value::Int(42)),
             duration_ms: Some(100),
         };
         assert_eq!(tt.type_name(), "ToolCall");

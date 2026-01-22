@@ -1,6 +1,9 @@
 //! Durability layer for Strata
 //!
 //! This crate implements write-ahead logging and snapshots:
+
+// Allow deprecated SnapshotSerializable usage (will be removed in future refactor)
+#![allow(deprecated)]
 //! - WAL: Append-only write-ahead log
 //! - WALEntry types: BeginTxn, Write, Delete, CommitTxn, etc.
 //! - Entry encoding/decoding with CRC32 checksums

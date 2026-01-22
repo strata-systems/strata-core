@@ -654,7 +654,7 @@ impl VectorStore {
         // Serialize metadata to bytes for WAL storage (before it's consumed)
         let metadata_bytes = metadata
             .as_ref()
-            .map(|m| serde_json::to_vec(m))
+            .map(serde_json::to_vec)
             .transpose()
             .map_err(|e| VectorError::Serialization(e.to_string()))?;
 
@@ -1101,10 +1101,10 @@ impl VectorStore {
 
         for (vector_id, score) in candidates {
             // Check time budget periodically
-            if matches.len() % 100 == 0 {
-                if start.elapsed().as_micros() as u64 >= budget.max_wall_time_micros {
-                    return Ok((matches, true));
-                }
+            if matches.len() % 100 == 0
+                && start.elapsed().as_micros() as u64 >= budget.max_wall_time_micros
+            {
+                return Ok((matches, true));
             }
 
             if matches.len() >= k {

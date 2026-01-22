@@ -183,8 +183,8 @@ mod tests {
     #[test]
     fn test_encode_wire_error_history_trimmed() {
         let err = ApiError::HistoryTrimmed {
-            requested: strata_core::Version::TxnId(10),
-            earliest_retained: strata_core::Version::TxnId(100),
+            requested: strata_core::Version::Txn(10),
+            earliest_retained: strata_core::Version::Txn(100),
         };
         let json = encode_api_error(&err);
 

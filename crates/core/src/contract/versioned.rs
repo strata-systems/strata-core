@@ -175,7 +175,7 @@ mod tests {
         let v = Versioned::new(42i32, Version::txn(1));
 
         assert_eq!(v.value, 42);
-        assert_eq!(v.version, Version::TxnId(1));
+        assert_eq!(v.version, Version::Txn(1));
         // Timestamp should be recent
         assert!(v.timestamp.as_micros() > 0);
     }
@@ -220,7 +220,7 @@ mod tests {
         let v2 = v.map(|n| n * 2);
 
         assert_eq!(v2.value, 10);
-        assert_eq!(v2.version, Version::TxnId(1));
+        assert_eq!(v2.version, Version::Txn(1));
     }
 
     #[test]
@@ -230,7 +230,7 @@ mod tests {
         let (val, ver, time) = v.into_parts();
 
         assert_eq!(val, 42);
-        assert_eq!(ver, Version::TxnId(5));
+        assert_eq!(ver, Version::Txn(5));
         assert_eq!(time, ts);
     }
 
@@ -307,8 +307,8 @@ mod tests {
     #[test]
     fn test_versioned_value_alias() {
         // VersionedValue should work as Versioned<Value>
-        let v: VersionedValue = Versioned::new(Value::I64(42), Version::txn(1));
-        assert!(matches!(v.value, Value::I64(42)));
+        let v: VersionedValue = Versioned::new(Value::Int(42), Version::txn(1));
+        assert!(matches!(v.value, Value::Int(42)));
     }
 
     #[test]
