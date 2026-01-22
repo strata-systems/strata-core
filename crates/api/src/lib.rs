@@ -59,6 +59,7 @@
 
 pub mod substrate;
 pub mod facade;
+pub mod desugar;
 
 // Re-export substrate types at crate root for convenience
 pub use substrate::{
