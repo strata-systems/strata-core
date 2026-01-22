@@ -599,8 +599,12 @@ impl WAL {
                     }
 
                     if let Ok(mut w) = writer.lock() {
-                        let _ = w.flush();
-                        let _ = w.get_mut().sync_all();
+                        if let Err(e) = w.flush() {
+                            error!(error = %e, "WAL async flush failed - data may not be durable");
+                        }
+                        if let Err(e) = w.get_mut().sync_all() {
+                            error!(error = %e, "WAL async sync_all failed - data may not be durable");
+                        }
                     }
                 }
             }))
@@ -752,7 +756,9 @@ impl WAL {
         // Flush any buffered writes before reading
         {
             let mut writer = self.writer.lock().unwrap();
-            let _ = writer.flush();
+            if let Err(e) = writer.flush() {
+                error!(error = %e, "WAL flush before read failed");
+            }
         }
 
         // Open separate read handle (writer is buffered, don't interfere)
@@ -859,11 +865,19 @@ impl Drop for WAL {
         self.shutdown.store(true, Ordering::Relaxed);
 
         if let Some(handle) = self.fsync_thread.take() {
-            let _ = handle.join();
+            if let Err(e) = handle.join() {
+                error!("WAL fsync thread panicked: {:?}", e);
+            }
         }
 
         // Final fsync to ensure all data is durable
-        let _ = self.fsync();
+        if let Err(e) = self.fsync() {
+            error!(
+                error = %e,
+                path = %self.path.display(),
+                "WAL final fsync on drop failed - data may not be durable"
+            );
+        }
     }
 }
 
