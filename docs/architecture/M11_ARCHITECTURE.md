@@ -378,6 +378,94 @@ From facade to substrate:
 | `exists(key)` | `kv_get(default, key).is_some()` |
 | `incr(key, delta)` | `kv_incr(default, key, delta)` (atomic engine op) |
 
+### 5.5 SubstrateImpl: The Semantic Boundary
+
+The Substrate API traits (`KVStore`, `JsonStore`, `EventLog`, `StateCell`, `VectorStore`, `TraceStore`, `RunIndex`) define the canonical semantic contract. These traits are implemented by `SubstrateImpl`, which serves as a **semantic boundary** between the unified API types and the domain-specific primitive types used internally.
+
+**This is not accidental complexity—it is architectural complexity by design.**
+
+#### Why SubstrateImpl is a Translation Layer
+
+Internal primitives use domain-specific types optimized for their use cases:
+
+| Primitive | Internal Types |
+|-----------|---------------|
+| JsonStore | `JsonDocId`, `JsonPath`, `JsonValue` |
+| EventLog | `Event`, `StreamId` |
+| TraceStore | `Trace`, `TraceType` |
+| VectorStore | `VectorEntry`, `VectorMetadata` |
+
+The Substrate API uses unified types for stability and wire-serializability:
+
+| API Type | Description |
+|----------|-------------|
+| `Value` | Universal value enum |
+| `&str` | String keys, paths, IDs |
+| `ApiRunId` | Run identifier (string-based) |
+| `Version` | Tagged union (Txn/Sequence/Counter) |
+| `Versioned<T>` | Value with version and timestamp |
+
+#### What SubstrateImpl Does
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         SubstrateImpl                                    │
+│                    (Semantic Boundary Layer)                             │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  API Types              Transformations              Primitive Types     │
+│  ─────────              ───────────────              ───────────────     │
+│                                                                          │
+│  Value          ──────► Type normalization ──────►  JsonValue            │
+│  &str           ──────► Path parsing       ──────►  JsonDocId, JsonPath  │
+│  ApiRunId       ──────► Run ID mapping     ──────►  RunId (UUID)         │
+│  Value          ──────► Event construction ──────►  Event                │
+│  &str           ──────► Trace parsing      ──────►  Trace, TraceType     │
+│                                                                          │
+│  Versioned<T>   ◄────── Result wrapping    ◄──────  primitive results    │
+│  StrataError    ◄────── Error normalization◄──────  primitive errors     │
+│  Version        ◄────── Version unification◄──────  sequence numbers     │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Transformations Performed
+
+| Category | Transformation | Example |
+|----------|---------------|---------|
+| **Type** | `Value` ↔ `JsonValue` | Unified enum to JSON-specific enum |
+| **Type** | `&str` → `JsonDocId` | String to validated document ID |
+| **Type** | `&str` → `JsonPath` | String to parsed/validated path |
+| **Run** | `ApiRunId` → `RunId` | "default" → UUID::nil |
+| **Version** | Unification | Sequence number → `Version::Txn(n)` |
+| **Error** | Normalization | `JsonError::PathNotFound` → `StrataError::InvalidPath` |
+| **Result** | Wrapping | `(value, seq, ts)` → `Versioned<Value>` |
+
+#### Architectural Rationale
+
+1. **Contract Stability**: The Substrate API is the frozen, wire-serializable contract. Primitives can evolve their internal representations without breaking the API.
+
+2. **Type Safety**: Primitives use domain-specific types (`JsonDocId` not `String`, `JsonPath` not `&str`) for compile-time validation within their domain.
+
+3. **Separation of Concerns**:
+   - API layer: Protocol, encoding, validation, user-facing types
+   - Primitive layer: Storage, indexing, domain-specific optimization
+
+4. **Industry Pattern**: This is the same architecture as:
+   - PostgreSQL: Wire protocol vs storage engine
+   - Redis: RESP protocol vs internal data structures
+   - HTTP APIs: REST/JSON vs internal domain models
+
+#### SubstrateImpl Invariants
+
+| Invariant | Description |
+|-----------|-------------|
+| IMPL-1 | Never expose primitive types through Substrate API |
+| IMPL-2 | Normalize all errors to `StrataError` codes |
+| IMPL-3 | Validate all inputs before passing to primitives |
+| IMPL-4 | Wrap all results in API types (`Versioned<Value>`, etc.) |
+| IMPL-5 | Map `ApiRunId::default()` to `RunId(UUID::nil)` |
+
 ---
 
 ## 6. Canonical Value Model

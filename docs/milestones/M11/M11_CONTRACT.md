@@ -703,6 +703,52 @@ commit(txn: Txn) -> ()
 rollback(txn: Txn) -> ()
 ```
 
+### 11.12 Substrate Implementation as Semantic Boundary
+
+The Substrate API is implemented by `SubstrateImpl`, which serves as a **semantic boundary** between the unified API types and the domain-specific primitive types used internally. This is a deliberate architectural choice, not accidental complexity.
+
+**Principle**: The Substrate API defines the canonical semantic contract. Internal primitives may use domain-specific types optimized for their particular use cases. `SubstrateImpl` bridges these worlds.
+
+**What SubstrateImpl does:**
+
+| Transformation | Example |
+|----------------|---------|
+| Type normalization | `Value` ↔ `JsonValue`, `&str` ↔ `JsonDocId`/`JsonPath` |
+| Run ID mapping | `ApiRunId("default")` → `RunId(UUID::nil)` |
+| Version normalization | Unified `Version` enum from primitive-specific versions |
+| Error normalization | Primitive errors → Unified `StrataError` codes |
+| Path parsing | `"$.a.b"` string → validated `JsonPath` object |
+| Result wrapping | Primitive results → `Versioned<Value>` wrappers |
+
+**Why this architecture:**
+
+1. **Stability**: The Substrate API is frozen and wire-serializable. Primitives can evolve internally.
+2. **Type safety**: Primitives use domain-specific types (`JsonDocId`, `Event`, `Trace`) for compile-time guarantees.
+3. **Separation of concerns**: API layer handles protocol/encoding; primitives handle storage/indexing.
+4. **Same pattern as industry standards**: PostgreSQL protocol vs storage engine, Redis protocol vs internal objects.
+
+**Data flow:**
+
+```
+   External                SubstrateImpl               Internal Primitives
+   --------                -------------               -------------------
+
+   API Types               Translation                 Domain Types
+   ---------               -----------                 ------------
+   Value         ────────►  normalize  ────────────►   JsonValue
+   &str          ────────►  parse      ────────────►   JsonDocId, JsonPath
+   ApiRunId      ────────►  to_run_id  ────────────►   RunId
+   Version       ◄────────  unify      ◄────────────   sequence number
+   StrataError   ◄────────  normalize  ◄────────────   PrimitiveError
+```
+
+**Invariants:**
+
+- `SubstrateImpl` MUST NOT expose primitive types through the Substrate API
+- `SubstrateImpl` MUST normalize all errors to `StrataError` codes
+- `SubstrateImpl` MUST validate inputs before passing to primitives
+- The Substrate API contract is stable; primitive internals may change
+
 ---
 
 ## 12. Facade → Substrate Desugaring
