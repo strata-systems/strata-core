@@ -1177,6 +1177,54 @@ UUIDs in lowercase hyphenated format:
 f47ac10b-58cc-4372-a567-0e02b2c3d479
 ```
 
+### 16.6 Default Run Internal Representation
+
+The API layer uses the string `"default"` for the default run, but the internal storage layer uses UUID-based `RunId` values. To bridge this gap, the default run is internally represented by **UUID::nil** (all zeros).
+
+**Internal representation:**
+```rust
+// Well-known UUID for the default run
+pub const DEFAULT_RUN_UUID_BYTES: [u8; 16] = [0u8; 16];  // UUID::nil
+
+// UUID::nil in standard format: 00000000-0000-0000-0000-000000000000
+```
+
+**Conversion semantics:**
+```rust
+impl ApiRunId {
+    /// Convert API run ID to internal RunId
+    pub fn to_run_id(&self) -> RunId {
+        if self.is_default() {
+            // "default" maps to UUID::nil
+            RunId::from_bytes(DEFAULT_RUN_UUID_BYTES)
+        } else {
+            // Non-default runs parse as UUID
+            let uuid = self.as_uuid().expect("Non-default must be valid UUID");
+            RunId::from_bytes(*uuid.as_bytes())
+        }
+    }
+}
+```
+
+**Why UUID::nil:**
+- It is deterministic and well-known (all zeros)
+- It will never collide with randomly generated UUIDs (UUID v4)
+- It is easily recognizable in logs and debugging
+- It requires no special-casing in the storage layer
+
+**Data flow:**
+```
+API Layer                          Storage Layer
+-----------                        -------------
+ApiRunId("default")  ─────────────►  RunId(UUID::nil)
+ApiRunId("f47ac10b-...")  ────────►  RunId(UUID("f47ac10b-..."))
+```
+
+**Invariants:**
+- `ApiRunId::default().to_run_id()` always produces `RunId` with UUID::nil
+- `RunId::from_bytes([0u8; 16])` is reserved for the default run
+- No user-created run may use UUID::nil
+
 ---
 
 ## 17. Transaction Semantics
