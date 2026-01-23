@@ -10,8 +10,8 @@
 //!
 //! All test data is loaded from testdata/kv_test_data.jsonl
 
-use super::*;
 use crate::test_data::load_kv_test_data;
+use crate::*;
 
 // =============================================================================
 // BASIC CRASH RECOVERY

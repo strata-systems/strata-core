@@ -10,8 +10,8 @@
 //! Note: Most concurrency tests use sequential integers for deterministic
 //! verification of concurrent operations rather than testdata values.
 
-use super::*;
 use crate::test_data::load_kv_test_data;
+use crate::*;
 use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::Duration;

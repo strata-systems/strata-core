@@ -41,17 +41,8 @@ use tempfile::TempDir;
 // Test data loader
 pub mod test_data;
 
-// Test modules
-pub mod kv_atomic_ops;
-pub mod kv_basic_ops;
-pub mod kv_batch_ops;
-pub mod kv_concurrency;
-pub mod kv_durability;
-pub mod kv_edge_cases;
-pub mod kv_recovery_invariants;
-pub mod kv_scan_ops;
-pub mod kv_transactions;
-pub mod kv_value_types;
+// Test modules by primitive
+pub mod kv;
 
 // =============================================================================
 // SHARED TEST UTILITIES

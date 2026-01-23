@@ -10,7 +10,7 @@
 //!
 //! All test data is loaded from testdata/kv_edge_cases.jsonl
 
-use super::*;
+use crate::*;
 use crate::test_data::{
     load_edge_case_data, load_kv_test_data,
     generate_large_string, generate_large_bytes,
