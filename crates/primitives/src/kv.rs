@@ -36,6 +36,15 @@ use strata_engine::Database;
 use std::sync::Arc;
 use std::time::Duration;
 
+/// Result of a scan operation with cursor-based pagination
+#[derive(Debug, Clone)]
+pub struct ScanResult {
+    /// Key-value pairs in this page
+    pub entries: Vec<(String, Versioned<Value>)>,
+    /// Cursor for next page (None if no more results)
+    pub cursor: Option<String>,
+}
+
 /// General-purpose key-value store primitive
 ///
 /// Stateless facade over Database - all state lives in storage.
@@ -147,6 +156,70 @@ impl KVStore {
             // M9: Wrap in Versioned with transaction snapshot version
             Ok(result.map(|v| Versioned::new(v, Version::Txn(txn.start_version))))
         })
+    }
+
+    /// Get a value at a specific version (point-in-time read)
+    ///
+    /// Returns the value as it existed at or before the specified version.
+    /// This enables historical queries and replay scenarios.
+    ///
+    /// # Arguments
+    /// * `run_id` - The run to query
+    /// * `key` - The key to look up
+    /// * `max_version` - The maximum version to return (inclusive)
+    ///
+    /// # Returns
+    /// * `Ok(Some(Versioned<Value>))` - Value at that version
+    /// * `Ok(None)` - Key didn't exist at that version
+    ///
+    /// # Errors
+    /// Returns error if storage operation fails.
+    pub fn get_at(
+        &self,
+        run_id: &RunId,
+        key: &str,
+        max_version: u64,
+    ) -> Result<Option<Versioned<Value>>> {
+        use strata_core::traits::Storage;
+
+        let storage_key = self.key_for(run_id, key);
+        self.db.storage().get_versioned(&storage_key, max_version)
+    }
+
+    /// Get version history for a key
+    ///
+    /// Returns historical versions of the value, newest first.
+    ///
+    /// # Arguments
+    /// * `run_id` - The run to query
+    /// * `key` - The key to get history for
+    /// * `limit` - Maximum versions to return (None = all)
+    /// * `before_version` - Only return versions older than this (for pagination)
+    ///
+    /// # Returns
+    /// Vector of Versioned<Value> in descending version order.
+    /// Empty if key doesn't exist or has no history.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Get last 10 versions
+    /// let history = kv.history(&run_id, "key", Some(10), None)?;
+    ///
+    /// // Paginate: get next 10 after version 50
+    /// let page2 = kv.history(&run_id, "key", Some(10), Some(50))?;
+    /// ```
+    pub fn history(
+        &self,
+        run_id: &RunId,
+        key: &str,
+        limit: Option<usize>,
+        before_version: Option<u64>,
+    ) -> Result<Vec<Versioned<Value>>> {
+        use strata_core::traits::Storage;
+
+        let storage_key = self.key_for(run_id, key);
+        self.db.storage().get_history(&storage_key, limit, before_version)
     }
 
     /// Put a value (M9: Returns version)
@@ -352,6 +425,93 @@ impl KVStore {
                 })
                 .collect())
         })
+    }
+
+    /// List keys with optional prefix and limit
+    ///
+    /// Simpler alternative to scan() when cursor-based pagination isn't needed.
+    ///
+    /// # Arguments
+    /// * `run_id` - The run to query
+    /// * `prefix` - Key prefix filter (None for all keys)
+    /// * `limit` - Maximum keys to return (None for all)
+    ///
+    /// # Returns
+    /// Vector of key strings in lexicographic order.
+    pub fn keys(
+        &self,
+        run_id: &RunId,
+        prefix: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<String>> {
+        let all_keys = self.list(run_id, prefix)?;
+
+        match limit {
+            Some(n) => Ok(all_keys.into_iter().take(n).collect()),
+            None => Ok(all_keys),
+        }
+    }
+
+    /// Scan keys with cursor-based pagination
+    ///
+    /// Provides efficient pagination through large key sets.
+    ///
+    /// # Arguments
+    /// * `run_id` - The run to scan
+    /// * `prefix` - Key prefix filter (empty string for all keys)
+    /// * `limit` - Maximum entries per page
+    /// * `cursor` - Cursor from previous scan (None for first page)
+    ///
+    /// # Returns
+    /// ScanResult with entries and cursor for next page.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // First page
+    /// let page1 = kv.scan(&run_id, "user:", 100, None)?;
+    ///
+    /// // Next page
+    /// if let Some(cursor) = page1.cursor {
+    ///     let page2 = kv.scan(&run_id, "user:", 100, Some(&cursor))?;
+    /// }
+    /// ```
+    pub fn scan(
+        &self,
+        run_id: &RunId,
+        prefix: &str,
+        limit: usize,
+        cursor: Option<&str>,
+    ) -> Result<ScanResult> {
+        let all_entries = self.list_with_values(run_id, Some(prefix))?;
+
+        // Find starting position based on cursor
+        let start_idx = match cursor {
+            Some(c) => all_entries
+                .iter()
+                .position(|(k, _)| k.as_str() > c)
+                .unwrap_or(all_entries.len()),
+            None => 0,
+        };
+
+        // Take limit + 1 to detect if there are more
+        let entries: Vec<_> = all_entries
+            .into_iter()
+            .skip(start_idx)
+            .take(limit + 1)
+            .collect();
+
+        // Check if there are more results
+        let (entries, cursor) = if entries.len() > limit {
+            let mut entries = entries;
+            entries.pop(); // Remove the extra one
+            let last_key = entries.last().map(|(k, _)| k.clone());
+            (entries, last_key)
+        } else {
+            (entries, None)
+        };
+
+        Ok(ScanResult { entries, cursor })
     }
 
     // ========== Search API (M6) ==========
@@ -1314,5 +1474,220 @@ mod tests {
         let response = Searchable::search(&kv, &req).unwrap();
 
         assert!(!response.hits.is_empty());
+    }
+
+    // ========== get_at() Tests ==========
+
+    #[test]
+    fn test_get_at_returns_historical_version() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        // Write 3 versions
+        let v1 = kv.put(&run_id, "key", Value::Int(1)).unwrap();
+        let v2 = kv.put(&run_id, "key", Value::Int(2)).unwrap();
+        let v3 = kv.put(&run_id, "key", Value::Int(3)).unwrap();
+
+        // Read at each version
+        let at_v1 = kv.get_at(&run_id, "key", v1.as_u64()).unwrap();
+        let at_v2 = kv.get_at(&run_id, "key", v2.as_u64()).unwrap();
+        let at_v3 = kv.get_at(&run_id, "key", v3.as_u64()).unwrap();
+
+        assert_eq!(at_v1.map(|v| v.value), Some(Value::Int(1)));
+        assert_eq!(at_v2.map(|v| v.value), Some(Value::Int(2)));
+        assert_eq!(at_v3.map(|v| v.value), Some(Value::Int(3)));
+    }
+
+    #[test]
+    fn test_get_at_returns_none_before_creation() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        // Write at some version
+        let v = kv.put(&run_id, "key", Value::Int(1)).unwrap();
+
+        // Read before the key was created
+        let before = kv.get_at(&run_id, "key", v.as_u64() - 1).unwrap();
+        assert!(before.is_none());
+    }
+
+    #[test]
+    fn test_get_at_nonexistent_key() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        let result = kv.get_at(&run_id, "nonexistent", 100).unwrap();
+        assert!(result.is_none());
+    }
+
+    // ========== history() Tests ==========
+
+    #[test]
+    fn test_history_returns_all_versions() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        // Write 3 versions
+        kv.put(&run_id, "key", Value::Int(1)).unwrap();
+        kv.put(&run_id, "key", Value::Int(2)).unwrap();
+        kv.put(&run_id, "key", Value::Int(3)).unwrap();
+
+        // Get full history
+        let history = kv.history(&run_id, "key", None, None).unwrap();
+
+        assert_eq!(history.len(), 3);
+        // Newest first
+        assert_eq!(history[0].value, Value::Int(3));
+        assert_eq!(history[1].value, Value::Int(2));
+        assert_eq!(history[2].value, Value::Int(1));
+    }
+
+    #[test]
+    fn test_history_with_limit() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        // Write 5 versions
+        for i in 1..=5 {
+            kv.put(&run_id, "key", Value::Int(i)).unwrap();
+        }
+
+        // Get only 2 versions
+        let history = kv.history(&run_id, "key", Some(2), None).unwrap();
+
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].value, Value::Int(5));
+        assert_eq!(history[1].value, Value::Int(4));
+    }
+
+    #[test]
+    fn test_history_pagination() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        // Write 5 versions
+        for i in 1..=5 {
+            kv.put(&run_id, "key", Value::Int(i)).unwrap();
+        }
+
+        // Page 1: first 2
+        let page1 = kv.history(&run_id, "key", Some(2), None).unwrap();
+        assert_eq!(page1.len(), 2);
+        assert_eq!(page1[0].value, Value::Int(5));
+        assert_eq!(page1[1].value, Value::Int(4));
+
+        // Page 2: before version of last item in page 1
+        let before = page1[1].version.as_u64();
+        let page2 = kv.history(&run_id, "key", Some(2), Some(before)).unwrap();
+        assert_eq!(page2.len(), 2);
+        assert_eq!(page2[0].value, Value::Int(3));
+        assert_eq!(page2[1].value, Value::Int(2));
+    }
+
+    #[test]
+    fn test_history_nonexistent_key() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        let history = kv.history(&run_id, "nonexistent", None, None).unwrap();
+        assert!(history.is_empty());
+    }
+
+    // ========== keys() Tests ==========
+
+    #[test]
+    fn test_keys_returns_all() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        kv.put(&run_id, "a", Value::Int(1)).unwrap();
+        kv.put(&run_id, "b", Value::Int(2)).unwrap();
+        kv.put(&run_id, "c", Value::Int(3)).unwrap();
+
+        let keys = kv.keys(&run_id, None, None).unwrap();
+        assert_eq!(keys.len(), 3);
+    }
+
+    #[test]
+    fn test_keys_with_prefix() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        kv.put(&run_id, "user:1", Value::Int(1)).unwrap();
+        kv.put(&run_id, "user:2", Value::Int(2)).unwrap();
+        kv.put(&run_id, "task:1", Value::Int(3)).unwrap();
+
+        let user_keys = kv.keys(&run_id, Some("user:"), None).unwrap();
+        assert_eq!(user_keys.len(), 2);
+    }
+
+    #[test]
+    fn test_keys_with_limit() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        for i in 0..10 {
+            kv.put(&run_id, &format!("key:{:02}", i), Value::Int(i)).unwrap();
+        }
+
+        let keys = kv.keys(&run_id, None, Some(3)).unwrap();
+        assert_eq!(keys.len(), 3);
+    }
+
+    // ========== scan() Tests ==========
+
+    #[test]
+    fn test_scan_basic() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        for i in 0..5 {
+            kv.put(&run_id, &format!("key:{:02}", i), Value::Int(i)).unwrap();
+        }
+
+        let result = kv.scan(&run_id, "key:", 10, None).unwrap();
+        assert_eq!(result.entries.len(), 5);
+        assert!(result.cursor.is_none()); // No more pages
+    }
+
+    #[test]
+    fn test_scan_pagination() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        // Create 10 keys
+        for i in 0..10 {
+            kv.put(&run_id, &format!("key:{:02}", i), Value::Int(i)).unwrap();
+        }
+
+        // Scan with limit 3
+        let page1 = kv.scan(&run_id, "key:", 3, None).unwrap();
+        assert_eq!(page1.entries.len(), 3);
+        assert!(page1.cursor.is_some());
+
+        // Next page
+        let page2 = kv.scan(&run_id, "key:", 3, page1.cursor.as_deref()).unwrap();
+        assert_eq!(page2.entries.len(), 3);
+        assert!(page2.cursor.is_some());
+
+        // Continue until exhausted
+        let mut cursor = page2.cursor;
+        let mut total = 6;
+        while cursor.is_some() {
+            let page = kv.scan(&run_id, "key:", 3, cursor.as_deref()).unwrap();
+            total += page.entries.len();
+            cursor = page.cursor;
+        }
+        assert_eq!(total, 10);
+    }
+
+    #[test]
+    fn test_scan_empty_results() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        let result = kv.scan(&run_id, "nonexistent:", 10, None).unwrap();
+        assert!(result.entries.is_empty());
+        assert!(result.cursor.is_none());
     }
 }
