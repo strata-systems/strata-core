@@ -138,7 +138,7 @@ fn kv_handle_exists() {
     let kv = handle.kv();
 
     assert!(!kv.exists("key").unwrap());
-    kv.put("key", strata_core::value::Value::I64(42)).unwrap();
+    kv.put("key", strata_core::value::Value::Int(42)).unwrap();
     assert!(kv.exists("key").unwrap());
 }
 
@@ -147,7 +147,7 @@ fn kv_handle_delete() {
     let (_, handle) = setup();
     let kv = handle.kv();
 
-    kv.put("key", strata_core::value::Value::I64(42)).unwrap();
+    kv.put("key", strata_core::value::Value::Int(42)).unwrap();
     assert!(kv.exists("key").unwrap());
 
     kv.delete("key").unwrap();
@@ -175,7 +175,7 @@ fn event_handle_read_by_sequence() {
     let (_, handle) = setup();
     let events = handle.events();
 
-    let seq = events.append("my-event", strata_core::value::Value::I64(42)).unwrap();
+    let seq = events.append("my-event", strata_core::value::Value::Int(42)).unwrap();
     let result = events.read(seq).unwrap();
 
     assert!(result.is_some());
@@ -199,7 +199,7 @@ fn state_handle_set_and_read() {
     let (_, handle) = setup();
     let state = handle.state();
 
-    state.set("counter", strata_core::value::Value::I64(0)).unwrap();
+    state.set("counter", strata_core::value::Value::Int(0)).unwrap();
     let result = state.read("counter").unwrap();
 
     assert!(result.is_some());
@@ -242,7 +242,7 @@ fn run_handle_transaction_returns_value() {
 
     let result = handle.transaction(|txn| {
         use strata_primitives::extensions::KVStoreExt;
-        txn.kv_put("key", strata_core::value::Value::I64(42))?;
+        txn.kv_put("key", strata_core::value::Value::Int(42))?;
         Ok("success")
     });
 
@@ -328,13 +328,13 @@ fn run_handle_concurrent_access() {
     // Spawn two threads using the same handle
     let t1 = thread::spawn(move || {
         for i in 0..10 {
-            handle1.kv().put(&format!("t1-key-{}", i), strata_core::value::Value::I64(i as i64)).unwrap();
+            handle1.kv().put(&format!("t1-key-{}", i), strata_core::value::Value::Int(i as i64)).unwrap();
         }
     });
 
     let t2 = thread::spawn(move || {
         for i in 0..10 {
-            handle2.kv().put(&format!("t2-key-{}", i), strata_core::value::Value::I64(i as i64)).unwrap();
+            handle2.kv().put(&format!("t2-key-{}", i), strata_core::value::Value::Int(i as i64)).unwrap();
         }
     });
 
@@ -403,9 +403,9 @@ fn run_handle_multiple_primitive_operations() {
     let (_, handle) = setup();
 
     // Use multiple primitives through the same handle
-    handle.kv().put("key", strata_core::value::Value::I64(1)).unwrap();
+    handle.kv().put("key", strata_core::value::Value::Int(1)).unwrap();
     let event_seq = handle.events().append("event", strata_core::value::Value::Null).unwrap();
-    handle.state().set("cell", strata_core::value::Value::I64(0)).unwrap();
+    handle.state().set("cell", strata_core::value::Value::Int(0)).unwrap();
 
     // All should exist
     assert!(handle.kv().exists("key").unwrap());

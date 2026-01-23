@@ -125,8 +125,8 @@ fn test_r5_committed_value_integrity() {
     // Write various value types
     kv.put(&run_id, "str", Value::String("test_string".into()))
         .unwrap();
-    kv.put(&run_id, "int", Value::I64(42)).unwrap();
-    kv.put(&run_id, "float", Value::F64(3.14)).unwrap();
+    kv.put(&run_id, "int", Value::Int(42)).unwrap();
+    kv.put(&run_id, "float", Value::Float(3.14)).unwrap();
     kv.put(&run_id, "bool", Value::Bool(true)).unwrap();
 
     test_db.reopen();
@@ -141,12 +141,12 @@ fn test_r5_committed_value_integrity() {
     );
     assert_eq!(
         kv.get(&run_id, "int").unwrap().map(|v| v.value),
-        Some(Value::I64(42)),
+        Some(Value::Int(42)),
         "R5: Int value corrupted"
     );
     assert_eq!(
         kv.get(&run_id, "float").unwrap().map(|v| v.value),
-        Some(Value::F64(3.14)),
+        Some(Value::Float(3.14)),
         "R5: Float value corrupted"
     );
     assert_eq!(
@@ -170,7 +170,7 @@ fn test_r5_all_transactions_survive() {
             kv.put(
                 &run_id,
                 &format!("batch_{}_key_{}", batch, i),
-                Value::I64((batch * 5 + i) as i64),
+                Value::Int((batch * 5 + i) as i64),
             )
             .unwrap();
         }
@@ -203,7 +203,7 @@ fn test_r5_earlier_commits_survive_later_operations() {
 
     // Many more operations
     for i in 0..100 {
-        kv.put(&run_id, &format!("later_{}", i), Value::I64(i))
+        kv.put(&run_id, &format!("later_{}", i), Value::Int(i))
             .unwrap();
     }
 
@@ -260,9 +260,9 @@ fn test_r5_final_committed_value_survives() {
     let kv = test_db.kv();
 
     // Multiple overwrites
-    kv.put(&run_id, "counter", Value::I64(1)).unwrap();
-    kv.put(&run_id, "counter", Value::I64(2)).unwrap();
-    kv.put(&run_id, "counter", Value::I64(3)).unwrap();
+    kv.put(&run_id, "counter", Value::Int(1)).unwrap();
+    kv.put(&run_id, "counter", Value::Int(2)).unwrap();
+    kv.put(&run_id, "counter", Value::Int(3)).unwrap();
 
     test_db.reopen();
 
@@ -270,7 +270,7 @@ fn test_r5_final_committed_value_survives() {
     let value = kv.get(&run_id, "counter").unwrap().map(|v| v.value);
     assert_eq!(
         value,
-        Some(Value::I64(3)),
+        Some(Value::Int(3)),
         "R5 VIOLATED: Final committed value not preserved"
     );
 }
@@ -285,7 +285,7 @@ fn test_r5_survives_stress_cycles() {
 
     // Initial committed data
     for i in 0..50 {
-        kv.put(&run_id, &format!("stable_{}", i), Value::I64(i))
+        kv.put(&run_id, &format!("stable_{}", i), Value::Int(i))
             .unwrap();
     }
 
@@ -296,7 +296,7 @@ fn test_r5_survives_stress_cycles() {
             kv.put(
                 &run_id,
                 &format!("cycle_{}_{}", cycle, i),
-                Value::I64((cycle * 20 + i) as i64),
+                Value::Int((cycle * 20 + i) as i64),
             )
             .unwrap();
         }

@@ -115,7 +115,7 @@ fn test_large_snapshot_integrity() {
 
     // Write large dataset
     for i in 0..1000 {
-        kv.put(&run_id, &format!("k{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("k{}", i), Value::Int(i)).unwrap();
     }
 
     let state_before = CapturedState::capture(&test_db.db, &run_id);

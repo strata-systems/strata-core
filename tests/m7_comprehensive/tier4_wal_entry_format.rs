@@ -59,7 +59,7 @@ fn test_wal_grows_with_writes() {
 
     let kv = test_db.kv();
     for i in 0..100 {
-        kv.put(&run_id, &format!("k{}", i), Value::I64(i)).unwrap();
+        kv.put(&run_id, &format!("k{}", i), Value::Int(i)).unwrap();
     }
 
     let size_after = file_size(&wal_path);

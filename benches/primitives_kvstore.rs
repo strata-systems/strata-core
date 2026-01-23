@@ -138,7 +138,7 @@ fn prepopulate_store(store: &UnifiedStore, ns: &Namespace, count: usize) -> Vec<
         .collect();
 
     for (i, key) in keys.iter().enumerate() {
-        store.put(key.clone(), Value::I64(i as i64), None).unwrap();
+        store.put(key.clone(), Value::Int(i as i64), None).unwrap();
     }
 
     keys
@@ -158,7 +158,7 @@ fn tier_a0_get(c: &mut Criterion) {
         let run_id = RunId::new();
         let ns = test_namespace(run_id);
         let key = make_kv_key(&ns, "hot_key");
-        store.put(key.clone(), Value::I64(42), None).unwrap();
+        store.put(key.clone(), Value::Int(42), None).unwrap();
 
         group.bench_function("hot_key", |b| {
             b.iter(|| {
@@ -235,7 +235,7 @@ fn tier_a0_put(c: &mut Criterion) {
             b.iter(|| {
                 let i = counter.fetch_add(1, Ordering::Relaxed);
                 let key = make_kv_key(&ns, &format!("insert_{}", i));
-                let result = store.put(key, Value::I64(i as i64), None);
+                let result = store.put(key, Value::Int(i as i64), None);
                 black_box(result.unwrap())
             });
         });
@@ -247,13 +247,13 @@ fn tier_a0_put(c: &mut Criterion) {
         let run_id = RunId::new();
         let ns = test_namespace(run_id);
         let key = make_kv_key(&ns, "hot_key");
-        store.put(key.clone(), Value::I64(0), None).unwrap();
+        store.put(key.clone(), Value::Int(0), None).unwrap();
         let counter = AtomicU64::new(0);
 
         group.bench_function("overwrite_hot", |b| {
             b.iter(|| {
                 let i = counter.fetch_add(1, Ordering::Relaxed);
-                let result = store.put(key.clone(), Value::I64(i as i64), None);
+                let result = store.put(key.clone(), Value::Int(i as i64), None);
                 black_box(result.unwrap())
             });
         });
@@ -272,7 +272,7 @@ fn tier_a0_put(c: &mut Criterion) {
             b.iter(|| {
                 let idx = lcg_index(&mut rng_state, keys.len());
                 let i = counter.fetch_add(1, Ordering::Relaxed);
-                let result = store.put(keys[idx].clone(), Value::I64(i as i64), None);
+                let result = store.put(keys[idx].clone(), Value::Int(i as i64), None);
                 black_box(result.unwrap())
             });
         });
@@ -296,7 +296,7 @@ fn kvstore_get(c: &mut Criterion) {
         let run_id = RunId::new();
         let kv = KVStore::new(db.clone());
 
-        kv.put(&run_id, "hot_key", Value::I64(42)).unwrap();
+        kv.put(&run_id, "hot_key", Value::Int(42)).unwrap();
 
         group.bench_function("hot_key", |b| {
             b.iter(|| {
@@ -313,7 +313,7 @@ fn kvstore_get(c: &mut Criterion) {
         let kv = KVStore::new(db.clone());
 
         for i in 0..1000 {
-            kv.put(&run_id, &format!("key_{}", i), Value::I64(i as i64))
+            kv.put(&run_id, &format!("key_{}", i), Value::Int(i as i64))
                 .unwrap();
         }
 
@@ -349,7 +349,7 @@ fn kvstore_get(c: &mut Criterion) {
         let kv = KVStore::new(db.clone());
 
         for i in 0..10_000 {
-            kv.put(&run_id, &format!("key_{}", i), Value::I64(i as i64))
+            kv.put(&run_id, &format!("key_{}", i), Value::Int(i as i64))
                 .unwrap();
         }
 
@@ -382,7 +382,7 @@ fn kvstore_put(c: &mut Criterion) {
         group.bench_function("insert", |b| {
             b.iter(|| {
                 let i = counter.fetch_add(1, Ordering::Relaxed);
-                let result = kv.put(&run_id, &format!("insert_{}", i), Value::I64(i as i64));
+                let result = kv.put(&run_id, &format!("insert_{}", i), Value::Int(i as i64));
                 black_box(result.unwrap())
             });
         });
@@ -393,13 +393,13 @@ fn kvstore_put(c: &mut Criterion) {
         let (db, _temp) = create_db();
         let run_id = RunId::new();
         let kv = KVStore::new(db.clone());
-        kv.put(&run_id, "hot_key", Value::I64(0)).unwrap();
+        kv.put(&run_id, "hot_key", Value::Int(0)).unwrap();
         let counter = AtomicU64::new(0);
 
         group.bench_function("overwrite_hot", |b| {
             b.iter(|| {
                 let i = counter.fetch_add(1, Ordering::Relaxed);
-                let result = kv.put(&run_id, "hot_key", Value::I64(i as i64));
+                let result = kv.put(&run_id, "hot_key", Value::Int(i as i64));
                 black_box(result.unwrap())
             });
         });
@@ -412,7 +412,7 @@ fn kvstore_put(c: &mut Criterion) {
         let kv = KVStore::new(db.clone());
 
         for i in 0..1000 {
-            kv.put(&run_id, &format!("key_{}", i), Value::I64(i as i64))
+            kv.put(&run_id, &format!("key_{}", i), Value::Int(i as i64))
                 .unwrap();
         }
 
@@ -423,7 +423,7 @@ fn kvstore_put(c: &mut Criterion) {
             b.iter(|| {
                 let idx = lcg_index(&mut rng_state, 1000);
                 let i = counter.fetch_add(1, Ordering::Relaxed);
-                let result = kv.put(&run_id, &format!("key_{}", idx), Value::I64(i as i64));
+                let result = kv.put(&run_id, &format!("key_{}", idx), Value::Int(i as i64));
                 black_box(result.unwrap())
             });
         });
@@ -446,7 +446,7 @@ fn kvstore_delete(c: &mut Criterion) {
 
         // Pre-populate
         for i in 0..100_000 {
-            kv.put(&run_id, &format!("del_{}", i), Value::I64(i as i64))
+            kv.put(&run_id, &format!("del_{}", i), Value::Int(i as i64))
                 .unwrap();
         }
 
@@ -538,7 +538,7 @@ fn kvstore_key_scaling(c: &mut Criterion) {
 
         // Pre-populate
         for i in 0..*key_count {
-            kv.put(&run_id, &format!("key_{}", i), Value::I64(i as i64))
+            kv.put(&run_id, &format!("key_{}", i), Value::Int(i as i64))
                 .unwrap();
         }
 
@@ -570,7 +570,7 @@ fn kvstore_fast_path(c: &mut Criterion) {
         let run_id = RunId::new();
         let kv = KVStore::new(db.clone());
 
-        kv.put(&run_id, "key", Value::I64(42)).unwrap();
+        kv.put(&run_id, "key", Value::Int(42)).unwrap();
 
         group.bench_function("get", |b| {
             b.iter(|| {
@@ -586,7 +586,7 @@ fn kvstore_fast_path(c: &mut Criterion) {
         let run_id = RunId::new();
         let kv = KVStore::new(db.clone());
 
-        kv.put(&run_id, "key", Value::I64(42)).unwrap();
+        kv.put(&run_id, "key", Value::Int(42)).unwrap();
 
         group.bench_function("get_in_transaction", |b| {
             b.iter(|| {
@@ -622,7 +622,7 @@ fn kvstore_durability_comparison(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("put", name), |b| {
             b.iter(|| {
                 let i = counter.fetch_add(1, Ordering::Relaxed);
-                let result = kv.put(&run_id, &format!("key_{}", i), Value::I64(i as i64));
+                let result = kv.put(&run_id, &format!("key_{}", i), Value::Int(i as i64));
                 black_box(result.unwrap())
             });
         });
@@ -633,7 +633,7 @@ fn kvstore_durability_comparison(c: &mut Criterion) {
         let run_id = RunId::new();
         let kv = KVStore::new(db.clone());
 
-        kv.put(&run_id, "key", Value::I64(42)).unwrap();
+        kv.put(&run_id, "key", Value::Int(42)).unwrap();
 
         group.bench_function(BenchmarkId::new("get", name), |b| {
             b.iter(|| {

@@ -41,7 +41,7 @@ pub enum Version {
     ///
     /// Represents a global transaction ID. Multiple entities modified
     /// in the same transaction share this version.
-    TxnId(u64),
+    Txn(u64),
 
     /// Sequence-based version
     ///
@@ -67,7 +67,7 @@ impl Version {
 
     /// Create a TxnId version with value 0
     pub const fn zero_txn() -> Self {
-        Version::TxnId(0)
+        Version::Txn(0)
     }
 
     /// Create a Sequence version with value 0
@@ -82,7 +82,7 @@ impl Version {
 
     /// Create a TxnId version
     pub const fn txn(id: u64) -> Self {
-        Version::TxnId(id)
+        Version::Txn(id)
     }
 
     /// Create a Sequence version
@@ -105,7 +105,7 @@ impl Version {
     #[inline]
     pub const fn as_u64(&self) -> u64 {
         match self {
-            Version::TxnId(v) => *v,
+            Version::Txn(v) => *v,
             Version::Sequence(v) => *v,
             Version::Counter(v) => *v,
         }
@@ -113,8 +113,15 @@ impl Version {
 
     /// Check if this is a transaction-based version
     #[inline]
+    pub const fn is_txn(&self) -> bool {
+        matches!(self, Version::Txn(_))
+    }
+
+    /// Check if this is a transaction-based version (deprecated)
+    #[deprecated(since = "0.11.0", note = "Use is_txn() instead")]
+    #[inline]
     pub const fn is_txn_id(&self) -> bool {
-        matches!(self, Version::TxnId(_))
+        self.is_txn()
     }
 
     /// Check if this is a sequence-based version
@@ -138,7 +145,7 @@ impl Version {
     /// Preserves the variant type.
     pub const fn increment(&self) -> Self {
         match self {
-            Version::TxnId(v) => Version::TxnId(*v + 1),
+            Version::Txn(v) => Version::Txn(*v + 1),
             Version::Sequence(v) => Version::Sequence(*v + 1),
             Version::Counter(v) => Version::Counter(*v + 1),
         }
@@ -147,7 +154,7 @@ impl Version {
     /// Saturating increment (won't overflow)
     pub const fn saturating_increment(&self) -> Self {
         match self {
-            Version::TxnId(v) => Version::TxnId(v.saturating_add(1)),
+            Version::Txn(v) => Version::Txn(v.saturating_add(1)),
             Version::Sequence(v) => Version::Sequence(v.saturating_add(1)),
             Version::Counter(v) => Version::Counter(v.saturating_add(1)),
         }
@@ -178,12 +185,12 @@ impl Ord for Version {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // First compare by variant discriminant, then by value
         let self_discriminant = match self {
-            Version::TxnId(_) => 0,
+            Version::Txn(_) => 0,
             Version::Sequence(_) => 1,
             Version::Counter(_) => 2,
         };
         let other_discriminant = match other {
-            Version::TxnId(_) => 0,
+            Version::Txn(_) => 0,
             Version::Sequence(_) => 1,
             Version::Counter(_) => 2,
         };
@@ -197,7 +204,7 @@ impl Ord for Version {
 impl std::fmt::Display for Version {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Version::TxnId(v) => write!(f, "txn:{}", v),
+            Version::Txn(v) => write!(f, "txn:{}", v),
             Version::Sequence(v) => write!(f, "seq:{}", v),
             Version::Counter(v) => write!(f, "cnt:{}", v),
         }
@@ -214,7 +221,7 @@ impl Default for Version {
 impl From<u64> for Version {
     /// Create a TxnId version from u64
     fn from(v: u64) -> Self {
-        Version::TxnId(v)
+        Version::Txn(v)
     }
 }
 
@@ -228,25 +235,25 @@ mod tests {
 
     #[test]
     fn test_version_constructors() {
-        assert_eq!(Version::zero_txn(), Version::TxnId(0));
+        assert_eq!(Version::zero_txn(), Version::Txn(0));
         assert_eq!(Version::zero_sequence(), Version::Sequence(0));
         assert_eq!(Version::zero_counter(), Version::Counter(0));
 
-        assert_eq!(Version::txn(42), Version::TxnId(42));
+        assert_eq!(Version::txn(42), Version::Txn(42));
         assert_eq!(Version::seq(100), Version::Sequence(100));
         assert_eq!(Version::counter(5), Version::Counter(5));
     }
 
     #[test]
     fn test_version_as_u64() {
-        assert_eq!(Version::TxnId(42).as_u64(), 42);
+        assert_eq!(Version::Txn(42).as_u64(), 42);
         assert_eq!(Version::Sequence(100).as_u64(), 100);
         assert_eq!(Version::Counter(5).as_u64(), 5);
     }
 
     #[test]
     fn test_version_type_checks() {
-        let txn = Version::TxnId(1);
+        let txn = Version::Txn(1);
         let seq = Version::Sequence(1);
         let cnt = Version::Counter(1);
 
@@ -265,7 +272,7 @@ mod tests {
 
     #[test]
     fn test_version_increment() {
-        assert_eq!(Version::TxnId(1).increment(), Version::TxnId(2));
+        assert_eq!(Version::Txn(1).increment(), Version::Txn(2));
         assert_eq!(Version::Sequence(10).increment(), Version::Sequence(11));
         assert_eq!(Version::Counter(5).increment(), Version::Counter(6));
     }
@@ -273,27 +280,27 @@ mod tests {
     #[test]
     fn test_version_saturating_increment() {
         assert_eq!(
-            Version::TxnId(u64::MAX).saturating_increment(),
-            Version::TxnId(u64::MAX)
+            Version::Txn(u64::MAX).saturating_increment(),
+            Version::Txn(u64::MAX)
         );
     }
 
     #[test]
     fn test_version_is_zero() {
-        assert!(Version::TxnId(0).is_zero());
+        assert!(Version::Txn(0).is_zero());
         assert!(Version::Sequence(0).is_zero());
         assert!(Version::Counter(0).is_zero());
 
-        assert!(!Version::TxnId(1).is_zero());
+        assert!(!Version::Txn(1).is_zero());
         assert!(!Version::Sequence(1).is_zero());
         assert!(!Version::Counter(1).is_zero());
     }
 
     #[test]
     fn test_version_partial_ord_same_type() {
-        assert!(Version::TxnId(1) < Version::TxnId(2));
-        assert!(Version::TxnId(2) > Version::TxnId(1));
-        assert!(Version::TxnId(1) == Version::TxnId(1));
+        assert!(Version::Txn(1) < Version::Txn(2));
+        assert!(Version::Txn(2) > Version::Txn(1));
+        assert!(Version::Txn(1) == Version::Txn(1));
 
         assert!(Version::Sequence(10) < Version::Sequence(20));
         assert!(Version::Counter(3) == Version::Counter(3));
@@ -306,7 +313,7 @@ mod tests {
         // Cross-variant comparison delegates to Ord for consistency
         // TxnId < Sequence < Counter
         assert_eq!(
-            Version::TxnId(1).partial_cmp(&Version::Sequence(1)),
+            Version::Txn(1).partial_cmp(&Version::Sequence(1)),
             Some(Ordering::Less)
         );
         assert_eq!(
@@ -314,7 +321,7 @@ mod tests {
             Some(Ordering::Less)
         );
         assert_eq!(
-            Version::TxnId(1).partial_cmp(&Version::Counter(1)),
+            Version::Txn(1).partial_cmp(&Version::Counter(1)),
             Some(Ordering::Less)
         );
     }
@@ -324,9 +331,9 @@ mod tests {
         use std::cmp::Ordering;
 
         // TxnId < Sequence < Counter (by discriminant)
-        assert_eq!(Version::TxnId(5).cmp(&Version::Sequence(5)), Ordering::Less);
+        assert_eq!(Version::Txn(5).cmp(&Version::Sequence(5)), Ordering::Less);
         assert_eq!(
-            Version::TxnId(5).cmp(&Version::Counter(5)),
+            Version::Txn(5).cmp(&Version::Counter(5)),
             Ordering::Less,
             "TxnId should be less than Counter"
         );
@@ -336,12 +343,12 @@ mod tests {
         );
 
         // Same variant, compare by value
-        assert_eq!(Version::TxnId(5).cmp(&Version::TxnId(10)), Ordering::Less);
+        assert_eq!(Version::Txn(5).cmp(&Version::Txn(10)), Ordering::Less);
         assert_eq!(
-            Version::TxnId(10).cmp(&Version::TxnId(5)),
+            Version::Txn(10).cmp(&Version::Txn(5)),
             Ordering::Greater
         );
-        assert_eq!(Version::TxnId(5).cmp(&Version::TxnId(5)), Ordering::Equal);
+        assert_eq!(Version::Txn(5).cmp(&Version::Txn(5)), Ordering::Equal);
     }
 
     #[test]
@@ -349,17 +356,17 @@ mod tests {
         // Total ordering groups by variant first, then by value
         let mut versions = vec![
             Version::Counter(5),
-            Version::TxnId(10),
+            Version::Txn(10),
             Version::Sequence(1),
-            Version::TxnId(5),
+            Version::Txn(5),
             Version::Sequence(10),
             Version::Counter(1),
         ];
         versions.sort();
 
         // Expected order: TxnId(5), TxnId(10), Sequence(1), Sequence(10), Counter(1), Counter(5)
-        assert_eq!(versions[0], Version::TxnId(5), "First should be TxnId(5)");
-        assert_eq!(versions[1], Version::TxnId(10), "Second should be TxnId(10)");
+        assert_eq!(versions[0], Version::Txn(5), "First should be TxnId(5)");
+        assert_eq!(versions[1], Version::Txn(10), "Second should be TxnId(10)");
         assert_eq!(
             versions[2],
             Version::Sequence(1),
@@ -384,20 +391,20 @@ mod tests {
 
     #[test]
     fn test_version_display() {
-        assert_eq!(format!("{}", Version::TxnId(42)), "txn:42");
+        assert_eq!(format!("{}", Version::Txn(42)), "txn:42");
         assert_eq!(format!("{}", Version::Sequence(100)), "seq:100");
         assert_eq!(format!("{}", Version::Counter(5)), "cnt:5");
     }
 
     #[test]
     fn test_version_default() {
-        assert_eq!(Version::default(), Version::TxnId(0));
+        assert_eq!(Version::default(), Version::Txn(0));
     }
 
     #[test]
     fn test_version_from_u64() {
         let v: Version = 42u64.into();
-        assert_eq!(v, Version::TxnId(42));
+        assert_eq!(v, Version::Txn(42));
     }
 
     #[test]
@@ -405,19 +412,19 @@ mod tests {
         use std::collections::HashSet;
 
         let mut set = HashSet::new();
-        set.insert(Version::TxnId(1));
-        set.insert(Version::TxnId(2));
-        set.insert(Version::TxnId(1)); // Duplicate
+        set.insert(Version::Txn(1));
+        set.insert(Version::Txn(2));
+        set.insert(Version::Txn(1)); // Duplicate
 
         assert_eq!(set.len(), 2);
-        assert!(set.contains(&Version::TxnId(1)));
-        assert!(set.contains(&Version::TxnId(2)));
+        assert!(set.contains(&Version::Txn(1)));
+        assert!(set.contains(&Version::Txn(2)));
     }
 
     #[test]
     fn test_version_serialization() {
         let versions = vec![
-            Version::TxnId(42),
+            Version::Txn(42),
             Version::Sequence(100),
             Version::Counter(5),
         ];
@@ -432,14 +439,14 @@ mod tests {
     #[test]
     fn test_version_equality() {
         // Same type, same value
-        assert_eq!(Version::TxnId(1), Version::TxnId(1));
+        assert_eq!(Version::Txn(1), Version::Txn(1));
 
         // Same type, different value
-        assert_ne!(Version::TxnId(1), Version::TxnId(2));
+        assert_ne!(Version::Txn(1), Version::Txn(2));
 
         // Different type, same value
-        assert_ne!(Version::TxnId(1), Version::Sequence(1));
-        assert_ne!(Version::TxnId(1), Version::Counter(1));
+        assert_ne!(Version::Txn(1), Version::Sequence(1));
+        assert_ne!(Version::Txn(1), Version::Counter(1));
         assert_ne!(Version::Sequence(1), Version::Counter(1));
     }
 }

@@ -46,7 +46,7 @@ fn cross_primitive_kv_and_events_in_same_transaction() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Use both KV and Events in same transaction
-    txn.kv_put("counter", Value::I64(1)).unwrap();
+    txn.kv_put("counter", Value::Int(1)).unwrap();
     txn.event_append("counter_created", Value::String("Created counter".into())).unwrap();
 
     // Both are visible within transaction
@@ -121,9 +121,9 @@ fn cross_primitive_all_four_primitives() {
     use strata_core::TraceType;
 
     // Use all four implemented primitives
-    txn.kv_put("key", Value::I64(1)).unwrap();
+    txn.kv_put("key", Value::Int(1)).unwrap();
     txn.event_append("event", Value::Null).unwrap();
-    txn.state_init("state", Value::I64(0)).unwrap();
+    txn.state_init("state", Value::Int(0)).unwrap();
     txn.trace_record(
         TraceType::Thought { content: "test".into(), confidence: None },
         vec![],
@@ -171,8 +171,8 @@ fn cross_primitive_read_your_writes_events() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Append events
-    txn.event_append("event1", Value::I64(1)).unwrap();
-    txn.event_append("event2", Value::I64(2)).unwrap();
+    txn.event_append("event1", Value::Int(1)).unwrap();
+    txn.event_append("event2", Value::Int(2)).unwrap();
 
     // Can read them back
     assert_eq!(txn.event_len().unwrap(), 2);
@@ -193,18 +193,18 @@ fn cross_primitive_read_your_writes_state() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Init state
-    txn.state_init("counter", Value::I64(0)).unwrap();
+    txn.state_init("counter", Value::Int(0)).unwrap();
 
     // Read it
     let state = txn.state_read("counter").unwrap().unwrap();
-    assert_eq!(state.value.value, Value::I64(0));
+    assert_eq!(state.value.value, Value::Int(0));
 
     // Update via CAS
-    txn.state_cas("counter", 1, Value::I64(1)).unwrap();
+    txn.state_cas("counter", 1, Value::Int(1)).unwrap();
 
     // Read sees update
     let state = txn.state_read("counter").unwrap().unwrap();
-    assert_eq!(state.value.value, Value::I64(1));
+    assert_eq!(state.value.value, Value::Int(1));
 }
 
 #[test]
@@ -244,8 +244,8 @@ fn cross_primitive_version_consistency_kv() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Multiple KV writes in same transaction have same TxnId
-    let v1 = txn.kv_put("key1", Value::I64(1)).unwrap();
-    let v2 = txn.kv_put("key2", Value::I64(2)).unwrap();
+    let v1 = txn.kv_put("key1", Value::Int(1)).unwrap();
+    let v2 = txn.kv_put("key2", Value::Int(2)).unwrap();
 
     assert_eq!(v1.as_u64(), v2.as_u64());
 }
@@ -260,13 +260,13 @@ fn cross_primitive_version_consistency_mixed() {
     use strata_core::TraceType;
 
     // KV write
-    let kv_version = txn.kv_put("key", Value::I64(1)).unwrap();
+    let kv_version = txn.kv_put("key", Value::Int(1)).unwrap();
 
     // Event append (returns sequence, not TxnId)
     let event_version = txn.event_append("event", Value::Null).unwrap();
 
     // State init (returns Counter)
-    let state_version = txn.state_init("state", Value::I64(0)).unwrap();
+    let state_version = txn.state_init("state", Value::Int(0)).unwrap();
 
     // Trace record (returns TxnId)
     let trace_versioned = txn.trace_record(
@@ -300,7 +300,7 @@ fn cross_primitive_delete_visible_in_transaction() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Create
-    txn.kv_put("key", Value::I64(1)).unwrap();
+    txn.kv_put("key", Value::Int(1)).unwrap();
     assert!(txn.kv_exists("key").unwrap());
 
     // Delete
@@ -319,7 +319,7 @@ fn cross_primitive_state_delete_visible_in_transaction() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Create
-    txn.state_init("state", Value::I64(0)).unwrap();
+    txn.state_init("state", Value::Int(0)).unwrap();
     assert!(txn.state_exists("state").unwrap());
 
     // Delete
@@ -342,16 +342,16 @@ fn cross_primitive_workflow_counter_with_events() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Initialize counter
-    txn.state_init("counter", Value::I64(0)).unwrap();
-    txn.event_append("counter_created", Value::I64(0)).unwrap();
+    txn.state_init("counter", Value::Int(0)).unwrap();
+    txn.event_append("counter_created", Value::Int(0)).unwrap();
 
     // Increment counter
-    txn.state_cas("counter", 1, Value::I64(1)).unwrap();
-    txn.event_append("counter_incremented", Value::I64(1)).unwrap();
+    txn.state_cas("counter", 1, Value::Int(1)).unwrap();
+    txn.event_append("counter_incremented", Value::Int(1)).unwrap();
 
     // Verify state
     let counter = txn.state_read("counter").unwrap().unwrap();
-    assert_eq!(counter.value.value, Value::I64(1));
+    assert_eq!(counter.value.value, Value::Int(1));
     assert_eq!(txn.event_len().unwrap(), 2);
 }
 
@@ -404,10 +404,10 @@ fn cross_primitive_state_cas_failure() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Init state with version 1
-    txn.state_init("counter", Value::I64(0)).unwrap();
+    txn.state_init("counter", Value::Int(0)).unwrap();
 
     // CAS with wrong expected version should fail
-    let result = txn.state_cas("counter", 99, Value::I64(1));
+    let result = txn.state_cas("counter", 99, Value::Int(1));
 
     // Should fail with version mismatch
     assert!(result.is_err());
@@ -425,18 +425,18 @@ fn cross_primitive_event_order_preserved() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Append events in order
-    txn.event_append("first", Value::I64(1)).unwrap();
-    txn.event_append("second", Value::I64(2)).unwrap();
-    txn.event_append("third", Value::I64(3)).unwrap();
+    txn.event_append("first", Value::Int(1)).unwrap();
+    txn.event_append("second", Value::Int(2)).unwrap();
+    txn.event_append("third", Value::Int(3)).unwrap();
 
     // Read them back - order should be preserved
     let e0 = txn.event_read(0).unwrap().unwrap();
     let e1 = txn.event_read(1).unwrap().unwrap();
     let e2 = txn.event_read(2).unwrap().unwrap();
 
-    assert_eq!(e0.value.payload, Value::I64(1));
-    assert_eq!(e1.value.payload, Value::I64(2));
-    assert_eq!(e2.value.payload, Value::I64(3));
+    assert_eq!(e0.value.payload, Value::Int(1));
+    assert_eq!(e1.value.payload, Value::Int(2));
+    assert_eq!(e2.value.payload, Value::Int(3));
 }
 
 #[test]
@@ -452,13 +452,13 @@ fn cross_primitive_trace_order_preserved() {
     let t1 = txn.trace_record(
         TraceType::Thought { content: "first".into(), confidence: None },
         vec![],
-        Value::I64(1),
+        Value::Int(1),
     ).unwrap();
 
     let t2 = txn.trace_record(
         TraceType::Thought { content: "second".into(), confidence: None },
         vec![],
-        Value::I64(2),
+        Value::Int(2),
     ).unwrap();
 
     // Sequence numbers should be in order
@@ -503,9 +503,9 @@ fn cross_primitive_uncommitted_writes_not_visible() {
         let mut ctx = create_context(&ns);
         let mut txn = Transaction::new(&mut ctx, ns.clone());
 
-        txn.kv_put("temp_key", Value::I64(42)).unwrap();
+        txn.kv_put("temp_key", Value::Int(42)).unwrap();
         txn.event_append("temp_event", Value::Null).unwrap();
-        txn.state_init("temp_state", Value::I64(0)).unwrap();
+        txn.state_init("temp_state", Value::Int(0)).unwrap();
 
         // Transaction is dropped here without commit
     }
@@ -532,12 +532,12 @@ fn cross_primitive_many_operations() {
 
     // Many KV writes
     for i in 0..100 {
-        txn.kv_put(&format!("key-{}", i), Value::I64(i as i64)).unwrap();
+        txn.kv_put(&format!("key-{}", i), Value::Int(i as i64)).unwrap();
     }
 
     // Many events
     for i in 0..50 {
-        txn.event_append(&format!("event-{}", i), Value::I64(i as i64)).unwrap();
+        txn.event_append(&format!("event-{}", i), Value::Int(i as i64)).unwrap();
     }
 
     // Verify

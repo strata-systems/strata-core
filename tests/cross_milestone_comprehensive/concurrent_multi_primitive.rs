@@ -22,7 +22,7 @@ fn test_concurrent_all_primitives() {
         let kv = strata_primitives::KVStore::new(db_kv);
         let run_id = strata_core::types::RunId::new();
         for i in 0..100 {
-            kv.put(&run_id, &format!("kv_{}", i), Value::I64(i)).expect("kv put");
+            kv.put(&run_id, &format!("kv_{}", i), Value::Int(i)).expect("kv put");
         }
     }));
 
@@ -44,7 +44,7 @@ fn test_concurrent_all_primitives() {
         let event = strata_primitives::EventLog::new(db_event);
         let run_id = strata_core::types::RunId::new();
         for i in 0..100 {
-            event.append(&run_id, "type", Value::I64(i))
+            event.append(&run_id, "type", Value::Int(i))
                 .expect("event append");
         }
     }));
@@ -89,7 +89,7 @@ fn test_concurrent_same_run() {
 
             for i in 0..25 {
                 let key = format!("t{}_item{}", t, i);
-                kv.put(&run_id, &key, Value::I64((t * 100 + i) as i64)).expect("kv put");
+                kv.put(&run_id, &key, Value::Int((t * 100 + i) as i64)).expect("kv put");
                 vector.insert(run_id, "same_run", &key, &seeded_vector(3, (t * 100 + i) as u64), None)
                     .expect("vector insert");
             }

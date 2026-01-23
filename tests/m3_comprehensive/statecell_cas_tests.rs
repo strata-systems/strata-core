@@ -239,14 +239,14 @@ mod cas_atomicity {
                 // Retry loop
                 for _ in 0..100 {
                     let state = sc.read(run_id, "counter").unwrap().unwrap();
-                    let current = if let Value::I64(v) = state.value.value {
+                    let current = if let Value::Int(v) = state.value.value {
                         v
                     } else {
                         panic!()
                     };
 
                     if sc
-                        .cas(run_id, "counter", state.value.version, Value::I64(current + 1))
+                        .cas(run_id, "counter", state.value.version, Value::Int(current + 1))
                         .is_ok()
                     {
                         success_count.fetch_add(1, Ordering::Relaxed);
@@ -259,7 +259,7 @@ mod cas_atomicity {
 
         // Final value should equal number of successful increments
         let final_state = tp.state_cell.read(&run_id, "counter").unwrap().unwrap();
-        let final_value = if let Value::I64(v) = final_state.value.value {
+        let final_value = if let Value::Int(v) = final_state.value.value {
             v
         } else {
             panic!()
@@ -441,12 +441,12 @@ mod transition_speculative_execution {
         let (result, _version) = tp
             .state_cell
             .transition(&run_id, "counter", |state| {
-                let current = if let Value::I64(v) = &state.value {
+                let current = if let Value::Int(v) = &state.value {
                     *v
                 } else {
                     0
                 };
-                Ok((Value::I64(current + 1), current + 1))
+                Ok((Value::Int(current + 1), current + 1))
             })
             .unwrap();
 
@@ -497,12 +497,12 @@ mod transition_speculative_execution {
                 for _ in 0..10 {
                     let _ = sc.transition(run_id, "counter", |state| {
                         cc.fetch_add(1, Ordering::Relaxed);
-                        let current = if let Value::I64(v) = &state.value {
+                        let current = if let Value::Int(v) = &state.value {
                             *v
                         } else {
                             0
                         };
-                        Ok((Value::I64(current + 1), ()))
+                        Ok((Value::Int(current + 1), ()))
                     });
                 }
             },
@@ -511,7 +511,7 @@ mod transition_speculative_execution {
         // call_count >= number of successful transitions
         // (may be greater due to retries)
         let final_state = tp.state_cell.read(&run_id, "counter").unwrap().unwrap();
-        let final_value = if let Value::I64(v) = final_state.value.value {
+        let final_value = if let Value::Int(v) = final_state.value.value {
             v
         } else {
             0
@@ -545,12 +545,12 @@ mod transition_speculative_execution {
             move |_, (sc, run_id)| {
                 for _ in 0..ops_per_thread {
                     let _ = sc.transition(run_id, "counter", |state| {
-                        let current = if let Value::I64(v) = &state.value {
+                        let current = if let Value::Int(v) = &state.value {
                             *v
                         } else {
                             0
                         };
-                        Ok((Value::I64(current + 1), ()))
+                        Ok((Value::Int(current + 1), ()))
                     });
                 }
             },
@@ -558,7 +558,7 @@ mod transition_speculative_execution {
 
         // Final value should be exactly num_threads * ops_per_thread
         let final_state = tp.state_cell.read(&run_id, "counter").unwrap().unwrap();
-        let final_value = if let Value::I64(v) = final_state.value.value {
+        let final_value = if let Value::Int(v) = final_state.value.value {
             v
         } else {
             0
@@ -602,12 +602,12 @@ mod transition_speculative_execution {
         let (result, _version) = tp
             .state_cell
             .transition_or_init(&run_id, "new_cell", values::int(0), |state| {
-                let current = if let Value::I64(v) = &state.value {
+                let current = if let Value::Int(v) = &state.value {
                     *v
                 } else {
                     0
                 };
-                Ok((Value::I64(current + 1), current + 1))
+                Ok((Value::Int(current + 1), current + 1))
             })
             .unwrap();
 

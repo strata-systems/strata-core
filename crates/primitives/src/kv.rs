@@ -36,6 +36,15 @@ use strata_engine::Database;
 use std::sync::Arc;
 use std::time::Duration;
 
+/// Result of a scan operation with cursor-based pagination
+#[derive(Debug, Clone)]
+pub struct ScanResult {
+    /// Key-value pairs in this page
+    pub entries: Vec<(String, Versioned<Value>)>,
+    /// Cursor for next page (None if no more results)
+    pub cursor: Option<String>,
+}
+
 /// General-purpose key-value store primitive
 ///
 /// Stateless facade over Database - all state lives in storage.
@@ -113,7 +122,7 @@ impl KVStore {
     ///
     /// # M9 Contract
     /// - Returns `Versioned<Value>` with version information
-    /// - Version is `Version::TxnId(commit_version)` from storage
+    /// - Version is `Version::Txn(commit_version)` from storage
     pub fn get(&self, run_id: &RunId, key: &str) -> Result<Option<Versioned<Value>>> {
         use strata_core::traits::SnapshotView;
 
@@ -122,7 +131,7 @@ impl KVStore {
         let storage_key = self.key_for(run_id, key);
 
         // M9: Return full Versioned<Value> instead of just value
-        Ok(snapshot.get(&storage_key)?)
+        snapshot.get(&storage_key)
     }
 
     /// Get value only, discarding version (DEPRECATED)
@@ -145,8 +154,72 @@ impl KVStore {
             let storage_key = self.key_for(run_id, key);
             let result = txn.get(&storage_key)?;
             // M9: Wrap in Versioned with transaction snapshot version
-            Ok(result.map(|v| Versioned::new(v, Version::TxnId(txn.start_version))))
+            Ok(result.map(|v| Versioned::new(v, Version::Txn(txn.start_version))))
         })
+    }
+
+    /// Get a value at a specific version (point-in-time read)
+    ///
+    /// Returns the value as it existed at or before the specified version.
+    /// This enables historical queries and replay scenarios.
+    ///
+    /// # Arguments
+    /// * `run_id` - The run to query
+    /// * `key` - The key to look up
+    /// * `max_version` - The maximum version to return (inclusive)
+    ///
+    /// # Returns
+    /// * `Ok(Some(Versioned<Value>))` - Value at that version
+    /// * `Ok(None)` - Key didn't exist at that version
+    ///
+    /// # Errors
+    /// Returns error if storage operation fails.
+    pub fn get_at(
+        &self,
+        run_id: &RunId,
+        key: &str,
+        max_version: u64,
+    ) -> Result<Option<Versioned<Value>>> {
+        use strata_core::traits::Storage;
+
+        let storage_key = self.key_for(run_id, key);
+        self.db.storage().get_versioned(&storage_key, max_version)
+    }
+
+    /// Get version history for a key
+    ///
+    /// Returns historical versions of the value, newest first.
+    ///
+    /// # Arguments
+    /// * `run_id` - The run to query
+    /// * `key` - The key to get history for
+    /// * `limit` - Maximum versions to return (None = all)
+    /// * `before_version` - Only return versions older than this (for pagination)
+    ///
+    /// # Returns
+    /// Vector of Versioned<Value> in descending version order.
+    /// Empty if key doesn't exist or has no history.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Get last 10 versions
+    /// let history = kv.history(&run_id, "key", Some(10), None)?;
+    ///
+    /// // Paginate: get next 10 after version 50
+    /// let page2 = kv.history(&run_id, "key", Some(10), Some(50))?;
+    /// ```
+    pub fn history(
+        &self,
+        run_id: &RunId,
+        key: &str,
+        limit: Option<usize>,
+        before_version: Option<u64>,
+    ) -> Result<Vec<Versioned<Value>>> {
+        use strata_core::traits::Storage;
+
+        let storage_key = self.key_for(run_id, key);
+        self.db.storage().get_history(&storage_key, limit, before_version)
     }
 
     /// Put a value (M9: Returns version)
@@ -155,13 +228,13 @@ impl KVStore {
     /// Returns the version created by this write operation.
     ///
     /// # M9 Contract
-    /// - Returns `Version::TxnId(commit_version)` on success
+    /// - Returns `Version::Txn(commit_version)` on success
     pub fn put(&self, run_id: &RunId, key: &str, value: Value) -> Result<Version> {
         let ((), commit_version) = self.db.transaction_with_version(*run_id, |txn| {
             let storage_key = self.key_for(run_id, key);
             txn.put(storage_key, value)
         })?;
-        Ok(Version::TxnId(commit_version))
+        Ok(Version::Txn(commit_version))
     }
 
     /// Put a value without returning version (DEPRECATED)
@@ -181,7 +254,7 @@ impl KVStore {
     /// Reads will return expired values until cleanup runs.
     ///
     /// # M9 Contract
-    /// - Returns `Version::TxnId(commit_version)` on success
+    /// - Returns `Version::Txn(commit_version)` on success
     pub fn put_with_ttl(
         &self,
         run_id: &RunId,
@@ -198,14 +271,14 @@ impl KVStore {
                 + ttl.as_millis() as i64;
 
             // Store value with expiration metadata
-            let value_with_ttl = Value::Map(std::collections::HashMap::from([
+            let value_with_ttl = Value::Object(std::collections::HashMap::from([
                 ("value".to_string(), value),
-                ("expires_at".to_string(), Value::I64(expires_at)),
+                ("expires_at".to_string(), Value::Int(expires_at)),
             ]));
 
             txn.put(storage_key, value_with_ttl)
         })?;
-        Ok(Version::TxnId(commit_version))
+        Ok(Version::Txn(commit_version))
     }
 
     /// Delete a key
@@ -265,7 +338,7 @@ impl KVStore {
             .map(|key| {
                 let storage_key = Key::new_kv(ns.clone(), key);
                 // M9: Return full Versioned<Value>
-                Ok(snapshot.get(&storage_key)?)
+                snapshot.get(&storage_key)
             })
             .collect()
     }
@@ -348,10 +421,97 @@ impl KVStore {
                 .into_iter()
                 .filter_map(|(key, value)| {
                     key.user_key_string()
-                        .map(|k| (k, Versioned::new(value, Version::TxnId(txn.start_version))))
+                        .map(|k| (k, Versioned::new(value, Version::Txn(txn.start_version))))
                 })
                 .collect())
         })
+    }
+
+    /// List keys with optional prefix and limit
+    ///
+    /// Simpler alternative to scan() when cursor-based pagination isn't needed.
+    ///
+    /// # Arguments
+    /// * `run_id` - The run to query
+    /// * `prefix` - Key prefix filter (None for all keys)
+    /// * `limit` - Maximum keys to return (None for all)
+    ///
+    /// # Returns
+    /// Vector of key strings in lexicographic order.
+    pub fn keys(
+        &self,
+        run_id: &RunId,
+        prefix: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<String>> {
+        let all_keys = self.list(run_id, prefix)?;
+
+        match limit {
+            Some(n) => Ok(all_keys.into_iter().take(n).collect()),
+            None => Ok(all_keys),
+        }
+    }
+
+    /// Scan keys with cursor-based pagination
+    ///
+    /// Provides efficient pagination through large key sets.
+    ///
+    /// # Arguments
+    /// * `run_id` - The run to scan
+    /// * `prefix` - Key prefix filter (empty string for all keys)
+    /// * `limit` - Maximum entries per page
+    /// * `cursor` - Cursor from previous scan (None for first page)
+    ///
+    /// # Returns
+    /// ScanResult with entries and cursor for next page.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // First page
+    /// let page1 = kv.scan(&run_id, "user:", 100, None)?;
+    ///
+    /// // Next page
+    /// if let Some(cursor) = page1.cursor {
+    ///     let page2 = kv.scan(&run_id, "user:", 100, Some(&cursor))?;
+    /// }
+    /// ```
+    pub fn scan(
+        &self,
+        run_id: &RunId,
+        prefix: &str,
+        limit: usize,
+        cursor: Option<&str>,
+    ) -> Result<ScanResult> {
+        let all_entries = self.list_with_values(run_id, Some(prefix))?;
+
+        // Find starting position based on cursor
+        let start_idx = match cursor {
+            Some(c) => all_entries
+                .iter()
+                .position(|(k, _)| k.as_str() > c)
+                .unwrap_or(all_entries.len()),
+            None => 0,
+        };
+
+        // Take limit + 1 to detect if there are more
+        let entries: Vec<_> = all_entries
+            .into_iter()
+            .skip(start_idx)
+            .take(limit + 1)
+            .collect();
+
+        // Check if there are more results
+        let (entries, cursor) = if entries.len() > limit {
+            let mut entries = entries;
+            entries.pop(); // Remove the extra one
+            let last_key = entries.last().map(|(k, _)| k.clone());
+            (entries, last_key)
+        } else {
+            (entries, None)
+        };
+
+        Ok(ScanResult { entries, cursor })
     }
 
     // ========== Search API (M6) ==========
@@ -448,10 +608,10 @@ impl KVStore {
                     parts.push(s.to_string());
                 }
             }
-            Value::I64(n) => parts.push(n.to_string()),
-            Value::F64(n) => parts.push(n.to_string()),
+            Value::Int(n) => parts.push(n.to_string()),
+            Value::Float(n) => parts.push(n.to_string()),
             Value::Bool(b) => parts.push(b.to_string()),
-            Value::Array(_) | Value::Map(_) => {
+            Value::Array(_) | Value::Object(_) => {
                 if let Ok(s) = serde_json::to_string(value) {
                     parts.push(s);
                 }
@@ -473,8 +633,8 @@ impl KVStore {
     ///
     /// ```ignore
     /// kv.transaction(&run_id, |txn| {
-    ///     txn.put("key1", Value::I64(1))?;
-    ///     txn.put("key2", Value::I64(2))?;
+    ///     txn.put("key1", Value::Int(1))?;
+    ///     txn.put("key2", Value::Int(2))?;
     ///     let val = txn.get("key1")?;
     ///     Ok(val)
     /// })?;
@@ -682,7 +842,7 @@ mod tests {
         let run_id = RunId::new();
 
         assert!(!kv.exists(&run_id, "key1").unwrap());
-        kv.put(&run_id, "key1", Value::I64(42)).unwrap();
+        kv.put(&run_id, "key1", Value::Int(42)).unwrap();
         assert!(kv.exists(&run_id, "key1").unwrap());
     }
 
@@ -727,11 +887,11 @@ mod tests {
 
         // Verify the value is wrapped with TTL metadata
         if let Some(versioned) = result {
-            if let Value::Map(map) = versioned.value {
+            if let Value::Object(map) = versioned.value {
                 assert!(map.contains_key("value"));
                 assert!(map.contains_key("expires_at"));
             } else {
-                panic!("Expected Value::Map with TTL metadata");
+                panic!("Expected Value::Object with TTL metadata");
             }
         }
     }
@@ -771,9 +931,9 @@ mod tests {
         let run_id = RunId::new();
 
         kv.transaction(&run_id, |txn| {
-            txn.put("key", Value::I64(1))?;
+            txn.put("key", Value::Int(1))?;
             let val = txn.get("key")?;
-            assert_eq!(val, Some(Value::I64(1)));
+            assert_eq!(val, Some(Value::Int(1)));
             Ok(())
         })
         .unwrap();
@@ -785,7 +945,7 @@ mod tests {
         let run_id = RunId::new();
 
         // Setup: create a key
-        kv.put(&run_id, "key", Value::I64(1)).unwrap();
+        kv.put(&run_id, "key", Value::Int(1)).unwrap();
 
         // Delete in transaction
         kv.transaction(&run_id, |txn| {
@@ -809,9 +969,9 @@ mod tests {
         let (_temp, _db, kv) = setup();
         let run_id = RunId::new();
 
-        kv.put(&run_id, "a", Value::I64(1)).unwrap();
-        kv.put(&run_id, "b", Value::I64(2)).unwrap();
-        kv.put(&run_id, "c", Value::I64(3)).unwrap();
+        kv.put(&run_id, "a", Value::Int(1)).unwrap();
+        kv.put(&run_id, "b", Value::Int(2)).unwrap();
+        kv.put(&run_id, "c", Value::Int(3)).unwrap();
 
         let keys = kv.list(&run_id, None).unwrap();
         assert_eq!(keys.len(), 3);
@@ -825,9 +985,9 @@ mod tests {
         let (_temp, _db, kv) = setup();
         let run_id = RunId::new();
 
-        kv.put(&run_id, "user:1", Value::I64(1)).unwrap();
-        kv.put(&run_id, "user:2", Value::I64(2)).unwrap();
-        kv.put(&run_id, "task:1", Value::I64(3)).unwrap();
+        kv.put(&run_id, "user:1", Value::Int(1)).unwrap();
+        kv.put(&run_id, "user:2", Value::Int(2)).unwrap();
+        kv.put(&run_id, "task:1", Value::Int(3)).unwrap();
 
         let user_keys = kv.list(&run_id, Some("user:")).unwrap();
         assert_eq!(user_keys.len(), 2);
@@ -844,8 +1004,8 @@ mod tests {
         let (_temp, _db, kv) = setup();
         let run_id = RunId::new();
 
-        kv.put(&run_id, "key1", Value::I64(1)).unwrap();
-        kv.put(&run_id, "key2", Value::I64(2)).unwrap();
+        kv.put(&run_id, "key1", Value::Int(1)).unwrap();
+        kv.put(&run_id, "key2", Value::Int(2)).unwrap();
 
         let keys = kv.list(&run_id, Some("nonexistent:")).unwrap();
         assert!(keys.is_empty());
@@ -875,8 +1035,8 @@ mod tests {
         let run1 = RunId::new();
         let run2 = RunId::new();
 
-        kv.put(&run1, "run1-key", Value::I64(1)).unwrap();
-        kv.put(&run2, "run2-key", Value::I64(2)).unwrap();
+        kv.put(&run1, "run1-key", Value::Int(1)).unwrap();
+        kv.put(&run2, "run2-key", Value::Int(2)).unwrap();
 
         // Each run only sees its own keys
         let run1_keys = kv.list(&run1, None).unwrap();
@@ -914,7 +1074,7 @@ mod tests {
         let run_id = RunId::new();
 
         // Setup
-        kv.put(&run_id, "key", Value::I64(42)).unwrap();
+        kv.put(&run_id, "key", Value::Int(42)).unwrap();
 
         // Delete via extension trait
         db.transaction(run_id, |txn| {
@@ -942,12 +1102,12 @@ mod tests {
         );
 
         // Integer
-        kv.put(&run_id, "int", Value::I64(42)).unwrap();
-        assert_eq!(kv.get(&run_id, "int").unwrap().map(|v| v.value), Some(Value::I64(42)));
+        kv.put(&run_id, "int", Value::Int(42)).unwrap();
+        assert_eq!(kv.get(&run_id, "int").unwrap().map(|v| v.value), Some(Value::Int(42)));
 
         // Float
-        kv.put(&run_id, "float", Value::F64(3.14)).unwrap();
-        assert_eq!(kv.get(&run_id, "float").unwrap().map(|v| v.value), Some(Value::F64(3.14)));
+        kv.put(&run_id, "float", Value::Float(3.14)).unwrap();
+        assert_eq!(kv.get(&run_id, "float").unwrap().map(|v| v.value), Some(Value::Float(3.14)));
 
         // Boolean
         kv.put(&run_id, "bool", Value::Bool(true)).unwrap();
@@ -969,13 +1129,13 @@ mod tests {
         kv.put(
             &run_id,
             "array",
-            Value::Array(vec![Value::I64(1), Value::I64(2)]),
+            Value::Array(vec![Value::Int(1), Value::Int(2)]),
         )
         .unwrap();
         // M9: Extract value from Versioned wrapper
         assert_eq!(
             kv.get(&run_id, "array").unwrap().map(|v| v.value),
-            Some(Value::Array(vec![Value::I64(1), Value::I64(2)]))
+            Some(Value::Array(vec![Value::Int(1), Value::Int(2)]))
         );
     }
 
@@ -986,11 +1146,11 @@ mod tests {
         let (_temp, _db, kv) = setup();
         let run_id = RunId::new();
 
-        kv.put(&run_id, "key", Value::I64(42)).unwrap();
+        kv.put(&run_id, "key", Value::Int(42)).unwrap();
 
         let result = kv.get(&run_id, "key").unwrap();
         // M9: get() now returns Versioned<Value>
-        assert_eq!(result.map(|v| v.value), Some(Value::I64(42)));
+        assert_eq!(result.map(|v| v.value), Some(Value::Int(42)));
     }
 
     #[test]
@@ -1007,7 +1167,7 @@ mod tests {
         let (_temp, _db, kv) = setup();
         let run_id = RunId::new();
 
-        kv.put(&run_id, "key", Value::I64(42)).unwrap();
+        kv.put(&run_id, "key", Value::Int(42)).unwrap();
 
         let fast = kv.get(&run_id, "key").unwrap();
         let txn = kv.get_in_transaction(&run_id, "key").unwrap();
@@ -1028,7 +1188,7 @@ mod tests {
         // Write some data
         kv.put(&run_id, "key1", Value::String("value1".into()))
             .unwrap();
-        kv.put(&run_id, "key2", Value::I64(42)).unwrap();
+        kv.put(&run_id, "key2", Value::Int(42)).unwrap();
 
         // Fast path reads
         let fast1 = kv.get(&run_id, "key1").unwrap();
@@ -1053,7 +1213,7 @@ mod tests {
 
         assert!(!kv.exists(&run_id, "key").unwrap());
 
-        kv.put(&run_id, "key", Value::I64(42)).unwrap();
+        kv.put(&run_id, "key", Value::Int(42)).unwrap();
 
         assert!(kv.exists(&run_id, "key").unwrap());
     }
@@ -1088,16 +1248,16 @@ mod tests {
         let (_temp, _db, kv) = setup();
         let run_id = RunId::new();
 
-        kv.put(&run_id, "a", Value::I64(1)).unwrap();
-        kv.put(&run_id, "b", Value::I64(2)).unwrap();
-        kv.put(&run_id, "c", Value::I64(3)).unwrap();
+        kv.put(&run_id, "a", Value::Int(1)).unwrap();
+        kv.put(&run_id, "b", Value::Int(2)).unwrap();
+        kv.put(&run_id, "c", Value::Int(3)).unwrap();
 
         let results = kv.get_many(&run_id, &["a", "b", "c", "missing"]).unwrap();
 
         // M9: get_many returns Versioned<Value>
-        assert_eq!(results[0].as_ref().map(|v| &v.value), Some(&Value::I64(1)));
-        assert_eq!(results[1].as_ref().map(|v| &v.value), Some(&Value::I64(2)));
-        assert_eq!(results[2].as_ref().map(|v| &v.value), Some(&Value::I64(3)));
+        assert_eq!(results[0].as_ref().map(|v| &v.value), Some(&Value::Int(1)));
+        assert_eq!(results[1].as_ref().map(|v| &v.value), Some(&Value::Int(2)));
+        assert_eq!(results[2].as_ref().map(|v| &v.value), Some(&Value::Int(3)));
         assert_eq!(results[3], None);
     }
 
@@ -1106,17 +1266,17 @@ mod tests {
         let (_temp, _db, kv) = setup();
         let run_id = RunId::new();
 
-        kv.put(&run_id, "z", Value::I64(26)).unwrap();
-        kv.put(&run_id, "a", Value::I64(1)).unwrap();
-        kv.put(&run_id, "m", Value::I64(13)).unwrap();
+        kv.put(&run_id, "z", Value::Int(26)).unwrap();
+        kv.put(&run_id, "a", Value::Int(1)).unwrap();
+        kv.put(&run_id, "m", Value::Int(13)).unwrap();
 
         // Order of results matches order of input keys
         let results = kv.get_many(&run_id, &["m", "z", "a"]).unwrap();
 
         // M9: get_many returns Versioned<Value>
-        assert_eq!(results[0].as_ref().map(|v| &v.value), Some(&Value::I64(13))); // m
-        assert_eq!(results[1].as_ref().map(|v| &v.value), Some(&Value::I64(26))); // z
-        assert_eq!(results[2].as_ref().map(|v| &v.value), Some(&Value::I64(1))); // a
+        assert_eq!(results[0].as_ref().map(|v| &v.value), Some(&Value::Int(13))); // m
+        assert_eq!(results[1].as_ref().map(|v| &v.value), Some(&Value::Int(26))); // z
+        assert_eq!(results[2].as_ref().map(|v| &v.value), Some(&Value::Int(1))); // a
     }
 
     #[test]
@@ -1165,7 +1325,7 @@ mod tests {
 
         assert!(!kv.contains(&run_id, "key").unwrap());
 
-        kv.put(&run_id, "key", Value::I64(42)).unwrap();
+        kv.put(&run_id, "key", Value::Int(42)).unwrap();
 
         assert!(kv.contains(&run_id, "key").unwrap());
     }
@@ -1176,15 +1336,15 @@ mod tests {
         let run1 = RunId::new();
         let run2 = RunId::new();
 
-        kv.put(&run1, "key", Value::I64(1)).unwrap();
-        kv.put(&run2, "key", Value::I64(2)).unwrap();
+        kv.put(&run1, "key", Value::Int(1)).unwrap();
+        kv.put(&run2, "key", Value::Int(2)).unwrap();
 
         let results1 = kv.get_many(&run1, &["key"]).unwrap();
         let results2 = kv.get_many(&run2, &["key"]).unwrap();
 
         // M9: get_many returns Versioned<Value>
-        assert_eq!(results1[0].as_ref().map(|v| &v.value), Some(&Value::I64(1)));
-        assert_eq!(results2[0].as_ref().map(|v| &v.value), Some(&Value::I64(2)));
+        assert_eq!(results1[0].as_ref().map(|v| &v.value), Some(&Value::Int(1)));
+        assert_eq!(results2[0].as_ref().map(|v| &v.value), Some(&Value::Int(2)));
     }
 
     // ========== Search API Tests (M6) ==========
@@ -1314,5 +1474,220 @@ mod tests {
         let response = Searchable::search(&kv, &req).unwrap();
 
         assert!(!response.hits.is_empty());
+    }
+
+    // ========== get_at() Tests ==========
+
+    #[test]
+    fn test_get_at_returns_historical_version() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        // Write 3 versions
+        let v1 = kv.put(&run_id, "key", Value::Int(1)).unwrap();
+        let v2 = kv.put(&run_id, "key", Value::Int(2)).unwrap();
+        let v3 = kv.put(&run_id, "key", Value::Int(3)).unwrap();
+
+        // Read at each version
+        let at_v1 = kv.get_at(&run_id, "key", v1.as_u64()).unwrap();
+        let at_v2 = kv.get_at(&run_id, "key", v2.as_u64()).unwrap();
+        let at_v3 = kv.get_at(&run_id, "key", v3.as_u64()).unwrap();
+
+        assert_eq!(at_v1.map(|v| v.value), Some(Value::Int(1)));
+        assert_eq!(at_v2.map(|v| v.value), Some(Value::Int(2)));
+        assert_eq!(at_v3.map(|v| v.value), Some(Value::Int(3)));
+    }
+
+    #[test]
+    fn test_get_at_returns_none_before_creation() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        // Write at some version
+        let v = kv.put(&run_id, "key", Value::Int(1)).unwrap();
+
+        // Read before the key was created
+        let before = kv.get_at(&run_id, "key", v.as_u64() - 1).unwrap();
+        assert!(before.is_none());
+    }
+
+    #[test]
+    fn test_get_at_nonexistent_key() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        let result = kv.get_at(&run_id, "nonexistent", 100).unwrap();
+        assert!(result.is_none());
+    }
+
+    // ========== history() Tests ==========
+
+    #[test]
+    fn test_history_returns_all_versions() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        // Write 3 versions
+        kv.put(&run_id, "key", Value::Int(1)).unwrap();
+        kv.put(&run_id, "key", Value::Int(2)).unwrap();
+        kv.put(&run_id, "key", Value::Int(3)).unwrap();
+
+        // Get full history
+        let history = kv.history(&run_id, "key", None, None).unwrap();
+
+        assert_eq!(history.len(), 3);
+        // Newest first
+        assert_eq!(history[0].value, Value::Int(3));
+        assert_eq!(history[1].value, Value::Int(2));
+        assert_eq!(history[2].value, Value::Int(1));
+    }
+
+    #[test]
+    fn test_history_with_limit() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        // Write 5 versions
+        for i in 1..=5 {
+            kv.put(&run_id, "key", Value::Int(i)).unwrap();
+        }
+
+        // Get only 2 versions
+        let history = kv.history(&run_id, "key", Some(2), None).unwrap();
+
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].value, Value::Int(5));
+        assert_eq!(history[1].value, Value::Int(4));
+    }
+
+    #[test]
+    fn test_history_pagination() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        // Write 5 versions
+        for i in 1..=5 {
+            kv.put(&run_id, "key", Value::Int(i)).unwrap();
+        }
+
+        // Page 1: first 2
+        let page1 = kv.history(&run_id, "key", Some(2), None).unwrap();
+        assert_eq!(page1.len(), 2);
+        assert_eq!(page1[0].value, Value::Int(5));
+        assert_eq!(page1[1].value, Value::Int(4));
+
+        // Page 2: before version of last item in page 1
+        let before = page1[1].version.as_u64();
+        let page2 = kv.history(&run_id, "key", Some(2), Some(before)).unwrap();
+        assert_eq!(page2.len(), 2);
+        assert_eq!(page2[0].value, Value::Int(3));
+        assert_eq!(page2[1].value, Value::Int(2));
+    }
+
+    #[test]
+    fn test_history_nonexistent_key() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        let history = kv.history(&run_id, "nonexistent", None, None).unwrap();
+        assert!(history.is_empty());
+    }
+
+    // ========== keys() Tests ==========
+
+    #[test]
+    fn test_keys_returns_all() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        kv.put(&run_id, "a", Value::Int(1)).unwrap();
+        kv.put(&run_id, "b", Value::Int(2)).unwrap();
+        kv.put(&run_id, "c", Value::Int(3)).unwrap();
+
+        let keys = kv.keys(&run_id, None, None).unwrap();
+        assert_eq!(keys.len(), 3);
+    }
+
+    #[test]
+    fn test_keys_with_prefix() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        kv.put(&run_id, "user:1", Value::Int(1)).unwrap();
+        kv.put(&run_id, "user:2", Value::Int(2)).unwrap();
+        kv.put(&run_id, "task:1", Value::Int(3)).unwrap();
+
+        let user_keys = kv.keys(&run_id, Some("user:"), None).unwrap();
+        assert_eq!(user_keys.len(), 2);
+    }
+
+    #[test]
+    fn test_keys_with_limit() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        for i in 0..10 {
+            kv.put(&run_id, &format!("key:{:02}", i), Value::Int(i)).unwrap();
+        }
+
+        let keys = kv.keys(&run_id, None, Some(3)).unwrap();
+        assert_eq!(keys.len(), 3);
+    }
+
+    // ========== scan() Tests ==========
+
+    #[test]
+    fn test_scan_basic() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        for i in 0..5 {
+            kv.put(&run_id, &format!("key:{:02}", i), Value::Int(i)).unwrap();
+        }
+
+        let result = kv.scan(&run_id, "key:", 10, None).unwrap();
+        assert_eq!(result.entries.len(), 5);
+        assert!(result.cursor.is_none()); // No more pages
+    }
+
+    #[test]
+    fn test_scan_pagination() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        // Create 10 keys
+        for i in 0..10 {
+            kv.put(&run_id, &format!("key:{:02}", i), Value::Int(i)).unwrap();
+        }
+
+        // Scan with limit 3
+        let page1 = kv.scan(&run_id, "key:", 3, None).unwrap();
+        assert_eq!(page1.entries.len(), 3);
+        assert!(page1.cursor.is_some());
+
+        // Next page
+        let page2 = kv.scan(&run_id, "key:", 3, page1.cursor.as_deref()).unwrap();
+        assert_eq!(page2.entries.len(), 3);
+        assert!(page2.cursor.is_some());
+
+        // Continue until exhausted
+        let mut cursor = page2.cursor;
+        let mut total = 6;
+        while cursor.is_some() {
+            let page = kv.scan(&run_id, "key:", 3, cursor.as_deref()).unwrap();
+            total += page.entries.len();
+            cursor = page.cursor;
+        }
+        assert_eq!(total, 10);
+    }
+
+    #[test]
+    fn test_scan_empty_results() {
+        let (_temp, _db, kv) = setup();
+        let run_id = RunId::new();
+
+        let result = kv.scan(&run_id, "nonexistent:", 10, None).unwrap();
+        assert!(result.entries.is_empty());
+        assert!(result.cursor.is_none());
     }
 }

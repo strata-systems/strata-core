@@ -45,6 +45,30 @@ pub trait Storage: Send + Sync {
     /// Returns an error if the storage operation fails.
     fn get_versioned(&self, key: &Key, max_version: u64) -> Result<Option<VersionedValue>>;
 
+    /// Get version history for a key
+    ///
+    /// Returns historical versions of the value, newest first.
+    /// Used by all primitives that support history queries (KV, JSON, State, etc.).
+    ///
+    /// # Arguments
+    /// * `key` - The key to get history for
+    /// * `limit` - Maximum versions to return (None = all)
+    /// * `before_version` - Only return versions older than this (for pagination)
+    ///
+    /// # Returns
+    /// Vector of VersionedValue in descending version order (newest first).
+    /// Empty if key doesn't exist or has no history.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the storage operation fails.
+    fn get_history(
+        &self,
+        key: &Key,
+        limit: Option<usize>,
+        before_version: Option<u64>,
+    ) -> Result<Vec<VersionedValue>>;
+
     /// Put key-value pair with optional TTL
     ///
     /// Returns the version assigned to this write.

@@ -30,9 +30,9 @@ fn test_transaction_framing_atomicity() {
     let kv = test_db.kv();
 
     // Write a batch of related data
-    kv.put(&run_id, "tx_a", Value::I64(1)).unwrap();
-    kv.put(&run_id, "tx_b", Value::I64(2)).unwrap();
-    kv.put(&run_id, "tx_c", Value::I64(3)).unwrap();
+    kv.put(&run_id, "tx_a", Value::Int(1)).unwrap();
+    kv.put(&run_id, "tx_b", Value::Int(2)).unwrap();
+    kv.put(&run_id, "tx_c", Value::Int(3)).unwrap();
 
     test_db.reopen();
 
@@ -83,7 +83,7 @@ fn test_transaction_order_preserved() {
             kv.put(
                 &run_id,
                 &format!("tx{}_{}", tx, i),
-                Value::I64((tx * 5 + i) as i64),
+                Value::Int((tx * 5 + i) as i64),
             )
             .unwrap();
         }
@@ -124,7 +124,7 @@ fn test_single_entry_transaction() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "single", Value::I64(42)).unwrap();
+    kv.put(&run_id, "single", Value::Int(42)).unwrap();
 
     test_db.reopen();
 
@@ -144,7 +144,7 @@ fn test_large_transaction() {
 
     // Large batch
     for i in 0..500 {
-        kv.put(&run_id, &format!("large_{}", i), Value::I64(i))
+        kv.put(&run_id, &format!("large_{}", i), Value::Int(i))
             .unwrap();
     }
 

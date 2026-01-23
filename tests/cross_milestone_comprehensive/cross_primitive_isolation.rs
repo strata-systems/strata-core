@@ -36,7 +36,7 @@ fn test_complete_run_isolation() {
     p.event
         .append(&run_a, "type", Value::Null)
         .expect("event a");
-    p.state.init(&run_a, "cell", Value::I64(1)).expect("state a");
+    p.state.init(&run_a, "cell", Value::Int(1)).expect("state a");
     p.vector
         .insert(run_a, "col_a", "v", &[1.0, 0.0, 0.0], None)
         .expect("vector a");
@@ -50,7 +50,7 @@ fn test_complete_run_isolation() {
     p.event
         .append(&run_b, "type", Value::Null)
         .expect("event b");
-    p.state.init(&run_b, "cell", Value::I64(2)).expect("state b");
+    p.state.init(&run_b, "cell", Value::Int(2)).expect("state b");
     p.vector
         .insert(run_b, "col_b", "v", &[0.0, 1.0, 0.0], None)
         .expect("vector b");

@@ -40,7 +40,7 @@ fn bench_disjoint_scaling(c: &mut Criterion) {
                             let kv = KVStore::new(db);
                             let run_id = RunId::new(); // Different run per thread
                             for i in 0..ITERATIONS_PER_THREAD {
-                                kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+                                kv.put(&run_id, &format!("key{}", i), Value::Int(i as i64))
                                     .unwrap();
                             }
                         })
@@ -79,7 +79,7 @@ fn bench_shared_scaling(c: &mut Criterion) {
                             let kv = KVStore::new(db);
                             for _ in 0..ITERATIONS_PER_THREAD {
                                 let i = counter.fetch_add(1, Ordering::Relaxed);
-                                kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+                                kv.put(&run_id, &format!("key{}", i), Value::Int(i as i64))
                                     .unwrap();
                             }
                         })
@@ -109,7 +109,7 @@ fn bench_mixed_read_write(c: &mut Criterion) {
 
             // Pre-populate with data
             for i in 0..1000 {
-                kv.put(&run_id, &format!("read_key{}", i), Value::I64(i as i64))
+                kv.put(&run_id, &format!("read_key{}", i), Value::Int(i as i64))
                     .unwrap();
             }
 
@@ -125,7 +125,7 @@ fn bench_mixed_read_write(c: &mut Criterion) {
                                     kv.put(
                                         &run_id,
                                         &format!("write_t{}_{}", t, i),
-                                        Value::I64(i as i64),
+                                        Value::Int(i as i64),
                                     )
                                     .unwrap();
                                 } else {
@@ -167,7 +167,7 @@ fn bench_throughput_scaling(c: &mut Criterion) {
                         let kv = KVStore::new(db);
                         let run_id = RunId::new();
                         for i in 0..ITERATIONS_PER_THREAD {
-                            kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+                            kv.put(&run_id, &format!("key{}", i), Value::Int(i as i64))
                                 .unwrap();
                         }
                     })
@@ -196,7 +196,7 @@ fn bench_lock_contention(c: &mut Criterion) {
 
         b.iter(|| {
             for i in 0..100 {
-                kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+                kv.put(&run_id, &format!("key{}", i), Value::Int(i as i64))
                     .unwrap();
             }
         });
@@ -214,7 +214,7 @@ fn bench_lock_contention(c: &mut Criterion) {
                     std::thread::spawn(move || {
                         let kv = KVStore::new(db);
                         for i in 0..25 {
-                            kv.put(&run_id, &format!("t{}_key{}", t, i), Value::I64(i as i64))
+                            kv.put(&run_id, &format!("t{}_key{}", t, i), Value::Int(i as i64))
                                 .unwrap();
                         }
                     })
@@ -241,7 +241,7 @@ fn bench_lock_contention(c: &mut Criterion) {
                             let kv = KVStore::new(db);
                             let run_id = RunId::new(); // Different run
                             for i in 0..25 {
-                                kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+                                kv.put(&run_id, &format!("key{}", i), Value::Int(i as i64))
                                     .unwrap();
                             }
                         })

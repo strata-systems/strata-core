@@ -2,28 +2,48 @@
 
 **Strata** - a fast, durable, embedded database for AI agent workloads.
 
-**Current Version**: 0.10.0 (M10 Storage Backend, Retention & Compaction)
+**Current Version**: 0.11.0 (M11 API Surface)
 
 ## Quick Links
 
 - [Getting Started](getting-started.md) - Installation and quick start
-- [API Reference](api-reference.md) - Complete API documentation
 - [Architecture](architecture.md) - How Strata works internally
 - [Milestones](../milestones/MILESTONES.md) - Project roadmap
 
+## External APIs (User-Facing)
+
+These APIs are for application developers using Strata:
+
+- **[Facade API](facade-api.md)** - Redis-like convenience API
+  - Simplified return types (no version metadata by default)
+  - Implicit default run targeting
+  - Auto-commit semantics
+  - Familiar operations: `get`, `set`, `incr`, `mget`, `mset`, etc.
+
+- **[Substrate API](substrate-api.md)** - Full-power API
+  - Explicit run targeting on every operation
+  - Full versioning with `Versioned<T>` returns
+  - History access and point-in-time reads
+  - CAS operations for optimistic concurrency
+  - Transaction control
+
+## Internal APIs (Engine)
+
+- [Engine API Reference](api-reference.md) - Internal primitives and storage layer
+  - KVStore, EventLog, StateCell, TraceStore, RunIndex, JsonStore primitives
+  - WAL types and snapshot/recovery internals
+  - Used by Substrate implementation, not directly by applications
+
 ## Features
 
-- **Seven Primitives**: KVStore, EventLog, StateCell, TraceStore, RunIndex, JsonStore, VectorStore
-- **Hybrid Search**: BM25 + semantic (vector) search with RRF fusion
+- **Six Primitives**: KVStore, EventLog, StateCell, TraceStore, RunIndex, JsonStore
+- **Hybrid Search**: BM25 + semantic search with RRF fusion
 - **Three Durability Modes**: InMemory (<3µs), Buffered (<30µs), Strict (~2ms)
 - **OCC Transactions**: Optimistic concurrency with snapshot isolation
 - **Run-Scoped Operations**: Every operation tagged with RunId for replay
-- **Disk-Backed Storage**: Portable database artifacts with WAL + snapshots
-- **Retention Policies**: KeepAll, KeepLast(N), KeepFor(Duration)
-- **Compaction**: User-triggered WAL and data compaction
+- **Periodic Snapshots**: Bounded recovery time with automatic WAL truncation
 - **Crash Recovery**: Deterministic, idempotent, prefix-consistent recovery
 - **Deterministic Replay**: Side-effect free reconstruction of agent run state
-- **Versioned API**: All reads return `Versioned<T>` with version and timestamp
 
 ## Current Status
 
@@ -37,46 +57,52 @@
 | M6 Retrieval | ✅ |
 | M7 Durability | ✅ |
 | M8 Vector | ✅ |
-| M9 API Stabilization | ✅ |
-| M10 Storage Backend | ✅ |
-| M11 Public API Contract | Next |
+| M9 Runs | ✅ |
+| M10 Schemas | ✅ |
+| M11 API Surface | ✅ |
 
 ## Quick Start
 
+### Facade API (Recommended for Most Users)
+
 ```rust
-use strata::{Database, DatabaseConfig, DurabilityMode};
-use strata::primitives::KVStore;
-use strata::Value;
+use strata_api::facade::{FacadeImpl, KVFacade, KVFacadeBatch};
+use strata_api::substrate::SubstrateImpl;
+use strata_core::Value;
+use strata_engine::Database;
 use std::sync::Arc;
 
-// Open database with disk-backed storage
-let config = DatabaseConfig {
-    durability_mode: DurabilityMode::Buffered {
-        flush_interval_ms: 100,
-        max_pending_writes: 1000
-    },
-    ..Default::default()
-};
+// Create facade
+let db = Arc::new(Database::open("./my-agent-db")?);
+let substrate = Arc::new(SubstrateImpl::new(db));
+let facade = FacadeImpl::new(substrate);
 
-let db = Arc::new(Database::open("./my-agent-db", config)?);
+// Simple get/set (targets default run, auto-commits)
+facade.set("user:1", Value::String("Alice".into()))?;
+let name = facade.get("user:1")?;
 
-let kv = KVStore::new(db.clone());
-let run_id = db.begin_run();
+// Atomic increment
+let count = facade.incr("page_views")?;
 
-// All operations participate in transactions
-kv.put(&run_id, "key", Value::String("value".into()))?;
+// Batch operations
+facade.mset(&[("a", Value::Int(1)), ("b", Value::Int(2))])?;
+```
 
-// Reads return Versioned<T> with version and timestamp
-let versioned = kv.get(&run_id, "key")?;
-if let Some(v) = versioned {
-    println!("Value: {:?}, Version: {:?}", v.value, v.version);
-}
+### Substrate API (Full Power)
 
-// Checkpoint for crash recovery
-db.checkpoint()?;
+```rust
+use strata_api::substrate::{SubstrateImpl, ApiRunId, KVStore};
+use strata_core::Value;
 
-db.end_run(run_id)?;
-db.close()?;
+// Create a specific run
+let run = ApiRunId::new();
+
+// Explicit run targeting, versioned results
+let version = substrate.kv_put(&run, "key", Value::String("value".into()))?;
+let versioned = substrate.kv_get(&run, "key")?;
+
+// Access history
+let history = substrate.kv_history(&run, "key", Some(10), None)?;
 ```
 
 ## Performance
@@ -87,24 +113,7 @@ db.close()?;
 | Buffered | <30µs | 50K+ ops/sec |
 | Strict | ~2ms | ~500 ops/sec |
 
-## Storage
-
-Strata uses a portable directory structure:
-
-```
-strata.db/
-├── MANIFEST              # Database metadata
-├── WAL/                  # Write-ahead log segments
-│   ├── wal-000001.seg
-│   └── ...
-├── SNAPSHOTS/            # Point-in-time snapshots
-│   └── snap-000010.chk
-└── DATA/                 # Optional data segments
-```
-
-**Portability**: Copy a closed `strata.db/` directory to create a valid clone.
-
 ---
 
-**Version**: 0.10.0
-**Last Updated**: 2026-01-21
+**Version**: 0.11.0
+**Last Updated**: 2026-01-23

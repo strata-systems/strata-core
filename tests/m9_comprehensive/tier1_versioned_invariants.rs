@@ -156,8 +156,8 @@ fn versioned_with_option() {
 
 #[test]
 fn versioned_with_value_enum() {
-    let v = Versioned::new(Value::I64(42), Version::txn(1));
-    assert_eq!(v.value(), &Value::I64(42));
+    let v = Versioned::new(Value::Int(42), Version::txn(1));
+    assert_eq!(v.value(), &Value::Int(42));
 }
 
 // ============================================================================
@@ -172,11 +172,11 @@ fn versioned_value_is_versioned_value() {
 
 #[test]
 fn versioned_value_map_to_different_type() {
-    let vv: VersionedValue = Versioned::new(Value::I64(42), Version::txn(1));
+    let vv: VersionedValue = Versioned::new(Value::Int(42), Version::txn(1));
 
     // Can map to extract inner value
     let mapped = vv.map(|v| match v {
-        Value::I64(n) => n,
+        Value::Int(n) => n,
         _ => panic!("expected i64"),
     });
 

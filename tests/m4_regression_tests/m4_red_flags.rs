@@ -65,7 +65,7 @@ fn red_flag_facade_tax_a1_a0() {
 
     // Warmup
     for i in 0..100 {
-        kv.put(&run_id, &format!("warmup{}", i), Value::I64(i as i64))
+        kv.put(&run_id, &format!("warmup{}", i), Value::Int(i as i64))
             .unwrap();
     }
 
@@ -73,14 +73,14 @@ fn red_flag_facade_tax_a1_a0() {
     let start = Instant::now();
     for i in 0..ITERATIONS {
         let key = Key::new(ns.clone(), TypeTag::KV, format!("a0key{}", i).into_bytes());
-        let _ = Storage::put(db.storage().as_ref(), key, Value::I64(i as i64), None);
+        let _ = Storage::put(db.storage().as_ref(), key, Value::Int(i as i64), None);
     }
     let a0_elapsed = start.elapsed();
 
     // A1: Primitive layer (KVStore.put)
     let start = Instant::now();
     for i in 0..ITERATIONS {
-        kv.put(&run_id, &format!("a1key{}", i), Value::I64(i as i64))
+        kv.put(&run_id, &format!("a1key{}", i), Value::Int(i as i64))
             .unwrap();
     }
     let a1_elapsed = start.elapsed();
@@ -117,14 +117,14 @@ fn red_flag_facade_tax_b_a1() {
 
     // Warmup
     for i in 0..100 {
-        kv.put(&run_id, &format!("warmup{}", i), Value::I64(i as i64))
+        kv.put(&run_id, &format!("warmup{}", i), Value::Int(i as i64))
             .unwrap();
     }
 
     // A1: Primitive layer
     let start = Instant::now();
     for i in 0..ITERATIONS {
-        kv.put(&run_id, &format!("a1key{}", i), Value::I64(i as i64))
+        kv.put(&run_id, &format!("a1key{}", i), Value::Int(i as i64))
             .unwrap();
     }
     let a1_elapsed = start.elapsed();
@@ -136,7 +136,7 @@ fn red_flag_facade_tax_b_a1() {
             use strata_core::types::{Key, Namespace, TypeTag};
             let ns = Namespace::for_run(run_id);
             let key = Key::new(ns, TypeTag::KV, format!("bkey{}", i).into_bytes());
-            txn.put(key, Value::I64(i as i64))
+            txn.put(key, Value::Int(i as i64))
         })
         .unwrap();
     }
@@ -176,7 +176,7 @@ fn red_flag_disjoint_scaling() {
 
     let start = Instant::now();
     for i in 0..iterations {
-        kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+        kv.put(&run_id, &format!("key{}", i), Value::Int(i as i64))
             .unwrap();
     }
     let single_thread_time = start.elapsed();
@@ -191,7 +191,7 @@ fn red_flag_disjoint_scaling() {
                 let kv = KVStore::new(db);
                 let run_id = RunId::new(); // Different run per thread
                 for i in 0..iterations {
-                    kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+                    kv.put(&run_id, &format!("key{}", i), Value::Int(i as i64))
                         .unwrap();
                 }
             })
@@ -233,7 +233,7 @@ fn red_flag_tail_latency() {
 
     // Warmup
     for i in 0..100 {
-        kv.put(&run_id, &format!("warmup{}", i), Value::I64(i as i64))
+        kv.put(&run_id, &format!("warmup{}", i), Value::Int(i as i64))
             .unwrap();
     }
 
@@ -241,7 +241,7 @@ fn red_flag_tail_latency() {
     let mut latencies: Vec<u128> = Vec::with_capacity(1000);
     for i in 0..1000 {
         let start = Instant::now();
-        kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+        kv.put(&run_id, &format!("key{}", i), Value::Int(i as i64))
             .unwrap();
         latencies.push(start.elapsed().as_nanos());
     }
@@ -276,7 +276,7 @@ fn red_flag_hot_path_allocations() {
 
     // Warmup - fill pool
     for _ in 0..10 {
-        kv.put(&run_id, "warmup", Value::I64(0)).unwrap();
+        kv.put(&run_id, "warmup", Value::Int(0)).unwrap();
     }
 
     // Check pool has contexts
@@ -290,7 +290,7 @@ fn red_flag_hot_path_allocations() {
 
     // Do operations
     for i in 0..100 {
-        kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+        kv.put(&run_id, &format!("key{}", i), Value::Int(i as i64))
             .unwrap();
     }
 
@@ -330,7 +330,7 @@ fn red_flag_graceful_shutdown() {
         let run_id = RunId::new();
 
         for i in 0..100 {
-            kv.put(&run_id, &format!("key{}", i), Value::I64(i as i64))
+            kv.put(&run_id, &format!("key{}", i), Value::Int(i as i64))
                 .unwrap();
         }
 

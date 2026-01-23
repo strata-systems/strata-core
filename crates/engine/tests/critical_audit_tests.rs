@@ -48,7 +48,7 @@ fn test_issue_594_toctou_race_condition() {
     let key = Key::new_kv(ns, "counter");
 
     // Initialize counter
-    db.put(run_id, key.clone(), Value::I64(0)).unwrap();
+    db.put(run_id, key.clone(), Value::Int(0)).unwrap();
 
     let success_count = Arc::new(AtomicU64::new(0));
     let iterations = 100;
@@ -70,10 +70,10 @@ fn test_issue_594_toctou_race_condition() {
                     // Each thread tries to increment the counter
                     let result = db.transaction(run_id, |txn| {
                         // txn.get returns Option<Value> directly (not VersionedValue)
-                        let current = txn.get(&key)?.unwrap_or(Value::I64(0));
+                        let current = txn.get(&key)?.unwrap_or(Value::Int(0));
                         let new_val = match current {
-                            Value::I64(n) => Value::I64(n + 1),
-                            _ => Value::I64(1),
+                            Value::Int(n) => Value::Int(n + 1),
+                            _ => Value::Int(1),
                         };
                         txn.put(key.clone(), new_val)?;
                         Ok(())
@@ -93,7 +93,7 @@ fn test_issue_594_toctou_race_condition() {
 
     let final_val = db.get(&key).unwrap().unwrap();
     let final_count = match final_val.value {
-        Value::I64(n) => n,
+        Value::Int(n) => n,
         _ => panic!("Expected I64"),
     };
 

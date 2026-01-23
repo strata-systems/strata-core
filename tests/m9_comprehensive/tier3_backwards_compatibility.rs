@@ -150,11 +150,11 @@ fn primitive_kind_methods_work() {
 
 #[test]
 fn versioned_value_is_versioned_value_alias() {
-    let vv: VersionedValue = Versioned::new(Value::I64(42), Version::txn(1));
+    let vv: VersionedValue = Versioned::new(Value::Int(42), Version::txn(1));
 
     // Should be assignable to Versioned<Value>
     let v: Versioned<Value> = vv;
-    assert_eq!(v.value(), &Value::I64(42));
+    assert_eq!(v.value(), &Value::Int(42));
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn versioned_value_construction_works() {
     // All construction patterns should work
     let vv1: VersionedValue = Versioned::new(Value::Null, Version::txn(1));
     let vv2: VersionedValue = Versioned::new(Value::Bool(true), Version::seq(1));
-    let vv3: VersionedValue = Versioned::new(Value::I64(42), Version::counter(1));
+    let vv3: VersionedValue = Versioned::new(Value::Int(42), Version::counter(1));
 
     assert!(vv1.version().is_txn_id());
     assert!(vv2.version().is_sequence());
@@ -181,7 +181,7 @@ fn versioned_value_methods_work() {
 
 #[test]
 fn versioned_value_map_works() {
-    let vv: VersionedValue = Versioned::new(Value::I64(42), Version::txn(1));
+    let vv: VersionedValue = Versioned::new(Value::Int(42), Version::txn(1));
 
     let mapped: Versioned<String> = vv.map(|v| format!("{:?}", v));
     assert!(mapped.value().contains("42"));
@@ -263,7 +263,7 @@ fn doc_ref_serialization_compatible_with_entity_ref() {
 
 #[test]
 fn versioned_value_serialization_compatible() {
-    let vv: VersionedValue = Versioned::new(Value::I64(42), Version::txn(1));
+    let vv: VersionedValue = Versioned::new(Value::Int(42), Version::txn(1));
 
     // Serialize as VersionedValue
     let json = serde_json::to_string(&vv).expect("serialize");

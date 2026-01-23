@@ -3,18 +3,45 @@
 //! This module defines all error types used throughout the system.
 //! We use `thiserror` for automatic `Display` and `Error` trait implementations.
 //!
-//! ## M9 Error Model
+//! ## Strata Error Model
 //!
 //! The `StrataError` type is the unified error type for all Strata APIs.
 //! It provides consistent error handling across all primitives.
 //!
-//! ### Error Categories
+//! ### Canonical Error Codes (Frozen)
 //!
-//! - **Not Found**: Entity doesn't exist
-//! - **Conflict**: Version mismatch or concurrent modification
-//! - **Transaction**: Transaction-level failures
-//! - **Validation**: Invalid input or operation
-//! - **Storage**: Low-level storage failures
+//! The following 9 error codes are the canonical wire representation:
+//!
+//! | Code | Description |
+//! |------|-------------|
+//! | NotFound | Entity or key not found |
+//! | WrongType | Wrong primitive or value type |
+//! | InvalidKey | Key syntax invalid |
+//! | InvalidPath | JSON path invalid |
+//! | HistoryTrimmed | Requested version is unavailable |
+//! | ConstraintViolation | API-level invariant violation (structural failure) |
+//! | Conflict | Temporal failure (version mismatch, write conflict) |
+//! | SerializationError | Invalid Value encoding |
+//! | StorageError | Disk or WAL failure |
+//! | InternalError | Bug or invariant violation |
+//!
+//! ### Error Classification
+//!
+//! - **Temporal failures (Conflict)**: Version conflicts, write conflicts, transaction aborts
+//!   - These are retryable - the operation may succeed with fresh data
+//! - **Structural failures (ConstraintViolation)**: Invalid input, dimension mismatch, capacity exceeded
+//!   - These require input changes to resolve
+//!
+//! ### Wire Encoding
+//!
+//! All errors encode to JSON as:
+//! ```json
+//! {
+//!   "code": "NotFound",
+//!   "message": "Entity not found: kv:default/config",
+//!   "details": { "entity": "kv:default/config" }
+//! }
+//! ```
 //!
 //! ### Usage
 //!
@@ -23,8 +50,8 @@
 //!     Err(StrataError::NotFound { entity_ref }) => {
 //!         println!("Entity not found: {}", entity_ref);
 //!     }
-//!     Err(StrataError::VersionConflict { expected, actual, .. }) => {
-//!         println!("Conflict: expected {:?}, got {:?}", expected, actual);
+//!     Err(StrataError::Conflict { reason, .. }) => {
+//!         println!("Conflict: {}", reason);
 //!     }
 //!     Err(e) if e.is_retryable() => {
 //!         // Retry the operation
@@ -38,8 +65,331 @@
 
 use crate::contract::{EntityRef, Version};
 use crate::types::{Key, RunId};
+use std::collections::HashMap;
 use std::io;
 use thiserror::Error;
+
+// =============================================================================
+// ErrorCode - Canonical Wire Error Codes (Frozen)
+// =============================================================================
+
+/// Canonical error codes for wire encoding
+///
+/// These 10 codes are the stable wire representation of all Strata errors.
+/// They are frozen and will not change without a major version bump.
+///
+/// ## Error Categories
+///
+/// - **NotFound**: Entity or key not found
+/// - **WrongType**: Wrong primitive or value type
+/// - **InvalidKey**: Key syntax invalid
+/// - **InvalidPath**: JSON path invalid
+/// - **HistoryTrimmed**: Requested version is unavailable
+/// - **ConstraintViolation**: Structural failure (invalid input, limits exceeded)
+/// - **Conflict**: Temporal failure (version mismatch, write conflict, transaction abort)
+/// - **SerializationError**: Invalid Value encoding
+/// - **StorageError**: Disk or WAL failure
+/// - **InternalError**: Bug or invariant violation
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ErrorCode {
+    /// Entity or key not found
+    NotFound,
+    /// Wrong primitive or value type
+    WrongType,
+    /// Key syntax invalid
+    InvalidKey,
+    /// JSON path invalid
+    InvalidPath,
+    /// Requested version is unavailable (history trimmed)
+    HistoryTrimmed,
+    /// Structural failure: invalid input, dimension mismatch, capacity exceeded
+    ConstraintViolation,
+    /// Temporal failure: version mismatch, write conflict, transaction abort
+    Conflict,
+    /// Invalid Value encoding
+    SerializationError,
+    /// Disk or WAL failure
+    StorageError,
+    /// Bug or invariant violation
+    InternalError,
+}
+
+impl ErrorCode {
+    /// Get the canonical string representation for wire encoding
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ErrorCode::NotFound => "NotFound",
+            ErrorCode::WrongType => "WrongType",
+            ErrorCode::InvalidKey => "InvalidKey",
+            ErrorCode::InvalidPath => "InvalidPath",
+            ErrorCode::HistoryTrimmed => "HistoryTrimmed",
+            ErrorCode::ConstraintViolation => "ConstraintViolation",
+            ErrorCode::Conflict => "Conflict",
+            ErrorCode::SerializationError => "SerializationError",
+            ErrorCode::StorageError => "StorageError",
+            ErrorCode::InternalError => "InternalError",
+        }
+    }
+
+    /// Parse an error code from its string representation
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "NotFound" => Some(ErrorCode::NotFound),
+            "WrongType" => Some(ErrorCode::WrongType),
+            "InvalidKey" => Some(ErrorCode::InvalidKey),
+            "InvalidPath" => Some(ErrorCode::InvalidPath),
+            "HistoryTrimmed" => Some(ErrorCode::HistoryTrimmed),
+            "ConstraintViolation" => Some(ErrorCode::ConstraintViolation),
+            "Conflict" => Some(ErrorCode::Conflict),
+            "SerializationError" => Some(ErrorCode::SerializationError),
+            "StorageError" => Some(ErrorCode::StorageError),
+            "InternalError" => Some(ErrorCode::InternalError),
+            _ => None,
+        }
+    }
+
+    /// Check if this error code represents a retryable error
+    pub fn is_retryable(&self) -> bool {
+        matches!(self, ErrorCode::Conflict)
+    }
+
+    /// Check if this error code represents a serious/unrecoverable error
+    pub fn is_serious(&self) -> bool {
+        matches!(self, ErrorCode::InternalError | ErrorCode::StorageError)
+    }
+}
+
+impl std::fmt::Display for ErrorCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+// =============================================================================
+// ErrorDetails - Structured Error Details for Wire Encoding
+// =============================================================================
+
+/// Structured error details for wire encoding
+///
+/// This provides type-safe access to error details that will be serialized
+/// as JSON in the wire format.
+#[derive(Debug, Clone, Default)]
+pub struct ErrorDetails {
+    /// Key-value pairs for error details
+    fields: HashMap<String, DetailValue>,
+}
+
+/// A value in error details
+#[derive(Debug, Clone)]
+pub enum DetailValue {
+    /// String value
+    String(String),
+    /// Integer value
+    Int(i64),
+    /// Boolean value
+    Bool(bool),
+}
+
+impl ErrorDetails {
+    /// Create empty error details
+    pub fn new() -> Self {
+        Self {
+            fields: HashMap::new(),
+        }
+    }
+
+    /// Add a string field
+    pub fn with_string(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.fields
+            .insert(key.into(), DetailValue::String(value.into()));
+        self
+    }
+
+    /// Add an integer field
+    pub fn with_int(mut self, key: impl Into<String>, value: i64) -> Self {
+        self.fields.insert(key.into(), DetailValue::Int(value));
+        self
+    }
+
+    /// Add a boolean field
+    pub fn with_bool(mut self, key: impl Into<String>, value: bool) -> Self {
+        self.fields.insert(key.into(), DetailValue::Bool(value));
+        self
+    }
+
+    /// Check if details are empty
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
+    }
+
+    /// Get the underlying fields
+    pub fn fields(&self) -> &HashMap<String, DetailValue> {
+        &self.fields
+    }
+
+    /// Convert to a HashMap<String, String> for simple serialization
+    pub fn to_string_map(&self) -> HashMap<String, String> {
+        self.fields
+            .iter()
+            .map(|(k, v)| {
+                let s = match v {
+                    DetailValue::String(s) => s.clone(),
+                    DetailValue::Int(i) => i.to_string(),
+                    DetailValue::Bool(b) => b.to_string(),
+                };
+                (k.clone(), s)
+            })
+            .collect()
+    }
+}
+
+// =============================================================================
+// ConstraintReason - Structured Constraint Violation Reasons
+// =============================================================================
+
+/// Structured constraint violation reasons
+///
+/// These reasons indicate why a constraint was violated.
+/// Per ERR-4: ConstraintViolation = structural failures (not temporal).
+/// These require input changes to resolve - they won't succeed on retry alone.
+///
+/// ## Categories
+///
+/// - **Value Constraints**: Value too large, dimension mismatch
+/// - **Key Constraints**: Invalid key format
+/// - **Capacity Constraints**: Resource limits exceeded
+/// - **Operation Constraints**: Invalid operation for current state
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ConstraintReason {
+    // Value constraints
+    /// Value exceeds maximum allowed size
+    ValueTooLarge,
+    /// String exceeds maximum length
+    StringTooLong,
+    /// Bytes exceeds maximum length
+    BytesTooLong,
+    /// Array exceeds maximum length
+    ArrayTooLong,
+    /// Object exceeds maximum entries
+    ObjectTooLarge,
+    /// Nesting depth exceeds maximum
+    NestingTooDeep,
+
+    // Key constraints
+    /// Key exceeds maximum length
+    KeyTooLong,
+    /// Key contains invalid characters
+    KeyInvalid,
+    /// Key is empty
+    KeyEmpty,
+
+    // Vector constraints
+    /// Vector dimension doesn't match collection
+    DimensionMismatch,
+    /// Vector dimension exceeds maximum
+    DimensionTooLarge,
+
+    // Capacity constraints
+    /// Resource limit reached
+    CapacityExceeded,
+    /// Operation budget exceeded
+    BudgetExceeded,
+
+    // Operation constraints
+    /// Operation not allowed in current state
+    InvalidOperation,
+    /// Run is not active
+    RunNotActive,
+    /// Transaction not active
+    TransactionNotActive,
+
+    // Type constraints
+    /// Wrong value type for operation
+    WrongType,
+    /// Numeric overflow
+    Overflow,
+}
+
+impl ConstraintReason {
+    /// Get the canonical string representation
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ConstraintReason::ValueTooLarge => "value_too_large",
+            ConstraintReason::StringTooLong => "string_too_long",
+            ConstraintReason::BytesTooLong => "bytes_too_long",
+            ConstraintReason::ArrayTooLong => "array_too_long",
+            ConstraintReason::ObjectTooLarge => "object_too_large",
+            ConstraintReason::NestingTooDeep => "nesting_too_deep",
+            ConstraintReason::KeyTooLong => "key_too_long",
+            ConstraintReason::KeyInvalid => "key_invalid",
+            ConstraintReason::KeyEmpty => "key_empty",
+            ConstraintReason::DimensionMismatch => "dimension_mismatch",
+            ConstraintReason::DimensionTooLarge => "dimension_too_large",
+            ConstraintReason::CapacityExceeded => "capacity_exceeded",
+            ConstraintReason::BudgetExceeded => "budget_exceeded",
+            ConstraintReason::InvalidOperation => "invalid_operation",
+            ConstraintReason::RunNotActive => "run_not_active",
+            ConstraintReason::TransactionNotActive => "transaction_not_active",
+            ConstraintReason::WrongType => "wrong_type",
+            ConstraintReason::Overflow => "overflow",
+        }
+    }
+
+    /// Parse a constraint reason from its string representation
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "value_too_large" => Some(ConstraintReason::ValueTooLarge),
+            "string_too_long" => Some(ConstraintReason::StringTooLong),
+            "bytes_too_long" => Some(ConstraintReason::BytesTooLong),
+            "array_too_long" => Some(ConstraintReason::ArrayTooLong),
+            "object_too_large" => Some(ConstraintReason::ObjectTooLarge),
+            "nesting_too_deep" => Some(ConstraintReason::NestingTooDeep),
+            "key_too_long" => Some(ConstraintReason::KeyTooLong),
+            "key_invalid" => Some(ConstraintReason::KeyInvalid),
+            "key_empty" => Some(ConstraintReason::KeyEmpty),
+            "dimension_mismatch" => Some(ConstraintReason::DimensionMismatch),
+            "dimension_too_large" => Some(ConstraintReason::DimensionTooLarge),
+            "capacity_exceeded" => Some(ConstraintReason::CapacityExceeded),
+            "budget_exceeded" => Some(ConstraintReason::BudgetExceeded),
+            "invalid_operation" => Some(ConstraintReason::InvalidOperation),
+            "run_not_active" => Some(ConstraintReason::RunNotActive),
+            "transaction_not_active" => Some(ConstraintReason::TransactionNotActive),
+            "wrong_type" => Some(ConstraintReason::WrongType),
+            "overflow" => Some(ConstraintReason::Overflow),
+            _ => None,
+        }
+    }
+
+    /// Get a human-readable description
+    pub fn description(&self) -> &'static str {
+        match self {
+            ConstraintReason::ValueTooLarge => "Value exceeds maximum allowed size",
+            ConstraintReason::StringTooLong => "String exceeds maximum length",
+            ConstraintReason::BytesTooLong => "Bytes exceeds maximum length",
+            ConstraintReason::ArrayTooLong => "Array exceeds maximum length",
+            ConstraintReason::ObjectTooLarge => "Object exceeds maximum entries",
+            ConstraintReason::NestingTooDeep => "Nesting depth exceeds maximum",
+            ConstraintReason::KeyTooLong => "Key exceeds maximum length",
+            ConstraintReason::KeyInvalid => "Key contains invalid characters",
+            ConstraintReason::KeyEmpty => "Key cannot be empty",
+            ConstraintReason::DimensionMismatch => "Vector dimension doesn't match collection",
+            ConstraintReason::DimensionTooLarge => "Vector dimension exceeds maximum",
+            ConstraintReason::CapacityExceeded => "Resource limit reached",
+            ConstraintReason::BudgetExceeded => "Operation budget exceeded",
+            ConstraintReason::InvalidOperation => "Operation not allowed in current state",
+            ConstraintReason::RunNotActive => "Run is not active",
+            ConstraintReason::TransactionNotActive => "Transaction is not active",
+            ConstraintReason::WrongType => "Wrong value type for operation",
+            ConstraintReason::Overflow => "Numeric overflow",
+        }
+    }
+}
+
+impl std::fmt::Display for ConstraintReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
 
 /// Result type alias for Strata operations
 pub type Result<T> = std::result::Result<T, Error>;
@@ -308,22 +658,30 @@ mod tests {
 }
 
 // =============================================================================
-// StrataError - Unified Error Type (M9)
+// StrataError - Unified Error Type
 // =============================================================================
 
-/// Unified error type for all Strata operations (M9)
+/// Unified error type for all Strata operations
 ///
 /// This is the canonical error type returned by all Strata APIs.
 /// It provides consistent error handling across all primitives.
 ///
+/// ## Wire Encoding
+///
+/// All errors encode to the canonical wire format with three fields:
+/// - `code`: One of the 10 canonical error codes (see `ErrorCode`)
+/// - `message`: Human-readable error message
+/// - `details`: Optional structured details
+///
 /// ## Error Categories
 ///
 /// - **Not Found**: Entity doesn't exist (`NotFound`, `RunNotFound`, `PathNotFound`)
-/// - **Conflict**: Version mismatch or concurrent modification (`VersionConflict`, `WriteConflict`)
-/// - **Transaction**: Transaction-level failures (`TransactionAborted`, `TransactionTimeout`, `TransactionNotActive`)
-/// - **Validation**: Invalid input or operation (`InvalidOperation`, `InvalidInput`, `DimensionMismatch`)
+/// - **Wrong Type**: Type mismatch (`WrongType`)
+/// - **Temporal Failures (Conflict)**: Version mismatch, write conflict, transaction abort
+///   - These are **retryable** with fresh data
+/// - **Structural Failures (ConstraintViolation)**: Invalid input, dimension mismatch, capacity exceeded
+///   - These require input changes to resolve
 /// - **Storage**: Low-level storage failures (`Storage`, `Serialization`, `Corruption`)
-/// - **Resource**: Resource limits exceeded (`CapacityExceeded`, `BudgetExceeded`)
 /// - **Internal**: Unexpected internal errors (`Internal`)
 ///
 /// ## Usage
@@ -332,15 +690,16 @@ mod tests {
 /// use strata_core::{StrataError, StrataResult, EntityRef, Version};
 ///
 /// fn example_operation() -> StrataResult<String> {
-///     // Use ? operator naturally
 ///     let value = some_db_operation()?;
 ///     Ok(value)
 /// }
 ///
-/// // Match on specific variants
 /// match result {
 ///     Err(StrataError::NotFound { entity_ref }) => {
 ///         println!("Entity not found: {}", entity_ref);
+///     }
+///     Err(StrataError::Conflict { reason, .. }) => {
+///         println!("Conflict: {}", reason);
 ///     }
 ///     Err(e) if e.is_retryable() => {
 ///         // Retry the operation
@@ -363,11 +722,7 @@ pub enum StrataError {
     /// The referenced entity does not exist. This could be a key, document,
     /// event, state cell, or any other entity type.
     ///
-    /// ## Example
-    /// ```ignore
-    /// // KV key not found
-    /// StrataError::not_found(EntityRef::kv(run_id, "missing-key"))
-    /// ```
+    /// Wire code: `NotFound`
     #[error("not found: {entity_ref}")]
     NotFound {
         /// Reference to the entity that was not found
@@ -376,13 +731,9 @@ pub enum StrataError {
 
     /// Run not found
     ///
-    /// The specified run does not exist. This is separate from `NotFound`
-    /// because runs are meta-level entities that scope all other data.
+    /// The specified run does not exist.
     ///
-    /// ## Example
-    /// ```ignore
-    /// StrataError::run_not_found(run_id)
-    /// ```
+    /// Wire code: `NotFound`
     #[error("run not found: {run_id}")]
     RunNotFound {
         /// ID of the run that was not found
@@ -390,8 +741,40 @@ pub enum StrataError {
     },
 
     // =========================================================================
-    // Conflict Errors
+    // Type Errors
     // =========================================================================
+
+    /// Wrong type
+    ///
+    /// The operation expected a different value type or primitive type.
+    ///
+    /// Wire code: `WrongType`
+    #[error("wrong type: expected {expected}, got {actual}")]
+    WrongType {
+        /// Expected type
+        expected: String,
+        /// Actual type found
+        actual: String,
+    },
+
+    // =========================================================================
+    // Conflict Errors (Temporal Failures - Retryable)
+    // =========================================================================
+
+    /// Generic conflict (temporal failure)
+    ///
+    /// The operation failed due to a temporal conflict that may be resolved
+    /// by retrying with fresh data. This is the canonical wire representation
+    /// for all conflict types.
+    ///
+    /// Wire code: `Conflict`
+    #[error("conflict: {reason}")]
+    Conflict {
+        /// Reason for the conflict
+        reason: String,
+        /// Optional entity reference
+        entity_ref: Option<EntityRef>,
+    },
 
     /// Version conflict
     ///
@@ -402,6 +785,8 @@ pub enum StrataError {
     ///
     /// This error is **retryable** - the operation can be retried after
     /// re-reading the current version.
+    ///
+    /// Wire code: `Conflict`
     ///
     /// ## Example
     /// ```ignore
@@ -548,6 +933,8 @@ pub enum StrataError {
     ///
     /// The specified path doesn't exist in the JSON document.
     ///
+    /// Wire code: `InvalidPath`
+    ///
     /// ## Example
     /// ```ignore
     /// StrataError::PathNotFound {
@@ -561,6 +948,35 @@ pub enum StrataError {
         entity_ref: EntityRef,
         /// The path that wasn't found
         path: String,
+    },
+
+    // =========================================================================
+    // History Errors
+    // =========================================================================
+
+    /// History trimmed
+    ///
+    /// The requested version is no longer available because retention policy
+    /// has removed it.
+    ///
+    /// Wire code: `HistoryTrimmed`
+    ///
+    /// ## Example
+    /// ```ignore
+    /// StrataError::history_trimmed(
+    ///     EntityRef::kv(run_id, "key"),
+    ///     Version::Txn(100),
+    ///     Version::Txn(150),
+    /// )
+    /// ```
+    #[error("history trimmed for {entity_ref}: requested {requested}, earliest is {earliest_retained}")]
+    HistoryTrimmed {
+        /// Reference to the entity
+        entity_ref: EntityRef,
+        /// The requested version
+        requested: Version,
+        /// The earliest version still retained
+        earliest_retained: Version,
     },
 
     // =========================================================================
@@ -818,6 +1234,28 @@ impl StrataError {
         }
     }
 
+    /// Create a HistoryTrimmed error
+    ///
+    /// ## Example
+    /// ```ignore
+    /// StrataError::history_trimmed(
+    ///     EntityRef::kv(run_id, "key"),
+    ///     Version::Txn(100),
+    ///     Version::Txn(150),
+    /// )
+    /// ```
+    pub fn history_trimmed(
+        entity_ref: EntityRef,
+        requested: Version,
+        earliest_retained: Version,
+    ) -> Self {
+        StrataError::HistoryTrimmed {
+            entity_ref,
+            requested,
+            earliest_retained,
+        }
+    }
+
     /// Create a Storage error
     ///
     /// ## Example
@@ -909,6 +1347,187 @@ impl StrataError {
         }
     }
 
+    /// Create a WrongType error
+    ///
+    /// ## Example
+    /// ```ignore
+    /// StrataError::wrong_type("Int", "String")
+    /// ```
+    pub fn wrong_type(expected: impl Into<String>, actual: impl Into<String>) -> Self {
+        StrataError::WrongType {
+            expected: expected.into(),
+            actual: actual.into(),
+        }
+    }
+
+    /// Create a Conflict error (generic temporal failure)
+    ///
+    /// ## Example
+    /// ```ignore
+    /// StrataError::conflict("Version mismatch on key 'counter'")
+    /// ```
+    pub fn conflict(reason: impl Into<String>) -> Self {
+        StrataError::Conflict {
+            reason: reason.into(),
+            entity_ref: None,
+        }
+    }
+
+    /// Create a Conflict error with entity reference
+    ///
+    /// ## Example
+    /// ```ignore
+    /// StrataError::conflict_on(EntityRef::kv(run_id, "key"), "Version mismatch")
+    /// ```
+    pub fn conflict_on(entity_ref: EntityRef, reason: impl Into<String>) -> Self {
+        StrataError::Conflict {
+            reason: reason.into(),
+            entity_ref: Some(entity_ref),
+        }
+    }
+
+    // =========================================================================
+    // Wire Encoding Methods
+    // =========================================================================
+
+    /// Get the canonical error code for wire encoding
+    ///
+    /// This maps the error variant to one of the 10 canonical error codes.
+    pub fn code(&self) -> ErrorCode {
+        match self {
+            // NotFound errors
+            StrataError::NotFound { .. } => ErrorCode::NotFound,
+            StrataError::RunNotFound { .. } => ErrorCode::NotFound,
+
+            // WrongType errors
+            StrataError::WrongType { .. } => ErrorCode::WrongType,
+
+            // Conflict errors (temporal failures - retryable)
+            StrataError::Conflict { .. } => ErrorCode::Conflict,
+            StrataError::VersionConflict { .. } => ErrorCode::Conflict,
+            StrataError::WriteConflict { .. } => ErrorCode::Conflict,
+            StrataError::TransactionAborted { .. } => ErrorCode::Conflict,
+            StrataError::TransactionTimeout { .. } => ErrorCode::Conflict,
+            StrataError::TransactionNotActive { .. } => ErrorCode::Conflict,
+
+            // ConstraintViolation errors (structural failures)
+            StrataError::InvalidOperation { .. } => ErrorCode::ConstraintViolation,
+            StrataError::InvalidInput { .. } => ErrorCode::ConstraintViolation,
+            StrataError::DimensionMismatch { .. } => ErrorCode::ConstraintViolation,
+            StrataError::CapacityExceeded { .. } => ErrorCode::ConstraintViolation,
+            StrataError::BudgetExceeded { .. } => ErrorCode::ConstraintViolation,
+
+            // Path errors
+            StrataError::PathNotFound { .. } => ErrorCode::InvalidPath,
+
+            // History errors
+            StrataError::HistoryTrimmed { .. } => ErrorCode::HistoryTrimmed,
+
+            // Storage errors
+            StrataError::Storage { .. } => ErrorCode::StorageError,
+            StrataError::Serialization { .. } => ErrorCode::SerializationError,
+            StrataError::Corruption { .. } => ErrorCode::StorageError,
+
+            // Internal errors
+            StrataError::Internal { .. } => ErrorCode::InternalError,
+        }
+    }
+
+    /// Get the error message for wire encoding
+    ///
+    /// This returns the human-readable error message.
+    pub fn message(&self) -> String {
+        self.to_string()
+    }
+
+    /// Get the structured error details for wire encoding
+    ///
+    /// This returns key-value details about the error that can be
+    /// serialized to JSON.
+    pub fn details(&self) -> ErrorDetails {
+        match self {
+            StrataError::NotFound { entity_ref } => {
+                ErrorDetails::new().with_string("entity", entity_ref.to_string())
+            }
+            StrataError::RunNotFound { run_id } => {
+                ErrorDetails::new().with_string("run_id", run_id.to_string())
+            }
+            StrataError::WrongType { expected, actual } => ErrorDetails::new()
+                .with_string("expected", expected)
+                .with_string("actual", actual),
+            StrataError::Conflict { reason, entity_ref } => {
+                let mut details = ErrorDetails::new().with_string("reason", reason);
+                if let Some(ref e) = entity_ref {
+                    details = details.with_string("entity", e.to_string());
+                }
+                details
+            }
+            StrataError::VersionConflict {
+                entity_ref,
+                expected,
+                actual,
+            } => ErrorDetails::new()
+                .with_string("entity", entity_ref.to_string())
+                .with_string("expected", expected.to_string())
+                .with_string("actual", actual.to_string()),
+            StrataError::WriteConflict { entity_ref } => {
+                ErrorDetails::new().with_string("entity", entity_ref.to_string())
+            }
+            StrataError::TransactionAborted { reason } => {
+                ErrorDetails::new().with_string("reason", reason)
+            }
+            StrataError::TransactionTimeout { duration_ms } => {
+                ErrorDetails::new().with_int("duration_ms", *duration_ms as i64)
+            }
+            StrataError::TransactionNotActive { state } => {
+                ErrorDetails::new().with_string("state", state)
+            }
+            StrataError::InvalidOperation { entity_ref, reason } => ErrorDetails::new()
+                .with_string("entity", entity_ref.to_string())
+                .with_string("reason", reason),
+            StrataError::InvalidInput { message } => {
+                ErrorDetails::new().with_string("message", message)
+            }
+            StrataError::DimensionMismatch { expected, got } => ErrorDetails::new()
+                .with_int("expected", *expected as i64)
+                .with_int("got", *got as i64),
+            StrataError::PathNotFound { entity_ref, path } => ErrorDetails::new()
+                .with_string("entity", entity_ref.to_string())
+                .with_string("path", path),
+            StrataError::HistoryTrimmed {
+                entity_ref,
+                requested,
+                earliest_retained,
+            } => ErrorDetails::new()
+                .with_string("entity", entity_ref.to_string())
+                .with_string("requested", requested.to_string())
+                .with_string("earliest_retained", earliest_retained.to_string()),
+            StrataError::Storage { message, .. } => {
+                ErrorDetails::new().with_string("message", message)
+            }
+            StrataError::Serialization { message } => {
+                ErrorDetails::new().with_string("message", message)
+            }
+            StrataError::Corruption { message } => {
+                ErrorDetails::new().with_string("message", message)
+            }
+            StrataError::CapacityExceeded {
+                resource,
+                limit,
+                requested,
+            } => ErrorDetails::new()
+                .with_string("resource", resource)
+                .with_int("limit", *limit as i64)
+                .with_int("requested", *requested as i64),
+            StrataError::BudgetExceeded { operation } => {
+                ErrorDetails::new().with_string("operation", operation)
+            }
+            StrataError::Internal { message } => {
+                ErrorDetails::new().with_string("message", message)
+            }
+        }
+    }
+
     // =========================================================================
     // Classification Methods
     // =========================================================================
@@ -932,9 +1551,9 @@ impl StrataError {
         )
     }
 
-    /// Check if this is a conflict error
+    /// Check if this is a conflict error (temporal failure)
     ///
-    /// Returns true for: `VersionConflict`, `WriteConflict`
+    /// Returns true for: `Conflict`, `VersionConflict`, `WriteConflict`
     ///
     /// ## Example
     /// ```ignore
@@ -945,8 +1564,17 @@ impl StrataError {
     pub fn is_conflict(&self) -> bool {
         matches!(
             self,
-            StrataError::VersionConflict { .. } | StrataError::WriteConflict { .. }
+            StrataError::Conflict { .. }
+                | StrataError::VersionConflict { .. }
+                | StrataError::WriteConflict { .. }
         )
+    }
+
+    /// Check if this is a wrong type error
+    ///
+    /// Returns true for: `WrongType`
+    pub fn is_wrong_type(&self) -> bool {
+        matches!(self, StrataError::WrongType { .. })
     }
 
     /// Check if this is a transaction error
@@ -1011,6 +1639,7 @@ impl StrataError {
     /// Check if this error is retryable
     ///
     /// Retryable errors may succeed on retry:
+    /// - `Conflict`: Generic conflict, retry with fresh data
     /// - `VersionConflict`: Re-read current version and retry
     /// - `WriteConflict`: Retry the transaction
     /// - `TransactionAborted`: Retry the transaction
@@ -1028,7 +1657,8 @@ impl StrataError {
     pub fn is_retryable(&self) -> bool {
         matches!(
             self,
-            StrataError::VersionConflict { .. }
+            StrataError::Conflict { .. }
+                | StrataError::VersionConflict { .. }
                 | StrataError::WriteConflict { .. }
                 | StrataError::TransactionAborted { .. }
         )
@@ -1158,8 +1788,8 @@ impl From<Error> for StrataError {
             },
             Error::VersionMismatch { expected, actual } => StrataError::VersionConflict {
                 entity_ref: EntityRef::kv(RunId::new(), "unknown"),
-                expected: Version::TxnId(expected),
-                actual: Version::TxnId(actual),
+                expected: Version::Txn(expected),
+                actual: Version::Txn(actual),
             },
             Error::Corruption(msg) => StrataError::Corruption { message: msg },
             Error::InvalidOperation(msg) => StrataError::InvalidInput { message: msg },
@@ -1434,8 +2064,8 @@ mod strata_error_tests {
         // Retryable
         assert!(StrataError::version_conflict(
             EntityRef::kv(run_id, "k"),
-            Version::TxnId(1),
-            Version::TxnId(2),
+            Version::Txn(1),
+            Version::Txn(2),
         )
         .is_retryable());
         assert!(StrataError::write_conflict(EntityRef::kv(run_id, "k")).is_retryable());
@@ -1552,5 +2182,330 @@ mod strata_error_tests {
             }
             _ => panic!("Wrong variant"),
         }
+    }
+
+    // === Wire Encoding Tests (Story #653) ===
+
+    #[test]
+    fn test_error_code_mapping_not_found() {
+        let run_id = RunId::new();
+        let e = StrataError::not_found(EntityRef::kv(run_id, "key"));
+        assert_eq!(e.code(), ErrorCode::NotFound);
+    }
+
+    #[test]
+    fn test_error_code_mapping_run_not_found() {
+        let e = StrataError::run_not_found(RunId::new());
+        assert_eq!(e.code(), ErrorCode::NotFound);
+    }
+
+    #[test]
+    fn test_error_code_mapping_wrong_type() {
+        let e = StrataError::wrong_type("Int", "String");
+        assert_eq!(e.code(), ErrorCode::WrongType);
+    }
+
+    #[test]
+    fn test_error_code_mapping_conflict() {
+        let e = StrataError::conflict("version mismatch");
+        assert_eq!(e.code(), ErrorCode::Conflict);
+    }
+
+    #[test]
+    fn test_error_code_mapping_version_conflict() {
+        let run_id = RunId::new();
+        let e = StrataError::version_conflict(
+            EntityRef::kv(run_id, "k"),
+            Version::Txn(1),
+            Version::Txn(2),
+        );
+        assert_eq!(e.code(), ErrorCode::Conflict);
+    }
+
+    #[test]
+    fn test_error_code_mapping_constraint_violation() {
+        let e = StrataError::invalid_input("value too large");
+        assert_eq!(e.code(), ErrorCode::ConstraintViolation);
+    }
+
+    #[test]
+    fn test_error_code_mapping_storage() {
+        let e = StrataError::storage("disk full");
+        assert_eq!(e.code(), ErrorCode::StorageError);
+    }
+
+    #[test]
+    fn test_error_code_mapping_internal() {
+        let e = StrataError::internal("bug");
+        assert_eq!(e.code(), ErrorCode::InternalError);
+    }
+
+    #[test]
+    fn test_error_message() {
+        let e = StrataError::invalid_input("key too long");
+        let msg = e.message();
+        assert!(msg.contains("key too long"));
+    }
+
+    #[test]
+    fn test_error_details() {
+        let run_id = RunId::new();
+        let e = StrataError::not_found(EntityRef::kv(run_id, "mykey"));
+        let details = e.details();
+        assert!(!details.is_empty());
+        assert!(details.fields().contains_key("entity"));
+    }
+
+    #[test]
+    fn test_error_details_version_conflict() {
+        let run_id = RunId::new();
+        let e = StrataError::version_conflict(
+            EntityRef::kv(run_id, "k"),
+            Version::Txn(1),
+            Version::Txn(2),
+        );
+        let details = e.details();
+        assert!(details.fields().contains_key("entity"));
+        assert!(details.fields().contains_key("expected"));
+        assert!(details.fields().contains_key("actual"));
+    }
+}
+
+// =============================================================================
+// ErrorCode Tests (Story #652)
+// =============================================================================
+
+#[cfg(test)]
+mod error_code_tests {
+    use super::*;
+
+    #[test]
+    fn test_all_error_codes() {
+        let codes = [
+            ErrorCode::NotFound,
+            ErrorCode::WrongType,
+            ErrorCode::InvalidKey,
+            ErrorCode::InvalidPath,
+            ErrorCode::HistoryTrimmed,
+            ErrorCode::ConstraintViolation,
+            ErrorCode::Conflict,
+            ErrorCode::SerializationError,
+            ErrorCode::StorageError,
+            ErrorCode::InternalError,
+        ];
+
+        // All codes have string representations
+        for code in &codes {
+            let s = code.as_str();
+            assert!(!s.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_error_code_parse() {
+        assert_eq!(ErrorCode::parse("NotFound"), Some(ErrorCode::NotFound));
+        assert_eq!(ErrorCode::parse("WrongType"), Some(ErrorCode::WrongType));
+        assert_eq!(ErrorCode::parse("Conflict"), Some(ErrorCode::Conflict));
+        assert_eq!(ErrorCode::parse("Invalid"), None);
+    }
+
+    #[test]
+    fn test_error_code_roundtrip() {
+        let codes = [
+            ErrorCode::NotFound,
+            ErrorCode::WrongType,
+            ErrorCode::InvalidKey,
+            ErrorCode::InvalidPath,
+            ErrorCode::HistoryTrimmed,
+            ErrorCode::ConstraintViolation,
+            ErrorCode::Conflict,
+            ErrorCode::SerializationError,
+            ErrorCode::StorageError,
+            ErrorCode::InternalError,
+        ];
+
+        for code in &codes {
+            let s = code.as_str();
+            let parsed = ErrorCode::parse(s);
+            assert_eq!(parsed, Some(*code), "Roundtrip failed for {:?}", code);
+        }
+    }
+
+    #[test]
+    fn test_error_code_display() {
+        assert_eq!(format!("{}", ErrorCode::NotFound), "NotFound");
+        assert_eq!(format!("{}", ErrorCode::Conflict), "Conflict");
+    }
+
+    #[test]
+    fn test_error_code_retryable() {
+        assert!(ErrorCode::Conflict.is_retryable());
+        assert!(!ErrorCode::NotFound.is_retryable());
+        assert!(!ErrorCode::ConstraintViolation.is_retryable());
+    }
+
+    #[test]
+    fn test_error_code_serious() {
+        assert!(ErrorCode::InternalError.is_serious());
+        assert!(ErrorCode::StorageError.is_serious());
+        assert!(!ErrorCode::NotFound.is_serious());
+        assert!(!ErrorCode::Conflict.is_serious());
+    }
+}
+
+// =============================================================================
+// ConstraintReason Tests (Story #654)
+// =============================================================================
+
+#[cfg(test)]
+mod constraint_reason_tests {
+    use super::*;
+
+    #[test]
+    fn test_all_constraint_reasons() {
+        let reasons = [
+            ConstraintReason::ValueTooLarge,
+            ConstraintReason::StringTooLong,
+            ConstraintReason::BytesTooLong,
+            ConstraintReason::ArrayTooLong,
+            ConstraintReason::ObjectTooLarge,
+            ConstraintReason::NestingTooDeep,
+            ConstraintReason::KeyTooLong,
+            ConstraintReason::KeyInvalid,
+            ConstraintReason::KeyEmpty,
+            ConstraintReason::DimensionMismatch,
+            ConstraintReason::DimensionTooLarge,
+            ConstraintReason::CapacityExceeded,
+            ConstraintReason::BudgetExceeded,
+            ConstraintReason::InvalidOperation,
+            ConstraintReason::RunNotActive,
+            ConstraintReason::TransactionNotActive,
+            ConstraintReason::WrongType,
+            ConstraintReason::Overflow,
+        ];
+
+        // All reasons have string representations
+        for reason in &reasons {
+            let s = reason.as_str();
+            assert!(!s.is_empty());
+            assert!(!reason.description().is_empty());
+        }
+    }
+
+    #[test]
+    fn test_constraint_reason_parse() {
+        assert_eq!(
+            ConstraintReason::parse("value_too_large"),
+            Some(ConstraintReason::ValueTooLarge)
+        );
+        assert_eq!(
+            ConstraintReason::parse("key_empty"),
+            Some(ConstraintReason::KeyEmpty)
+        );
+        assert_eq!(
+            ConstraintReason::parse("dimension_mismatch"),
+            Some(ConstraintReason::DimensionMismatch)
+        );
+        assert_eq!(ConstraintReason::parse("invalid"), None);
+    }
+
+    #[test]
+    fn test_constraint_reason_roundtrip() {
+        let reasons = [
+            ConstraintReason::ValueTooLarge,
+            ConstraintReason::StringTooLong,
+            ConstraintReason::BytesTooLong,
+            ConstraintReason::ArrayTooLong,
+            ConstraintReason::ObjectTooLarge,
+            ConstraintReason::NestingTooDeep,
+            ConstraintReason::KeyTooLong,
+            ConstraintReason::KeyInvalid,
+            ConstraintReason::KeyEmpty,
+            ConstraintReason::DimensionMismatch,
+            ConstraintReason::DimensionTooLarge,
+            ConstraintReason::CapacityExceeded,
+            ConstraintReason::BudgetExceeded,
+            ConstraintReason::InvalidOperation,
+            ConstraintReason::RunNotActive,
+            ConstraintReason::TransactionNotActive,
+            ConstraintReason::WrongType,
+            ConstraintReason::Overflow,
+        ];
+
+        for reason in &reasons {
+            let s = reason.as_str();
+            let parsed = ConstraintReason::parse(s);
+            assert_eq!(parsed, Some(*reason), "Roundtrip failed for {:?}", reason);
+        }
+    }
+
+    #[test]
+    fn test_constraint_reason_display() {
+        assert_eq!(
+            format!("{}", ConstraintReason::ValueTooLarge),
+            "value_too_large"
+        );
+        assert_eq!(format!("{}", ConstraintReason::KeyEmpty), "key_empty");
+    }
+}
+
+// =============================================================================
+// ErrorDetails Tests (Story #656)
+// =============================================================================
+
+#[cfg(test)]
+mod error_details_tests {
+    use super::*;
+
+    #[test]
+    fn test_error_details_empty() {
+        let details = ErrorDetails::new();
+        assert!(details.is_empty());
+    }
+
+    #[test]
+    fn test_error_details_with_string() {
+        let details = ErrorDetails::new().with_string("key", "value");
+        assert!(!details.is_empty());
+        assert!(details.fields().contains_key("key"));
+    }
+
+    #[test]
+    fn test_error_details_with_int() {
+        let details = ErrorDetails::new().with_int("count", 42);
+        assert!(!details.is_empty());
+        assert!(details.fields().contains_key("count"));
+    }
+
+    #[test]
+    fn test_error_details_with_bool() {
+        let details = ErrorDetails::new().with_bool("active", true);
+        assert!(!details.is_empty());
+        assert!(details.fields().contains_key("active"));
+    }
+
+    #[test]
+    fn test_error_details_chained() {
+        let details = ErrorDetails::new()
+            .with_string("entity", "kv:default/key")
+            .with_int("expected", 1)
+            .with_int("actual", 2)
+            .with_bool("retryable", true);
+
+        assert!(!details.is_empty());
+        assert_eq!(details.fields().len(), 4);
+    }
+
+    #[test]
+    fn test_error_details_to_string_map() {
+        let details = ErrorDetails::new()
+            .with_string("name", "test")
+            .with_int("count", 42)
+            .with_bool("flag", true);
+
+        let map = details.to_string_map();
+        assert_eq!(map.get("name"), Some(&"test".to_string()));
+        assert_eq!(map.get("count"), Some(&"42".to_string()));
+        assert_eq!(map.get("flag"), Some(&"true".to_string()));
     }
 }

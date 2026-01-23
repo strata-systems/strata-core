@@ -77,7 +77,7 @@ fn test_prim_count_at_correct_offset() {
 
     // Create some data so snapshot has content
     let kv = test_db.kv();
-    kv.put(&run_id, "test_key", strata_core::value::Value::I64(42))
+    kv.put(&run_id, "test_key", strata_core::value::Value::Int(42))
         .expect("Should put");
 
     // Trigger a snapshot
@@ -221,7 +221,7 @@ fn test_read_snapshot_header_fields() {
         kv.put(
             &run_id,
             &format!("key_{}", i),
-            strata_core::value::Value::I64(i as i64),
+            strata_core::value::Value::Int(i as i64),
         )
         .expect("put");
     }

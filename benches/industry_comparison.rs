@@ -1000,7 +1000,7 @@ fn statecell_comparison_read_write(c: &mut Criterion) {
         let run_id = RunId::new();
 
         // Initialize state
-        state.set(&run_id, "counter", Value::I64(0)).expect("init");
+        state.set(&run_id, "counter", Value::Int(0)).expect("init");
 
         group.bench_function("inmem_statecell/read", |b| {
             b.iter(|| black_box(state.read(&run_id, "counter").expect("read")));
@@ -1017,7 +1017,7 @@ fn statecell_comparison_read_write(c: &mut Criterion) {
         group.bench_function("inmem_statecell/write", |b| {
             b.iter(|| {
                 counter += 1;
-                black_box(state.set(&run_id, "counter", Value::I64(counter)).expect("set"))
+                black_box(state.set(&run_id, "counter", Value::Int(counter)).expect("set"))
             });
         });
     }

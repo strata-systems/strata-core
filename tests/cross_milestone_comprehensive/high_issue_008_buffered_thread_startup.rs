@@ -25,7 +25,7 @@ fn test_buffered_auto_starts_flush_thread() {
         kv.put(
             &test_db.run_id,
             &format!("key_{}", i),
-            strata_core::value::Value::I64(i),
+            strata_core::value::Value::Int(i),
         )
         .expect("put");
     }

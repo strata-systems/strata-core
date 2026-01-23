@@ -51,7 +51,7 @@ fn test_inmemory_no_recovery() {
     let kv = test_db.kv();
     let run_id = test_db.run_id;
 
-    kv.put(&run_id, "ephemeral", Value::I64(42)).expect("put");
+    kv.put(&run_id, "ephemeral", Value::Int(42)).expect("put");
 
     // Data exists while database is open
     assert!(kv.get(&run_id, "ephemeral").expect("get").map(|v| v.value).is_some());

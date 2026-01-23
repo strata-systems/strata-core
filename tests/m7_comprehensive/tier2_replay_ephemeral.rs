@@ -124,7 +124,7 @@ fn test_p4_concurrent_view_lifecycle() {
     let run_id = test_db.run_id;
 
     let kv = test_db.kv();
-    kv.put(&run_id, "shared", Value::I64(42)).unwrap();
+    kv.put(&run_id, "shared", Value::Int(42)).unwrap();
 
     let db = test_db.db.clone();
     let original_state = CapturedState::capture(&db, &run_id);
@@ -187,7 +187,7 @@ fn test_p4_large_view_released() {
 
     // Create large dataset
     for i in 0..1000 {
-        kv.put(&run_id, &format!("key_{}", i), Value::I64(i))
+        kv.put(&run_id, &format!("key_{}", i), Value::Int(i))
             .unwrap();
     }
 

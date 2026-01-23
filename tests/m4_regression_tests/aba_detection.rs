@@ -96,24 +96,24 @@ fn statecell_aba_rapid_cycle() {
         let run_id = RunId::new();
 
         // 1. Init cell with value 0
-        let v0 = state.init(&run_id, "counter", Value::I64(0)).unwrap().value;
+        let v0 = state.init(&run_id, "counter", Value::Int(0)).unwrap().value;
 
         // 2. Record V0 for later stale CAS attempt
         let stale_version = v0;
 
         // 3. Rapid cycle: 0 → 1 → 2 → 1 → 0
-        let v1 = state.cas(&run_id, "counter", v0, Value::I64(1)).unwrap().value;
-        let v2 = state.cas(&run_id, "counter", v1, Value::I64(2)).unwrap().value;
-        let v3 = state.cas(&run_id, "counter", v2, Value::I64(1)).unwrap().value;
-        let v4 = state.cas(&run_id, "counter", v3, Value::I64(0)).unwrap().value;
+        let v1 = state.cas(&run_id, "counter", v0, Value::Int(1)).unwrap().value;
+        let v2 = state.cas(&run_id, "counter", v1, Value::Int(2)).unwrap().value;
+        let v3 = state.cas(&run_id, "counter", v2, Value::Int(1)).unwrap().value;
+        let v4 = state.cas(&run_id, "counter", v3, Value::Int(0)).unwrap().value;
 
         // Value is now 0 (same as original) but version is V4
         let current = state.read(&run_id, "counter").unwrap().unwrap();
-        assert_eq!(current.value.value, Value::I64(0));
+        assert_eq!(current.value.value, Value::Int(0));
         assert_eq!(current.value.version, v4);
 
         // 4. Attempt CAS with stale V0 - MUST FAIL
-        let stale_cas = state.cas(&run_id, "counter", stale_version, Value::I64(99));
+        let stale_cas = state.cas(&run_id, "counter", stale_version, Value::Int(99));
         assert!(
             stale_cas.is_err(),
             "ABA BUG: CAS with stale version {} succeeded (current {})",
@@ -133,7 +133,7 @@ fn statecell_aba_concurrent_stress() {
     let run_id = RunId::new();
 
     // Initialize counter
-    state.init(&run_id, "counter", Value::I64(0)).unwrap();
+    state.init(&run_id, "counter", Value::Int(0)).unwrap();
 
     let successful_cas = Arc::new(AtomicUsize::new(0));
     let failed_cas = Arc::new(AtomicUsize::new(0));
@@ -163,12 +163,12 @@ fn statecell_aba_concurrent_stress() {
                     if let Some(current_state) = current {
                         let current_version = current_state.value.version;
                         let current_value = match current_state.value.value {
-                            Value::I64(n) => n,
+                            Value::Int(n) => n,
                             _ => continue,
                         };
 
                         // Try to increment
-                        let new_value = Value::I64(current_value + 1);
+                        let new_value = Value::Int(current_value + 1);
                         match state.cas(&run_id, "counter", current_version, new_value) {
                             Ok(versioned) => {
                                 let new_version = versioned.value;
@@ -204,7 +204,7 @@ fn statecell_aba_concurrent_stress() {
     // Final value should equal number of successful CAS operations
     let final_state = state.read(&run_id, "counter").unwrap().unwrap();
     let final_value = match final_state.value.value {
-        Value::I64(n) => n as usize,
+        Value::Int(n) => n as usize,
         _ => panic!("Unexpected value type"),
     };
 
@@ -267,7 +267,7 @@ fn statecell_version_uniqueness() {
     let state = StateCell::new(db);
     let run_id = RunId::new();
 
-    state.init(&run_id, "cell", Value::I64(0)).unwrap();
+    state.init(&run_id, "cell", Value::Int(0)).unwrap();
 
     let versions_won = Arc::new(Mutex::new(Vec::new()));
 
@@ -289,7 +289,7 @@ fn statecell_version_uniqueness() {
                 for i in 0..ITERATIONS {
                     loop {
                         let current = state.read(&run_id, "cell").unwrap().unwrap();
-                        let new_value = Value::I64(i as i64);
+                        let new_value = Value::Int(i as i64);
 
                         match state.cas(&run_id, "cell", current.value.version, new_value) {
                             Ok(versioned) => {
@@ -351,15 +351,15 @@ mod aba_unit_tests {
         let state = StateCell::new(db);
         let run_id = RunId::new();
 
-        let v1 = state.init(&run_id, "x", Value::I64(0)).unwrap().value;
-        let v2 = state.cas(&run_id, "x", v1, Value::I64(1)).unwrap().value;
-        let v3 = state.cas(&run_id, "x", v2, Value::I64(2)).unwrap().value;
+        let v1 = state.init(&run_id, "x", Value::Int(0)).unwrap().value;
+        let v2 = state.cas(&run_id, "x", v1, Value::Int(1)).unwrap().value;
+        let v3 = state.cas(&run_id, "x", v2, Value::Int(2)).unwrap().value;
 
         assert!(v1 < v2);
         assert!(v2 < v3);
 
         let current = state.read(&run_id, "x").unwrap().unwrap();
-        assert_eq!(current.value.value, Value::I64(2));
+        assert_eq!(current.value.value, Value::Int(2));
         assert_eq!(current.value.version, v3);
     }
 
@@ -369,11 +369,11 @@ mod aba_unit_tests {
         let state = StateCell::new(db);
         let run_id = RunId::new();
 
-        let v1 = state.init(&run_id, "x", Value::I64(0)).unwrap().value;
-        let _v2 = state.cas(&run_id, "x", v1, Value::I64(1)).unwrap();
+        let v1 = state.init(&run_id, "x", Value::Int(0)).unwrap().value;
+        let _v2 = state.cas(&run_id, "x", v1, Value::Int(1)).unwrap();
 
         // Try to use stale v1
-        let result = state.cas(&run_id, "x", v1, Value::I64(999));
+        let result = state.cas(&run_id, "x", v1, Value::Int(999));
         assert!(result.is_err(), "Stale CAS should fail");
     }
 }

@@ -211,7 +211,7 @@ fn trace_invariant3_read_your_writes() {
     let trace_type = TraceType::ToolCall {
         tool_name: "test-tool".to_string(),
         arguments: Value::String("args".to_string()),
-        result: Some(Value::I64(42)),
+        result: Some(Value::Int(42)),
         duration_ms: Some(100),
     };
     let result = txn.trace_record(trace_type, vec!["important".to_string()], Value::Null).unwrap();

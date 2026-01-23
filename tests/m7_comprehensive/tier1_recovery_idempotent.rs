@@ -107,7 +107,7 @@ fn test_r2_idempotent_with_overwrites() {
 
     // Many overwrites to same key
     for i in 0..100 {
-        kv.put(&run_id, "counter", Value::I64(i)).unwrap();
+        kv.put(&run_id, "counter", Value::Int(i)).unwrap();
     }
 
     let original_state = CapturedState::capture(&test_db.db, &run_id);
@@ -122,7 +122,7 @@ fn test_r2_idempotent_with_overwrites() {
 
     // Verify final value
     let kv = test_db.kv();
-    assert_eq!(kv.get(&run_id, "counter").unwrap().map(|v| v.value), Some(Value::I64(99)));
+    assert_eq!(kv.get(&run_id, "counter").unwrap().map(|v| v.value), Some(Value::Int(99)));
 }
 
 /// R2: State invariant - recovery never adds extra data

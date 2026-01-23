@@ -17,6 +17,7 @@
 #![warn(clippy::all)]
 
 // Module declarations
+pub mod api_error; // API-level error types for wire encoding
 pub mod contract; // M9 contract types
 pub mod error; // Story #10
 pub mod json; // M5 JSON types
@@ -28,7 +29,11 @@ pub mod types; // Story #7, #8
 pub mod value; // Story #9
 
 // Re-export commonly used types and traits
-pub use error::{Error, Result, StrataError, StrataResult};
+pub use api_error::{ApiError, WireError};
+pub use error::{
+    ConstraintReason, DetailValue, Error, ErrorCode, ErrorDetails, Result, StrataError,
+    StrataResult,
+};
 pub use json::{
     apply_patches, delete_at_path, get_at_path, get_at_path_mut, set_at_path, JsonPatch, JsonPath,
     JsonPathError, JsonValue, LimitError, PathParseError, PathSegment, MAX_ARRAY_SIZE,

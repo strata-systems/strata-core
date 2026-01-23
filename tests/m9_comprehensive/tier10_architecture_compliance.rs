@@ -60,7 +60,7 @@ fn rule1_kv_get_returns_versioned() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Put a value first
-    txn.kv_put("test_key", Value::I64(42)).unwrap();
+    txn.kv_put("test_key", Value::Int(42)).unwrap();
 
     // Get returns Option<Versioned<Value>>
     let result: Option<Versioned<Value>> = txn.kv_get("test_key").unwrap();
@@ -101,7 +101,7 @@ fn rule1_state_read_returns_versioned() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Init state first
-    txn.state_init("test_state", Value::I64(0)).unwrap();
+    txn.state_init("test_state", Value::Int(0)).unwrap();
 
     // Read returns Option<Versioned<State>>
     let result: Option<Versioned<State>> = txn.state_read("test_state").unwrap();
@@ -149,7 +149,7 @@ fn rule2_kv_put_returns_version() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Put returns Version (TxnId)
-    let version: Version = txn.kv_put("key", Value::I64(1)).unwrap();
+    let version: Version = txn.kv_put("key", Value::Int(1)).unwrap();
     assert!(version.is_txn_id());
 }
 
@@ -173,7 +173,7 @@ fn rule2_state_init_returns_version() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Init returns Version (Counter)
-    let version: Version = txn.state_init("state", Value::I64(0)).unwrap();
+    let version: Version = txn.state_init("state", Value::Int(0)).unwrap();
     assert!(version.is_counter());
 }
 
@@ -185,10 +185,10 @@ fn rule2_state_cas_returns_version() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Init first
-    txn.state_init("counter", Value::I64(0)).unwrap();
+    txn.state_init("counter", Value::Int(0)).unwrap();
 
     // CAS returns Version (Counter)
-    let version: Version = txn.state_cas("counter", 1, Value::I64(1)).unwrap();
+    let version: Version = txn.state_cas("counter", 1, Value::Int(1)).unwrap();
     assert!(version.is_counter());
 }
 
@@ -225,7 +225,7 @@ fn rule3_transaction_has_kv_operations() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // All KV operations available via TransactionOps
-    let _ = txn.kv_put("key", Value::I64(1));
+    let _ = txn.kv_put("key", Value::Int(1));
     let _ = txn.kv_get("key");
     let _ = txn.kv_exists("key");
     let _ = txn.kv_delete("key");
@@ -254,10 +254,10 @@ fn rule3_transaction_has_state_operations() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // All State operations available via TransactionOps
-    let _ = txn.state_init("state", Value::I64(0));
+    let _ = txn.state_init("state", Value::Int(0));
     let _ = txn.state_read("state");
     let _ = txn.state_exists("state");
-    let _ = txn.state_cas("state", 1, Value::I64(1));
+    let _ = txn.state_cas("state", 1, Value::Int(1));
     let _ = txn.state_delete("state");
 }
 
@@ -287,9 +287,9 @@ fn rule3_cross_primitive_transaction_works() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // All primitives in same transaction
-    txn.kv_put("key", Value::I64(1)).unwrap();
+    txn.kv_put("key", Value::Int(1)).unwrap();
     txn.event_append("event", Value::Null).unwrap();
-    txn.state_init("state", Value::I64(0)).unwrap();
+    txn.state_init("state", Value::Int(0)).unwrap();
     txn.trace_record(
         TraceType::Thought { content: "thought".into(), confidence: None },
         vec![],
@@ -385,7 +385,7 @@ fn audit_kv_has_exists() {
     assert!(!txn.kv_exists("nonexistent").unwrap());
 
     // exists() returns true after put
-    txn.kv_put("key", Value::I64(1)).unwrap();
+    txn.kv_put("key", Value::Int(1)).unwrap();
     assert!(txn.kv_exists("key").unwrap());
 }
 
@@ -400,7 +400,7 @@ fn audit_state_has_exists() {
     assert!(!txn.state_exists("nonexistent").unwrap());
 
     // exists() returns true after init
-    txn.state_init("cell", Value::I64(0)).unwrap();
+    txn.state_init("cell", Value::Int(0)).unwrap();
     assert!(txn.state_exists("cell").unwrap());
 }
 
@@ -479,9 +479,9 @@ fn audit_all_primitives_follow_same_patterns() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Pattern 1: Writes return Version
-    let kv_version: Version = txn.kv_put("k", Value::I64(1)).unwrap();
+    let kv_version: Version = txn.kv_put("k", Value::Int(1)).unwrap();
     let event_version: Version = txn.event_append("e", Value::Null).unwrap();
-    let state_version: Version = txn.state_init("s", Value::I64(0)).unwrap();
+    let state_version: Version = txn.state_init("s", Value::Int(0)).unwrap();
     let trace_versioned: Versioned<u64> = txn.trace_record(
         TraceType::Thought { content: "t".into(), confidence: None },
         vec![],
@@ -520,9 +520,9 @@ fn cross_primitive_transaction_atomicity() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Multiple primitive operations
-    txn.kv_put("atomic_key", Value::I64(1)).unwrap();
+    txn.kv_put("atomic_key", Value::Int(1)).unwrap();
     txn.event_append("atomic_event", Value::Null).unwrap();
-    txn.state_init("atomic_state", Value::I64(0)).unwrap();
+    txn.state_init("atomic_state", Value::Int(0)).unwrap();
     txn.trace_record(
         TraceType::Thought { content: "atomic".into(), confidence: None },
         vec![],
@@ -546,7 +546,7 @@ fn cross_primitive_isolation() {
     // First transaction writes
     let mut ctx1 = create_context(&ns);
     let mut txn1 = Transaction::new(&mut ctx1, ns.clone());
-    txn1.kv_put("isolated_key", Value::I64(100)).unwrap();
+    txn1.kv_put("isolated_key", Value::Int(100)).unwrap();
 
     // Second transaction (concurrent) doesn't see first's writes
     let mut ctx2 = create_context(&ns);
@@ -567,7 +567,7 @@ fn version_types_match_primitive_semantics() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // KV uses TxnId (transaction-based versioning)
-    let kv_version = txn.kv_put("k", Value::I64(1)).unwrap();
+    let kv_version = txn.kv_put("k", Value::Int(1)).unwrap();
     assert!(kv_version.is_txn_id(), "KV should use TxnId versioning");
 
     // Event uses Sequence (monotonic sequence numbers)
@@ -575,7 +575,7 @@ fn version_types_match_primitive_semantics() {
     assert!(event_version.is_sequence(), "Event should use Sequence versioning");
 
     // State uses Counter (CAS counter)
-    let state_version = txn.state_init("s", Value::I64(0)).unwrap();
+    let state_version = txn.state_init("s", Value::Int(0)).unwrap();
     assert!(state_version.is_counter(), "State should use Counter versioning");
 
     // Trace uses TxnId (transaction-based)
@@ -696,9 +696,9 @@ fn gate1_all_primitives_conform_to_invariant_2_versioned() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // All writes return Version
-    let _: Version = txn.kv_put("k", Value::I64(1)).unwrap();
+    let _: Version = txn.kv_put("k", Value::Int(1)).unwrap();
     let _: Version = txn.event_append("e", Value::Null).unwrap();
-    let _: Version = txn.state_init("s", Value::I64(0)).unwrap();
+    let _: Version = txn.state_init("s", Value::Int(0)).unwrap();
     let _: Versioned<u64> = txn.trace_record(
         TraceType::Thought { content: "t".into(), confidence: None },
         vec![],
@@ -715,9 +715,9 @@ fn gate1_all_primitives_conform_to_invariant_3_transactional() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // All primitive operations callable within transaction
-    txn.kv_put("k", Value::I64(1)).unwrap();
+    txn.kv_put("k", Value::Int(1)).unwrap();
     txn.event_append("e", Value::Null).unwrap();
-    txn.state_init("s", Value::I64(0)).unwrap();
+    txn.state_init("s", Value::Int(0)).unwrap();
     txn.trace_record(
         TraceType::Thought { content: "t".into(), confidence: None },
         vec![],
@@ -753,7 +753,7 @@ fn gate1_all_primitives_conform_to_invariant_7_read_write_consistency() {
     let mut txn = Transaction::new(&mut ctx, ns.clone());
 
     // Write first
-    txn.kv_put("key", Value::I64(1)).unwrap();
+    txn.kv_put("key", Value::Int(1)).unwrap();
 
     // Multiple reads don't change version
     let v1 = txn.kv_get("key").unwrap().unwrap();

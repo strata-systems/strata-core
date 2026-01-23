@@ -209,7 +209,7 @@ mod consistency {
             accounts
                 .iter()
                 .map(|k| match db.get(k).unwrap().unwrap().value {
-                    Value::I64(n) => n,
+                    Value::Int(n) => n,
                     _ => 0,
                 })
                 .sum()
@@ -222,11 +222,11 @@ mod consistency {
         tdb.db
             .transaction(tdb.run_id, |txn| {
                 let from = match txn.get(&accounts[0])?.unwrap() {
-                    Value::I64(n) => n,
+                    Value::Int(n) => n,
                     _ => 0,
                 };
                 let to = match txn.get(&accounts[1])?.unwrap() {
-                    Value::I64(n) => n,
+                    Value::Int(n) => n,
                     _ => 0,
                 };
 
@@ -308,11 +308,11 @@ mod consistency {
                         RetryConfig::new().with_max_retries(50),
                         |txn| {
                             let from = match txn.get(&accounts[from_idx])?.unwrap() {
-                                Value::I64(n) => n,
+                                Value::Int(n) => n,
                                 _ => 0,
                             };
                             let to = match txn.get(&accounts[to_idx])?.unwrap() {
-                                Value::I64(n) => n,
+                                Value::Int(n) => n,
                                 _ => 0,
                             };
 
@@ -335,7 +335,7 @@ mod consistency {
         let sum: i64 = accounts
             .iter()
             .map(|k| match db.get(k).unwrap().unwrap().value {
-                Value::I64(n) => n,
+                Value::Int(n) => n,
                 _ => 0,
             })
             .sum();
@@ -383,7 +383,7 @@ mod isolation {
         let h1 = thread::spawn(move || {
             db1.transaction(run_id, |txn| {
                 let a = match txn.get(&keys1.0)?.unwrap() {
-                    Value::I64(n) => n,
+                    Value::Int(n) => n,
                     _ => 0,
                 };
 
@@ -391,7 +391,7 @@ mod isolation {
                 thread::sleep(Duration::from_millis(20));
 
                 let b = match txn.get(&keys1.1)?.unwrap() {
-                    Value::I64(n) => n,
+                    Value::Int(n) => n,
                     _ => 0,
                 };
 
@@ -407,11 +407,11 @@ mod isolation {
 
             db2.transaction(run_id, |txn| {
                 let a = match txn.get(&keys2.0)?.unwrap() {
-                    Value::I64(n) => n,
+                    Value::Int(n) => n,
                     _ => 0,
                 };
                 let b = match txn.get(&keys2.1)?.unwrap() {
-                    Value::I64(n) => n,
+                    Value::Int(n) => n,
                     _ => 0,
                 };
 
@@ -475,7 +475,7 @@ mod isolation {
 
             // Read immediately - should not see 999
             let val = db2.get(&key2).unwrap().unwrap();
-            if let Value::I64(n) = val.value {
+            if let Value::Int(n) = val.value {
                 if n == 999 {
                     // This is only a "dirty read" if T1 hasn't committed yet
                     // Due to timing, we might legitimately see 999 after T1 commits
@@ -861,11 +861,11 @@ mod combined_acid {
                             RetryConfig::new().with_max_retries(50),
                             |txn| {
                                 let a = match txn.get(&account_a)?.unwrap() {
-                                    Value::I64(n) => n,
+                                    Value::Int(n) => n,
                                     _ => 0,
                                 };
                                 let b = match txn.get(&account_b)?.unwrap() {
-                                    Value::I64(n) => n,
+                                    Value::Int(n) => n,
                                     _ => 0,
                                 };
 
@@ -905,11 +905,11 @@ mod combined_acid {
         {
             let db = Database::open(&db_path).unwrap();
             let a = match db.get(&account_a).unwrap().unwrap().value {
-                Value::I64(n) => n,
+                Value::Int(n) => n,
                 _ => 0,
             };
             let b = match db.get(&account_b).unwrap().unwrap().value {
-                Value::I64(n) => n,
+                Value::Int(n) => n,
                 _ => 0,
             };
 
@@ -945,7 +945,7 @@ mod combined_acid {
                         RetryConfig::new().with_max_retries(100),
                         |txn| {
                             let current = match txn.get(&counter_key)?.unwrap() {
-                                Value::I64(n) => n,
+                                Value::Int(n) => n,
                                 _ => 0,
                             };
                             txn.put(counter_key.clone(), values::int(current + 1))?;
@@ -972,7 +972,7 @@ mod combined_acid {
 
         // Final value should equal number of increments (ACID: no lost updates)
         let final_value = match db.get(&counter_key).unwrap().unwrap().value {
-            Value::I64(n) => n,
+            Value::Int(n) => n,
             _ => 0,
         };
 
