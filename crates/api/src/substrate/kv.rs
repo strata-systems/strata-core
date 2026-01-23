@@ -305,20 +305,23 @@ pub trait KVStoreBatch: KVStore {
 // Implementation
 // =============================================================================
 
-use super::impl_::{SubstrateImpl, convert_error};
+use super::impl_::{SubstrateImpl, convert_error, validate_key};
 
 impl KVStore for SubstrateImpl {
     fn kv_put(&self, run: &ApiRunId, key: &str, value: Value) -> StrataResult<Version> {
+        validate_key(key)?;
         let run_id = run.to_run_id();
         self.kv().put(&run_id, key, value).map_err(convert_error)
     }
 
     fn kv_get(&self, run: &ApiRunId, key: &str) -> StrataResult<Option<Versioned<Value>>> {
+        validate_key(key)?;
         let run_id = run.to_run_id();
         self.kv().get(&run_id, key).map_err(convert_error)
     }
 
     fn kv_get_at(&self, run: &ApiRunId, key: &str, version: Version) -> StrataResult<Versioned<Value>> {
+        validate_key(key)?;
         let run_id = run.to_run_id();
         // History/point-in-time reads not yet fully implemented in primitives
         // Try to get current value and check if version matches
@@ -335,11 +338,13 @@ impl KVStore for SubstrateImpl {
     }
 
     fn kv_delete(&self, run: &ApiRunId, key: &str) -> StrataResult<bool> {
+        validate_key(key)?;
         let run_id = run.to_run_id();
         self.kv().delete(&run_id, key).map_err(convert_error)
     }
 
     fn kv_exists(&self, run: &ApiRunId, key: &str) -> StrataResult<bool> {
+        validate_key(key)?;
         let run_id = run.to_run_id();
         self.kv().exists(&run_id, key).map_err(convert_error)
     }
@@ -347,15 +352,17 @@ impl KVStore for SubstrateImpl {
     fn kv_history(
         &self,
         _run: &ApiRunId,
-        _key: &str,
+        key: &str,
         _limit: Option<u64>,
         _before: Option<Version>,
     ) -> StrataResult<Vec<Versioned<Value>>> {
+        validate_key(key)?;
         // History is not yet implemented in primitives
         Ok(vec![])
     }
 
     fn kv_incr(&self, run: &ApiRunId, key: &str, delta: i64) -> StrataResult<i64> {
+        validate_key(key)?;
         let run_id = run.to_run_id();
         // Implement atomic increment using transaction
         self.db().transaction(run_id, |txn| {
@@ -369,7 +376,12 @@ impl KVStore for SubstrateImpl {
                 )),
                 None => 0,
             };
-            let new_value = current_value + delta;
+            // Use checked_add to prevent overflow
+            let new_value = current_value.checked_add(delta).ok_or_else(|| {
+                strata_core::error::Error::InvalidOperation(
+                    "Integer overflow in increment operation".to_string(),
+                )
+            })?;
             txn.kv_put(key, Value::Int(new_value))?;
             Ok(new_value)
         }).map_err(convert_error)
@@ -382,6 +394,7 @@ impl KVStore for SubstrateImpl {
         expected_version: Option<Version>,
         new_value: Value,
     ) -> StrataResult<bool> {
+        validate_key(key)?;
         let run_id = run.to_run_id();
         self.db().transaction(run_id, |txn| {
             use strata_primitives::extensions::KVStoreExt;
@@ -411,6 +424,7 @@ impl KVStore for SubstrateImpl {
         expected_value: Option<Value>,
         new_value: Value,
     ) -> StrataResult<bool> {
+        validate_key(key)?;
         let run_id = run.to_run_id();
         self.db().transaction(run_id, |txn| {
             use strata_primitives::extensions::KVStoreExt;
@@ -443,11 +457,19 @@ impl KVStoreBatch for SubstrateImpl {
         run: &ApiRunId,
         keys: &[&str],
     ) -> StrataResult<Vec<Option<Versioned<Value>>>> {
+        // Validate all keys first
+        for key in keys {
+            validate_key(key)?;
+        }
         let run_id = run.to_run_id();
         self.kv().get_many(&run_id, keys).map_err(convert_error)
     }
 
     fn kv_mput(&self, run: &ApiRunId, entries: &[(&str, Value)]) -> StrataResult<Version> {
+        // Validate all keys first
+        for (key, _) in entries {
+            validate_key(key)?;
+        }
         let run_id = run.to_run_id();
         let ((), commit_version) = self.db().transaction_with_version(run_id, |txn| {
             use strata_primitives::extensions::KVStoreExt;
@@ -460,6 +482,10 @@ impl KVStoreBatch for SubstrateImpl {
     }
 
     fn kv_mdelete(&self, run: &ApiRunId, keys: &[&str]) -> StrataResult<u64> {
+        // Validate all keys first
+        for key in keys {
+            validate_key(key)?;
+        }
         let run_id = run.to_run_id();
         self.db().transaction(run_id, |txn| {
             use strata_primitives::extensions::KVStoreExt;
@@ -475,6 +501,10 @@ impl KVStoreBatch for SubstrateImpl {
     }
 
     fn kv_mexists(&self, run: &ApiRunId, keys: &[&str]) -> StrataResult<u64> {
+        // Validate all keys first
+        for key in keys {
+            validate_key(key)?;
+        }
         let run_id = run.to_run_id();
         let results = self.kv().get_many(&run_id, keys).map_err(convert_error)?;
         Ok(results.iter().filter(|v| v.is_some()).count() as u64)

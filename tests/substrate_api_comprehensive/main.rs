@@ -31,17 +31,39 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use strata_api::substrate::{ApiRunId, EventLog, KVStore, KVStoreBatch, SubstrateImpl};
+use strata_api::substrate::{ApiRunId, EventLog, JsonStore, KVStore, KVStoreBatch, RunIndex, StateCell, SubstrateImpl, TraceStore, VectorStore};
 use strata_core::{Value, Version};
 use strata_engine::Database;
 use tempfile::TempDir;
+
+/// Helper to create Value::Object from a list of key-value pairs
+///
+/// Usage: `obj([("key", Value::Int(1)), ("other", Value::String("hello".into()))])`
+pub fn obj<I>(pairs: I) -> Value
+where
+    I: IntoIterator<Item = (&'static str, Value)>,
+{
+    Value::Object(pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+}
+
+/// Helper to create Value::Object from owned strings
+pub fn obj_owned<I>(pairs: I) -> Value
+where
+    I: IntoIterator<Item = (String, Value)>,
+{
+    Value::Object(pairs.into_iter().collect())
+}
 
 // Test data loader
 pub mod test_data;
 
 // Test modules by primitive
 pub mod eventlog;
+pub mod jsonstore;
 pub mod kv;
+pub mod statecell;
+pub mod tracestore;
+pub mod vectorstore;
 
 // =============================================================================
 // SHARED TEST UTILITIES
@@ -228,6 +250,39 @@ where
             test_name, first_mode, first_result, mode, result
         );
     }
+}
+
+/// Run a test across all three durability modes using SubstrateImpl
+pub fn test_across_substrate_modes<F>(test_fn: F)
+where
+    F: Fn(&SubstrateImpl),
+{
+    // Test in-memory mode
+    let db = create_inmemory_db();
+    let substrate = SubstrateImpl::new(db);
+    test_fn(&substrate);
+
+    // Test buffered mode
+    let db = create_buffered_db();
+    let substrate = SubstrateImpl::new(db);
+    test_fn(&substrate);
+
+    // Test strict mode
+    let db = create_strict_db();
+    let substrate = SubstrateImpl::new(db);
+    test_fn(&substrate);
+}
+
+/// Create a persistent database at the given path
+pub fn create_persistent_db(path: &std::path::Path) -> SubstrateImpl {
+    let db = Arc::new(
+        Database::builder()
+            .path(path)
+            .buffered()
+            .open()
+            .expect("Failed to create persistent database"),
+    );
+    SubstrateImpl::new(db)
 }
 
 /// Standard test values covering all 8 types

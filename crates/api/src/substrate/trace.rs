@@ -212,6 +212,70 @@ pub trait TraceStore {
         add_tags: Vec<String>,
         remove_tags: Vec<String>,
     ) -> StrataResult<Version>;
+
+    /// Query traces by tag
+    ///
+    /// Returns all traces that have the specified tag.
+    ///
+    /// ## Errors
+    ///
+    /// - `NotFound`: Run does not exist
+    fn trace_query_by_tag(&self, run: &ApiRunId, tag: &str) -> StrataResult<Vec<Versioned<TraceEntry>>>;
+
+    /// Query traces by time range
+    ///
+    /// Returns all traces created within the specified time range.
+    ///
+    /// ## Parameters
+    ///
+    /// - `start_ms`: Start time (inclusive), milliseconds since epoch
+    /// - `end_ms`: End time (inclusive), milliseconds since epoch
+    ///
+    /// ## Errors
+    ///
+    /// - `NotFound`: Run does not exist
+    fn trace_query_by_time(
+        &self,
+        run: &ApiRunId,
+        start_ms: i64,
+        end_ms: i64,
+    ) -> StrataResult<Vec<Versioned<TraceEntry>>>;
+
+    /// Count traces in a run
+    ///
+    /// Returns the total number of traces.
+    ///
+    /// ## Errors
+    ///
+    /// - `NotFound`: Run does not exist
+    fn trace_count(&self, run: &ApiRunId) -> StrataResult<u64>;
+
+    /// Search traces
+    ///
+    /// Performs full-text search across trace content.
+    ///
+    /// ## Parameters
+    ///
+    /// - `query`: Search query string
+    /// - `k`: Maximum results to return
+    ///
+    /// ## Return Value
+    ///
+    /// Search results with trace IDs and relevance scores.
+    ///
+    /// ## Errors
+    ///
+    /// - `NotFound`: Run does not exist
+    fn trace_search(&self, run: &ApiRunId, query: &str, k: u64) -> StrataResult<Vec<TraceSearchHit>>;
+}
+
+/// A search hit in trace search
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TraceSearchHit {
+    /// Trace ID
+    pub id: String,
+    /// Relevance score (higher = more relevant)
+    pub score: f32,
 }
 
 // =============================================================================
@@ -378,6 +442,62 @@ impl TraceStore for SubstrateImpl {
             strata_core::EntityRef::run(_run.to_run_id()),
             "trace_update_tags not supported - traces are append-only",
         ))
+    }
+
+    fn trace_query_by_tag(&self, run: &ApiRunId, tag: &str) -> StrataResult<Vec<Versioned<TraceEntry>>> {
+        let run_id = run.to_run_id();
+        let traces = self.trace().query_by_tag(&run_id, tag).map_err(convert_error)?;
+
+        Ok(traces
+            .into_iter()
+            .map(|t| Versioned {
+                value: convert_primitive_trace_to_entry(t),
+                version: Version::Txn(0),
+                timestamp: strata_core::Timestamp::now(),
+            })
+            .collect())
+    }
+
+    fn trace_query_by_time(
+        &self,
+        run: &ApiRunId,
+        start_ms: i64,
+        end_ms: i64,
+    ) -> StrataResult<Vec<Versioned<TraceEntry>>> {
+        let run_id = run.to_run_id();
+        let traces = self.trace().query_by_time(&run_id, start_ms, end_ms).map_err(convert_error)?;
+
+        Ok(traces
+            .into_iter()
+            .map(|t| Versioned {
+                value: convert_primitive_trace_to_entry(t),
+                version: Version::Txn(0),
+                timestamp: strata_core::Timestamp::now(),
+            })
+            .collect())
+    }
+
+    fn trace_count(&self, run: &ApiRunId) -> StrataResult<u64> {
+        let run_id = run.to_run_id();
+        let count = self.trace().count(&run_id).map_err(convert_error)?;
+        Ok(count as u64)
+    }
+
+    fn trace_search(&self, run: &ApiRunId, query: &str, k: u64) -> StrataResult<Vec<TraceSearchHit>> {
+        let run_id = run.to_run_id();
+        let request = strata_core::SearchRequest::new(run_id, query).with_k(k as usize);
+        let response = self.trace().search(&request).map_err(convert_error)?;
+
+        Ok(response.hits.into_iter().map(|hit| {
+            let id = match hit.doc_ref {
+                strata_core::search_types::DocRef::Trace { trace_id, .. } => trace_id,
+                _ => String::new(),
+            };
+            TraceSearchHit {
+                id,
+                score: hit.score,
+            }
+        }).collect())
     }
 }
 

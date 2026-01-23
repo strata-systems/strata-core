@@ -137,6 +137,56 @@ pub trait RunIndex {
     /// - `InvalidKey`: Run ID format is invalid
     fn run_exists(&self, run: &ApiRunId) -> StrataResult<bool>;
 
+    /// Pause a run
+    ///
+    /// Transitions the run to Paused state. Can be resumed later.
+    ///
+    /// ## Errors
+    ///
+    /// - `NotFound`: Run does not exist
+    /// - `ConstraintViolation`: Run is not in Active state
+    fn run_pause(&self, run: &ApiRunId) -> StrataResult<Version>;
+
+    /// Resume a paused run
+    ///
+    /// Transitions the run from Paused back to Active state.
+    ///
+    /// ## Errors
+    ///
+    /// - `NotFound`: Run does not exist
+    /// - `ConstraintViolation`: Run is not in Paused state
+    fn run_resume(&self, run: &ApiRunId) -> StrataResult<Version>;
+
+    /// Fail a run with an error message
+    ///
+    /// Transitions the run to Failed state with an error message.
+    ///
+    /// ## Errors
+    ///
+    /// - `NotFound`: Run does not exist
+    /// - `ConstraintViolation`: Run is in terminal state
+    fn run_fail(&self, run: &ApiRunId, error: &str) -> StrataResult<Version>;
+
+    /// Delete a run and all its data
+    ///
+    /// This operation is destructive and cascades to all run data.
+    /// The default run cannot be deleted.
+    ///
+    /// ## Errors
+    ///
+    /// - `NotFound`: Run does not exist
+    /// - `ConstraintViolation`: Cannot delete the default run
+    fn run_delete(&self, run: &ApiRunId) -> StrataResult<()>;
+
+    /// Query runs by status
+    ///
+    /// Returns all runs that are in the specified state.
+    ///
+    /// ## Errors
+    ///
+    /// - Storage errors
+    fn run_query_by_status(&self, state: RunState) -> StrataResult<Vec<Versioned<RunInfo>>>;
+
     /// Set retention policy for a run
     ///
     /// Configures the history retention policy for a run.
@@ -179,7 +229,7 @@ impl RunIndex for SubstrateImpl {
     ) -> StrataResult<(RunInfo, Version)> {
         let run_str = run_id.map(api_run_id_to_string).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-        let _result = if let Some(meta) = metadata {
+        let versioned = if let Some(meta) = metadata {
             self.run().create_run_with_options(&run_str, None, vec![], meta).map_err(convert_error)?
         } else {
             self.run().create_run(&run_str).map_err(convert_error)?
@@ -191,12 +241,13 @@ impl RunIndex for SubstrateImpl {
 
         let info = RunInfo {
             run_id: api_run_id,
-            created_at: strata_core::Timestamp::now().as_micros(),
-            metadata: Value::Null,
-            state: RunState::Active,
+            created_at: (versioned.value.created_at.max(0) as u64).saturating_mul(1000),
+            metadata: versioned.value.metadata,
+            state: convert_run_status(&versioned.value.status),
+            error: versioned.value.error,
         };
 
-        Ok((info, Version::Txn(0)))
+        Ok((info, versioned.version))
     }
 
     fn run_get(&self, run: &ApiRunId) -> StrataResult<Option<Versioned<RunInfo>>> {
@@ -210,6 +261,7 @@ impl RunIndex for SubstrateImpl {
                 created_at: (m.value.created_at.max(0) as u64).saturating_mul(1000),
                 metadata: m.value.metadata,
                 state: convert_run_status(&m.value.status),
+                error: m.value.error,
             };
             Versioned {
                 value: info,
@@ -227,10 +279,7 @@ impl RunIndex for SubstrateImpl {
         _offset: Option<u64>,
     ) -> StrataResult<Vec<Versioned<RunInfo>>> {
         let run_ids = if let Some(s) = state {
-            let primitive_status = match s {
-                RunState::Active => strata_primitives::RunStatus::Active,
-                RunState::Closed => strata_primitives::RunStatus::Completed,
-            };
+            let primitive_status = convert_run_state_to_status(s);
             self.run().query_by_status(primitive_status).map_err(convert_error)?
         } else {
             // Get all runs
@@ -259,6 +308,7 @@ impl RunIndex for SubstrateImpl {
                     created_at: (m.created_at.max(0) as u64).saturating_mul(1000),
                     metadata: m.metadata,
                     state: convert_run_status(&m.status),
+                    error: m.error,
                 };
                 Versioned {
                     value: info,
@@ -278,14 +328,14 @@ impl RunIndex for SubstrateImpl {
             ));
         }
         let run_str = api_run_id_to_string(run);
-        self.run().complete_run(&run_str).map_err(convert_error)?;
-        Ok(Version::Txn(0))
+        let versioned = self.run().complete_run(&run_str).map_err(convert_error)?;
+        Ok(versioned.version)
     }
 
     fn run_update_metadata(&self, run: &ApiRunId, metadata: Value) -> StrataResult<Version> {
         let run_str = api_run_id_to_string(run);
-        self.run().update_metadata(&run_str, metadata).map_err(convert_error)?;
-        Ok(Version::Txn(0))
+        let versioned = self.run().update_metadata(&run_str, metadata).map_err(convert_error)?;
+        Ok(versioned.version)
     }
 
     fn run_exists(&self, run: &ApiRunId) -> StrataResult<bool> {
@@ -301,16 +351,80 @@ impl RunIndex for SubstrateImpl {
     fn run_get_retention(&self, _run: &ApiRunId) -> StrataResult<RetentionPolicy> {
         Ok(RetentionPolicy::KeepAll)
     }
+
+    fn run_pause(&self, run: &ApiRunId) -> StrataResult<Version> {
+        let run_str = api_run_id_to_string(run);
+        let versioned = self.run().pause_run(&run_str).map_err(convert_error)?;
+        Ok(versioned.version)
+    }
+
+    fn run_resume(&self, run: &ApiRunId) -> StrataResult<Version> {
+        let run_str = api_run_id_to_string(run);
+        let versioned = self.run().resume_run(&run_str).map_err(convert_error)?;
+        Ok(versioned.version)
+    }
+
+    fn run_fail(&self, run: &ApiRunId, error: &str) -> StrataResult<Version> {
+        let run_str = api_run_id_to_string(run);
+        let versioned = self.run().fail_run(&run_str, error).map_err(convert_error)?;
+        Ok(versioned.version)
+    }
+
+    fn run_delete(&self, run: &ApiRunId) -> StrataResult<()> {
+        if run.is_default() {
+            return Err(StrataError::invalid_operation(
+                strata_core::EntityRef::run(run.to_run_id()),
+                "Cannot delete the default run",
+            ));
+        }
+        let run_str = api_run_id_to_string(run);
+        self.run().delete_run(&run_str).map_err(convert_error)
+    }
+
+    fn run_query_by_status(&self, state: RunState) -> StrataResult<Vec<Versioned<RunInfo>>> {
+        let primitive_status = convert_run_state_to_status(state);
+        let runs = self.run().query_by_status(primitive_status).map_err(convert_error)?;
+
+        Ok(runs
+            .into_iter()
+            .map(|m| {
+                let api_run_id = ApiRunId::parse(&m.run_id).unwrap_or_else(|| ApiRunId::new());
+                let info = RunInfo {
+                    run_id: api_run_id,
+                    created_at: (m.created_at.max(0) as u64).saturating_mul(1000),
+                    metadata: m.metadata,
+                    state: convert_run_status(&m.status),
+                    error: m.error,
+                };
+                Versioned {
+                    value: info,
+                    version: Version::Txn(0),
+                    timestamp: strata_core::Timestamp::from_millis(m.created_at.max(0) as u64),
+                }
+            })
+            .collect())
+    }
 }
 
 fn convert_run_status(status: &strata_primitives::RunStatus) -> RunState {
     match status {
         strata_primitives::RunStatus::Active => RunState::Active,
-        strata_primitives::RunStatus::Completed => RunState::Closed,
-        strata_primitives::RunStatus::Failed => RunState::Closed,
-        strata_primitives::RunStatus::Cancelled => RunState::Closed,
-        strata_primitives::RunStatus::Paused => RunState::Active, // Paused is still "active" in API terms
-        strata_primitives::RunStatus::Archived => RunState::Closed,
+        strata_primitives::RunStatus::Completed => RunState::Completed,
+        strata_primitives::RunStatus::Failed => RunState::Failed,
+        strata_primitives::RunStatus::Cancelled => RunState::Cancelled,
+        strata_primitives::RunStatus::Paused => RunState::Paused,
+        strata_primitives::RunStatus::Archived => RunState::Archived,
+    }
+}
+
+fn convert_run_state_to_status(state: RunState) -> strata_primitives::RunStatus {
+    match state {
+        RunState::Active => strata_primitives::RunStatus::Active,
+        RunState::Completed => strata_primitives::RunStatus::Completed,
+        RunState::Failed => strata_primitives::RunStatus::Failed,
+        RunState::Cancelled => strata_primitives::RunStatus::Cancelled,
+        RunState::Paused => strata_primitives::RunStatus::Paused,
+        RunState::Archived => strata_primitives::RunStatus::Archived,
     }
 }
 

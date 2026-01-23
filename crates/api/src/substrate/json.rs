@@ -186,6 +186,58 @@ pub trait JsonStore {
         limit: Option<u64>,
         before: Option<Version>,
     ) -> StrataResult<Vec<Versioned<Value>>>;
+
+    /// Check if a document exists
+    ///
+    /// Returns `true` if a document with the given key exists.
+    ///
+    /// ## Errors
+    ///
+    /// - `InvalidKey`: Key is invalid
+    /// - `NotFound`: Run does not exist
+    fn json_exists(&self, run: &ApiRunId, key: &str) -> StrataResult<bool>;
+
+    /// Get the current version of a document
+    ///
+    /// Returns the version number of the document, or `None` if not found.
+    ///
+    /// ## Errors
+    ///
+    /// - `InvalidKey`: Key is invalid
+    /// - `NotFound`: Run does not exist
+    fn json_get_version(&self, run: &ApiRunId, key: &str) -> StrataResult<Option<u64>>;
+
+    /// Search JSON documents
+    ///
+    /// Performs full-text search across document values.
+    ///
+    /// ## Parameters
+    ///
+    /// - `query`: Search query string
+    /// - `k`: Maximum results to return
+    ///
+    /// ## Return Value
+    ///
+    /// Search results with document keys and relevance scores.
+    ///
+    /// ## Errors
+    ///
+    /// - `NotFound`: Run does not exist
+    fn json_search(
+        &self,
+        run: &ApiRunId,
+        query: &str,
+        k: u64,
+    ) -> StrataResult<Vec<JsonSearchHit>>;
+}
+
+/// A search hit in JSON document search
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct JsonSearchHit {
+    /// Document key
+    pub key: String,
+    /// Relevance score (higher = more relevant)
+    pub score: f32,
 }
 
 // =============================================================================
@@ -281,6 +333,21 @@ impl JsonStore for SubstrateImpl {
         let json_path = parse_path(path)?;
         let patch_json = value_to_json(patch)?;
 
+        // Check if document exists
+        let exists = self.json().exists(&run_id, &doc_id).map_err(convert_error)?;
+
+        if !exists {
+            // Document doesn't exist - create it with the patch value at the path
+            if json_path.is_root() {
+                // Create document at root with patch value
+                return self.json().create(&run_id, &doc_id, patch_json).map_err(convert_error);
+            } else {
+                // Create empty object first, then set at path
+                self.json().create(&run_id, &doc_id, JsonValue::object()).map_err(convert_error)?;
+                return self.json().set(&run_id, &doc_id, &json_path, patch_json).map_err(convert_error);
+            }
+        }
+
         // Get current value at path
         let current = self.json().get(&run_id, &doc_id, &json_path).map_err(convert_error)?;
 
@@ -308,6 +375,40 @@ impl JsonStore for SubstrateImpl {
     ) -> StrataResult<Vec<Versioned<Value>>> {
         // History not yet implemented
         Ok(vec![])
+    }
+
+    fn json_exists(&self, run: &ApiRunId, key: &str) -> StrataResult<bool> {
+        let run_id = run.to_run_id();
+        let doc_id = parse_doc_id(key)?;
+        self.json().exists(&run_id, &doc_id).map_err(convert_error)
+    }
+
+    fn json_get_version(&self, run: &ApiRunId, key: &str) -> StrataResult<Option<u64>> {
+        let run_id = run.to_run_id();
+        let doc_id = parse_doc_id(key)?;
+        self.json().get_version(&run_id, &doc_id).map_err(convert_error)
+    }
+
+    fn json_search(
+        &self,
+        run: &ApiRunId,
+        query: &str,
+        k: u64,
+    ) -> StrataResult<Vec<JsonSearchHit>> {
+        let run_id = run.to_run_id();
+        let request = strata_core::SearchRequest::new(run_id, query).with_k(k as usize);
+        let response = self.json().search(&request).map_err(convert_error)?;
+
+        Ok(response.hits.into_iter().map(|hit| {
+            let key = match hit.doc_ref {
+                strata_core::search_types::DocRef::Json { doc_id, .. } => doc_id.to_string(),
+                _ => String::new(),
+            };
+            JsonSearchHit {
+                key,
+                score: hit.score,
+            }
+        }).collect())
     }
 }
 

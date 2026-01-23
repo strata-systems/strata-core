@@ -17,6 +17,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
 tokio = { workspace = true, optional = true }
+base64 = "0.22"
 
 [features]
 default = ["embedded"]
@@ -26,4 +27,3 @@ mcp = ["tokio"]  # M8: MCP integration
 
 [dev-dependencies]
 tempfile = { workspace = true }
-base64 = "0.22"

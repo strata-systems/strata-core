@@ -55,22 +55,114 @@ use super::types::ApiRunId;
 /// Convert strata_core::Value to JsonValue
 ///
 /// This converts our canonical Value type to the JSON-specific wrapper.
+/// Note: We manually convert to avoid serde's tagged enum serialization.
 pub(crate) fn value_to_json(value: Value) -> StrataResult<JsonValue> {
-    // Serialize Value to serde_json::Value, then wrap in JsonValue
-    let json_val = serde_json::to_value(&value)
-        .map_err(|e| StrataError::serialization(format!("Failed to convert Value to JSON: {}", e)))?;
+    let json_val = value_to_serde_json(value)?;
     Ok(JsonValue::from(json_val))
+}
+
+/// Convert a Value to serde_json::Value without using serde serialization
+///
+/// This avoids the tagged enum representation that serde produces by default.
+fn value_to_serde_json(value: Value) -> StrataResult<serde_json::Value> {
+    use serde_json::Value as JV;
+    use serde_json::Map;
+
+    match value {
+        Value::Null => Ok(JV::Null),
+        Value::Bool(b) => Ok(JV::Bool(b)),
+        Value::Int(i) => Ok(JV::Number(i.into())),
+        Value::Float(f) => {
+            // JSON doesn't support Infinity or NaN
+            if f.is_infinite() || f.is_nan() {
+                return Err(StrataError::serialization(
+                    format!("Cannot convert {} to JSON: not a valid JSON number", f)
+                ));
+            }
+            serde_json::Number::from_f64(f)
+                .map(JV::Number)
+                .ok_or_else(|| StrataError::serialization(
+                    format!("Cannot convert {} to JSON number", f)
+                ))
+        }
+        Value::String(s) => Ok(JV::String(s)),
+        Value::Bytes(b) => {
+            // Encode bytes as base64 string with a prefix to distinguish from regular strings
+            use base64::Engine;
+            let encoded = base64::engine::general_purpose::STANDARD.encode(&b);
+            Ok(JV::String(format!("__bytes__:{}", encoded)))
+        }
+        Value::Array(arr) => {
+            let converted: Result<Vec<_>, _> = arr.into_iter()
+                .map(value_to_serde_json)
+                .collect();
+            Ok(JV::Array(converted?))
+        }
+        Value::Object(obj) => {
+            let mut map = Map::new();
+            for (k, v) in obj {
+                map.insert(k, value_to_serde_json(v)?);
+            }
+            Ok(JV::Object(map))
+        }
+    }
 }
 
 /// Convert JsonValue to strata_core::Value
 ///
 /// This converts the JSON-specific wrapper back to our canonical Value type.
 pub(crate) fn json_to_value(json: JsonValue) -> StrataResult<Value> {
-    // Convert JsonValue's inner serde_json::Value to our Value
     let serde_val: serde_json::Value = json.into();
-    let value: Value = serde_json::from_value(serde_val)
-        .map_err(|e| StrataError::serialization(format!("Failed to convert JSON to Value: {}", e)))?;
-    Ok(value)
+    serde_json_to_value(serde_val)
+}
+
+/// Convert serde_json::Value to Value without using serde deserialization
+fn serde_json_to_value(json: serde_json::Value) -> StrataResult<Value> {
+    use serde_json::Value as JV;
+
+    match json {
+        JV::Null => Ok(Value::Null),
+        JV::Bool(b) => Ok(Value::Bool(b)),
+        JV::Number(n) => {
+            // Try to preserve integers when possible
+            if let Some(i) = n.as_i64() {
+                Ok(Value::Int(i))
+            } else if let Some(f) = n.as_f64() {
+                Ok(Value::Float(f))
+            } else {
+                Err(StrataError::serialization(
+                    format!("Cannot convert JSON number {} to Value", n)
+                ))
+            }
+        }
+        JV::String(s) => {
+            // Check for base64-encoded bytes
+            if let Some(encoded) = s.strip_prefix("__bytes__:") {
+                use base64::Engine;
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(encoded)
+                    .map_err(|e| StrataError::serialization(
+                        format!("Invalid base64 in bytes value: {}", e)
+                    ))?;
+                Ok(Value::Bytes(bytes))
+            } else {
+                Ok(Value::String(s))
+            }
+        }
+        JV::Array(arr) => {
+            let converted: Result<Vec<_>, _> = arr.into_iter()
+                .map(serde_json_to_value)
+                .collect();
+            Ok(Value::Array(converted?))
+        }
+        JV::Object(obj) => {
+            let mut map = std::collections::HashMap::new();
+            for (k, v) in obj {
+                map.insert(k, serde_json_to_value(v)?);
+            }
+            Ok(Value::Object(map))
+        }
+    }
 }
 
 /// Parse a string document ID to JsonDocId
@@ -130,6 +222,49 @@ pub(crate) fn convert_error(err: strata_core::error::Error) -> StrataError {
 /// Uses the existing From implementation in strata_primitives::vector::error.
 pub(crate) fn convert_vector_error(err: VectorError) -> StrataError {
     StrataError::from(err)
+}
+
+/// Reserved key prefix that users cannot use
+const RESERVED_KEY_PREFIX: &str = "_strata/";
+
+/// Validate a KV key according to the contract:
+/// - Non-empty
+/// - No NUL bytes
+/// - Not starting with `_strata/` (reserved prefix)
+///
+/// Returns an error if the key is invalid.
+pub(crate) fn validate_key(key: &str) -> StrataResult<()> {
+    if key.is_empty() {
+        return Err(StrataError::invalid_input("Key must not be empty"));
+    }
+    if key.contains('\0') {
+        return Err(StrataError::invalid_input("Key must not contain NUL bytes"));
+    }
+    if key.starts_with(RESERVED_KEY_PREFIX) {
+        return Err(StrataError::invalid_input(
+            format!("Key must not start with reserved prefix '{}'", RESERVED_KEY_PREFIX)
+        ));
+    }
+    Ok(())
+}
+
+/// Validate an event stream name:
+/// - Non-empty
+pub(crate) fn validate_stream_name(stream: &str) -> StrataResult<()> {
+    if stream.is_empty() {
+        return Err(StrataError::invalid_input("Stream name must not be empty"));
+    }
+    Ok(())
+}
+
+/// Validate an event payload (must be Object)
+pub(crate) fn validate_event_payload(payload: &Value) -> StrataResult<()> {
+    if !matches!(payload, Value::Object(_)) {
+        return Err(StrataError::invalid_input(
+            "Event payload must be an Object"
+        ));
+    }
+    Ok(())
 }
 
 /// Convert ApiRunId to string representation for RunIndex

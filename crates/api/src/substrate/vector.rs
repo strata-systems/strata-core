@@ -263,6 +263,36 @@ pub trait VectorStore {
     /// - `NotFound`: Run does not exist
     /// - `ConstraintViolation`: Run is closed
     fn vector_drop_collection(&self, run: &ApiRunId, collection: &str) -> StrataResult<bool>;
+
+    /// List all collections in a run
+    ///
+    /// Returns information about all collections.
+    ///
+    /// ## Errors
+    ///
+    /// - `NotFound`: Run does not exist
+    fn vector_list_collections(&self, run: &ApiRunId) -> StrataResult<Vec<VectorCollectionInfo>>;
+
+    /// Check if a collection exists
+    ///
+    /// Returns `true` if the collection exists.
+    ///
+    /// ## Errors
+    ///
+    /// - `InvalidKey`: Collection name is invalid
+    /// - `NotFound`: Run does not exist
+    fn vector_collection_exists(&self, run: &ApiRunId, collection: &str) -> StrataResult<bool>;
+}
+
+/// Information about a vector collection
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VectorCollectionInfo {
+    /// Collection name
+    pub name: String,
+    /// Vector dimension
+    pub dimension: usize,
+    /// Number of vectors in the collection
+    pub count: u64,
 }
 
 // =============================================================================
@@ -273,7 +303,76 @@ pub trait VectorStore {
 // while the Substrate API uses strata_core::Value. This is a semantic
 // boundary that needs proper bridging.
 
+use strata_core::StrataError;
 use super::impl_::{SubstrateImpl, convert_vector_error};
+
+/// Convert our SearchFilter to the primitive's MetadataFilter
+///
+/// Note: The primitive only supports equality filters with AND semantics.
+/// Complex filters (Prefix, Range, Or, Not) return an error.
+fn convert_search_filter(filter: &SearchFilter) -> StrataResult<strata_core::primitives::MetadataFilter> {
+    match filter {
+        SearchFilter::Equals { field, value } => {
+            let mut mf = strata_core::primitives::MetadataFilter::new();
+            let scalar = value_to_json_scalar(value)?;
+            mf = mf.eq(field.clone(), scalar);
+            Ok(mf)
+        }
+        SearchFilter::And(filters) => {
+            let mut mf = strata_core::primitives::MetadataFilter::new();
+            for f in filters {
+                match f {
+                    SearchFilter::Equals { field, value } => {
+                        let scalar = value_to_json_scalar(value)?;
+                        mf = mf.eq(field.clone(), scalar);
+                    }
+                    _ => {
+                        return Err(StrataError::invalid_input(
+                            "Vector search filter: only Equals filters supported inside And"
+                        ));
+                    }
+                }
+            }
+            Ok(mf)
+        }
+        SearchFilter::Prefix { .. } => {
+            Err(StrataError::invalid_input(
+                "Vector search filter: Prefix filter not supported by backend"
+            ))
+        }
+        SearchFilter::Range { .. } => {
+            Err(StrataError::invalid_input(
+                "Vector search filter: Range filter not supported by backend"
+            ))
+        }
+        SearchFilter::Or(_) => {
+            Err(StrataError::invalid_input(
+                "Vector search filter: Or filter not supported by backend"
+            ))
+        }
+        SearchFilter::Not(_) => {
+            Err(StrataError::invalid_input(
+                "Vector search filter: Not filter not supported by backend"
+            ))
+        }
+    }
+}
+
+/// Convert Value to JsonScalar for metadata filtering
+fn value_to_json_scalar(value: &Value) -> StrataResult<strata_core::primitives::JsonScalar> {
+    match value {
+        Value::Null => Ok(strata_core::primitives::JsonScalar::Null),
+        Value::Bool(b) => Ok(strata_core::primitives::JsonScalar::Bool(*b)),
+        Value::Int(i) => Ok(strata_core::primitives::JsonScalar::Number(*i as f64)),
+        Value::Float(f) => Ok(strata_core::primitives::JsonScalar::Number(*f)),
+        Value::String(s) => Ok(strata_core::primitives::JsonScalar::String(s.clone())),
+        Value::Bytes(_) | Value::Array(_) | Value::Object(_) => {
+            Err(StrataError::invalid_input(
+                "Vector search filter: only scalar values (null, bool, int, float, string) supported"
+            ))
+        }
+    }
+}
 
 impl VectorStore for SubstrateImpl {
     fn vector_upsert(
@@ -284,14 +383,33 @@ impl VectorStore for SubstrateImpl {
         vector: &[f32],
         metadata: Option<Value>,
     ) -> StrataResult<Version> {
+        // Validate vector is not empty
+        if vector.is_empty() {
+            return Err(StrataError::invalid_input("Vector must not be empty"));
+        }
+
         let run_id = run.to_run_id();
+
+        // Auto-create collection if it doesn't exist (per API contract)
+        let exists = self.vector().collection_exists(run_id, collection)
+            .map_err(convert_vector_error)?;
+        if !exists {
+            // Create collection with dimension inferred from vector
+            let config = strata_core::VectorConfig::new(
+                vector.len(),
+                strata_core::DistanceMetric::Cosine,
+            )?;
+            self.vector().create_collection(run_id, collection, config)
+                .map_err(convert_vector_error)?;
+        }
+
         // Convert strata_core::Value metadata to serde_json::Value
         let json_metadata = metadata.map(|v| {
             serde_json::to_value(&v).unwrap_or(serde_json::Value::Null)
         });
-        self.vector().insert(run_id, collection, key, vector, json_metadata)
+        let version = self.vector().insert(run_id, collection, key, vector, json_metadata)
             .map_err(convert_vector_error)?;
-        Ok(Version::Txn(0))
+        Ok(version)
     }
 
     fn vector_get(
@@ -301,6 +419,14 @@ impl VectorStore for SubstrateImpl {
         key: &str,
     ) -> StrataResult<Option<Versioned<VectorData>>> {
         let run_id = run.to_run_id();
+
+        // Check if collection exists first - return None if not
+        let exists = self.vector().collection_exists(run_id, collection)
+            .map_err(convert_vector_error)?;
+        if !exists {
+            return Ok(None);
+        }
+
         let entry = self.vector().get(run_id, collection, key)
             .map_err(convert_vector_error)?;
         Ok(entry.map(|e| {
@@ -329,33 +455,44 @@ impl VectorStore for SubstrateImpl {
         collection: &str,
         query: &[f32],
         k: u64,
-        _filter: Option<SearchFilter>,
+        filter: Option<SearchFilter>,
         _metric: Option<DistanceMetric>,
     ) -> StrataResult<Vec<VectorMatch>> {
         let run_id = run.to_run_id();
-        // Note: The primitive's search() takes an optional MetadataFilter as 5th arg
-        let results = self.vector().search(run_id, collection, query, k as usize, None)
+
+        // Convert filter if provided
+        let metadata_filter = match filter {
+            Some(ref f) => Some(convert_search_filter(f)?),
+            None => None,
+        };
+
+        let results = self.vector().search(run_id, collection, query, k as usize, metadata_filter)
             .map_err(convert_vector_error)?;
 
-        // Note: primitive's VectorMatch doesn't include the vector data,
-        // so we return an empty vector. Callers needing the full vector
-        // should use vector_get after search.
-        Ok(results
-            .into_iter()
-            .map(|r| {
-                // Convert serde_json::Value metadata to strata_core::Value
-                let api_metadata: Value = r.metadata
-                    .and_then(|v| serde_json::from_value(v).ok())
-                    .unwrap_or(Value::Null);
-                VectorMatch {
-                    key: r.key,
-                    score: r.score,
-                    vector: vec![], // Primitive search doesn't return vector data
-                    metadata: api_metadata,
-                    version: Version::Txn(0),
-                }
-            })
-            .collect())
+        // Fetch vector data for each result
+        let mut matches = Vec::with_capacity(results.len());
+        for r in results {
+            // Convert serde_json::Value metadata to strata_core::Value
+            let api_metadata: Value = r.metadata
+                .and_then(|v| serde_json::from_value(v).ok())
+                .unwrap_or(Value::Null);
+
+            // Fetch the actual vector data
+            let vector_data = match self.vector().get(run_id, collection, &r.key) {
+                Ok(Some(entry)) => entry.value.embedding.clone(),
+                _ => vec![], // Fall back to empty if fetch fails
+            };
+
+            matches.push(VectorMatch {
+                key: r.key,
+                score: r.score,
+                vector: vector_data,
+                metadata: api_metadata,
+                version: Version::Txn(0),
+            });
+        }
+
+        Ok(matches)
     }
 
     fn vector_collection_info(
@@ -381,9 +518,9 @@ impl VectorStore for SubstrateImpl {
             dimension,
             strata_core::DistanceMetric::Cosine,
         )?;
-        self.vector().create_collection(run_id, collection, config)
+        let versioned = self.vector().create_collection(run_id, collection, config)
             .map_err(convert_vector_error)?;
-        Ok(Version::Txn(0))
+        Ok(versioned.version)
     }
 
     fn vector_drop_collection(&self, run: &ApiRunId, collection: &str) -> StrataResult<bool> {
@@ -396,6 +533,24 @@ impl VectorStore for SubstrateImpl {
                 .map_err(convert_vector_error)?;
         }
         Ok(existed)
+    }
+
+    fn vector_list_collections(&self, run: &ApiRunId) -> StrataResult<Vec<VectorCollectionInfo>> {
+        let run_id = run.to_run_id();
+        let collections = self.vector().list_collections(run_id)
+            .map_err(convert_vector_error)?;
+
+        Ok(collections.into_iter().map(|info| VectorCollectionInfo {
+            name: info.name,
+            dimension: info.config.dimension,
+            count: info.count as u64,
+        }).collect())
+    }
+
+    fn vector_collection_exists(&self, run: &ApiRunId, collection: &str) -> StrataResult<bool> {
+        let run_id = run.to_run_id();
+        self.vector().collection_exists(run_id, collection)
+            .map_err(convert_vector_error)
     }
 }
 

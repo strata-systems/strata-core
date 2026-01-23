@@ -147,6 +147,78 @@ pub trait StateCell {
         limit: Option<u64>,
         before: Option<Version>,
     ) -> StrataResult<Vec<Versioned<Value>>>;
+
+    /// Initialize a cell (only if it doesn't exist)
+    ///
+    /// Creates a new cell with the given value. Fails if the cell already exists.
+    /// Returns the new version (always 1 for new cells).
+    ///
+    /// ## Errors
+    ///
+    /// - `InvalidKey`: Cell name is invalid
+    /// - `ConstraintViolation`: Cell already exists, or run is closed
+    /// - `NotFound`: Run does not exist
+    fn state_init(&self, run: &ApiRunId, cell: &str, value: Value) -> StrataResult<Version>;
+
+    /// List all cell names in a run
+    ///
+    /// Returns all cell names that exist in the run.
+    ///
+    /// ## Errors
+    ///
+    /// - `NotFound`: Run does not exist
+    fn state_list(&self, run: &ApiRunId) -> StrataResult<Vec<String>>;
+
+    /// Apply a transition function with automatic retry
+    ///
+    /// Reads the current value, applies the transition closure, and writes the result.
+    /// Automatically retries on conflict (optimistic concurrency).
+    ///
+    /// ## Purity Requirement
+    ///
+    /// The closure MAY BE CALLED MULTIPLE TIMES due to OCC retries.
+    /// It MUST be a pure function:
+    /// - No I/O (file, network, console)
+    /// - No external mutation
+    /// - No irreversible effects
+    /// - Idempotent (same input -> same output)
+    ///
+    /// ## Return Value
+    ///
+    /// Returns `(new_value, new_version)` on success.
+    ///
+    /// ## Errors
+    ///
+    /// - `InvalidKey`: Cell name is invalid
+    /// - `NotFound`: Run or cell does not exist
+    /// - `ConstraintViolation`: Run is closed
+    fn state_transition<F>(
+        &self,
+        run: &ApiRunId,
+        cell: &str,
+        f: F,
+    ) -> StrataResult<(Value, Version)>
+    where
+        F: Fn(&Value) -> StrataResult<Value> + Send + Sync;
+
+    /// Apply transition or initialize if cell doesn't exist
+    ///
+    /// If the cell doesn't exist, initializes it with `initial`, then applies the transition.
+    ///
+    /// ## Errors
+    ///
+    /// - `InvalidKey`: Cell name is invalid
+    /// - `NotFound`: Run does not exist
+    /// - `ConstraintViolation`: Run is closed
+    fn state_transition_or_init<F>(
+        &self,
+        run: &ApiRunId,
+        cell: &str,
+        initial: Value,
+        f: F,
+    ) -> StrataResult<(Value, Version)>
+    where
+        F: Fn(&Value) -> StrataResult<Value> + Send + Sync;
 }
 
 // =============================================================================
@@ -218,6 +290,68 @@ impl StateCell for SubstrateImpl {
     ) -> StrataResult<Vec<Versioned<Value>>> {
         // History not yet implemented
         Ok(vec![])
+    }
+
+    fn state_init(&self, run: &ApiRunId, cell: &str, value: Value) -> StrataResult<Version> {
+        let run_id = run.to_run_id();
+        let versioned = self.state().init(&run_id, cell, value).map_err(convert_error)?;
+        Ok(versioned.version)
+    }
+
+    fn state_list(&self, run: &ApiRunId) -> StrataResult<Vec<String>> {
+        let run_id = run.to_run_id();
+        self.state().list(&run_id).map_err(convert_error)
+    }
+
+    fn state_transition<F>(
+        &self,
+        run: &ApiRunId,
+        cell: &str,
+        f: F,
+    ) -> StrataResult<(Value, Version)>
+    where
+        F: Fn(&Value) -> StrataResult<Value> + Send + Sync,
+    {
+        let run_id = run.to_run_id();
+
+        // Wrap the substrate closure to match the primitive's signature
+        let primitive_closure = |state: &strata_primitives::State| {
+            let new_value = f(&state.value)
+                .map_err(|e| strata_core::error::Error::InvalidOperation(e.to_string()))?;
+            Ok((new_value.clone(), new_value))
+        };
+
+        let (new_value, versioned) = self.state()
+            .transition(&run_id, cell, primitive_closure)
+            .map_err(convert_error)?;
+
+        Ok((new_value, versioned.version))
+    }
+
+    fn state_transition_or_init<F>(
+        &self,
+        run: &ApiRunId,
+        cell: &str,
+        initial: Value,
+        f: F,
+    ) -> StrataResult<(Value, Version)>
+    where
+        F: Fn(&Value) -> StrataResult<Value> + Send + Sync,
+    {
+        let run_id = run.to_run_id();
+
+        // Wrap the substrate closure to match the primitive's signature
+        let primitive_closure = |state: &strata_primitives::State| {
+            let new_value = f(&state.value)
+                .map_err(|e| strata_core::error::Error::InvalidOperation(e.to_string()))?;
+            Ok((new_value.clone(), new_value))
+        };
+
+        let (new_value, versioned) = self.state()
+            .transition_or_init(&run_id, cell, initial, primitive_closure)
+            .map_err(convert_error)?;
+
+        Ok((new_value, versioned.version))
     }
 }
 

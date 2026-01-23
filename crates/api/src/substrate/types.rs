@@ -235,17 +235,23 @@ impl std::error::Error for InvalidRunIdError {}
 
 /// Run lifecycle state
 ///
-/// A run can be in one of two states:
-/// - `Active`: The run is open and accepting operations
-/// - `Closed`: The run has been closed and is read-only
+/// A run can be in one of six states:
+/// - `Active`: The run is executing and accepting operations
+/// - `Completed`: The run completed successfully
+/// - `Failed`: The run failed with an error
+/// - `Cancelled`: The run was cancelled
+/// - `Paused`: The run is paused (can resume)
+/// - `Archived`: The run is archived (terminal, soft delete)
 ///
 /// ## State Transitions
 ///
 /// ```text
-/// [Created] --> Active --> Closed
+/// Active --> Completed / Failed / Cancelled / Paused / Archived
+/// Paused --> Active (resume) / Cancelled / Archived
+/// Completed/Failed/Cancelled --> Archived
+/// Archived --> (terminal, no transitions)
 /// ```
 ///
-/// Once a run is closed, it cannot be reopened.
 /// The default run cannot be closed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -253,8 +259,16 @@ pub enum RunState {
     /// Run is active and accepting operations
     #[default]
     Active,
-    /// Run has been closed (read-only)
-    Closed,
+    /// Run completed successfully
+    Completed,
+    /// Run failed with error
+    Failed,
+    /// Run was cancelled
+    Cancelled,
+    /// Run is paused (can resume)
+    Paused,
+    /// Run is archived (terminal, soft delete)
+    Archived,
 }
 
 impl RunState {
@@ -264,17 +278,39 @@ impl RunState {
         matches!(self, RunState::Active)
     }
 
-    /// Check if the run is closed
+    /// Check if the run is closed (any non-active state that prevents writes)
     #[inline]
     pub fn is_closed(&self) -> bool {
-        matches!(self, RunState::Closed)
+        !matches!(self, RunState::Active | RunState::Paused)
+    }
+
+    /// Check if the run is terminal (no further transitions allowed)
+    #[inline]
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, RunState::Archived)
+    }
+
+    /// Check if the run is finished (completed, failed, or cancelled)
+    #[inline]
+    pub fn is_finished(&self) -> bool {
+        matches!(self, RunState::Completed | RunState::Failed | RunState::Cancelled)
+    }
+
+    /// Check if the run is paused
+    #[inline]
+    pub fn is_paused(&self) -> bool {
+        matches!(self, RunState::Paused)
     }
 
     /// Get the string representation
     pub fn as_str(&self) -> &'static str {
         match self {
             RunState::Active => "active",
-            RunState::Closed => "closed",
+            RunState::Completed => "completed",
+            RunState::Failed => "failed",
+            RunState::Cancelled => "cancelled",
+            RunState::Paused => "paused",
+            RunState::Archived => "archived",
         }
     }
 }
@@ -299,6 +335,7 @@ impl fmt::Display for RunState {
 /// - `created_at`: Creation timestamp (microseconds since Unix epoch)
 /// - `metadata`: User-provided metadata (Value::Object or Value::Null)
 /// - `state`: Current lifecycle state
+/// - `error`: Error message if state is Failed
 ///
 /// ## Wire Encoding
 ///
@@ -307,7 +344,8 @@ impl fmt::Display for RunState {
 ///   "run_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
 ///   "created_at": 1700000000000000,
 ///   "metadata": {"name": "experiment-1"},
-///   "state": "active"
+///   "state": "active",
+///   "error": null
 /// }
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -323,6 +361,10 @@ pub struct RunInfo {
 
     /// Current lifecycle state
     pub state: RunState,
+
+    /// Error message if state is Failed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 impl RunInfo {
@@ -333,6 +375,7 @@ impl RunInfo {
             created_at,
             metadata,
             state: RunState::Active,
+            error: None,
         }
     }
 
@@ -343,6 +386,7 @@ impl RunInfo {
             created_at,
             metadata: Value::Null,
             state: RunState::Active,
+            error: None,
         }
     }
 
@@ -364,9 +408,15 @@ impl RunInfo {
         self.state.is_closed()
     }
 
-    /// Mark the run as closed
+    /// Mark the run as closed (completed)
     pub fn close(&mut self) {
-        self.state = RunState::Closed;
+        self.state = RunState::Completed;
+    }
+
+    /// Mark the run as failed with an error message
+    pub fn fail(&mut self, error: String) {
+        self.state = RunState::Failed;
+        self.error = Some(error);
     }
 }
 
@@ -670,15 +720,47 @@ mod tests {
         let state = RunState::Active;
         assert!(state.is_active());
         assert!(!state.is_closed());
+        assert!(!state.is_terminal());
+        assert!(!state.is_finished());
         assert_eq!(state.as_str(), "active");
     }
 
     #[test]
-    fn test_run_state_closed() {
-        let state = RunState::Closed;
+    fn test_run_state_completed() {
+        let state = RunState::Completed;
         assert!(!state.is_active());
         assert!(state.is_closed());
-        assert_eq!(state.as_str(), "closed");
+        assert!(!state.is_terminal());
+        assert!(state.is_finished());
+        assert_eq!(state.as_str(), "completed");
+    }
+
+    #[test]
+    fn test_run_state_failed() {
+        let state = RunState::Failed;
+        assert!(!state.is_active());
+        assert!(state.is_closed());
+        assert!(!state.is_terminal());
+        assert!(state.is_finished());
+        assert_eq!(state.as_str(), "failed");
+    }
+
+    #[test]
+    fn test_run_state_paused() {
+        let state = RunState::Paused;
+        assert!(!state.is_active());
+        assert!(!state.is_closed()); // Paused is not "closed" - it can resume
+        assert!(state.is_paused());
+        assert_eq!(state.as_str(), "paused");
+    }
+
+    #[test]
+    fn test_run_state_archived() {
+        let state = RunState::Archived;
+        assert!(!state.is_active());
+        assert!(state.is_closed());
+        assert!(state.is_terminal());
+        assert_eq!(state.as_str(), "archived");
     }
 
     #[test]
@@ -692,12 +774,15 @@ mod tests {
         let json = serde_json::to_string(&active).unwrap();
         assert_eq!(json, "\"active\"");
 
-        let closed = RunState::Closed;
-        let json = serde_json::to_string(&closed).unwrap();
-        assert_eq!(json, "\"closed\"");
+        let completed = RunState::Completed;
+        let json = serde_json::to_string(&completed).unwrap();
+        assert_eq!(json, "\"completed\"");
 
         let restored: RunState = serde_json::from_str("\"active\"").unwrap();
         assert_eq!(restored, RunState::Active);
+
+        let restored: RunState = serde_json::from_str("\"failed\"").unwrap();
+        assert_eq!(restored, RunState::Failed);
     }
 
     // =========================================================================

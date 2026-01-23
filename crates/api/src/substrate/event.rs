@@ -146,6 +146,82 @@ pub trait EventLog {
     /// - `InvalidKey`: Stream name is invalid
     /// - `NotFound`: Run does not exist
     fn event_latest_sequence(&self, run: &ApiRunId, stream: &str) -> StrataResult<Option<u64>>;
+
+    /// Read events from a stream in reverse order (newest first)
+    ///
+    /// Returns events within the specified range, in reverse sequence order.
+    ///
+    /// ## Parameters
+    ///
+    /// - `start`: Start sequence (inclusive), `None` = from end
+    /// - `end`: End sequence (inclusive), `None` = to beginning
+    /// - `limit`: Maximum events to return, `None` = no limit
+    ///
+    /// ## Return Value
+    ///
+    /// Vector of `Versioned<Value>` in descending sequence order (newest first).
+    ///
+    /// ## Errors
+    ///
+    /// - `InvalidKey`: Stream name is invalid
+    /// - `NotFound`: Run does not exist
+    fn event_rev_range(
+        &self,
+        run: &ApiRunId,
+        stream: &str,
+        start: Option<u64>,
+        end: Option<u64>,
+        limit: Option<u64>,
+    ) -> StrataResult<Vec<Versioned<Value>>>;
+
+    /// List all streams (event types) in a run
+    ///
+    /// Returns all distinct stream names that have events.
+    ///
+    /// ## Errors
+    ///
+    /// - `NotFound`: Run does not exist
+    fn event_streams(&self, run: &ApiRunId) -> StrataResult<Vec<String>>;
+
+    /// Get the latest event (head) of a stream
+    ///
+    /// Returns the most recent event in the stream, or `None` if empty.
+    ///
+    /// ## Errors
+    ///
+    /// - `InvalidKey`: Stream name is invalid
+    /// - `NotFound`: Run does not exist
+    fn event_head(&self, run: &ApiRunId, stream: &str) -> StrataResult<Option<Versioned<Value>>>;
+
+    /// Verify the hash chain integrity of the event log
+    ///
+    /// Validates that all events exist and the hash chain is unbroken.
+    ///
+    /// ## Return Value
+    ///
+    /// `ChainVerification` containing:
+    /// - `is_valid`: Whether the chain is valid
+    /// - `length`: Total number of events
+    /// - `first_invalid`: Sequence of first invalid event (if any)
+    /// - `error`: Description of the error (if any)
+    ///
+    /// ## Errors
+    ///
+    /// - `NotFound`: Run does not exist
+    fn event_verify_chain(&self, run: &ApiRunId) -> StrataResult<ChainVerification>;
+}
+
+/// Chain verification result
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ChainVerification {
+    /// Whether the chain is valid
+    pub is_valid: bool,
+    /// Total number of events in the chain
+    pub length: u64,
+    /// Sequence of first invalid event (if any)
+    pub first_invalid: Option<u64>,
+    /// Description of the error (if any)
+    pub error: Option<String>,
 }
 
 // =============================================================================
@@ -156,7 +232,7 @@ pub trait EventLog {
 // `stream` parameter to `event_type` in the primitive. Sequence numbers
 // are global per-run, not per-stream.
 
-use super::impl_::{SubstrateImpl, convert_error};
+use super::impl_::{SubstrateImpl, convert_error, validate_stream_name, validate_event_payload};
 
 impl EventLog for SubstrateImpl {
     fn event_append(
@@ -165,6 +241,8 @@ impl EventLog for SubstrateImpl {
         stream: &str,
         payload: Value,
     ) -> StrataResult<Version> {
+        validate_stream_name(stream)?;
+        validate_event_payload(&payload)?;
         let run_id = run.to_run_id();
         // Use stream as event_type
         self.event().append(&run_id, stream, payload).map_err(convert_error)
@@ -178,6 +256,7 @@ impl EventLog for SubstrateImpl {
         end: Option<u64>,
         limit: Option<u64>,
     ) -> StrataResult<Vec<Versioned<Value>>> {
+        validate_stream_name(stream)?;
         let run_id = run.to_run_id();
 
         // Read events filtered by type (stream)
@@ -210,6 +289,7 @@ impl EventLog for SubstrateImpl {
         stream: &str,
         sequence: u64,
     ) -> StrataResult<Option<Versioned<Value>>> {
+        validate_stream_name(stream)?;
         let run_id = run.to_run_id();
 
         // Read the event at this sequence
@@ -229,6 +309,7 @@ impl EventLog for SubstrateImpl {
     }
 
     fn event_len(&self, run: &ApiRunId, stream: &str) -> StrataResult<u64> {
+        validate_stream_name(stream)?;
         let run_id = run.to_run_id();
         // Count events with this type
         let events = self.event().read_by_type(&run_id, stream).map_err(convert_error)?;
@@ -236,6 +317,7 @@ impl EventLog for SubstrateImpl {
     }
 
     fn event_latest_sequence(&self, run: &ApiRunId, stream: &str) -> StrataResult<Option<u64>> {
+        validate_stream_name(stream)?;
         let run_id = run.to_run_id();
         // Find highest sequence with this type
         let events = self.event().read_by_type(&run_id, stream).map_err(convert_error)?;
@@ -246,6 +328,78 @@ impl EventLog for SubstrateImpl {
             }
         }).max();
         Ok(max_seq)
+    }
+
+    fn event_rev_range(
+        &self,
+        run: &ApiRunId,
+        stream: &str,
+        start: Option<u64>,
+        end: Option<u64>,
+        limit: Option<u64>,
+    ) -> StrataResult<Vec<Versioned<Value>>> {
+        validate_stream_name(stream)?;
+        let run_id = run.to_run_id();
+
+        // Read events filtered by type (stream)
+        let events = self.event().read_by_type(&run_id, stream).map_err(convert_error)?;
+
+        // Apply start/end range, reverse, and limit
+        let mut filtered: Vec<_> = events
+            .into_iter()
+            .filter(|e| {
+                let seq = match e.version {
+                    Version::Sequence(s) => s,
+                    _ => return false,
+                };
+                start.map_or(true, |s| seq <= s) && end.map_or(true, |e| seq >= e)
+            })
+            .map(|e| Versioned {
+                value: e.value.payload.clone(),
+                version: e.version,
+                timestamp: strata_core::Timestamp::from_millis(e.value.timestamp as u64),
+            })
+            .collect();
+
+        // Reverse to get newest first
+        filtered.reverse();
+
+        // Apply limit
+        if let Some(n) = limit {
+            filtered.truncate(n as usize);
+        }
+
+        Ok(filtered)
+    }
+
+    fn event_streams(&self, run: &ApiRunId) -> StrataResult<Vec<String>> {
+        let run_id = run.to_run_id();
+        self.event().event_types(&run_id).map_err(convert_error)
+    }
+
+    fn event_head(&self, run: &ApiRunId, stream: &str) -> StrataResult<Option<Versioned<Value>>> {
+        validate_stream_name(stream)?;
+        let run_id = run.to_run_id();
+
+        // Read events filtered by type (stream) and get the last one
+        let events = self.event().read_by_type(&run_id, stream).map_err(convert_error)?;
+
+        Ok(events.into_iter().last().map(|e| Versioned {
+            value: e.value.payload.clone(),
+            version: e.version,
+            timestamp: strata_core::Timestamp::from_millis(e.value.timestamp as u64),
+        }))
+    }
+
+    fn event_verify_chain(&self, run: &ApiRunId) -> StrataResult<ChainVerification> {
+        let run_id = run.to_run_id();
+        let verification = self.event().verify_chain(&run_id).map_err(convert_error)?;
+        Ok(ChainVerification {
+            is_valid: verification.is_valid,
+            length: verification.length,
+            first_invalid: verification.first_invalid,
+            error: verification.error,
+        })
     }
 }
 
