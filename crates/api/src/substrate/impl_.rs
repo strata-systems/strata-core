@@ -227,15 +227,24 @@ pub(crate) fn convert_vector_error(err: VectorError) -> StrataError {
 /// Reserved key prefix that users cannot use
 const RESERVED_KEY_PREFIX: &str = "_strata/";
 
+/// Maximum key length in bytes (matches Limits::default().max_key_bytes)
+const MAX_KEY_BYTES: usize = 1024;
+
 /// Validate a KV key according to the contract:
 /// - Non-empty
 /// - No NUL bytes
 /// - Not starting with `_strata/` (reserved prefix)
+/// - Not exceeding max key length (1024 bytes)
 ///
 /// Returns an error if the key is invalid.
 pub(crate) fn validate_key(key: &str) -> StrataResult<()> {
     if key.is_empty() {
         return Err(StrataError::invalid_input("Key must not be empty"));
+    }
+    if key.len() > MAX_KEY_BYTES {
+        return Err(StrataError::invalid_input(
+            format!("Key exceeds maximum length of {} bytes", MAX_KEY_BYTES)
+        ));
     }
     if key.contains('\0') {
         return Err(StrataError::invalid_input("Key must not contain NUL bytes"));

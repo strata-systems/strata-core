@@ -151,42 +151,38 @@ fn test_key_whitespace_handling() {
     }
 }
 
-/// Key at maximum allowed length should be accepted
+/// Key at maximum allowed length (1024 bytes) should be accepted
 #[test]
 fn test_key_max_length_accepted() {
     let (_, substrate) = quick_setup();
     let run = ApiRunId::default();
-    let edge_cases = load_edge_case_data();
 
-    // Use the 256-byte key from test data
-    if let Some(entry) = edge_cases.get_test("key_256_bytes") {
-        let result = substrate.kv_put(&run, &entry.key, Value::Int(1));
-        // 256 bytes is a common max key length - should likely succeed
-        if result.is_err() {
-            println!(
-                "Note: 256-byte key rejected (max_key_bytes may be < 256): {:?}",
-                result.err()
-            );
-        }
-    }
+    // Key exactly at 1024 bytes should succeed
+    let max_key = "k".repeat(1024);
+    let result = substrate.kv_put(&run, &max_key, Value::Int(1));
+    assert!(result.is_ok(), "Key at max length (1024 bytes) should be accepted");
+
+    // Verify it can be read back
+    let value = substrate.kv_get(&run, &max_key).unwrap();
+    assert!(value.is_some());
+    assert_eq!(value.unwrap().value, Value::Int(1));
 }
 
-/// Key exceeding maximum length should be rejected
+/// Key exceeding maximum length (1024 bytes) should be rejected
 #[test]
 fn test_key_over_max_length_rejected() {
     let (_, substrate) = quick_setup();
     let run = ApiRunId::default();
-    let edge_cases = load_edge_case_data();
 
-    // Use the 1024-byte key from test data
-    if let Some(entry) = edge_cases.get_test("key_1024_bytes") {
-        let result = substrate.kv_put(&run, &entry.key, Value::Int(1));
-        // Document behavior - might be Ok or InvalidKey depending on limits
-        match &result {
-            Ok(_) => println!("Note: 1024-byte key accepted (max_key_bytes >= 1024)"),
-            Err(e) => println!("Note: 1024-byte key rejected as expected: {:?}", e),
-        }
-    }
+    // Key at 1025 bytes should be rejected
+    let over_key = "k".repeat(1025);
+    let result = substrate.kv_put(&run, &over_key, Value::Int(1));
+    assert!(result.is_err(), "Key over max length (1025 bytes) should be rejected");
+
+    // Much longer key should also be rejected
+    let long_key = "k".repeat(4096);
+    let result = substrate.kv_put(&run, &long_key, Value::Int(1));
+    assert!(result.is_err(), "Key way over max length should be rejected");
 }
 
 // =============================================================================
