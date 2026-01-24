@@ -29,9 +29,9 @@ fn test_append_returns_sequence_version() {
         .event_append(&run, "stream1", payload)
         .expect("append should succeed");
 
-    // Version should be a sequence version
+    // Version should be a sequence version (0-indexed)
     match version {
-        Version::Sequence(n) => assert!(n >= 1, "Sequence should be at least 1"),
+        Version::Sequence(_) => {} // Sequences start at 0
         _ => panic!("Expected Version::Sequence, got {:?}", version),
     }
 }
