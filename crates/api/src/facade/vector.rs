@@ -168,6 +168,64 @@ pub trait VectorFacade {
     ///
     /// Returns 0 if the collection doesn't exist.
     fn vcount(&self, collection: &str) -> StrataResult<u64>;
+
+    // =========================================================================
+    // Batch Operations
+    // =========================================================================
+
+    /// Add or update multiple vectors
+    ///
+    /// More efficient than calling `vadd` multiple times.
+    ///
+    /// ## Parameters
+    /// - `collection`: Collection name
+    /// - `vectors`: Vector of (key, vector, metadata) tuples
+    ///
+    /// ## Returns
+    /// Number of vectors successfully added/updated.
+    ///
+    /// ## Example
+    /// ```ignore
+    /// let vectors = vec![
+    ///     ("doc:1", vec![0.1, 0.2, 0.3].as_slice(), None),
+    ///     ("doc:2", vec![0.4, 0.5, 0.6].as_slice(), Some(metadata)),
+    /// ];
+    /// let count = facade.vadd_batch("embeddings", vectors)?;
+    /// ```
+    fn vadd_batch(
+        &self,
+        collection: &str,
+        vectors: Vec<(&str, &[f32], Option<Value>)>,
+    ) -> StrataResult<usize>;
+
+    /// Get multiple vectors by key
+    ///
+    /// More efficient than calling `vget` multiple times.
+    ///
+    /// ## Parameters
+    /// - `collection`: Collection name
+    /// - `keys`: Keys to retrieve
+    ///
+    /// ## Returns
+    /// Vector of results in the same order as input keys.
+    /// Missing keys return `None`.
+    fn vget_batch(
+        &self,
+        collection: &str,
+        keys: &[&str],
+    ) -> StrataResult<Vec<Option<(Vec<f32>, Value)>>>;
+
+    /// Delete multiple vectors by key
+    ///
+    /// More efficient than calling `vdel` multiple times.
+    ///
+    /// ## Parameters
+    /// - `collection`: Collection name
+    /// - `keys`: Keys to delete
+    ///
+    /// ## Returns
+    /// Number of vectors that existed and were deleted.
+    fn vdel_batch(&self, collection: &str, keys: &[&str]) -> StrataResult<usize>;
 }
 
 // =============================================================================
@@ -294,6 +352,66 @@ impl VectorFacade for FacadeImpl {
 
     fn vcount(&self, collection: &str) -> StrataResult<u64> {
         self.substrate().vector_count(self.default_run(), collection)
+    }
+
+    fn vadd_batch(
+        &self,
+        collection: &str,
+        vectors: Vec<(&str, &[f32], Option<Value>)>,
+    ) -> StrataResult<usize> {
+        if vectors.is_empty() {
+            return Ok(0);
+        }
+
+        // Ensure collection exists (using first vector's dimension)
+        let info = self.substrate().vector_collection_info(self.default_run(), collection)?;
+        if info.is_none() {
+            if let Some((_, first_vec, _)) = vectors.iter().find(|(_, v, _)| !v.is_empty()) {
+                let _version = self.substrate().vector_create_collection(
+                    self.default_run(),
+                    collection,
+                    first_vec.len(),
+                    DistanceMetric::Cosine,
+                )?;
+            }
+        }
+
+        let results = self.substrate().vector_upsert_batch(
+            self.default_run(),
+            collection,
+            vectors,
+        )?;
+
+        // Count successful inserts
+        Ok(results.into_iter().filter(|r| r.is_ok()).count())
+    }
+
+    fn vget_batch(
+        &self,
+        collection: &str,
+        keys: &[&str],
+    ) -> StrataResult<Vec<Option<(Vec<f32>, Value)>>> {
+        let results = self.substrate().vector_get_batch(
+            self.default_run(),
+            collection,
+            keys,
+        )?;
+
+        Ok(results
+            .into_iter()
+            .map(|opt| opt.map(|v| v.value))
+            .collect())
+    }
+
+    fn vdel_batch(&self, collection: &str, keys: &[&str]) -> StrataResult<usize> {
+        let results = self.substrate().vector_delete_batch(
+            self.default_run(),
+            collection,
+            keys,
+        )?;
+
+        // Count successful deletes (true = existed and was deleted)
+        Ok(results.into_iter().filter(|&deleted| deleted).count())
     }
 }
 

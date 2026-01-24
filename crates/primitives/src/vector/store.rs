@@ -1384,6 +1384,388 @@ impl VectorStore {
     }
 
     // ========================================================================
+    // Batch Operations
+    // ========================================================================
+
+    /// Batch insert vectors
+    ///
+    /// Inserts multiple vectors in a single operation. More efficient than
+    /// calling `insert` multiple times as it batches WAL writes and backend
+    /// operations.
+    ///
+    /// # Arguments
+    /// * `run_id` - Run this operation belongs to
+    /// * `collection` - Collection name
+    /// * `vectors` - Vector of (key, embedding, metadata) tuples
+    ///
+    /// # Returns
+    /// Vector of (key, version) results for each insert. If an individual
+    /// insert fails, its entry will contain the error.
+    ///
+    /// # Errors
+    /// - `CollectionNotFound` if collection doesn't exist
+    /// - `DimensionMismatch` if any embedding dimension doesn't match config
+    pub fn insert_batch(
+        &self,
+        run_id: RunId,
+        collection: &str,
+        vectors: Vec<(&str, &[f32], Option<JsonValue>)>,
+    ) -> VectorResult<Vec<Result<(String, Version), VectorError>>> {
+        if vectors.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Ensure collection is loaded
+        self.ensure_collection_loaded(run_id, collection)?;
+
+        let collection_id = CollectionId::new(run_id, collection);
+
+        // Get config for dimension validation
+        let config = self.get_collection_config_required(run_id, collection)?;
+
+        let mut results = Vec::with_capacity(vectors.len());
+
+        for (key, embedding, metadata) in vectors {
+            let result = self.insert_single(
+                run_id,
+                collection,
+                &collection_id,
+                key,
+                embedding,
+                metadata,
+                None,
+                config.dimension,
+            );
+            results.push(result.map(|v| (key.to_string(), v)));
+        }
+
+        Ok(results)
+    }
+
+    /// Batch insert vectors with source references
+    ///
+    /// Same as `insert_batch` but allows linking embeddings back to source documents.
+    ///
+    /// # Arguments
+    /// * `run_id` - Run this operation belongs to
+    /// * `collection` - Collection name
+    /// * `vectors` - Vector of (key, embedding, metadata, source_ref) tuples
+    pub fn insert_batch_with_source(
+        &self,
+        run_id: RunId,
+        collection: &str,
+        vectors: Vec<(&str, &[f32], Option<JsonValue>, Option<strata_core::EntityRef>)>,
+    ) -> VectorResult<Vec<Result<(String, Version), VectorError>>> {
+        if vectors.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Ensure collection is loaded
+        self.ensure_collection_loaded(run_id, collection)?;
+
+        let collection_id = CollectionId::new(run_id, collection);
+
+        // Get config for dimension validation
+        let config = self.get_collection_config_required(run_id, collection)?;
+
+        let mut results = Vec::with_capacity(vectors.len());
+
+        for (key, embedding, metadata, source_ref) in vectors {
+            let result = self.insert_single(
+                run_id,
+                collection,
+                &collection_id,
+                key,
+                embedding,
+                metadata,
+                source_ref,
+                config.dimension,
+            );
+            results.push(result.map(|v| (key.to_string(), v)));
+        }
+
+        Ok(results)
+    }
+
+    /// Helper for batch insert - handles a single vector insert
+    fn insert_single(
+        &self,
+        run_id: RunId,
+        collection: &str,
+        collection_id: &CollectionId,
+        key: &str,
+        embedding: &[f32],
+        metadata: Option<JsonValue>,
+        source_ref: Option<strata_core::EntityRef>,
+    expected_dimension: usize,
+    ) -> VectorResult<Version> {
+        // Validate key
+        validate_vector_key(key)?;
+
+        // Validate dimension
+        if embedding.len() != expected_dimension {
+            return Err(VectorError::DimensionMismatch {
+                expected: expected_dimension,
+                got: embedding.len(),
+            });
+        }
+
+        // Serialize metadata to bytes for WAL storage
+        let metadata_bytes = metadata
+            .as_ref()
+            .map(serde_json::to_vec)
+            .transpose()
+            .map_err(|e| VectorError::Serialization(e.to_string()))?;
+
+        // Check if vector already exists
+        let kv_key = Key::new_vector(Namespace::for_run(run_id), collection, key);
+        let existing = self.get_vector_record_by_key(&kv_key)?;
+        let is_update = existing.is_some();
+
+        let (vector_id, record) = if let Some(existing_record) = existing {
+            // Update existing: keep the same VectorId
+            let mut updated = existing_record;
+            if source_ref.is_some() {
+                updated.update_with_source(metadata, source_ref.clone());
+            } else {
+                updated.update(metadata);
+            }
+            (VectorId(updated.vector_id), updated)
+        } else {
+            // New vector: allocate VectorId from backend's per-collection counter
+            let state = self.state();
+            let mut backends = state.backends.write();
+            let backend = backends.get_mut(collection_id).ok_or_else(|| {
+                VectorError::CollectionNotFound {
+                    name: collection.to_string(),
+                }
+            })?;
+
+            // Allocate new ID
+            let vector_id = backend.allocate_id();
+            let record = if let Some(ref src) = source_ref {
+                VectorRecord::new_with_source(vector_id, metadata, src.clone())
+            } else {
+                VectorRecord::new(vector_id, metadata)
+            };
+
+            // Insert into backend
+            backend.insert(vector_id, embedding)?;
+
+            drop(backends);
+            (vector_id, record)
+        };
+
+        // For updates, update the backend
+        if is_update {
+            let state = self.state();
+            let mut backends = state.backends.write();
+            if let Some(backend) = backends.get_mut(collection_id) {
+                backend.insert(vector_id, embedding)?;
+            }
+        }
+
+        // Store record in KV
+        let record_version = record.version;
+        let record_bytes = record.to_bytes()?;
+        self.db
+            .transaction(run_id, |txn| {
+                txn.put(kv_key.clone(), Value::Bytes(record_bytes.clone()))
+            })
+            .map_err(|e| VectorError::Storage(e.to_string()))?;
+
+        // Write WAL entry for durability
+        self.write_wal_entry(WALEntry::VectorUpsert {
+            run_id,
+            collection: collection.to_string(),
+            key: key.to_string(),
+            vector_id: vector_id.as_u64(),
+            embedding: embedding.to_vec(),
+            metadata: metadata_bytes,
+            version: 1,
+            source_ref,
+        })?;
+
+        Ok(Version::counter(record_version))
+    }
+
+    /// Batch get vectors
+    ///
+    /// Retrieves multiple vectors by key in a single operation.
+    ///
+    /// # Arguments
+    /// * `run_id` - Run this operation belongs to
+    /// * `collection` - Collection name
+    /// * `keys` - Keys to retrieve
+    ///
+    /// # Returns
+    /// Vector of results in the same order as input keys.
+    /// Missing keys return `Ok(None)`.
+    pub fn get_batch(
+        &self,
+        run_id: RunId,
+        collection: &str,
+        keys: &[&str],
+    ) -> VectorResult<Vec<Option<Versioned<VectorEntry>>>> {
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Ensure collection is loaded
+        self.ensure_collection_loaded(run_id, collection)?;
+
+        let collection_id = CollectionId::new(run_id, collection);
+        let namespace = Namespace::for_run(run_id);
+
+        // Create snapshot for consistent reads
+        use strata_core::traits::SnapshotView;
+        let snapshot = self.db.storage().create_snapshot();
+
+        let state = self.state();
+        let backends = state.backends.read();
+        let backend =
+            backends
+                .get(&collection_id)
+                .ok_or_else(|| VectorError::CollectionNotFound {
+                    name: collection.to_string(),
+                })?;
+
+        let mut results = Vec::with_capacity(keys.len());
+
+        for key in keys {
+            let kv_key = Key::new_vector(namespace.clone(), collection, key);
+
+            let entry = match snapshot.get(&kv_key) {
+                Ok(Some(versioned_value)) => {
+                    let bytes = match &versioned_value.value {
+                        Value::Bytes(b) => b,
+                        _ => {
+                            results.push(None);
+                            continue;
+                        }
+                    };
+
+                    match VectorRecord::from_bytes(bytes) {
+                        Ok(record) => {
+                            let vector_id = VectorId(record.vector_id);
+                            match backend.get(vector_id) {
+                                Some(embedding) => {
+                                    let entry = VectorEntry {
+                                        key: (*key).to_string(),
+                                        embedding: embedding.to_vec(),
+                                        metadata: record.metadata,
+                                        vector_id,
+                                        version: record.version,
+                                        source_ref: record.source_ref,
+                                    };
+                                    Some(Versioned::with_timestamp(
+                                        entry,
+                                        versioned_value.version,
+                                        versioned_value.timestamp,
+                                    ))
+                                }
+                                None => None,
+                            }
+                        }
+                        Err(_) => None,
+                    }
+                }
+                Ok(None) => None,
+                Err(_) => None,
+            };
+
+            results.push(entry);
+        }
+
+        Ok(results)
+    }
+
+    /// Batch delete vectors
+    ///
+    /// Deletes multiple vectors by key in a single operation.
+    ///
+    /// # Arguments
+    /// * `run_id` - Run this operation belongs to
+    /// * `collection` - Collection name
+    /// * `keys` - Keys to delete
+    ///
+    /// # Returns
+    /// Vector of booleans indicating whether each key existed and was deleted.
+    pub fn delete_batch(
+        &self,
+        run_id: RunId,
+        collection: &str,
+        keys: &[&str],
+    ) -> VectorResult<Vec<bool>> {
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Ensure collection is loaded
+        self.ensure_collection_loaded(run_id, collection)?;
+
+        let collection_id = CollectionId::new(run_id, collection);
+        let namespace = Namespace::for_run(run_id);
+
+        let mut results = Vec::with_capacity(keys.len());
+        let mut keys_to_delete = Vec::new();
+        let mut vector_ids_to_delete = Vec::new();
+
+        // First pass: collect existing keys and their vector IDs
+        for key in keys {
+            let kv_key = Key::new_vector(namespace.clone(), collection, key);
+
+            match self.get_vector_record_by_key(&kv_key)? {
+                Some(record) => {
+                    keys_to_delete.push((kv_key, *key));
+                    vector_ids_to_delete.push(VectorId(record.vector_id));
+                    results.push(true);
+                }
+                None => {
+                    results.push(false);
+                }
+            }
+        }
+
+        // Delete from backend
+        if !vector_ids_to_delete.is_empty() {
+            let state = self.state();
+            let mut backends = state.backends.write();
+            if let Some(backend) = backends.get_mut(&collection_id) {
+                for vector_id in &vector_ids_to_delete {
+                    let _ = backend.delete(*vector_id);
+                }
+            }
+        }
+
+        // Delete from KV in a transaction
+        if !keys_to_delete.is_empty() {
+            let kv_keys: Vec<Key> = keys_to_delete.iter().map(|(k, _)| k.clone()).collect();
+            self.db
+                .transaction(run_id, |txn| {
+                    for kv_key in &kv_keys {
+                        txn.delete(kv_key.clone())?;
+                    }
+                    Ok(())
+                })
+                .map_err(|e| VectorError::Storage(e.to_string()))?;
+        }
+
+        // Write WAL entries for durability
+        for ((_, key), vector_id) in keys_to_delete.iter().zip(vector_ids_to_delete.iter()) {
+            self.write_wal_entry(WALEntry::VectorDelete {
+                run_id,
+                collection: collection.to_string(),
+                key: (*key).to_string(),
+                vector_id: vector_id.as_u64(),
+                version: 1,
+            })?;
+        }
+
+        Ok(results)
+    }
+
+    // ========================================================================
     // Internal Helpers
     // ========================================================================
 

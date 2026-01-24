@@ -357,6 +357,93 @@ pub trait VectorStore {
     /// - `InvalidKey`: Collection name is invalid
     /// - `NotFound`: Run does not exist
     fn vector_count(&self, run: &ApiRunId, collection: &str) -> StrataResult<u64>;
+
+    // =========================================================================
+    // Batch Operations
+    // =========================================================================
+
+    /// Batch insert or update vectors
+    ///
+    /// Inserts multiple vectors in a single operation. More efficient than
+    /// calling `vector_upsert` multiple times.
+    ///
+    /// ## Parameters
+    ///
+    /// - `collection`: Collection name
+    /// - `vectors`: Vector of (key, vector, metadata) tuples
+    ///
+    /// ## Returns
+    ///
+    /// Vector of results for each insert. Each result is either:
+    /// - `Ok((key, version))`: Successfully inserted
+    /// - `Err(error)`: Failed to insert (e.g., dimension mismatch)
+    ///
+    /// ## Semantics
+    ///
+    /// - Creates collection if it doesn't exist (dimension from first vector)
+    /// - Individual failures don't affect other inserts
+    /// - All vectors must have the same dimension as the collection
+    ///
+    /// ## Errors
+    ///
+    /// - `InvalidKey`: Collection name is invalid
+    /// - `NotFound`: Run does not exist
+    fn vector_upsert_batch(
+        &self,
+        run: &ApiRunId,
+        collection: &str,
+        vectors: Vec<(&str, &[f32], Option<Value>)>,
+    ) -> StrataResult<Vec<Result<(String, Version), StrataError>>>;
+
+    /// Batch get vectors
+    ///
+    /// Retrieves multiple vectors by key in a single operation.
+    ///
+    /// ## Parameters
+    ///
+    /// - `collection`: Collection name
+    /// - `keys`: Keys to retrieve
+    ///
+    /// ## Returns
+    ///
+    /// Vector of results in the same order as input keys.
+    /// Missing keys return `None`.
+    ///
+    /// ## Errors
+    ///
+    /// - `InvalidKey`: Collection name is invalid
+    /// - `NotFound`: Run does not exist
+    fn vector_get_batch(
+        &self,
+        run: &ApiRunId,
+        collection: &str,
+        keys: &[&str],
+    ) -> StrataResult<Vec<Option<Versioned<VectorData>>>>;
+
+    /// Batch delete vectors
+    ///
+    /// Deletes multiple vectors by key in a single operation.
+    ///
+    /// ## Parameters
+    ///
+    /// - `collection`: Collection name
+    /// - `keys`: Keys to delete
+    ///
+    /// ## Returns
+    ///
+    /// Vector of booleans indicating whether each key existed and was deleted.
+    ///
+    /// ## Errors
+    ///
+    /// - `InvalidKey`: Collection name is invalid
+    /// - `NotFound`: Run does not exist
+    /// - `ConstraintViolation`: Run is closed
+    fn vector_delete_batch(
+        &self,
+        run: &ApiRunId,
+        collection: &str,
+        keys: &[&str],
+    ) -> StrataResult<Vec<bool>>;
 }
 
 /// Information about a vector collection
@@ -813,6 +900,131 @@ impl VectorStore for SubstrateImpl {
         self.vector()
             .count(run_id, collection)
             .map(|n| n as u64)
+            .map_err(convert_vector_error)
+    }
+
+    fn vector_upsert_batch(
+        &self,
+        run: &ApiRunId,
+        collection: &str,
+        vectors: Vec<(&str, &[f32], Option<Value>)>,
+    ) -> StrataResult<Vec<Result<(String, Version), StrataError>>> {
+        // Block access to internal collections
+        validate_not_internal_collection(collection)?;
+
+        if vectors.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let run_id = run.to_run_id();
+
+        // Auto-create collection if it doesn't exist (using first vector's dimension)
+        let exists = self.vector().collection_exists(run_id, collection)
+            .map_err(convert_vector_error)?;
+        if !exists {
+            // Find first non-empty vector for dimension
+            if let Some((_, first_vec, _)) = vectors.iter().find(|(_, v, _)| !v.is_empty()) {
+                let config = strata_core::VectorConfig::new(
+                    first_vec.len(),
+                    strata_core::DistanceMetric::Cosine,
+                )?;
+                self.vector().create_collection(run_id, collection, config)
+                    .map_err(convert_vector_error)?;
+            }
+        }
+
+        // Convert metadata from Value to serde_json::Value
+        let primitive_vectors: Vec<(&str, &[f32], Option<serde_json::Value>)> = vectors
+            .into_iter()
+            .map(|(key, vec, metadata)| {
+                let json_metadata = metadata.map(|v| {
+                    serde_json::to_value(&v).unwrap_or(serde_json::Value::Null)
+                });
+                (key, vec, json_metadata)
+            })
+            .collect();
+
+        // Call primitive batch insert
+        let results = self.vector()
+            .insert_batch(run_id, collection, primitive_vectors)
+            .map_err(convert_vector_error)?;
+
+        // Convert results
+        Ok(results
+            .into_iter()
+            .map(|r| r.map_err(convert_vector_error))
+            .collect())
+    }
+
+    fn vector_get_batch(
+        &self,
+        run: &ApiRunId,
+        collection: &str,
+        keys: &[&str],
+    ) -> StrataResult<Vec<Option<Versioned<VectorData>>>> {
+        // Block access to internal collections
+        validate_not_internal_collection(collection)?;
+
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let run_id = run.to_run_id();
+
+        // Check if collection exists first - return all None if not
+        let exists = self.vector().collection_exists(run_id, collection)
+            .map_err(convert_vector_error)?;
+        if !exists {
+            return Ok(vec![None; keys.len()]);
+        }
+
+        let results = self.vector()
+            .get_batch(run_id, collection, keys)
+            .map_err(convert_vector_error)?;
+
+        // Convert results
+        Ok(results
+            .into_iter()
+            .map(|opt| {
+                opt.map(|e| {
+                    // Convert serde_json::Value back to strata_core::Value
+                    let api_metadata: Value = e.value.metadata.clone()
+                        .and_then(|v| serde_json::from_value(v).ok())
+                        .unwrap_or(Value::Null);
+                    Versioned {
+                        value: (e.value.embedding.clone(), api_metadata),
+                        version: Version::Txn(e.value.version),
+                        timestamp: e.timestamp,
+                    }
+                })
+            })
+            .collect())
+    }
+
+    fn vector_delete_batch(
+        &self,
+        run: &ApiRunId,
+        collection: &str,
+        keys: &[&str],
+    ) -> StrataResult<Vec<bool>> {
+        // Block access to internal collections
+        validate_not_internal_collection(collection)?;
+
+        if keys.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let run_id = run.to_run_id();
+
+        // Check if collection exists first - return all false if not
+        let exists = self.vector().collection_exists(run_id, collection)
+            .map_err(convert_vector_error)?;
+        if !exists {
+            return Ok(vec![false; keys.len()]);
+        }
+
+        self.vector()
+            .delete_batch(run_id, collection, keys)
             .map_err(convert_vector_error)
     }
 }

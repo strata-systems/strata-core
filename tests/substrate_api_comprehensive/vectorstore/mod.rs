@@ -2,6 +2,7 @@
 //!
 //! Tests organized by functionality:
 //! - basic_ops: CRUD operations (upsert, get, delete)
+//! - batch: Batch operations (upsert_batch, get_batch, delete_batch)
 //! - collections: Collection management (create, drop, info, list)
 //! - search: Similarity search and filtering
 //! - durability: Persistence across restarts
@@ -9,6 +10,7 @@
 //! - edge_cases: Validation and boundary conditions
 
 mod basic_ops;
+mod batch;
 mod collections;
 mod search;
 mod durability;
