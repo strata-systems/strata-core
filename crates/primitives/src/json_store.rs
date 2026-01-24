@@ -363,6 +363,117 @@ impl JsonStore {
         Ok(snapshot.get(&key)?.is_some())
     }
 
+    /// Get document version history
+    ///
+    /// Returns full document snapshots in descending version order (newest first).
+    ///
+    /// **Important**: This returns value-history, not transition-history. Each entry
+    /// is a complete document snapshot, not a diff or operation log.
+    ///
+    /// ## Parameters
+    ///
+    /// * `run_id` - RunId for namespace isolation
+    /// * `doc_id` - Document identifier
+    /// * `limit` - Maximum versions to return (None = all)
+    /// * `before_version` - Only return versions older than this document version (for pagination)
+    ///
+    /// ## Returns
+    ///
+    /// Vector of `Versioned<JsonDoc>` in descending version order (newest first).
+    /// Empty if document doesn't exist or has no history.
+    ///
+    /// ## Ordering Guarantee
+    ///
+    /// Results are guaranteed to be in descending document version order.
+    /// This invariant is enforced by the storage layer's `get_history()` contract.
+    ///
+    /// ## Deletion Semantics
+    ///
+    /// History survives document deletion. If a document is deleted:
+    /// - Previous versions remain accessible via `history()`
+    /// - The deleted state may appear as a tombstone entry (filtered at substrate layer)
+    /// - This matches Strata's "execution commit" philosophy where all committed state is preserved
+    ///
+    /// ## Version Semantics
+    ///
+    /// The `before_version` parameter filters by **document version** (`JsonDoc.version`),
+    /// not by storage transaction version. This matches StateCell semantics.
+    ///
+    /// ## Storage Behavior
+    ///
+    /// - **ShardedStore** (persistent): Returns full version history from VersionChain
+    /// - **UnifiedStore** (in-memory): Returns only current version (no history retention)
+    ///
+    /// ## Example
+    ///
+    /// ```ignore
+    /// // Get last 10 versions
+    /// let history = json.history(&run_id, &doc_id, Some(10), None)?;
+    ///
+    /// // Paginate: get next 10 versions older than version 50
+    /// let page2 = json.history(&run_id, &doc_id, Some(10), Some(50))?;
+    /// ```
+    pub fn history(
+        &self,
+        run_id: &RunId,
+        doc_id: &JsonDocId,
+        limit: Option<usize>,
+        before_version: Option<u64>,
+    ) -> Result<Vec<Versioned<JsonDoc>>> {
+        use strata_core::traits::Storage;
+
+        let key = self.key_for(run_id, doc_id);
+
+        // Optimization: When before_version is None, we can pass limit directly to storage
+        // to avoid unbounded reads. When before_version is Some, we must fetch more and
+        // filter by document version (which differs from storage transaction version).
+        let storage_limit = if before_version.is_none() { limit } else { None };
+
+        let raw_history = self.db.storage().get_history(&key, storage_limit, None)?;
+
+        // Storage layer contract: get_history() returns newest-first.
+        // If this invariant ever changes, json_history semantics must be updated.
+        debug_assert!(
+            raw_history.windows(2).all(|w| w[0].version >= w[1].version),
+            "Storage::get_history() must return results in descending version order"
+        );
+
+        let mut results: Vec<Versioned<JsonDoc>> = Vec::new();
+
+        for versioned_value in raw_history {
+            // Deserialize the JsonDoc from storage
+            let doc = match Self::deserialize_doc(&versioned_value.value) {
+                Ok(d) => d,
+                Err(_) => continue, // Skip malformed entries
+            };
+
+            // Apply before_version filter (based on document's internal version)
+            if let Some(before) = before_version {
+                if doc.version >= before {
+                    continue;
+                }
+            }
+
+            // Build result with document's internal version.
+            // Use STORAGE timestamp for consistency with KV and StateCell.
+            // (JsonDoc.updated_at is document-level, but we want commit-time consistency)
+            results.push(Versioned::with_timestamp(
+                doc.clone(),
+                Version::counter(doc.version),
+                versioned_value.timestamp,
+            ));
+
+            // Apply limit
+            if let Some(max) = limit {
+                if results.len() >= max {
+                    break;
+                }
+            }
+        }
+
+        Ok(results)
+    }
+
     // ========================================================================
     // Mutations (Story #276+)
     // ========================================================================

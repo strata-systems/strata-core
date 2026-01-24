@@ -7,6 +7,7 @@
 //! - tier1_ops: M11B Tier 1 features (list, cas, query)
 //! - tier2_ops: M11B Tier 2 features (count, batch_get, batch_create)
 //! - tier3_ops: M11B Tier 3 features (array_push, increment, array_pop)
+//! - history_ops: Document version history
 //! - durability: Persistence across restarts
 //! - concurrency: Thread safety
 //! - edge_cases: Validation and boundary conditions
@@ -17,6 +18,7 @@ mod merge_ops;
 mod tier1_ops;
 mod tier2_ops;
 mod tier3_ops;
+mod history_ops;
 mod durability;
 mod concurrency;
 mod edge_cases;

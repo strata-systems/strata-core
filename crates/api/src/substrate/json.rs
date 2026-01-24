@@ -575,13 +575,36 @@ impl JsonStore for SubstrateImpl {
 
     fn json_history(
         &self,
-        _run: &ApiRunId,
-        _key: &str,
-        _limit: Option<u64>,
-        _before: Option<Version>,
+        run: &ApiRunId,
+        key: &str,
+        limit: Option<u64>,
+        before: Option<Version>,
     ) -> StrataResult<Vec<Versioned<Value>>> {
-        // History not yet implemented
-        Ok(vec![])
+        let run_id = run.to_run_id();
+        let doc_id = parse_doc_id(key)?;
+
+        // Extract version number from before (JSON documents use Counter versions)
+        let before_version = match before {
+            Some(Version::Counter(v)) => Some(v),
+            Some(_) => return Err(strata_core::StrataError::invalid_input(
+                "JSON document operations use Counter versions, not Txn versions",
+            )),
+            None => None,
+        };
+
+        // Get history from primitive
+        let history = self.json()
+            .history(&run_id, &doc_id, limit.map(|l| l as usize), before_version)
+            .map_err(convert_error)?;
+
+        // Convert Versioned<JsonDoc> to Versioned<Value>
+        history
+            .into_iter()
+            .map(|v| {
+                let value = json_to_value(v.value.value)?;
+                Ok(Versioned::with_timestamp(value, v.version, v.timestamp))
+            })
+            .collect()
     }
 
     fn json_exists(&self, run: &ApiRunId, key: &str) -> StrataResult<bool> {
