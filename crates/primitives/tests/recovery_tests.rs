@@ -439,7 +439,7 @@ fn test_run_delete_survives_recovery() {
 /// Test cross-primitive transaction survives recovery
 #[test]
 fn test_cross_primitive_transaction_survives_recovery() {
-    use strata_primitives::{EventLogExt, KVStoreExt, StateCellExtExt};
+    use strata_primitives::{EventLogExt, KVStoreExt, StateCellExt};
 
     let (db, temp_dir, run_id) = setup();
     let path = get_path(&temp_dir);
