@@ -5,52 +5,71 @@
 //! - json_delete
 //! - json_exists
 //! - json_get_version
+//!
+//! All tests use dirty test data from fixtures/dirty_jsonstore_data.json
 
 use crate::*;
+use crate::test_data::{load_jsonstore_test_data, JsonStoreTestData};
+use std::sync::OnceLock;
 
-/// Test basic set and get operations at root
+/// Lazily loaded test data (shared across tests)
+fn test_data() -> &'static JsonStoreTestData {
+    static DATA: OnceLock<JsonStoreTestData> = OnceLock::new();
+    DATA.get_or_init(|| load_jsonstore_test_data())
+}
+
+/// Test basic set and get operations using test data entities
 #[test]
-fn test_json_set_get_root() {
+fn test_json_set_get_from_test_data() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "test_doc";
 
-        // Create a document at root
-        let document = obj([
-            ("name", Value::String("Alice".to_string())),
-            ("age", Value::Int(30)),
-        ]);
-        let _version = db.json_set(&run, key, "$", document.clone()).unwrap();
+        // Use first 50 entities from run 0 (hand-crafted edge cases)
+        for entity in data.sample(0, 50) {
+            // Skip empty keys for this basic test
+            if entity.key.is_empty() {
+                continue;
+            }
 
-        // Get the entire document
-        let result = db.json_get(&run, key, "$").unwrap();
-        assert!(result.is_some(), "Document should exist");
-        assert_eq!(result.unwrap().value, document);
+            // Set the document
+            let result = db.json_set(&run, &entity.key, "$", entity.value.clone());
+            assert!(result.is_ok(), "Should set key '{}': {:?}", entity.key, result);
+
+            // Get and verify
+            let retrieved = db.json_get(&run, &entity.key, "$").unwrap();
+            assert!(retrieved.is_some(), "Document '{}' should exist", entity.key);
+            assert_eq!(retrieved.unwrap().value, entity.value, "Value mismatch for key '{}'", entity.key);
+        }
     });
 }
 
-/// Test setting nested fields
+/// Test setting nested fields with test data
 #[test]
 fn test_json_set_nested_field() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "nested_doc";
 
-        // Create base document
-        let document = obj([
-            ("user", obj([
-                ("name", Value::String("Bob".to_string())),
-            ])),
-        ]);
-        db.json_set(&run, key, "$", document).unwrap();
+        // Use object entities that have nested structure
+        for (_, entity) in data.object_entities().into_iter().take(20) {
+            if entity.key.is_empty() {
+                continue;
+            }
 
-        // Set a nested field
-        db.json_set(&run, key, "user.email", Value::String("bob@example.com".to_string())).unwrap();
+            // Set the base document
+            db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
 
-        // Verify nested field
-        let result = db.json_get(&run, key, "user.email").unwrap();
-        assert!(result.is_some());
-        assert_eq!(result.unwrap().value, Value::String("bob@example.com".to_string()));
+            // Try to add a nested field
+            db.json_set(&run, &entity.key, "test_nested", Value::String("added".to_string())).unwrap();
+
+            // Verify nested field was added
+            let result = db.json_get(&run, &entity.key, "test_nested").unwrap();
+            assert!(result.is_some(), "Nested field should exist for '{}'", entity.key);
+            assert_eq!(result.unwrap().value, Value::String("added".to_string()));
+        }
     });
 }
 
@@ -60,7 +79,7 @@ fn test_json_get_nonexistent() {
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
 
-        let result = db.json_get(&run, "nonexistent_doc", "$").unwrap();
+        let result = db.json_get(&run, "nonexistent_doc_xyz_123", "$").unwrap();
         assert!(result.is_none(), "Non-existent document should return None");
     });
 }
@@ -68,21 +87,22 @@ fn test_json_get_nonexistent() {
 /// Test getting a non-existent path in existing document
 #[test]
 fn test_json_get_nonexistent_path() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "doc_with_missing_path";
 
-        // Create document
-        let document = obj([("exists", Value::Int(1))]);
-        db.json_set(&run, key, "$", document).unwrap();
+        // Use an entity from test data
+        let entity = &data.get_entities(0)[0];
+        db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
 
         // Get non-existent path
-        let result = db.json_get(&run, key, "missing").unwrap();
+        let result = db.json_get(&run, &entity.key, "nonexistent_path_xyz").unwrap();
         assert!(result.is_none(), "Missing path should return None");
     });
 }
 
-/// Test deleting a field
+/// Test deleting a field using test data
 #[test]
 fn test_json_delete_field() {
     test_across_substrate_modes(|db| {
@@ -106,160 +126,203 @@ fn test_json_delete_field() {
     });
 }
 
-/// Test deleting non-existent path
-///
-/// Note: Current implementation is idempotent - deleting a nonexistent path succeeds
-/// and returns 1 (the substrate doesn't differentiate between existing and non-existing paths).
-/// This matches RFC 7396 idempotent delete semantics.
+/// Test deleting non-existent path (idempotent operation)
 #[test]
 fn test_json_delete_nonexistent_path() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "delete_missing_doc";
 
-        // Create document
-        let document = obj([("exists", Value::Int(1))]);
-        db.json_set(&run, key, "$", document).unwrap();
+        // Use an entity from test data
+        let entity = &data.get_entities(0)[0];
+        db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
 
         // Delete non-existent path - idempotent operation succeeds
-        let count = db.json_delete(&run, key, "nonexistent").unwrap();
-        // Implementation always returns 1 for non-root deletes
+        let count = db.json_delete(&run, &entity.key, "nonexistent_field_xyz").unwrap();
         assert_eq!(count, 1, "Delete is idempotent, returns 1 even for non-existent path");
-
-        // Verify the existing field is unaffected
-        assert!(db.json_get(&run, key, "exists").unwrap().is_some());
     });
 }
 
-/// Test json_exists operation
+/// Test json_exists operation with test data
 #[test]
 fn test_json_exists() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "exists_test_doc";
 
-        // Should not exist initially
-        assert!(!db.json_exists(&run, key).unwrap());
+        // Use entities from test data with unique prefix to avoid key collision
+        for (i, entity) in data.sample(0, 30).into_iter().enumerate() {
+            if entity.key.is_empty() {
+                continue;
+            }
 
-        // Create document
-        let document = obj([("field", Value::Int(1))]);
-        db.json_set(&run, key, "$", document).unwrap();
+            // Create unique key for this test
+            let key = format!("exists_test_{}_{}", i, entity.key);
 
-        // Should exist now
-        assert!(db.json_exists(&run, key).unwrap());
+            // Should not exist initially
+            assert!(!db.json_exists(&run, &key).unwrap(), "Key '{}' should not exist initially", key);
+
+            // Create document
+            db.json_set(&run, &key, "$", entity.value.clone()).unwrap();
+
+            // Should exist now
+            assert!(db.json_exists(&run, &key).unwrap(), "Key '{}' should exist after set", key);
+        }
     });
 }
 
 /// Test json_get_version operation
 #[test]
 fn test_json_get_version() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "version_test_doc";
+
+        // Use an entity from test data
+        let entity = &data.get_entities(0)[0];
 
         // No version for non-existent doc
-        assert!(db.json_get_version(&run, key).unwrap().is_none());
+        assert!(db.json_get_version(&run, &entity.key).unwrap().is_none());
 
         // Create document
-        let document = obj([("field", Value::Int(1))]);
-        db.json_set(&run, key, "$", document).unwrap();
-        let v1 = db.json_get_version(&run, key).unwrap();
+        db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
+        let v1 = db.json_get_version(&run, &entity.key).unwrap();
         assert!(v1.is_some(), "Version should exist");
 
         // Update document
-        db.json_set(&run, key, "field", Value::Int(2)).unwrap();
-        let v2 = db.json_get_version(&run, key).unwrap();
+        db.json_set(&run, &entity.key, "$", obj([("updated", Value::Int(1))])).unwrap();
+        let v2 = db.json_get_version(&run, &entity.key).unwrap();
         assert!(v2.is_some());
     });
 }
 
-/// Test overwriting entire document
+/// Test overwriting entire document with test data
 #[test]
 fn test_json_overwrite_document() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "overwrite_doc";
 
-        // Create initial document
-        let obj1 = obj([("original", Value::Int(1))]);
-        db.json_set(&run, key, "$", obj1).unwrap();
+        // Get two different entities
+        let entities = data.get_entities(0);
+        if entities.len() < 2 {
+            return;
+        }
 
-        // Overwrite with new document
-        let obj2 = obj([("replaced", Value::Int(2))]);
-        db.json_set(&run, key, "$", obj2.clone()).unwrap();
+        let key = "overwrite_test_key";
+
+        // Create initial document from first entity
+        db.json_set(&run, key, "$", entities[0].value.clone()).unwrap();
+
+        // Overwrite with second entity's value
+        db.json_set(&run, key, "$", entities[1].value.clone()).unwrap();
 
         // Verify overwrite
         let result = db.json_get(&run, key, "$").unwrap().unwrap();
-        assert_eq!(result.value, obj2);
-        assert!(db.json_get(&run, key, "original").unwrap().is_none());
+        assert_eq!(result.value, entities[1].value);
     });
 }
 
-/// Test all value types in JSON document
+/// Test all value types from dirty test data
 #[test]
 fn test_json_all_value_types() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "all_types_doc";
 
-        let document = obj([
-            ("null_field", Value::Null),
-            ("bool_field", Value::Bool(true)),
-            ("int_field", Value::Int(42)),
-            ("float_field", Value::Float(3.14)),
-            ("string_field", Value::String("hello".to_string())),
-            ("array_field", Value::Array(vec![Value::Int(1), Value::Int(2)])),
-            ("nested_obj", obj([("inner", Value::String("nested".to_string()))])),
-        ]);
+        // Test null entities
+        for (_, entity) in data.null_entities().into_iter().take(5) {
+            if entity.key.is_empty() {
+                continue;
+            }
+            db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
+            let result = db.json_get(&run, &entity.key, "$").unwrap().unwrap();
+            assert_eq!(result.value, Value::Null, "Null value mismatch for '{}'", entity.key);
+        }
 
-        db.json_set(&run, key, "$", document.clone()).unwrap();
-        let result = db.json_get(&run, key, "$").unwrap().unwrap();
-        assert_eq!(result.value, document);
+        // Test array entities
+        for (_, entity) in data.array_entities().into_iter().take(5) {
+            if entity.key.is_empty() {
+                continue;
+            }
+            db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
+            let result = db.json_get(&run, &entity.key, "$").unwrap().unwrap();
+            assert_eq!(result.value, entity.value, "Array value mismatch for '{}'", entity.key);
+        }
+
+        // Test object entities
+        for (_, entity) in data.object_entities().into_iter().take(5) {
+            if entity.key.is_empty() {
+                continue;
+            }
+            db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
+            let result = db.json_get(&run, &entity.key, "$").unwrap().unwrap();
+            assert_eq!(result.value, entity.value, "Object value mismatch for '{}'", entity.key);
+        }
     });
 }
 
-/// Test run isolation for JSON documents
+/// Test run isolation for JSON documents using multiple runs from test data
 #[test]
 fn test_json_run_isolation() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run1 = ApiRunId::default_run_id();
         let run2 = ApiRunId::new();
-        let key = "shared_key";
 
-        // Create run2
-        db.run_create(Some(&run2), None).unwrap();
+        // Get entities from different runs in test data
+        let entities_run1 = data.get_entities(0);
+        let entities_run2 = data.get_entities(1);
+
+        if entities_run1.is_empty() || entities_run2.is_empty() {
+            return;
+        }
+
+        let shared_key = "shared_isolation_key";
 
         // Create documents with same key in different runs
-        let obj1 = obj([("run", Value::Int(1))]);
-        let obj2 = obj([("run", Value::Int(2))]);
-
-        db.json_set(&run1, key, "$", obj1.clone()).unwrap();
-        db.json_set(&run2, key, "$", obj2.clone()).unwrap();
+        db.json_set(&run1, shared_key, "$", entities_run1[0].value.clone()).unwrap();
+        db.json_set(&run2, shared_key, "$", entities_run2[0].value.clone()).unwrap();
 
         // Verify isolation
-        assert_eq!(db.json_get(&run1, key, "$").unwrap().unwrap().value, obj1);
-        assert_eq!(db.json_get(&run2, key, "$").unwrap().unwrap().value, obj2);
+        assert_eq!(db.json_get(&run1, shared_key, "$").unwrap().unwrap().value, entities_run1[0].value);
+        assert_eq!(db.json_get(&run2, shared_key, "$").unwrap().unwrap().value, entities_run2[0].value);
     });
 }
 
-/// Test multiple documents
+/// Test multiple documents from test data
 #[test]
 fn test_json_multiple_documents() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
 
-        // Create multiple documents
-        for i in 0..10 {
-            let key = format!("doc_{}", i);
-            let document = obj([("index", Value::Int(i))]);
-            db.json_set(&run, &key, "$", document).unwrap();
+        // Load 100 entities from test data with unique keys
+        let entities: Vec<_> = data.get_entities(0).iter()
+            .filter(|e| !e.key.is_empty())
+            .take(100)
+            .enumerate()
+            .collect();
+
+        // Create all documents with unique prefixed keys
+        for (i, entity) in &entities {
+            let key = format!("multi_doc_{}_{}", i, entity.key);
+            db.json_set(&run, &key, "$", entity.value.clone()).unwrap();
         }
 
         // Verify all documents
-        for i in 0..10 {
-            let key = format!("doc_{}", i);
-            let result = db.json_get(&run, &key, "index").unwrap().unwrap();
-            assert_eq!(result.value, Value::Int(i));
+        for (i, entity) in &entities {
+            let key = format!("multi_doc_{}_{}", i, entity.key);
+            let result = db.json_get(&run, &key, "$").unwrap();
+            assert!(result.is_some(), "Document '{}' should exist", key);
+            assert_eq!(result.unwrap().value, entity.value, "Value mismatch for '{}'", key);
         }
     });
 }

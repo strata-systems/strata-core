@@ -646,6 +646,163 @@ impl StateCellTestData {
     }
 }
 
+// =============================================================================
+// JSONSTORE TEST DATA
+// =============================================================================
+
+/// Header for JsonStore test data
+#[derive(Debug, Deserialize)]
+pub struct JsonStoreHeader {
+    pub description: String,
+    #[serde(default)]
+    pub total_runs: usize,
+    #[serde(default)]
+    pub total_entities: usize,
+}
+
+/// A single JsonStore run with entities
+#[derive(Debug, Clone)]
+pub struct JsonStoreRun {
+    pub run_id: String,
+    pub run_index: usize,
+    pub entities: Vec<JsonStoreEntity>,
+}
+
+/// A single JsonStore entity
+#[derive(Debug, Clone)]
+pub struct JsonStoreEntity {
+    pub key: String,
+    pub value: Value,
+}
+
+/// Loaded JsonStore test data
+pub struct JsonStoreTestData {
+    pub description: String,
+    pub runs: Vec<JsonStoreRun>,
+    pub total_entities: usize,
+    pub entities_by_run: HashMap<usize, Vec<JsonStoreEntity>>,
+}
+
+/// Get the path to the fixtures directory
+pub fn fixtures_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+}
+
+/// Load JsonStore dirty test data from JSON file
+pub fn load_jsonstore_test_data() -> JsonStoreTestData {
+    let path = fixtures_dir().join("dirty_jsonstore_data.json");
+    let file = File::open(&path).expect(&format!("Failed to open {:?}", path));
+    let reader = BufReader::new(file);
+
+    let json: JsonValue = serde_json::from_reader(reader)
+        .expect("Failed to parse JSON file");
+
+    let description = json["description"].as_str().unwrap_or("").to_string();
+
+    let mut runs = Vec::new();
+    let mut entities_by_run: HashMap<usize, Vec<JsonStoreEntity>> = HashMap::new();
+    let mut total_entities = 0;
+
+    if let Some(runs_array) = json["runs"].as_array() {
+        for (run_index, run_json) in runs_array.iter().enumerate() {
+            let run_id = run_json["run_id"].as_str().unwrap_or("").to_string();
+            let mut entities = Vec::new();
+
+            if let Some(entities_array) = run_json["entities"].as_array() {
+                for entity_json in entities_array {
+                    let key = entity_json["key"].as_str().unwrap_or("").to_string();
+                    let value = json_to_value(&entity_json["value"]);
+                    entities.push(JsonStoreEntity { key, value });
+                }
+            }
+
+            total_entities += entities.len();
+            entities_by_run.insert(run_index, entities.clone());
+
+            runs.push(JsonStoreRun {
+                run_id,
+                run_index,
+                entities,
+            });
+        }
+    }
+
+    JsonStoreTestData {
+        description,
+        runs,
+        total_entities,
+        entities_by_run,
+    }
+}
+
+impl JsonStoreTestData {
+    /// Get a specific run by index
+    pub fn get_run(&self, run_index: usize) -> Option<&JsonStoreRun> {
+        self.runs.get(run_index)
+    }
+
+    /// Get entities for a specific run
+    pub fn get_entities(&self, run_index: usize) -> &[JsonStoreEntity] {
+        self.entities_by_run.get(&run_index).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+
+    /// Get all entities across all runs
+    pub fn all_entities(&self) -> impl Iterator<Item = (usize, &JsonStoreEntity)> {
+        self.runs.iter().flat_map(|run| {
+            run.entities.iter().map(move |e| (run.run_index, e))
+        })
+    }
+
+    /// Get entities matching a key prefix
+    pub fn entities_with_prefix(&self, prefix: &str) -> Vec<(usize, &JsonStoreEntity)> {
+        self.all_entities()
+            .filter(|(_, e)| e.key.starts_with(prefix))
+            .collect()
+    }
+
+    /// Get dirty/edge case entities (nulls, empty keys, unicode, etc.)
+    pub fn dirty_entities(&self) -> Vec<(usize, &JsonStoreEntity)> {
+        self.all_entities()
+            .filter(|(_, e)| {
+                e.key.is_empty() ||
+                e.value == Value::Null ||
+                e.key.chars().any(|c| !c.is_ascii()) ||
+                e.key.contains(' ') ||
+                e.key.contains('/') ||
+                e.key.contains('.')
+            })
+            .collect()
+    }
+
+    /// Get entities with null values
+    pub fn null_entities(&self) -> Vec<(usize, &JsonStoreEntity)> {
+        self.all_entities()
+            .filter(|(_, e)| e.value == Value::Null)
+            .collect()
+    }
+
+    /// Get entities with array values
+    pub fn array_entities(&self) -> Vec<(usize, &JsonStoreEntity)> {
+        self.all_entities()
+            .filter(|(_, e)| matches!(e.value, Value::Array(_)))
+            .collect()
+    }
+
+    /// Get entities with object values
+    pub fn object_entities(&self) -> Vec<(usize, &JsonStoreEntity)> {
+        self.all_entities()
+            .filter(|(_, e)| matches!(e.value, Value::Object(_)))
+            .collect()
+    }
+
+    /// Sample N random entities from a run
+    pub fn sample(&self, run_index: usize, n: usize) -> Vec<&JsonStoreEntity> {
+        self.get_entities(run_index).iter().take(n).collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -693,5 +850,21 @@ mod tests {
         // Verify init and CAS test entries
         assert!(data.init_tests.len() >= 10, "Should have init test entries");
         assert!(data.cas_tests.len() >= 10, "Should have CAS test entries");
+    }
+
+    #[test]
+    fn test_load_jsonstore_test_data() {
+        let data = load_jsonstore_test_data();
+        assert!(data.total_entities >= 20000, "Should load 20000+ JsonStore entities, got {}", data.total_entities);
+        assert_eq!(data.runs.len(), 20, "Should have 20 runs");
+        // Verify data is distributed across runs
+        assert_eq!(data.entities_by_run.len(), 20, "Should have entities for all 20 runs");
+        // Verify dirty data categories exist
+        assert!(!data.null_entities().is_empty(), "Should have null entities");
+        assert!(!data.array_entities().is_empty(), "Should have array entities");
+        assert!(!data.dirty_entities().is_empty(), "Should have dirty entities");
+        // Verify run 1 has the hand-crafted edge cases
+        let run1 = data.get_entities(0);
+        assert!(run1.len() >= 100, "Run 1 should have hand-crafted edge cases");
     }
 }

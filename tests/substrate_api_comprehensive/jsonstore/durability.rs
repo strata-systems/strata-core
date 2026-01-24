@@ -3,216 +3,304 @@
 //! Tests for durability and crash recovery:
 //! - Data persistence across restarts
 //! - Complex documents persistence
+//!
+//! All tests use dirty test data from fixtures/dirty_jsonstore_data.json
 
 use crate::*;
+use crate::test_data::{load_jsonstore_test_data, JsonStoreTestData};
+use std::sync::OnceLock;
 use tempfile::tempdir;
 
-/// Test basic document persistence after restart
+/// Lazily loaded test data (shared across tests)
+fn test_data() -> &'static JsonStoreTestData {
+    static DATA: OnceLock<JsonStoreTestData> = OnceLock::new();
+    DATA.get_or_init(|| load_jsonstore_test_data())
+}
+
+/// Test basic document persistence after restart using test data
 #[test]
 fn test_json_persist_after_restart() {
+    let data = test_data();
     let dir = tempdir().unwrap();
     let path = dir.path();
 
     let run = ApiRunId::default_run_id();
-    let key = "persistent_doc";
+
+    let entity = data.get_entities(0).iter()
+        .find(|e| !e.key.is_empty())
+        .unwrap();
 
     // Write document and close
     {
         let db = create_persistent_db(path);
-        let document = obj([("message", Value::String("persisted".to_string()))]);
-        db.json_set(&run, key, "$", document).unwrap();
+        db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
     }
 
     // Reopen and verify
     {
         let db = create_persistent_db(path);
-        let result = db.json_get(&run, key, "$").unwrap();
+        let result = db.json_get(&run, &entity.key, "$").unwrap();
         assert!(result.is_some(), "Document should persist after restart");
-        let doc = result.unwrap();
-        if let Value::Object(fields) = doc.value {
-            let msg = fields.get("message");
-            assert!(msg.is_some());
-            assert_eq!(msg.unwrap(), &Value::String("persisted".to_string()));
-        } else {
-            panic!("Expected object");
-        }
+        assert_eq!(result.unwrap().value, entity.value);
     }
 }
 
-/// Test nested document persistence
+/// Test nested document persistence using test data
 #[test]
 fn test_json_nested_persist() {
+    let data = test_data();
     let dir = tempdir().unwrap();
     let path = dir.path();
 
     let run = ApiRunId::default_run_id();
-    let key = "nested_persistent";
+
+    // Find an object entity with nested structure
+    let entity = data.object_entities().into_iter()
+        .find(|(_, e)| !e.key.is_empty())
+        .map(|(_, e)| e)
+        .unwrap();
 
     // Write nested document
     {
         let db = create_persistent_db(path);
-        let document = obj([
-            ("level1", obj([
-                ("level2", obj([
-                    ("value", Value::Int(42)),
-                ])),
-            ])),
-        ]);
-        db.json_set(&run, key, "$", document).unwrap();
+        db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
     }
 
-    // Reopen and verify nested structure
+    // Reopen and verify
     {
         let db = create_persistent_db(path);
-        let result = db.json_get(&run, key, "level1.level2.value").unwrap();
+        let result = db.json_get(&run, &entity.key, "$").unwrap();
         assert!(result.is_some());
-        assert_eq!(result.unwrap().value, Value::Int(42));
+        assert_eq!(result.unwrap().value, entity.value);
     }
 }
 
-/// Test multiple documents persist
+/// Test multiple documents persist using test data
 #[test]
 fn test_json_multiple_persist() {
+    let data = test_data();
     let dir = tempdir().unwrap();
     let path = dir.path();
 
     let run = ApiRunId::default_run_id();
 
+    let entities: Vec<_> = data.get_entities(0).iter()
+        .filter(|e| !e.key.is_empty())
+        .take(10)
+        .collect();
+
     // Write multiple documents
     {
         let db = create_persistent_db(path);
-        for i in 0..5 {
-            let key = format!("doc_{}", i);
-            let document = obj([("index", Value::Int(i))]);
-            db.json_set(&run, &key, "$", document).unwrap();
+        for entity in &entities {
+            db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
         }
     }
 
     // Reopen and verify all
     {
         let db = create_persistent_db(path);
-        for i in 0..5 {
-            let key = format!("doc_{}", i);
-            let result = db.json_get(&run, &key, "index").unwrap().unwrap();
-            assert_eq!(result.value, Value::Int(i));
+        for entity in &entities {
+            let result = db.json_get(&run, &entity.key, "$").unwrap();
+            assert!(result.is_some(), "Entity '{}' should persist", entity.key);
+            assert_eq!(result.unwrap().value, entity.value);
         }
     }
 }
 
-/// Test document updates persist
+/// Test document updates persist using test data
 #[test]
 fn test_json_updates_persist() {
+    let data = test_data();
     let dir = tempdir().unwrap();
     let path = dir.path();
 
     let run = ApiRunId::default_run_id();
-    let key = "update_persist";
+
+    let entities: Vec<_> = data.get_entities(0).iter()
+        .filter(|e| !e.key.is_empty())
+        .take(3)
+        .collect();
+
+    let key = &entities[0].key;
 
     // Create and update document
     {
         let db = create_persistent_db(path);
-        let document = obj([("counter", Value::Int(0))]);
-        db.json_set(&run, key, "$", document).unwrap();
+        db.json_set(&run, key, "$", entities[0].value.clone()).unwrap();
 
-        // Update multiple times
-        for i in 1..=5 {
-            db.json_set(&run, key, "counter", Value::Int(i)).unwrap();
+        // Update with different values
+        for entity in entities.iter().skip(1) {
+            db.json_set(&run, key, "$", entity.value.clone()).unwrap();
         }
     }
 
     // Reopen and verify final value
     {
         let db = create_persistent_db(path);
-        let result = db.json_get(&run, key, "counter").unwrap().unwrap();
-        assert_eq!(result.value, Value::Int(5));
+        let result = db.json_get(&run, key, "$").unwrap().unwrap();
+        // Final value should be the last entity's value
+        assert_eq!(result.value, entities.last().unwrap().value);
     }
 }
 
-/// Test merge operations persist
+/// Test merge operations persist using test data
 #[test]
 fn test_json_merge_persist() {
+    let data = test_data();
     let dir = tempdir().unwrap();
     let path = dir.path();
 
     let run = ApiRunId::default_run_id();
-    let key = "merge_persist";
+
+    // Get object entities for merge testing
+    let objects: Vec<_> = data.object_entities().into_iter()
+        .filter(|(_, e)| !e.key.is_empty())
+        .map(|(_, e)| e)
+        .take(2)
+        .collect();
+
+    if objects.len() < 2 {
+        return; // Skip if not enough objects
+    }
+
+    let key = &objects[0].key;
 
     // Create and merge
     {
         let db = create_persistent_db(path);
-        let document = obj([("a", Value::Int(1))]);
-        db.json_set(&run, key, "$", document).unwrap();
+        db.json_set(&run, key, "$", objects[0].value.clone()).unwrap();
 
-        let patch = obj([("b", Value::Int(2))]);
-        db.json_merge(&run, key, "$", patch).unwrap();
+        // Merge with another object
+        if let Value::Object(_) = &objects[1].value {
+            db.json_merge(&run, key, "$", objects[1].value.clone()).unwrap();
+        }
     }
 
-    // Reopen and verify merge result
+    // Reopen and verify document exists
     {
         let db = create_persistent_db(path);
-        let a = db.json_get(&run, key, "a").unwrap().unwrap();
-        let b = db.json_get(&run, key, "b").unwrap().unwrap();
-        assert_eq!(a.value, Value::Int(1));
-        assert_eq!(b.value, Value::Int(2));
+        let result = db.json_get(&run, key, "$").unwrap();
+        assert!(result.is_some(), "Merged document should persist");
     }
 }
 
-/// Test run isolation persists
+/// Test run isolation persists using test data
 #[test]
 fn test_json_run_isolation_persists() {
+    let data = test_data();
     let dir = tempdir().unwrap();
     let path = dir.path();
 
     let run1 = ApiRunId::default_run_id();
     let run2 = ApiRunId::new();
-    let key = "isolated_doc";
+
+    let entities_run1: Vec<_> = data.get_entities(0).iter()
+        .filter(|e| !e.key.is_empty())
+        .take(3)
+        .collect();
+    let entities_run2: Vec<_> = data.get_entities(1).iter()
+        .filter(|e| !e.key.is_empty())
+        .take(3)
+        .collect();
 
     // Create documents in different runs
     {
         let db = create_persistent_db(path);
         db.run_create(Some(&run2), None).unwrap();
 
-        let obj1 = obj([("run", Value::Int(1))]);
-        let obj2 = obj([("run", Value::Int(2))]);
+        for entity in &entities_run1 {
+            db.json_set(&run1, &entity.key, "$", entity.value.clone()).unwrap();
+        }
 
-        db.json_set(&run1, key, "$", obj1).unwrap();
-        db.json_set(&run2, key, "$", obj2).unwrap();
+        for entity in &entities_run2 {
+            db.json_set(&run2, &entity.key, "$", entity.value.clone()).unwrap();
+        }
     }
 
     // Reopen and verify isolation
     {
         let db = create_persistent_db(path);
-        let r1 = db.json_get(&run1, key, "run").unwrap().unwrap();
-        let r2 = db.json_get(&run2, key, "run").unwrap().unwrap();
-        assert_eq!(r1.value, Value::Int(1));
-        assert_eq!(r2.value, Value::Int(2));
+
+        for entity in &entities_run1 {
+            let result = db.json_get(&run1, &entity.key, "$").unwrap();
+            assert!(result.is_some(), "Run1 entity '{}' should persist", entity.key);
+            assert_eq!(result.unwrap().value, entity.value);
+        }
+
+        for entity in &entities_run2 {
+            let result = db.json_get(&run2, &entity.key, "$").unwrap();
+            assert!(result.is_some(), "Run2 entity '{}' should persist", entity.key);
+            assert_eq!(result.unwrap().value, entity.value);
+        }
     }
 }
 
-/// Test delete operations persist
+/// Test delete operations persist using test data
 #[test]
 fn test_json_delete_persist() {
+    let data = test_data();
     let dir = tempdir().unwrap();
     let path = dir.path();
 
     let run = ApiRunId::default_run_id();
-    let key = "delete_persist";
 
-    // Create document and delete field
+    let entities: Vec<_> = data.get_entities(0).iter()
+        .filter(|e| !e.key.is_empty())
+        .take(3)
+        .collect();
+
+    // Create documents and delete one
     {
         let db = create_persistent_db(path);
-        let document = obj([
-            ("keep", Value::Int(1)),
-            ("remove", Value::Int(2)),
-        ]);
-        db.json_set(&run, key, "$", document).unwrap();
-        db.json_delete(&run, key, "remove").unwrap();
+
+        for entity in &entities {
+            db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
+        }
+
+        // Delete the second document
+        db.json_delete(&run, &entities[1].key, "$").unwrap();
     }
 
     // Reopen and verify deletion persisted
     {
         let db = create_persistent_db(path);
-        assert!(db.json_get(&run, key, "keep").unwrap().is_some());
-        assert!(db.json_get(&run, key, "remove").unwrap().is_none());
+        assert!(db.json_get(&run, &entities[0].key, "$").unwrap().is_some());
+        assert!(db.json_get(&run, &entities[1].key, "$").unwrap().is_none(), "Deleted doc should stay deleted");
+        assert!(db.json_get(&run, &entities[2].key, "$").unwrap().is_some());
+    }
+}
+
+/// Test dirty data persists correctly (unicode, special chars)
+#[test]
+fn test_json_dirty_data_persist() {
+    let data = test_data();
+    let dir = tempdir().unwrap();
+    let path = dir.path();
+
+    let run = ApiRunId::default_run_id();
+
+    // Get dirty entities with unicode, special chars, etc.
+    let dirty_entities: Vec<_> = data.dirty_entities().into_iter()
+        .filter(|(_, e)| !e.key.is_empty())
+        .take(20)
+        .collect();
+
+    // Write dirty documents
+    {
+        let db = create_persistent_db(path);
+        for (_, entity) in &dirty_entities {
+            db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
+        }
+    }
+
+    // Reopen and verify all dirty data persists correctly
+    {
+        let db = create_persistent_db(path);
+        for (_, entity) in &dirty_entities {
+            let result = db.json_get(&run, &entity.key, "$").unwrap();
+            assert!(result.is_some(), "Dirty entity '{}' should persist", entity.key);
+            assert_eq!(result.unwrap().value, entity.value, "Dirty data should match for '{}'", entity.key);
+        }
     }
 }

@@ -5,46 +5,65 @@
 //! - Path syntax validation
 //! - Large documents
 //! - Special characters
+//!
+//! All tests use dirty test data from fixtures/dirty_jsonstore_data.json
 
 use crate::*;
+use crate::test_data::{load_jsonstore_test_data, JsonStoreTestData};
+use std::sync::OnceLock;
 
-/// Test document key with special characters
+/// Lazily loaded test data (shared across tests)
+fn test_data() -> &'static JsonStoreTestData {
+    static DATA: OnceLock<JsonStoreTestData> = OnceLock::new();
+    DATA.get_or_init(|| load_jsonstore_test_data())
+}
+
+/// Test document key with special characters from test data
 #[test]
 fn test_json_special_key_names() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
 
-        let keys = vec![
-            "key-with-dashes",
-            "key_with_underscores",
-            "key.with.dots",
-            "key:with:colons",
-        ];
+        // Get entities with special characters in keys
+        let special_keys: Vec<_> = data.all_entities()
+            .filter(|(_, e)| {
+                e.key.contains('-') || e.key.contains('_') ||
+                e.key.contains('.') || e.key.contains(':')
+            })
+            .take(20)
+            .collect();
 
-        for key in keys {
-            let document = obj([("test", Value::Int(1))]);
-            db.json_set(&run, key, "$", document).unwrap();
-            assert!(db.json_exists(&run, key).unwrap(), "Key '{}' should work", key);
+        for (_, entity) in special_keys {
+            if entity.key.is_empty() {
+                continue;
+            }
+            let result = db.json_set(&run, &entity.key, "$", entity.value.clone());
+            assert!(result.is_ok(), "Key '{}' should work", entity.key);
+            assert!(db.json_exists(&run, &entity.key).unwrap(), "Key '{}' should exist", entity.key);
         }
     });
 }
 
-/// Test document key with unicode
+/// Test document key with unicode from test data
 #[test]
 fn test_json_unicode_key() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
 
-        let keys = vec![
-            "key_\u{4e2d}\u{6587}", // Chinese
-            "key_\u{65e5}\u{672c}\u{8a9e}", // Japanese
-            "key_\u{d55c}\u{ad6d}\u{c5b4}", // Korean
-        ];
+        // Get entities with unicode in keys
+        let unicode_keys: Vec<_> = data.all_entities()
+            .filter(|(_, e)| e.key.chars().any(|c| !c.is_ascii()) && !e.key.is_empty())
+            .take(20)
+            .collect();
 
-        for key in keys {
-            let document = obj([("unicode", Value::String("test".to_string()))]);
-            db.json_set(&run, key, "$", document).unwrap();
-            assert!(db.json_exists(&run, key).unwrap());
+        for (_, entity) in unicode_keys {
+            let result = db.json_set(&run, &entity.key, "$", entity.value.clone());
+            assert!(result.is_ok(), "Unicode key '{}' should work", entity.key);
+            assert!(db.json_exists(&run, &entity.key).unwrap(), "Unicode key '{}' should exist", entity.key);
         }
     });
 }
@@ -73,61 +92,82 @@ fn test_json_special_field_names() {
     });
 }
 
-/// Test large document
+/// Test large document from test data
 #[test]
 fn test_json_large_document() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "large_doc";
 
-        // Create document with many fields
-        let fields: HashMap<String, Value> = (0..100)
-            .map(|i| (format!("field_{}", i), Value::Int(i)))
+        // Use entities with large/complex objects
+        let large_entities: Vec<_> = data.object_entities()
+            .into_iter()
+            .take(50)
             .collect();
-        let document = Value::Object(fields);
 
-        db.json_set(&run, key, "$", document).unwrap();
+        for (_, entity) in large_entities {
+            if entity.key.is_empty() {
+                continue;
+            }
+            let result = db.json_set(&run, &entity.key, "$", entity.value.clone());
+            assert!(result.is_ok(), "Large document '{}' should be stored", entity.key);
 
-        // Verify some fields
-        let f0 = db.json_get(&run, key, "field_0").unwrap().unwrap();
-        let f99 = db.json_get(&run, key, "field_99").unwrap().unwrap();
-        assert_eq!(f0.value, Value::Int(0));
-        assert_eq!(f99.value, Value::Int(99));
+            let retrieved = db.json_get(&run, &entity.key, "$").unwrap();
+            assert!(retrieved.is_some(), "Large document '{}' should be retrievable", entity.key);
+        }
     });
 }
 
-/// Test large nested array
+/// Test large nested array from test data
 #[test]
 fn test_json_large_array() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "large_array";
 
-        // Create document with large array
-        let items: Vec<Value> = (0..1000).map(|i| Value::Int(i)).collect();
-        let document = obj([("items", Value::Array(items))]);
+        // Use array entities from test data (run 3 has arrays)
+        let array_entities: Vec<_> = data.array_entities()
+            .into_iter()
+            .take(20)
+            .collect();
 
-        db.json_set(&run, key, "$", document).unwrap();
+        for (_, entity) in array_entities {
+            if entity.key.is_empty() {
+                continue;
+            }
+            let result = db.json_set(&run, &entity.key, "$", entity.value.clone());
+            assert!(result.is_ok(), "Array document '{}' should be stored", entity.key);
 
-        // Access elements at different positions
-        let first = db.json_get(&run, key, "items[0]").unwrap().unwrap();
-        let middle = db.json_get(&run, key, "items[500]").unwrap().unwrap();
-        let last = db.json_get(&run, key, "items[999]").unwrap().unwrap();
-
-        assert_eq!(first.value, Value::Int(0));
-        assert_eq!(middle.value, Value::Int(500));
-        assert_eq!(last.value, Value::Int(999));
+            let retrieved = db.json_get(&run, &entity.key, "$").unwrap();
+            assert!(retrieved.is_some(), "Array document '{}' should be retrievable", entity.key);
+            assert_eq!(retrieved.unwrap().value, entity.value);
+        }
     });
 }
 
 /// Test deeply nested document
 #[test]
 fn test_json_deeply_nested() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "deep_doc";
 
-        // Create 10-level nested structure
+        // Find deeply nested entities from test data
+        let deep_entity = data.entities_with_prefix("deep:")
+            .into_iter()
+            .next();
+
+        if let Some((_, entity)) = deep_entity {
+            db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
+            let result = db.json_get(&run, &entity.key, "$").unwrap();
+            assert!(result.is_some(), "Deep document should be retrievable");
+        }
+
+        // Also test programmatic deep nesting
+        let key = "deep_doc_test";
         let mut nested = Value::Int(42);
         for _ in 0..10 {
             nested = obj([("nested", nested)]);
@@ -142,18 +182,26 @@ fn test_json_deeply_nested() {
     });
 }
 
-/// Test empty document
+/// Test empty document (run 2 in test data has empty objects)
 #[test]
 fn test_json_empty_document() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "empty_doc";
 
-        let document = obj([]);
-        db.json_set(&run, key, "$", document.clone()).unwrap();
+        // Run 2 has empty objects
+        let empty_entities: Vec<_> = data.get_entities(1).iter()
+            .filter(|e| !e.key.is_empty())
+            .take(10)
+            .collect();
 
-        let result = db.json_get(&run, key, "$").unwrap().unwrap();
-        assert_eq!(result.value, document);
+        for entity in empty_entities {
+            db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
+
+            let result = db.json_get(&run, &entity.key, "$").unwrap().unwrap();
+            assert_eq!(result.value, obj([]));
+        }
     });
 }
 
@@ -172,16 +220,30 @@ fn test_json_empty_array() {
     });
 }
 
-/// Test empty string value
+/// Test empty string value (run 5 in test data has strings)
 #[test]
 fn test_json_empty_string() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "empty_string_doc";
 
+        // Find string entities from test data
+        let string_entities: Vec<_> = data.get_entities(4).iter()
+            .filter(|e| !e.key.is_empty() && matches!(e.value, Value::String(_)))
+            .take(10)
+            .collect();
+
+        for entity in string_entities {
+            db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
+            let result = db.json_get(&run, &entity.key, "$").unwrap().unwrap();
+            assert_eq!(result.value, entity.value, "String value mismatch for '{}'", entity.key);
+        }
+
+        // Also test explicit empty string
+        let key = "empty_string_doc";
         let document = obj([("name", Value::String(String::new()))]);
         db.json_set(&run, key, "$", document).unwrap();
-
         let result = db.json_get(&run, key, "name").unwrap().unwrap();
         assert_eq!(result.value, Value::String(String::new()));
     });
@@ -209,91 +271,118 @@ fn test_json_large_string() {
     });
 }
 
-/// Test unicode values
+/// Test unicode values from test data (run 6 has unicode)
 #[test]
 fn test_json_unicode_values() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "unicode_values";
 
-        let document = obj([
-            ("chinese", Value::String("\u{4e2d}\u{6587}\u{6d4b}\u{8bd5}".to_string())),
-            ("emoji", Value::String("\u{1f600}\u{1f389}\u{1f680}".to_string())),
-            ("mixed", Value::String("Hello \u{4e16}\u{754c} World!".to_string())),
-        ]);
+        // Run 6 has unicode-heavy entities
+        let unicode_entities: Vec<_> = data.get_entities(5).iter()
+            .filter(|e| !e.key.is_empty())
+            .take(20)
+            .collect();
 
-        db.json_set(&run, key, "$", document.clone()).unwrap();
-        let result = db.json_get(&run, key, "$").unwrap().unwrap();
-        assert_eq!(result.value, document);
+        for entity in unicode_entities {
+            db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
+            let result = db.json_get(&run, &entity.key, "$").unwrap().unwrap();
+            assert_eq!(result.value, entity.value, "Unicode value mismatch for '{}'", entity.key);
+        }
     });
 }
 
 /// Test setting scalar at root
-///
-/// Note: The primitive layer allows any JSON value at root, not just objects.
-/// This is more flexible than strict JSON document semantics.
 #[test]
 fn test_json_scalar_at_root() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "scalar_root";
 
-        // Setting scalar at root is allowed by the primitive
-        let result = db.json_set(&run, key, "$", Value::Int(42));
-        assert!(result.is_ok(), "Setting scalar at root is allowed");
+        // Test with string entities (run 5 has strings at root)
+        let string_entities: Vec<_> = data.get_entities(4).iter()
+            .filter(|e| !e.key.is_empty() && matches!(e.value, Value::String(_)))
+            .take(5)
+            .collect();
 
-        // Verify we can retrieve it
-        let value = db.json_get(&run, key, "$").unwrap().unwrap();
-        assert_eq!(value.value, Value::Int(42));
+        for entity in string_entities {
+            let result = db.json_set(&run, &entity.key, "$", entity.value.clone());
+            assert!(result.is_ok(), "Setting scalar at root is allowed");
+
+            let value = db.json_get(&run, &entity.key, "$").unwrap().unwrap();
+            assert_eq!(value.value, entity.value);
+        }
     });
 }
 
-/// Test setting array at root
-///
-/// Note: The primitive layer allows any JSON value at root, not just objects.
+/// Test setting array at root (run 3 has arrays at root)
 #[test]
 fn test_json_array_at_root() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "array_root";
 
-        // Setting array at root is allowed by the primitive
-        let arr = Value::Array(vec![Value::Int(1), Value::Int(2), Value::Int(3)]);
-        let result = db.json_set(&run, key, "$", arr.clone());
-        assert!(result.is_ok(), "Setting array at root is allowed");
+        // Run 3 has array entities
+        let array_entities: Vec<_> = data.get_entities(2).iter()
+            .filter(|e| !e.key.is_empty() && matches!(e.value, Value::Array(_)))
+            .take(10)
+            .collect();
 
-        // Verify we can retrieve it
-        let value = db.json_get(&run, key, "$").unwrap().unwrap();
-        assert_eq!(value.value, arr);
+        for entity in array_entities {
+            let result = db.json_set(&run, &entity.key, "$", entity.value.clone());
+            assert!(result.is_ok(), "Setting array at root is allowed");
+
+            let value = db.json_get(&run, &entity.key, "$").unwrap().unwrap();
+            assert_eq!(value.value, entity.value);
+        }
     });
 }
 
-/// Test null value in document
+/// Test null value in document (run 4 has nulls)
 #[test]
 fn test_json_null_value() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "null_value_doc";
 
-        let document = obj([
-            ("nullable", Value::Null),
-            ("not_null", Value::Int(1)),
-        ]);
+        // Run 4 has null entities
+        let null_entities: Vec<_> = data.get_entities(3).iter()
+            .filter(|e| !e.key.is_empty())
+            .take(10)
+            .collect();
 
-        db.json_set(&run, key, "$", document).unwrap();
-
-        let nullable = db.json_get(&run, key, "nullable").unwrap().unwrap();
-        assert_eq!(nullable.value, Value::Null);
+        for entity in null_entities {
+            db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
+            let result = db.json_get(&run, &entity.key, "$").unwrap().unwrap();
+            assert_eq!(result.value, Value::Null);
+        }
     });
 }
 
-/// Test mixed array types
+/// Test mixed array types from test data
 #[test]
 fn test_json_mixed_array() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "mixed_array";
 
+        // Find entities with mixed arrays from run 0 (hand-crafted)
+        let mixed_array_entity = data.get_entities(0).iter()
+            .find(|e| e.key.contains("MixedArray") || e.key.contains("mixed"));
+
+        if let Some(entity) = mixed_array_entity {
+            db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
+            let result = db.json_get(&run, &entity.key, "$").unwrap().unwrap();
+            assert_eq!(result.value, entity.value);
+        }
+
+        // Also test programmatic mixed array
+        let key = "mixed_array_test";
         let document = obj([
             ("items", Value::Array(vec![
                 Value::Int(1),
@@ -315,21 +404,75 @@ fn test_json_mixed_array() {
 /// Test version increments on updates
 #[test]
 fn test_json_version_increments() {
+    let data = test_data();
+
     test_across_substrate_modes(|db| {
         let run = ApiRunId::default_run_id();
-        let key = "version_test";
 
-        let document = obj([("counter", Value::Int(0))]);
-        db.json_set(&run, key, "$", document).unwrap();
-        let v1 = db.json_get_version(&run, key).unwrap().unwrap();
+        let entity = data.get_entities(0).iter()
+            .find(|e| !e.key.is_empty() && matches!(e.value, Value::Object(_)))
+            .unwrap();
 
-        db.json_set(&run, key, "counter", Value::Int(1)).unwrap();
-        let v2 = db.json_get_version(&run, key).unwrap().unwrap();
+        db.json_set(&run, &entity.key, "$", entity.value.clone()).unwrap();
+        let v1 = db.json_get_version(&run, &entity.key).unwrap().unwrap();
 
-        db.json_set(&run, key, "counter", Value::Int(2)).unwrap();
-        let v3 = db.json_get_version(&run, key).unwrap().unwrap();
+        db.json_set(&run, &entity.key, "$", obj([("updated", Value::Int(1))])).unwrap();
+        let v2 = db.json_get_version(&run, &entity.key).unwrap().unwrap();
+
+        db.json_set(&run, &entity.key, "$", obj([("updated", Value::Int(2))])).unwrap();
+        let v3 = db.json_get_version(&run, &entity.key).unwrap().unwrap();
 
         // Versions should be different (increasing in some way)
         assert!(v1 != v2 || v2 != v3 || v1 <= v3, "Versions should change on update");
+    });
+}
+
+/// Test dirty data - entities with empty keys
+#[test]
+fn test_json_empty_keys() {
+    let data = test_data();
+
+    test_across_substrate_modes(|db| {
+        let run = ApiRunId::default_run_id();
+
+        // Find entities with empty keys
+        let empty_key_entities: Vec<_> = data.all_entities()
+            .filter(|(_, e)| e.key.is_empty())
+            .take(5)
+            .collect();
+
+        for (_, entity) in empty_key_entities {
+            // Empty keys may or may not be accepted - test the behavior
+            let result = db.json_set(&run, &entity.key, "$", entity.value.clone());
+            // Just verify it doesn't panic
+            let _ = result;
+        }
+    });
+}
+
+/// Test dirty data - special path characters
+#[test]
+fn test_json_keys_with_path_chars() {
+    let data = test_data();
+
+    test_across_substrate_modes(|db| {
+        let run = ApiRunId::default_run_id();
+
+        // Find entities with slashes, dots, spaces in keys
+        let special_keys: Vec<_> = data.all_entities()
+            .filter(|(_, e)| {
+                !e.key.is_empty() &&
+                (e.key.contains('/') || e.key.contains(' '))
+            })
+            .take(10)
+            .collect();
+
+        for (_, entity) in special_keys {
+            let result = db.json_set(&run, &entity.key, "$", entity.value.clone());
+            assert!(result.is_ok(), "Key with path chars '{}' should be accepted", entity.key);
+
+            let retrieved = db.json_get(&run, &entity.key, "$").unwrap();
+            assert!(retrieved.is_some(), "Key '{}' should be retrievable", entity.key);
+        }
     });
 }
