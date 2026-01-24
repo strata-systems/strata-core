@@ -8,8 +8,24 @@ use strata_engine::Database;
 use strata_primitives::{
     EventLog, EventLogExt, KVStore, KVStoreExt, StateCell, StateCellExt, TraceStore, TraceStoreExt,
 };
+use std::collections::HashMap;
 use std::sync::Arc;
 use tempfile::TempDir;
+
+/// Helper to create an empty object payload for EventLog
+fn empty_payload() -> Value {
+    Value::Object(HashMap::new())
+}
+
+/// Helper to create an object payload with a string value
+fn string_payload(s: &str) -> Value {
+    Value::Object(HashMap::from([("data".to_string(), Value::String(s.into()))]))
+}
+
+/// Helper to create an object payload with an integer value
+fn int_payload(v: i64) -> Value {
+    Value::Object(HashMap::from([("value".to_string(), Value::Int(v))]))
+}
 
 fn setup() -> (Arc<Database>, TempDir, RunId) {
     let temp_dir = TempDir::new().unwrap();
@@ -33,7 +49,7 @@ fn test_kv_event_state_trace_atomic() {
         txn.kv_put("task/status", Value::String("running".into()))?;
 
         // Event operation (sequences start at 0)
-        let seq = txn.event_append("task_started", Value::String("payload".into()))?;
+        let seq = txn.event_append("task_started", string_payload("payload"))?;
         assert_eq!(seq, 0);
 
         // State operation (CAS from version 1 after init)
@@ -83,7 +99,7 @@ fn test_cross_primitive_rollback() {
         txn.kv_put("key_to_rollback", Value::Int(42))?;
 
         // Event append (should succeed alone)
-        txn.event_append("event_to_rollback", Value::Null)?;
+        txn.event_append("event_to_rollback", empty_payload())?;
 
         // StateCell CAS with WRONG version (should fail)
         // State is at version 1, but we try version 999
@@ -124,7 +140,7 @@ fn test_all_extension_traits_compose() {
         txn.kv_put("config", Value::String("enabled".into()))?;
 
         // EventLogExt::event_append() - sequences start at 0
-        let seq = txn.event_append("config_changed", Value::Null)?;
+        let seq = txn.event_append("config_changed", empty_payload())?;
         assert_eq!(seq, 0);
 
         // StateCellExt::state_set() (unconditional) - version 2 after init
@@ -166,7 +182,7 @@ fn test_partial_failure_full_rollback() {
         txn.kv_put("partial_key", Value::Int(1))?;
 
         // 2. Event - success
-        txn.event_append("partial_event", Value::Null)?;
+        txn.event_append("partial_event", empty_payload())?;
 
         // 3. Trace - success
         txn.trace_record("Thought", Value::String("partial".into()))?;
@@ -210,9 +226,11 @@ fn test_nested_primitive_operations() {
 
     // Chain operations: read KV -> use in Event -> update State -> record Trace
     let result = db.transaction(run_id, |txn| {
-        // Read KV -> use value in Event payload
+        // Read KV -> use value in Event payload (wrapped in object)
         let kv_value = txn.kv_get("initial_value")?;
-        let payload = kv_value.unwrap_or(Value::Null);
+        let inner_value = kv_value.unwrap_or(Value::Null);
+        // EventLog requires object payloads, so wrap the KV value
+        let payload = Value::Object(HashMap::from([("from_kv".to_string(), inner_value)]));
 
         // Append Event with payload from KV (sequence starts at 0)
         let seq = txn.event_append("chained_event", payload)?;
@@ -236,7 +254,9 @@ fn test_nested_primitive_operations() {
     // Verify causal chain worked
     let event_log = EventLog::new(db.clone());
     let event = event_log.read(&run_id, 0).unwrap().unwrap();
-    assert_eq!(event.value.payload, Value::Int(42)); // From KV
+    // Payload is now wrapped: {"from_kv": 42}
+    let expected_payload = Value::Object(HashMap::from([("from_kv".to_string(), Value::Int(42))]));
+    assert_eq!(event.value.payload, expected_payload);
 
     let state = state_cell
         .read(&run_id, "sequence_tracker")
@@ -261,7 +281,7 @@ fn test_multiple_transactions_consistency() {
     for i in 1..=10 {
         let result = db.transaction(run_id, |txn| {
             txn.kv_put(&format!("key_{}", i), Value::Int(i))?;
-            txn.event_append("iteration", Value::Int(i))?;
+            txn.event_append("iteration", int_payload(i))?;
             txn.state_set("counter", Value::Int(i))?;
             txn.trace_record("Thought", Value::String(format!("Iteration {}", i)))?;
             Ok(())
@@ -307,11 +327,11 @@ fn test_read_your_writes_in_transaction() {
         assert_eq!(value, Some(Value::String("test_value".into())));
 
         // Append event (sequences start at 0)
-        let seq1 = txn.event_append("event1", Value::Null)?;
+        let seq1 = txn.event_append("event1", empty_payload())?;
         assert_eq!(seq1, 0);
 
         // Append another - sequence should continue
-        let seq2 = txn.event_append("event2", Value::Null)?;
+        let seq2 = txn.event_append("event2", empty_payload())?;
         assert_eq!(seq2, 1);
 
         Ok(())

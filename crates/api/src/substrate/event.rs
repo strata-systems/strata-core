@@ -3,21 +3,29 @@
 //! The EventLog provides append-only event streams for logging and messaging.
 //! Events are immutable once appended and use sequence-based versioning.
 //!
+//! ## Role
+//!
+//! EventLog is the **determinism boundary recorder**. It captures all non-deterministic
+//! inputs (API calls, timestamps, randomness, external state) at the point of entry,
+//! enabling replay-based recovery and debugging.
+//!
 //! ## Stream Model
 //!
-//! - Events are organized into named streams
-//! - Each stream has independent sequence numbers
+//! - Events are organized into named streams (event types)
+//! - **Sequences are GLOBAL** - all streams share a single sequence counter
+//! - Streams are FILTERS over the global sequence, not partitions
 //! - Events are immutable (append-only, no updates or deletes)
 //!
 //! ## Versioning
 //!
 //! Events use sequence-based versioning (`Version::Sequence`).
-//! Each event gets a unique, monotonically increasing sequence number within its stream.
+//! Each event gets a unique, monotonically increasing sequence number globally.
 //!
 //! ## Payload
 //!
 //! Event payloads must be `Value::Object`. Empty objects `{}` are allowed.
 //! Bytes values are allowed within the payload (encoded via `$bytes` wrapper on wire).
+//! NaN and Infinity float values are rejected for JSON serialization safety.
 
 use super::types::ApiRunId;
 use strata_core::{StrataResult, Value, Version, Versioned};
@@ -30,8 +38,10 @@ use strata_core::{StrataResult, Value, Version, Versioned};
 /// ## Contract
 ///
 /// - Events are append-only (no updates, no deletes)
-/// - Payloads must be `Value::Object`
-/// - Sequence numbers are unique and monotonically increasing within a stream
+/// - Payloads must be `Value::Object` (no primitives, no arrays at top level)
+/// - Payloads cannot contain NaN or Infinity float values
+/// - Sequence numbers are GLOBAL (shared across all streams in a run)
+/// - Streams are filters, not partitions - they filter the global sequence
 ///
 /// ## Error Handling
 ///
@@ -49,12 +59,13 @@ pub trait EventLog {
     /// ## Semantics
     ///
     /// - Creates stream if it doesn't exist
-    /// - Assigns next sequence number in the stream
+    /// - Assigns next GLOBAL sequence number (shared across all streams)
     /// - Event is immutable once appended
+    /// - Hash chain is extended with SHA-256 for deterministic verification
     ///
     /// ## Return Value
     ///
-    /// Returns `Version::Sequence(n)` where `n` is the event's sequence number.
+    /// Returns `Version::Sequence(n)` where `n` is the event's global sequence number.
     ///
     /// ## Errors
     ///
@@ -67,6 +78,35 @@ pub trait EventLog {
         stream: &str,
         payload: Value,
     ) -> StrataResult<Version>;
+
+    /// Append multiple events atomically
+    ///
+    /// All events are appended in a single transaction with consecutive sequence numbers.
+    /// Either all succeed or none are written (atomic batch).
+    ///
+    /// ## Semantics
+    ///
+    /// - Creates streams if they don't exist
+    /// - Assigns consecutive GLOBAL sequence numbers
+    /// - All events share the same timestamp
+    /// - Hash chain is extended for each event
+    ///
+    /// ## Return Value
+    ///
+    /// Returns a vector of `Version::Sequence(n)` for each appended event.
+    ///
+    /// ## Errors
+    ///
+    /// - `InvalidKey`: Any stream name is invalid
+    /// - `ConstraintViolation`: Any payload is not Object, or run is closed
+    /// - `NotFound`: Run does not exist
+    ///
+    /// If any event fails validation, no events are written.
+    fn event_append_batch(
+        &self,
+        run: &ApiRunId,
+        events: &[(&str, Value)],
+    ) -> StrataResult<Vec<Version>>;
 
     /// Read events from a stream
     ///
@@ -126,6 +166,10 @@ pub trait EventLog {
     ///
     /// Returns the total number of events in the stream.
     ///
+    /// ## Performance
+    ///
+    /// O(1) - uses cached stream metadata.
+    ///
     /// ## Return Value
     ///
     /// - `0` if stream doesn't exist or is empty
@@ -141,11 +185,35 @@ pub trait EventLog {
     ///
     /// Returns the highest sequence number in the stream, or `None` if empty.
     ///
+    /// ## Performance
+    ///
+    /// O(1) - uses cached stream metadata.
+    ///
     /// ## Errors
     ///
     /// - `InvalidKey`: Stream name is invalid
     /// - `NotFound`: Run does not exist
     fn event_latest_sequence(&self, run: &ApiRunId, stream: &str) -> StrataResult<Option<u64>>;
+
+    /// Get stream metadata
+    ///
+    /// Returns detailed metadata about a stream including count, sequence bounds,
+    /// and timestamp bounds. All data is O(1) access.
+    ///
+    /// ## Return Value
+    ///
+    /// `StreamInfo` containing:
+    /// - `count`: Number of events in the stream
+    /// - `first_sequence`/`last_sequence`: Sequence bounds
+    /// - `first_timestamp`/`last_timestamp`: Time bounds
+    ///
+    /// Returns a StreamInfo with count=0 if the stream doesn't exist.
+    ///
+    /// ## Errors
+    ///
+    /// - `InvalidKey`: Stream name is invalid
+    /// - `NotFound`: Run does not exist
+    fn event_stream_info(&self, run: &ApiRunId, stream: &str) -> StrataResult<StreamInfo>;
 
     /// Read events from a stream in reverse order (newest first)
     ///
@@ -187,6 +255,10 @@ pub trait EventLog {
     ///
     /// Returns the most recent event in the stream, or `None` if empty.
     ///
+    /// ## Performance
+    ///
+    /// O(1) - uses cached stream metadata to find the last sequence.
+    ///
     /// ## Errors
     ///
     /// - `InvalidKey`: Stream name is invalid
@@ -224,6 +296,21 @@ pub struct ChainVerification {
     pub error: Option<String>,
 }
 
+/// Stream metadata (O(1) access)
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct StreamInfo {
+    /// Number of events in this stream
+    pub count: u64,
+    /// First (oldest) sequence number in this stream
+    pub first_sequence: Option<u64>,
+    /// Last (newest) sequence number in this stream
+    pub last_sequence: Option<u64>,
+    /// Timestamp of first event (microseconds since epoch)
+    pub first_timestamp: Option<i64>,
+    /// Timestamp of last event (microseconds since epoch)
+    pub last_timestamp: Option<i64>,
+}
+
 // =============================================================================
 // Implementation
 // =============================================================================
@@ -246,6 +333,20 @@ impl EventLog for SubstrateImpl {
         let run_id = run.to_run_id();
         // Use stream as event_type
         self.event().append(&run_id, stream, payload).map_err(convert_error)
+    }
+
+    fn event_append_batch(
+        &self,
+        run: &ApiRunId,
+        events: &[(&str, Value)],
+    ) -> StrataResult<Vec<Version>> {
+        // Validate all inputs
+        for (stream, payload) in events {
+            validate_stream_name(stream)?;
+            validate_event_payload(payload)?;
+        }
+        let run_id = run.to_run_id();
+        self.event().append_batch(&run_id, events).map_err(convert_error)
     }
 
     fn event_range(
@@ -311,23 +412,37 @@ impl EventLog for SubstrateImpl {
     fn event_len(&self, run: &ApiRunId, stream: &str) -> StrataResult<u64> {
         validate_stream_name(stream)?;
         let run_id = run.to_run_id();
-        // Count events with this type
-        let events = self.event().read_by_type(&run_id, stream).map_err(convert_error)?;
-        Ok(events.len() as u64)
+        // O(1) using stream metadata
+        self.event().len_by_type(&run_id, stream).map_err(convert_error)
     }
 
     fn event_latest_sequence(&self, run: &ApiRunId, stream: &str) -> StrataResult<Option<u64>> {
         validate_stream_name(stream)?;
         let run_id = run.to_run_id();
-        // Find highest sequence with this type
-        let events = self.event().read_by_type(&run_id, stream).map_err(convert_error)?;
-        let max_seq = events.iter().filter_map(|e| {
-            match e.version {
-                Version::Sequence(s) => Some(s),
-                _ => None,
-            }
-        }).max();
-        Ok(max_seq)
+        // O(1) using stream metadata
+        self.event().latest_sequence_by_type(&run_id, stream).map_err(convert_error)
+    }
+
+    fn event_stream_info(&self, run: &ApiRunId, stream: &str) -> StrataResult<StreamInfo> {
+        validate_stream_name(stream)?;
+        let run_id = run.to_run_id();
+        // O(1) using stream metadata
+        match self.event().stream_info(&run_id, stream).map_err(convert_error)? {
+            Some(meta) => Ok(StreamInfo {
+                count: meta.count,
+                first_sequence: Some(meta.first_sequence),
+                last_sequence: Some(meta.last_sequence),
+                first_timestamp: Some(meta.first_timestamp),
+                last_timestamp: Some(meta.last_timestamp),
+            }),
+            None => Ok(StreamInfo {
+                count: 0,
+                first_sequence: None,
+                last_sequence: None,
+                first_timestamp: None,
+                last_timestamp: None,
+            }),
+        }
     }
 
     fn event_rev_range(
@@ -374,21 +489,22 @@ impl EventLog for SubstrateImpl {
 
     fn event_streams(&self, run: &ApiRunId) -> StrataResult<Vec<String>> {
         let run_id = run.to_run_id();
-        self.event().event_types(&run_id).map_err(convert_error)
+        // O(1) using stream metadata keys
+        self.event().stream_names(&run_id).map_err(convert_error)
     }
 
     fn event_head(&self, run: &ApiRunId, stream: &str) -> StrataResult<Option<Versioned<Value>>> {
         validate_stream_name(stream)?;
         let run_id = run.to_run_id();
-
-        // Read events filtered by type (stream) and get the last one
-        let events = self.event().read_by_type(&run_id, stream).map_err(convert_error)?;
-
-        Ok(events.into_iter().last().map(|e| Versioned {
-            value: e.value.payload.clone(),
-            version: e.version,
-            timestamp: strata_core::Timestamp::from_millis(e.value.timestamp as u64),
-        }))
+        // O(1) using stream metadata to find last sequence
+        match self.event().head_by_type(&run_id, stream).map_err(convert_error)? {
+            Some(e) => Ok(Some(Versioned {
+                value: e.value.payload.clone(),
+                version: e.version,
+                timestamp: strata_core::Timestamp::from_millis(e.value.timestamp as u64),
+            })),
+            None => Ok(None),
+        }
     }
 
     fn event_verify_chain(&self, run: &ApiRunId) -> StrataResult<ChainVerification> {

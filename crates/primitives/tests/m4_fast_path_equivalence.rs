@@ -14,8 +14,19 @@ use strata_core::types::RunId;
 use strata_core::value::Value;
 use strata_engine::Database;
 use strata_primitives::{EventLog, KVStore, StateCell, TraceStore, TraceType};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tempfile::TempDir;
+
+/// Helper to create an empty object payload for EventLog
+fn empty_payload() -> Value {
+    Value::Object(HashMap::new())
+}
+
+/// Helper to create an object payload with an integer value
+fn int_payload(v: i64) -> Value {
+    Value::Object(HashMap::from([("value".to_string(), Value::Int(v))]))
+}
 
 fn setup_db() -> (Arc<Database>, TempDir) {
     let temp_dir = TempDir::new().unwrap();
@@ -121,8 +132,8 @@ fn eventlog_fast_path_equals_transaction_read() {
     let run_id = RunId::new();
 
     // Append events
-    log.append(&run_id, "event1", Value::Int(1)).unwrap();
-    log.append(&run_id, "event2", Value::Int(2)).unwrap();
+    log.append(&run_id, "event1", int_payload(1)).unwrap();
+    log.append(&run_id, "event2", int_payload(2)).unwrap();
 
     // Fast path reads
     let fast0 = log.read(&run_id, 0).unwrap();
@@ -148,9 +159,9 @@ fn eventlog_len_fast_path_equals_transaction() {
 
     assert_eq!(log.len(&run_id).unwrap(), 0);
 
-    log.append(&run_id, "test", Value::Null).unwrap();
-    log.append(&run_id, "test", Value::Null).unwrap();
-    log.append(&run_id, "test", Value::Null).unwrap();
+    log.append(&run_id, "test", empty_payload()).unwrap();
+    log.append(&run_id, "test", empty_payload()).unwrap();
+    log.append(&run_id, "test", empty_payload()).unwrap();
 
     // Fast path len should match actual count
     assert_eq!(log.len(&run_id).unwrap(), 3);
@@ -331,7 +342,7 @@ fn all_primitives_run_isolation() {
 
     // Write to run1
     kv.put(&run1, "key", Value::Int(1)).unwrap();
-    log.append(&run1, "event", Value::Int(1)).unwrap();
+    log.append(&run1, "event", int_payload(1)).unwrap();
     sc.init(&run1, "cell", Value::Int(1)).unwrap();
     let trace1_id = ts
         .record(
@@ -348,7 +359,7 @@ fn all_primitives_run_isolation() {
 
     // Write to run2
     kv.put(&run2, "key", Value::Int(2)).unwrap();
-    log.append(&run2, "event", Value::Int(2)).unwrap();
+    log.append(&run2, "event", int_payload(2)).unwrap();
     sc.init(&run2, "cell", Value::Int(2)).unwrap();
     let trace2_id = ts
         .record(
@@ -369,8 +380,8 @@ fn all_primitives_run_isolation() {
 
     let event1 = log.read(&run1, 0).unwrap().unwrap();
     let event2 = log.read(&run2, 0).unwrap().unwrap();
-    assert_eq!(event1.value.payload, Value::Int(1));
-    assert_eq!(event2.value.payload, Value::Int(2));
+    assert_eq!(event1.value.payload, int_payload(1));
+    assert_eq!(event2.value.payload, int_payload(2));
 
     let state1 = sc.read(&run1, "cell").unwrap().unwrap();
     let state2 = sc.read(&run2, "cell").unwrap().unwrap();

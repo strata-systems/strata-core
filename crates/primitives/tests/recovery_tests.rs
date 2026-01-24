@@ -10,9 +10,20 @@ use strata_core::types::RunId;
 use strata_core::value::Value;
 use strata_engine::Database;
 use strata_primitives::{EventLog, KVStore, RunIndex, RunStatus, StateCell, TraceStore, TraceType};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
+
+/// Helper to create an object payload with a string value
+fn string_payload(s: &str) -> Value {
+    Value::Object(HashMap::from([("data".to_string(), Value::String(s.into()))]))
+}
+
+/// Helper to create an object payload with an integer value
+fn int_payload(v: i64) -> Value {
+    Value::Object(HashMap::from([("value".to_string(), Value::Int(v))]))
+}
 
 fn setup() -> (Arc<Database>, TempDir, RunId) {
     let temp_dir = TempDir::new().unwrap();
@@ -120,13 +131,13 @@ fn test_event_log_chain_survives_recovery() {
 
     // Append multiple events (sequences are 0-based)
     event_log
-        .append(&run_id, "event1", Value::String("payload1".into()))
+        .append(&run_id, "event1", string_payload("payload1"))
         .unwrap();
     event_log
-        .append(&run_id, "event2", Value::String("payload2".into()))
+        .append(&run_id, "event2", string_payload("payload2"))
         .unwrap();
     event_log
-        .append(&run_id, "event3", Value::String("payload3".into()))
+        .append(&run_id, "event3", string_payload("payload3"))
         .unwrap();
 
     // Read to get hashes before crash
@@ -159,7 +170,7 @@ fn test_event_log_chain_survives_recovery() {
     // Events readable with correct hashes
     let event0 = event_log.read(&run_id, 0).unwrap().unwrap();
     assert_eq!(event0.value.event_type, "event1");
-    assert_eq!(event0.value.payload, Value::String("payload1".into()));
+    assert_eq!(event0.value.payload, string_payload("payload1"));
     assert_eq!(event0.value.hash, hash0);
 
     let event2 = event_log.read(&run_id, 2).unwrap().unwrap();
@@ -172,7 +183,7 @@ fn test_event_log_chain_survives_recovery() {
 
     // Sequence continues correctly (not restarted)
     let v3 = event_log
-        .append(&run_id, "event4", Value::String("payload4".into()))
+        .append(&run_id, "event4", string_payload("payload4"))
         .unwrap();
     assert!(matches!(v3, Version::Sequence(3))); // Not 0 (would be restart)
 
@@ -193,7 +204,7 @@ fn test_event_log_range_survives_recovery() {
     // Append 5 events
     for i in 0..5 {
         event_log
-            .append(&run_id, "numbered", Value::Int(i))
+            .append(&run_id, "numbered", int_payload(i))
             .unwrap();
     }
 
@@ -673,7 +684,7 @@ fn test_cross_primitive_transaction_survives_recovery() {
     // Perform atomic transaction
     let result = db.transaction(run_id, |txn| {
         txn.kv_put("txn_key", Value::String("txn_value".into()))?;
-        txn.event_append("txn_event", Value::Int(100))?;
+        txn.event_append("txn_event", int_payload(100))?;
         txn.state_set("txn_state", Value::Int(42))?;
         txn.trace_record("Thought", Value::String("txn thought".into()))?;
         Ok(())
@@ -777,7 +788,7 @@ fn test_all_primitives_recover_together() {
             .unwrap();
 
         event_log
-            .append(&run_id, "full_event", Value::Int(999))
+            .append(&run_id, "full_event", int_payload(999))
             .unwrap();
 
         state_cell
@@ -822,7 +833,7 @@ fn test_all_primitives_recover_together() {
         // EventLog
         assert_eq!(event_log.len(&run_id).unwrap(), 1);
         let event = event_log.read(&run_id, 0).unwrap().unwrap();
-        assert_eq!(event.value.payload, Value::Int(999));
+        assert_eq!(event.value.payload, int_payload(999));
 
         // StateCell
         let state = state_cell.read(&run_id, "full_state").unwrap().unwrap();

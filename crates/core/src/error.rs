@@ -460,6 +460,10 @@ pub enum Error {
     /// Transaction exceeded timeout (M2)
     #[error("Transaction timeout: {0}")]
     TransactionTimeout(String),
+
+    /// Input validation failed
+    #[error("Validation error: {0}")]
+    ValidationError(String),
 }
 
 impl From<bincode::Error> for Error {
@@ -1819,6 +1823,7 @@ impl From<Error> for StrataError {
                 ),
                 source: None,
             },
+            Error::ValidationError(msg) => StrataError::InvalidInput { message: msg },
         }
     }
 }

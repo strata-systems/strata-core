@@ -530,3 +530,169 @@ All appends serialize through CAS (200 retries). Parallel append from multiple t
 **Strata's Unique Strength:** Hash chain for tamper-evidence (but currently hidden!)
 
 **Strata's Gaps:** Consumer position tracking, blocking reads, batch append
+
+---
+
+## Part 7: Additional Issues (2026-01-23 Analysis)
+
+### Bug 5: Non-Deterministic Hash Algorithm (P1)
+
+**Location:** `crates/primitives/src/event_log.rs:57`
+
+**Problem:** Uses `std::collections::hash_map::DefaultHasher` for hash chain.
+
+From Rust documentation:
+> "The default hashing algorithm is currently SipHash 1-3, though this is **subject to change at any point in the future**."
+
+**Risk:**
+- Chain verification fails after Rust toolchain upgrade
+- Chain verification fails across different platforms/builds
+- Hash values may differ between debug and release builds
+
+**Current Code:**
+```rust
+fn compute_event_hash(...) -> [u8; 32] {
+    let mut hasher = DefaultHasher::new();
+    // ... hash inputs
+    let h = hasher.finish();
+    let mut result = [0u8; 32];
+    result[0..8].copy_from_slice(&h.to_le_bytes());
+    result
+}
+```
+
+**Fix:** Use deterministic hash algorithm (SHA-256 or BLAKE3)
+
+```rust
+use sha2::{Sha256, Digest};
+
+fn compute_event_hash(...) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(&sequence.to_le_bytes());
+    hasher.update(event_type.as_bytes());
+    hasher.update(serde_json::to_vec(payload).unwrap_or_default());
+    hasher.update(&timestamp.to_le_bytes());
+    hasher.update(prev_hash);
+    hasher.finalize().into()
+}
+```
+
+**Migration:** Add version field to metadata. Old chains use v0, new chains use v1.
+
+---
+
+### Bug 6: Facade `xrevrange` Bypasses Substrate (P2)
+
+**Location:** `crates/api/src/facade/event.rs:152-155`
+
+**Problem:** Facade's `xrevrange` doesn't use Substrate's `event_rev_range`.
+
+**Current Code:**
+```rust
+fn xrevrange(&self, stream: &str, start: Option<u64>, end: Option<u64>) -> StrataResult<Vec<EventEntry>> {
+    let mut results = self.xrange(stream, start, end)?;  // Loads ALL forward
+    results.reverse();  // Then reverses in memory
+    Ok(results)
+}
+```
+
+**Expected:**
+```rust
+fn xrevrange(&self, stream: &str, start: Option<u64>, end: Option<u64>) -> StrataResult<Vec<EventEntry>> {
+    let results = self.substrate().event_rev_range(self.default_run(), stream, start, end, None)?;
+    Ok(results.into_iter().map(|v| EventEntry { ... }).collect())
+}
+```
+
+**Impact:** Double inefficiency - loads all forward, then reverses.
+
+---
+
+### Perf 3: `event_head()` Loads All Events (P1)
+
+**Location:** `crates/api/src/substrate/event.rs:380-392`
+
+**Current Implementation:**
+```rust
+fn event_head(&self, run: &ApiRunId, stream: &str) -> StrataResult<Option<Versioned<Value>>> {
+    let events = self.event().read_by_type(&run_id, stream)?;  // Loads ALL events
+    Ok(events.into_iter().last().map(...))  // Then takes last
+}
+```
+
+**Should:** Use primitive's `head()` or `head_by_type()` method.
+
+---
+
+### Perf 4: All Range Methods Load Full Dataset (P1)
+
+**Locations:**
+- `event_range`: Line 263 - `read_by_type()` then filters
+- `event_rev_range`: Line 345 - `read_by_type()` then filters and reverses
+- `event_get`: Line 296 - Uses point read (OK)
+
+**Problem:** `read_by_type()` loads ALL events of that type into memory, then applies range filtering. For a stream with 1M events, requesting the last 10 still loads 1M events.
+
+**Fix:** Primitive needs efficient range queries by type, or per-stream indexing.
+
+---
+
+### Design Issue 4: Substrate Already Has Methods That Aren't Used
+
+**Observation:** Looking at the Substrate trait (`event.rs:44-212`), these methods EXIST in the trait:
+- `event_rev_range` ✅ (lines 168-175)
+- `event_streams` ✅ (lines 177-184)
+- `event_head` ✅ (lines 186-194)
+- `event_verify_chain` ✅ (lines 196-211)
+
+But earlier defects documentation (EVENTLOG_DEFECTS.md) listed them as "missing".
+
+**Actual Issue:** They exist but implementations are inefficient (O(n)) due to primitive limitations.
+
+---
+
+## Updated Summary Table
+
+| Category | Count | Priority |
+|----------|-------|----------|
+| Implementation Bugs | 6 | 1 P0, 4 P1, 1 P2 |
+| Missing Table Stakes APIs | 6 | P0 |
+| Missing Important APIs | 3 | P1 |
+| API Design Issues | 4 | P1-P2 |
+| Known Limitations | 2 | N/A |
+| Performance Issues | 4 | P1 |
+| **Total Issues** | **25** | |
+
+---
+
+## Updated Priority Matrix
+
+| ID | Issue | Priority | Effort | Category |
+|----|-------|----------|--------|----------|
+| Bug 1 | Payload validation | P0 | Low | Bug |
+| Bug 5 | Non-deterministic hash | P1 | Medium | Bug |
+| Bug 6 | Facade xrevrange bypass | P2 | Low | Bug |
+| Gap 1 | Batch append | P0 | Medium | Missing API |
+| Gap 4 | Time-based queries | P0 | Medium | Missing API |
+| Gap 5 | Stream info O(1) | P0 | Medium | Missing API |
+| Gap 6 | Consumer position | P0 | Medium | Missing API |
+| Bug 2 | Empty stream name | P1 | Low | Bug |
+| Bug 3 | Sequence start (doc) | P1 | Low | Documentation |
+| Gap 7 | Blocking read | P1 | High | Missing API |
+| Perf 1 | O(n) event_len | P1 | Medium | Performance |
+| Perf 2 | O(n) latest_seq | P1 | Medium | Performance |
+| Perf 3 | O(n) event_head | P1 | Medium | Performance |
+| Perf 4 | O(n) range methods | P1 | Medium | Performance |
+| Design 1 | Timestamp hidden | P1 | Low | Design |
+| Design 2 | Hash chain hidden | P1 | Low | Design |
+| Design 3 | Facade/Substrate mismatch | P1 | Medium | Design |
+| Bug 4 | Float NaN/Infinity | P2 | Medium | Bug |
+
+---
+
+## Cross-Reference: Fix Plan
+
+See `docs/milestones/EVENTLOG_FIX_PLAN.md` for comprehensive fix plan covering:
+- Primitive layer changes (per-stream metadata, batch append, timestamp index)
+- Substrate layer changes (validation, efficient methods, new APIs)
+- Implementation phases and dependencies

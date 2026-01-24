@@ -7,8 +7,24 @@ use strata_core::types::RunId;
 use strata_core::value::Value;
 use strata_engine::Database;
 use strata_primitives::{EventLog, KVStore, RunIndex, StateCell, TraceStore, TraceType};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tempfile::TempDir;
+
+/// Helper to create an empty object payload for EventLog
+fn empty_payload() -> Value {
+    Value::Object(HashMap::new())
+}
+
+/// Helper to create an object payload with an integer value
+fn int_payload(v: i64) -> Value {
+    Value::Object(HashMap::from([("value".to_string(), Value::Int(v))]))
+}
+
+/// Helper to create an object payload with a string value
+fn string_payload(s: &str) -> Value {
+    Value::Object(HashMap::from([("data".to_string(), Value::String(s.into()))]))
+}
 
 fn setup() -> (Arc<Database>, TempDir) {
     let temp_dir = TempDir::new().unwrap();
@@ -56,10 +72,10 @@ fn test_event_log_isolation() {
 
     // Both runs start at sequence 0
     let v1 = event_log
-        .append(&run1, "event", Value::String("run1".into()))
+        .append(&run1, "event", string_payload("run1"))
         .unwrap();
     let v2 = event_log
-        .append(&run2, "event", Value::String("run2".into()))
+        .append(&run2, "event", string_payload("run2"))
         .unwrap();
 
     // Independent sequences - both start at 0
@@ -76,10 +92,10 @@ fn test_event_log_isolation() {
 
     // Appending more to run1 doesn't affect run2
     event_log
-        .append(&run1, "event2", Value::String("run1-2".into()))
+        .append(&run1, "event2", string_payload("run1-2"))
         .unwrap();
     event_log
-        .append(&run1, "event3", Value::String("run1-3".into()))
+        .append(&run1, "event3", string_payload("run1-3"))
         .unwrap();
 
     assert_eq!(event_log.len(&run1).unwrap(), 3);
@@ -199,7 +215,7 @@ fn test_cross_run_query_isolation() {
     // Run1 data
     for i in 0..10 {
         kv.put(&run1, &format!("key{}", i), Value::Int(i)).unwrap();
-        event_log.append(&run1, "event", Value::Int(i)).unwrap();
+        event_log.append(&run1, "event", int_payload(i)).unwrap();
         trace_store
             .record(
                 &run1,
@@ -221,7 +237,7 @@ fn test_cross_run_query_isolation() {
         kv.put(&run2, &format!("key{}", i), Value::Int(i + 100))
             .unwrap();
         event_log
-            .append(&run2, "event", Value::Int(i + 100))
+            .append(&run2, "event", int_payload(i + 100))
             .unwrap();
         trace_store
             .record(
@@ -288,8 +304,8 @@ fn test_run_delete_isolation() {
     kv.put(&run1, "key", Value::Int(1)).unwrap();
     kv.put(&run2, "key", Value::Int(2)).unwrap();
 
-    event_log.append(&run1, "event", Value::Null).unwrap();
-    event_log.append(&run2, "event", Value::Null).unwrap();
+    event_log.append(&run1, "event", empty_payload()).unwrap();
+    event_log.append(&run2, "event", empty_payload()).unwrap();
 
     state_cell.init(&run1, "cell", Value::Int(10)).unwrap();
     state_cell.init(&run2, "cell", Value::Int(20)).unwrap();
@@ -402,13 +418,13 @@ fn test_event_log_chain_isolation() {
     let run2 = RunId::new();
 
     // Build chain in run1
-    event_log.append(&run1, "e1", Value::Int(0)).unwrap();
-    event_log.append(&run1, "e2", Value::Int(1)).unwrap();
-    event_log.append(&run1, "e3", Value::Int(2)).unwrap();
+    event_log.append(&run1, "e1", int_payload(0)).unwrap();
+    event_log.append(&run1, "e2", int_payload(1)).unwrap();
+    event_log.append(&run1, "e3", int_payload(2)).unwrap();
 
     // Build different chain in run2
-    event_log.append(&run2, "x1", Value::Int(100)).unwrap();
-    event_log.append(&run2, "x2", Value::Int(101)).unwrap();
+    event_log.append(&run2, "x1", int_payload(100)).unwrap();
+    event_log.append(&run2, "x2", int_payload(101)).unwrap();
 
     // Read events to get hashes
     let event1_0 = event_log.read(&run1, 0).unwrap().unwrap();
