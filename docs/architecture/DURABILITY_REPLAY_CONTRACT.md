@@ -138,7 +138,15 @@ This is explicitly permitted, not a bug. In Buffered mode, recent unflushed writ
 
 ## Replay Invariants
 
-Replay reconstructs the state of a specific run from the EventLog. These six invariants define replay semantics.
+Replay re-executes a run deterministically by injecting recorded nondeterministic inputs from EventLog. These six invariants define replay semantics.
+
+### Source of Truth Clarification
+
+**Critical distinction**:
+- **Snapshot + WAL** are the source of truth for **state**
+- **EventLog** is the source of truth for **nondeterministic inputs**
+
+Replay is *re-execution*, not *state reconstruction*. The EventLog captures external inputs (API responses, user messages, random values) that allow deterministic re-execution of agent code.
 
 ### P1: Pure Function
 
@@ -147,6 +155,10 @@ replay(run_id) = f(Snapshot, WAL, EventLog)
 ```
 
 Replay is a pure function over stored data. No external input, no side effects during computation.
+
+- Snapshot + WAL provide initial state
+- EventLog provides recorded nondeterministic inputs
+- Agent code re-executes deterministically
 
 ### P2: Side-Effect Free
 
@@ -164,7 +176,9 @@ Replay is read-only. It constructs a view but never writes to the database. The 
 replay(run_id) is a derived view, not a source of truth
 ```
 
-The replayed view is computed from EventLog. It is not persisted. It is not authoritative. The EventLog is the source of truth.
+The replayed view is computed by re-executing agent code with recorded inputs. It is not persisted. It is not authoritative.
+
+EventLog does NOT contain all state changes. It contains nondeterministic inputs that enable deterministic re-execution.
 
 ### P4: Does Not Persist
 

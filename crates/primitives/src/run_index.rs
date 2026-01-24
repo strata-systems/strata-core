@@ -932,6 +932,11 @@ mod tests {
         (Arc::new(db), temp_dir)
     }
 
+    /// Helper to create an empty object payload for EventLog tests
+    fn empty_event_payload() -> Value {
+        Value::Object(std::collections::HashMap::new())
+    }
+
     // ========== Story #191 Tests: RunStatus ==========
 
     #[test]
@@ -1481,7 +1486,7 @@ mod tests {
             // Use all primitives with this run
             kv.put(&run_id, "key", Value::Int(42)).unwrap();
             event_log
-                .append(&run_id, "test-event", Value::Null)
+                .append(&run_id, "test-event", empty_event_payload())
                 .unwrap();
             state_cell.init(&run_id, "cell", Value::Bool(true)).unwrap();
             trace_store
@@ -1582,11 +1587,13 @@ mod tests {
             kv.put(&run_id, "state", Value::Int(0)).unwrap();
 
             // EventLog: append multiple events
-            event_log.append(&run_id, "start", Value::Null).unwrap();
+            event_log.append(&run_id, "start", empty_event_payload()).unwrap();
             event_log
-                .append(&run_id, "action", Value::String("do_something".into()))
+                .append(&run_id, "action", Value::Object(std::collections::HashMap::from([
+                    ("action".to_string(), Value::String("do_something".into()))
+                ])))
                 .unwrap();
-            event_log.append(&run_id, "end", Value::Null).unwrap();
+            event_log.append(&run_id, "end", empty_event_payload()).unwrap();
 
             // StateCell: create multiple cells
             state_cell.init(&run_id, "counter", Value::Int(0)).unwrap();

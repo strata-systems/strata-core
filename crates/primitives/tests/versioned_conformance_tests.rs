@@ -20,7 +20,23 @@ use strata_core::value::Value;
 use strata_engine::Database;
 use strata_primitives::extensions::*;
 use strata_primitives::*;
+use std::collections::HashMap;
 use std::sync::Arc;
+
+/// Helper to create an empty object payload for EventLog
+fn empty_payload() -> Value {
+    Value::Object(HashMap::new())
+}
+
+/// Helper to create an object payload with a string value
+fn string_payload(s: &str) -> Value {
+    Value::Object(HashMap::from([("data".to_string(), Value::String(s.into()))]))
+}
+
+/// Helper to create an object payload with an integer value
+fn int_payload(v: i64) -> Value {
+    Value::Object(HashMap::from([("value".to_string(), Value::Int(v))]))
+}
 
 fn setup() -> (Arc<Database>, RunId) {
     let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
@@ -59,7 +75,7 @@ mod invariant_1_addressable {
         let events = EventLog::new(db);
 
         let version = events
-            .append(&run_id, "test-event", Value::String("payload".into()))
+            .append(&run_id, "test-event", string_payload("payload"))
             .unwrap();
 
         // Events are addressed by sequence number
@@ -211,7 +227,7 @@ mod invariant_2_versioned {
         let events = EventLog::new(db);
 
         events
-            .append(&run_id, "test-event", Value::String("payload".into()))
+            .append(&run_id, "test-event", string_payload("payload"))
             .unwrap();
 
         let versioned = events.read(&run_id, 0).unwrap().unwrap();
@@ -224,10 +240,10 @@ mod invariant_2_versioned {
         let events = EventLog::new(db);
 
         let v0 = events
-            .append(&run_id, "e0", Value::String("p0".into()))
+            .append(&run_id, "e0", string_payload("p0"))
             .unwrap();
         let v1 = events
-            .append(&run_id, "e1", Value::String("p1".into()))
+            .append(&run_id, "e1", string_payload("p1"))
             .unwrap();
 
         // Event versions are sequential
@@ -460,7 +476,7 @@ mod invariant_3_transactional {
         let (db, run_id) = setup();
 
         db.transaction(run_id, |txn| {
-            txn.event_append("test-event", Value::String("payload".into()))?;
+            txn.event_append("test-event", string_payload("payload"))?;
             Ok(())
         })
         .unwrap();
@@ -517,7 +533,7 @@ mod invariant_3_transactional {
 
         db.transaction(run_id, |txn| {
             txn.kv_put("key", Value::Int(42))?;
-            txn.event_append("test-event", Value::String("payload".into()))?;
+            txn.event_append("test-event", string_payload("payload"))?;
             txn.state_set("cell", Value::Int(100))?;
             Ok(())
         })
@@ -540,7 +556,7 @@ mod invariant_3_transactional {
 
         let result: Result<(), strata_core::error::Error> = db.transaction(run_id, |txn| {
             txn.kv_put("key", Value::Int(1))?;
-            txn.event_append("event", Value::String("payload".into()))?;
+            txn.event_append("event", string_payload("payload"))?;
 
             // Force rollback
             Err(strata_core::error::Error::InvalidOperation(
@@ -599,7 +615,7 @@ mod invariant_4_lifecycle {
 
         // Create (append)
         events
-            .append(&run_id, "e1", Value::Int(1))
+            .append(&run_id, "e1", int_payload(1))
             .unwrap();
 
         // Exist (read)
@@ -609,7 +625,7 @@ mod invariant_4_lifecycle {
         // Events are immutable - no evolve, no destroy
         // Can only append more
         events
-            .append(&run_id, "e2", Value::Int(2))
+            .append(&run_id, "e2", int_payload(2))
             .unwrap();
 
         // Both events exist
@@ -781,10 +797,10 @@ mod invariant_5_run_scoped {
         let events = EventLog::new(db);
 
         events
-            .append(&run1, "event-run1", Value::Int(1))
+            .append(&run1, "event-run1", int_payload(1))
             .unwrap();
         events
-            .append(&run2, "event-run2", Value::Int(2))
+            .append(&run2, "event-run2", int_payload(2))
             .unwrap();
 
         let e1 = events.read(&run1, 0).unwrap().unwrap();
@@ -909,7 +925,7 @@ mod invariant_5_run_scoped {
         kv.get(&run_id, "k").unwrap();
 
         let events = EventLog::new(db.clone());
-        events.append(&run_id, "e", Value::Null).unwrap();
+        events.append(&run_id, "e", empty_payload()).unwrap();
         events.read(&run_id, 0).unwrap();
 
         let state = StateCell::new(db.clone());
@@ -948,7 +964,7 @@ mod invariant_6_introspectable {
         // No event at sequence 0 yet
         assert!(events.read(&run_id, 0).unwrap().is_none());
 
-        events.append(&run_id, "e", Value::Null).unwrap();
+        events.append(&run_id, "e", empty_payload()).unwrap();
 
         // Now exists
         assert!(events.read(&run_id, 0).unwrap().is_some());
@@ -1078,8 +1094,8 @@ mod invariant_7_read_write {
         let events = EventLog::new(db);
 
         // append is write (returns version)
-        let v1 = events.append(&run_id, "e1", Value::Int(1)).unwrap();
-        let v2 = events.append(&run_id, "e2", Value::Int(2)).unwrap();
+        let v1 = events.append(&run_id, "e1", int_payload(1)).unwrap();
+        let v2 = events.append(&run_id, "e2", int_payload(2)).unwrap();
 
         assert!(v2 > v1); // Versions increase
 
@@ -1141,7 +1157,7 @@ mod invariant_7_read_write {
 
         // Event
         let events = EventLog::new(db.clone());
-        let _ = events.append(&run_id, "e", Value::Null).unwrap(); // write
+        let _ = events.append(&run_id, "e", empty_payload()).unwrap(); // write
         let _ = events.read(&run_id, 0).unwrap(); // read
 
         // State
@@ -1204,7 +1220,7 @@ mod version_monotonicity {
         let mut last_seq = None;
         for i in 0..10 {
             let version = events
-                .append(&run_id, &format!("event-{}", i), Value::Int(i as i64))
+                .append(&run_id, &format!("event-{}", i), int_payload(i as i64))
                 .unwrap();
 
             let current_seq = match version {
