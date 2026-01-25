@@ -653,7 +653,7 @@ impl JsonPath {
         for seg in &self.segments {
             match seg {
                 PathSegment::Key(k) => {
-                    if !result.is_empty() || result.is_empty() {
+                    if !result.is_empty() {
                         result.push('.');
                     }
                     result.push_str(k);
@@ -664,10 +664,6 @@ impl JsonPath {
                     result.push(']');
                 }
             }
-        }
-        // Remove leading dot if it starts with one
-        if result.starts_with('.') {
-            result.remove(0);
         }
         result
     }
