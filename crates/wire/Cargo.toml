@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
+publish = false
 description = "Wire encoding for Strata - JSON value encoding with special wrappers"
 
 [dependencies]

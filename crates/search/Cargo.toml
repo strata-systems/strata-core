@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Search infrastructure for Strata (M6 Retrieval Surfaces)"
 license = "MIT"
+publish = false
 
 [dependencies]
 strata-core = { path = "../core" }
