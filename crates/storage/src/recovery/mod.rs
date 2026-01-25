@@ -24,7 +24,7 @@ pub mod replay;
 
 use std::path::{Path, PathBuf};
 
-use crate::codec::StorageCodec;
+use crate::codec::{CodecError, StorageCodec};
 use crate::disk_snapshot::{SnapshotReadError, SnapshotReader};
 use crate::format::manifest::{Manifest, ManifestError, ManifestManager};
 use crate::format::{snapshot_path, WalRecord};
@@ -138,7 +138,7 @@ impl RecoveryCoordinator {
 
         // Load snapshot if exists
         if let Some(snapshot_path) = &plan.snapshot_path {
-            let snapshot_reader = SnapshotReader::new(clone_codec(self.codec.as_ref()));
+            let snapshot_reader = SnapshotReader::new(clone_codec(self.codec.as_ref())?);
             let loaded = snapshot_reader.load(snapshot_path)?;
 
             on_snapshot(RecoverySnapshot {
@@ -149,7 +149,7 @@ impl RecoveryCoordinator {
         }
 
         // Replay WAL
-        let replayer = WalReplayer::new(plan.wal_dir.clone(), clone_codec(self.codec.as_ref()));
+        let replayer = WalReplayer::new(plan.wal_dir.clone(), clone_codec(self.codec.as_ref())?);
         let replay_stats = replayer.replay_after(plan.watermark, |record| {
             on_record(record).map_err(|e| WalReplayError::Apply(e.to_string()))
         })?;
@@ -172,16 +172,16 @@ impl RecoveryCoordinator {
     /// - In Strict mode, committed transactions are fsynced
     /// - In Buffered mode, some data loss is expected on crash
     pub fn truncate_partial_records(&self, wal_dir: &Path) -> Result<u64, RecoveryError> {
-        let reader = crate::wal::WalReader::new(clone_codec(self.codec.as_ref()));
+        let reader = crate::wal::WalReader::new(clone_codec(self.codec.as_ref())?);
 
         // Get all segments
         let segments = reader.list_segments(wal_dir)?;
-        if segments.is_empty() {
-            return Ok(0);
-        }
 
         // Only truncate the last (active) segment
-        let last_segment = *segments.last().unwrap();
+        let last_segment = match segments.last() {
+            Some(&segment) => segment,
+            None => return Ok(0),
+        };
         let result = reader.read_all(wal_dir)?;
 
         if let Some(truncate_info) = result.truncate_info {
@@ -272,6 +272,10 @@ pub enum RecoveryError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// Codec error
+    #[error("Codec error: {0}")]
+    Codec(#[from] CodecError),
+
     /// Apply error (from callbacks)
     #[error("Apply error: {0}")]
     Apply(String),
@@ -285,8 +289,8 @@ impl RecoveryError {
 }
 
 /// Helper to clone a boxed codec
-fn clone_codec(codec: &dyn StorageCodec) -> Box<dyn StorageCodec> {
-    crate::codec::get_codec(codec.codec_id()).unwrap()
+fn clone_codec(codec: &dyn StorageCodec) -> Result<Box<dyn StorageCodec>, CodecError> {
+    crate::codec::get_codec(codec.codec_id())
 }
 
 #[cfg(test)]
