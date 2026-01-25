@@ -2345,6 +2345,149 @@ mod tests {
         assert!(v.validate().is_ok());
     }
 
+    // ========================================
+    // Limit Boundary Tests
+    // ========================================
+
+    #[test]
+    fn test_nesting_at_max_depth_passes() {
+        // Create a document with exactly MAX_NESTING_DEPTH levels
+        // Each level is an object containing the next level
+        let mut json_str = String::new();
+        for _ in 0..MAX_NESTING_DEPTH {
+            json_str.push_str(r#"{"a":"#);
+        }
+        json_str.push_str("1");
+        for _ in 0..MAX_NESTING_DEPTH {
+            json_str.push('}');
+        }
+
+        let v: JsonValue = json_str.parse().expect("Should parse valid JSON");
+        assert_eq!(
+            v.nesting_depth(),
+            MAX_NESTING_DEPTH,
+            "Should have exactly MAX_NESTING_DEPTH levels"
+        );
+        assert!(
+            v.validate_depth().is_ok(),
+            "Document at exactly MAX_NESTING_DEPTH should pass validation"
+        );
+    }
+
+    #[test]
+    fn test_nesting_exceeds_max_depth_fails() {
+        // Create a document with MAX_NESTING_DEPTH + 1 levels
+        let depth = MAX_NESTING_DEPTH + 1;
+        let mut json_str = String::new();
+        for _ in 0..depth {
+            json_str.push_str(r#"{"a":"#);
+        }
+        json_str.push_str("1");
+        for _ in 0..depth {
+            json_str.push('}');
+        }
+
+        let v: JsonValue = json_str.parse().expect("Should parse valid JSON");
+        assert_eq!(
+            v.nesting_depth(),
+            depth,
+            "Should have exactly MAX_NESTING_DEPTH + 1 levels"
+        );
+
+        let result = v.validate_depth();
+        assert!(result.is_err(), "Should fail validation when exceeding MAX_NESTING_DEPTH");
+
+        match result {
+            Err(LimitError::NestingTooDeep { depth: d, max }) => {
+                assert_eq!(d, depth);
+                assert_eq!(max, MAX_NESTING_DEPTH);
+            }
+            _ => panic!("Expected NestingTooDeep error"),
+        }
+    }
+
+    #[test]
+    fn test_nesting_with_arrays_at_boundary() {
+        // Arrays also count as nesting. Test alternating objects and arrays.
+        // Each pair adds 2 levels of nesting
+        let pairs = MAX_NESTING_DEPTH / 2;
+        let mut json_str = String::new();
+        for _ in 0..pairs {
+            json_str.push_str(r#"{"a":["#);
+        }
+        json_str.push_str("1");
+        for _ in 0..pairs {
+            json_str.push_str("]}");
+        }
+
+        let v: JsonValue = json_str.parse().expect("Should parse valid JSON");
+        let depth = v.nesting_depth();
+        assert_eq!(depth, pairs * 2, "Each object-array pair adds 2 levels");
+        assert!(
+            v.validate_depth().is_ok(),
+            "Nesting within limit should pass"
+        );
+    }
+
+    #[test]
+    fn test_array_size_validation_logic() {
+        // We can't easily test MAX_ARRAY_SIZE (1M elements) due to memory,
+        // but we can verify the validation logic works correctly.
+        // Create an array and verify max_array_size() reports correctly.
+        let v: JsonValue = r#"[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]"#.parse().unwrap();
+        assert_eq!(v.max_array_size(), 10);
+        assert!(v.validate_array_size().is_ok());
+
+        // Verify nested arrays report the maximum
+        let v: JsonValue = r#"{"outer": [1, 2], "inner": [[1, 2, 3, 4, 5]]}"#.parse().unwrap();
+        assert_eq!(v.max_array_size(), 5, "Should report max of all arrays");
+    }
+
+    #[test]
+    fn test_document_size_validation_logic() {
+        // We can't easily test MAX_DOCUMENT_SIZE (16MB) due to memory,
+        // but we can verify the size calculation works.
+        let v = JsonValue::from("test");
+        let size = v.size_bytes();
+        assert!(size > 0, "Should report non-zero size");
+        assert!(
+            v.validate_size().is_ok(),
+            "Small document should pass size validation"
+        );
+
+        // Larger string should have larger size
+        let large_str = "x".repeat(10000);
+        let v_large = JsonValue::from(large_str.as_str());
+        assert!(
+            v_large.size_bytes() > v.size_bytes(),
+            "Larger content should have larger size"
+        );
+    }
+
+    #[test]
+    fn test_validate_catches_first_limit_exceeded() {
+        // Create a document that exceeds nesting depth
+        let depth = MAX_NESTING_DEPTH + 5;
+        let mut json_str = String::new();
+        for _ in 0..depth {
+            json_str.push_str(r#"{"a":"#);
+        }
+        json_str.push_str("1");
+        for _ in 0..depth {
+            json_str.push('}');
+        }
+
+        let v: JsonValue = json_str.parse().expect("Should parse valid JSON");
+
+        // validate() should catch the nesting limit
+        let result = v.validate();
+        assert!(result.is_err(), "validate() should fail");
+        assert!(
+            matches!(result, Err(LimitError::NestingTooDeep { .. })),
+            "Should be NestingTooDeep error"
+        );
+    }
+
     #[test]
     fn test_path_validate_ok() {
         let path = JsonPath::root().key("user").key("name");

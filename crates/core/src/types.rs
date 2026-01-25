@@ -571,6 +571,89 @@ mod tests {
     }
 
     // ========================================
+    // RunId::from_string Tests
+    // ========================================
+
+    #[test]
+    fn test_run_id_from_string_valid_with_hyphens() {
+        let uuid_str = "550e8400-e29b-41d4-a716-446655440000";
+        let result = RunId::from_string(uuid_str);
+        assert!(result.is_some(), "Should parse valid UUID with hyphens");
+
+        let id = result.unwrap();
+        let display = format!("{}", id);
+        assert_eq!(display, uuid_str, "Display should match input");
+    }
+
+    #[test]
+    fn test_run_id_from_string_valid_without_hyphens() {
+        let uuid_str = "550e8400e29b41d4a716446655440000";
+        let result = RunId::from_string(uuid_str);
+        assert!(result.is_some(), "Should parse valid UUID without hyphens");
+
+        // Verify it parsed correctly by checking display includes hyphens
+        let id = result.unwrap();
+        let display = format!("{}", id);
+        assert_eq!(display.len(), 36, "Display should have hyphens added");
+        assert!(display.contains('-'), "Display should have hyphens");
+    }
+
+    #[test]
+    fn test_run_id_from_string_valid_uppercase() {
+        let uuid_str = "550E8400-E29B-41D4-A716-446655440000";
+        let result = RunId::from_string(uuid_str);
+        assert!(result.is_some(), "Should parse uppercase UUID");
+    }
+
+    #[test]
+    fn test_run_id_from_string_invalid_too_short() {
+        let result = RunId::from_string("550e8400-e29b-41d4");
+        assert!(result.is_none(), "Should reject UUID that's too short");
+    }
+
+    #[test]
+    fn test_run_id_from_string_invalid_too_long() {
+        let result = RunId::from_string("550e8400-e29b-41d4-a716-446655440000-extra");
+        assert!(result.is_none(), "Should reject UUID that's too long");
+    }
+
+    #[test]
+    fn test_run_id_from_string_invalid_characters() {
+        let result = RunId::from_string("550e8400-e29b-41d4-a716-44665544ZZZZ");
+        assert!(result.is_none(), "Should reject non-hex characters");
+    }
+
+    #[test]
+    fn test_run_id_from_string_invalid_format() {
+        // Wrong hyphen positions
+        let result = RunId::from_string("550e-8400e29b-41d4a716-446655440000");
+        assert!(result.is_none(), "Should reject malformed hyphen positions");
+    }
+
+    #[test]
+    fn test_run_id_from_string_empty() {
+        let result = RunId::from_string("");
+        assert!(result.is_none(), "Should reject empty string");
+    }
+
+    #[test]
+    fn test_run_id_from_string_whitespace() {
+        let result = RunId::from_string("  550e8400-e29b-41d4-a716-446655440000  ");
+        assert!(result.is_none(), "Should reject string with whitespace");
+    }
+
+    #[test]
+    fn test_run_id_from_string_roundtrip() {
+        // Create a RunId, get its string, parse it back
+        let original = RunId::new();
+        let as_string = format!("{}", original);
+        let parsed = RunId::from_string(&as_string);
+
+        assert!(parsed.is_some(), "Should parse back its own Display output");
+        assert_eq!(parsed.unwrap(), original, "Roundtrip should preserve value");
+    }
+
+    // ========================================
     // Namespace Tests
     // ========================================
 

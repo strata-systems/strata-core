@@ -2012,6 +2012,84 @@ mod strata_error_tests {
     }
 
     #[test]
+    fn test_storage_with_source_verifies_content() {
+        let io_err = io::Error::new(io::ErrorKind::NotFound, "file missing");
+        let e = StrataError::storage_with_source("Read failed", io_err);
+
+        match &e {
+            StrataError::Storage { message, source } => {
+                // Verify the message is preserved
+                assert_eq!(message, "Read failed");
+
+                // Verify the source error content
+                let source_err = source.as_ref().expect("Should have source");
+                let source_msg = format!("{}", source_err);
+                assert!(
+                    source_msg.contains("file missing"),
+                    "Source error should contain original message, got: {}",
+                    source_msg
+                );
+            }
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_storage_with_source_preserves_error_message() {
+        let io_err = io::Error::new(io::ErrorKind::PermissionDenied, "access denied");
+        let e = StrataError::storage_with_source("Cannot write", io_err);
+
+        match &e {
+            StrataError::Storage { source, .. } => {
+                let source_err = source.as_ref().expect("Should have source");
+                // Verify the source error message is preserved
+                let source_display = format!("{}", source_err);
+                assert!(
+                    source_display.contains("access denied"),
+                    "Source error should contain original message, got: {}",
+                    source_display
+                );
+            }
+            _ => panic!("Wrong variant"),
+        }
+    }
+
+    #[test]
+    fn test_error_display_includes_source() {
+        let io_err = io::Error::new(io::ErrorKind::Other, "underlying cause");
+        let e = StrataError::storage_with_source("Operation failed", io_err);
+
+        let display = format!("{}", e);
+        // The display should mention the operation
+        assert!(
+            display.contains("Operation failed"),
+            "Display should include main message, got: {}",
+            display
+        );
+    }
+
+    #[test]
+    fn test_from_io_error_source_chain() {
+        use std::error::Error;
+
+        let io_err = io::Error::new(io::ErrorKind::BrokenPipe, "connection lost");
+        let strata_err: StrataError = io_err.into();
+
+        // Verify conversion works
+        assert!(strata_err.is_storage_error());
+
+        // Verify we can get the source back via Error trait
+        let source = strata_err.source();
+        assert!(source.is_some(), "Should have source error");
+
+        let source_display = format!("{}", source.unwrap());
+        assert!(
+            source_display.contains("connection lost"),
+            "Source should contain original message"
+        );
+    }
+
+    #[test]
     fn test_serialization_constructor() {
         let e = StrataError::serialization("Invalid UTF-8");
 

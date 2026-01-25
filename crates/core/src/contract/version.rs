@@ -327,6 +327,106 @@ mod tests {
     }
 
     #[test]
+    fn test_version_partial_ord_reverse_direction() {
+        use std::cmp::Ordering;
+
+        // Test the reverse direction (Greater)
+        assert_eq!(
+            Version::Sequence(1).partial_cmp(&Version::Txn(1)),
+            Some(Ordering::Greater),
+            "Sequence should be greater than Txn"
+        );
+        assert_eq!(
+            Version::Counter(1).partial_cmp(&Version::Sequence(1)),
+            Some(Ordering::Greater),
+            "Counter should be greater than Sequence"
+        );
+        assert_eq!(
+            Version::Counter(1).partial_cmp(&Version::Txn(1)),
+            Some(Ordering::Greater),
+            "Counter should be greater than Txn"
+        );
+    }
+
+    #[test]
+    fn test_version_different_types_never_equal() {
+        // Different variant types are never equal, even with same numeric value
+        assert_ne!(Version::Txn(42), Version::Sequence(42));
+        assert_ne!(Version::Txn(42), Version::Counter(42));
+        assert_ne!(Version::Sequence(42), Version::Counter(42));
+
+        // Verify via partial_cmp as well
+        use std::cmp::Ordering;
+        assert_ne!(
+            Version::Txn(42).partial_cmp(&Version::Sequence(42)),
+            Some(Ordering::Equal)
+        );
+        assert_ne!(
+            Version::Txn(42).partial_cmp(&Version::Counter(42)),
+            Some(Ordering::Equal)
+        );
+        assert_ne!(
+            Version::Sequence(42).partial_cmp(&Version::Counter(42)),
+            Some(Ordering::Equal)
+        );
+    }
+
+    #[test]
+    fn test_version_boundary_values_different_types() {
+        use std::cmp::Ordering;
+
+        // Even with extreme values, ordering by discriminant takes precedence
+        // Txn(MAX) < Sequence(0) because Txn discriminant < Sequence discriminant
+        assert_eq!(
+            Version::Txn(u64::MAX).partial_cmp(&Version::Sequence(0)),
+            Some(Ordering::Less),
+            "Txn(MAX) should still be less than Sequence(0)"
+        );
+        assert_eq!(
+            Version::Sequence(u64::MAX).partial_cmp(&Version::Counter(0)),
+            Some(Ordering::Less),
+            "Sequence(MAX) should still be less than Counter(0)"
+        );
+
+        // And the reverse
+        assert_eq!(
+            Version::Counter(0).partial_cmp(&Version::Txn(u64::MAX)),
+            Some(Ordering::Greater),
+            "Counter(0) should be greater than Txn(MAX)"
+        );
+    }
+
+    #[test]
+    fn test_version_ordering_symmetry() {
+        use std::cmp::Ordering;
+
+        // For any a, b: if a < b then b > a (ordering symmetry)
+        let pairs = [
+            (Version::Txn(5), Version::Txn(10)),
+            (Version::Sequence(5), Version::Sequence(10)),
+            (Version::Counter(5), Version::Counter(10)),
+            (Version::Txn(5), Version::Sequence(5)),
+            (Version::Sequence(5), Version::Counter(5)),
+            (Version::Txn(5), Version::Counter(5)),
+        ];
+
+        for (a, b) in pairs {
+            let a_cmp_b = a.partial_cmp(&b);
+            let b_cmp_a = b.partial_cmp(&a);
+
+            match (a_cmp_b, b_cmp_a) {
+                (Some(Ordering::Less), Some(Ordering::Greater)) => {}
+                (Some(Ordering::Greater), Some(Ordering::Less)) => {}
+                (Some(Ordering::Equal), Some(Ordering::Equal)) => {}
+                _ => panic!(
+                    "Ordering symmetry violated: {:?} vs {:?} gave {:?} vs {:?}",
+                    a, b, a_cmp_b, b_cmp_a
+                ),
+            }
+        }
+    }
+
+    #[test]
     fn test_version_cmp_directly() {
         use std::cmp::Ordering;
 
