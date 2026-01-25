@@ -4019,4 +4019,353 @@ mod tests {
             assert!(txn.json_delete(&key, &path).is_err());
         }
     }
+
+    // ========================================================================
+    // ADVERSARIAL TESTS - Bug Hunting
+    // ========================================================================
+
+    mod adversarial_tests {
+        use super::*;
+        use strata_core::types::{Key, Namespace, RunId, TypeTag};
+        use strata_core::value::Value;
+
+        fn create_test_key(run_id: RunId, name: &str) -> Key {
+            let ns = Namespace::for_run(run_id);
+            Key::new(ns, TypeTag::KV, name.as_bytes().to_vec())
+        }
+
+        fn create_test_txn() -> TransactionContext {
+            let run_id = RunId::new();
+            TransactionContext::new(1, run_id, 0)
+        }
+
+        /// BUG HUNT: Double mark_validating from Active state
+        ///
+        /// Can we call mark_validating twice? What happens?
+        #[test]
+        fn test_double_mark_validating() {
+            let mut txn = create_test_txn();
+
+            // First mark_validating should succeed
+            assert!(txn.mark_validating().is_ok());
+            assert!(matches!(txn.status, TransactionStatus::Validating));
+
+            // Second mark_validating should fail (not Active anymore)
+            let result = txn.mark_validating();
+            assert!(result.is_err(), "Should not be able to mark_validating twice");
+        }
+
+        /// BUG HUNT: Commit from Active state (bypassing validation)
+        ///
+        /// What happens if we try to commit directly from Active?
+        #[test]
+        fn test_commit_from_active_state_fails() {
+            let mut txn = create_test_txn();
+
+            // Try to mark_committed from Active (should fail)
+            let result = txn.mark_committed();
+            assert!(result.is_err(), "Cannot commit from Active state");
+            assert!(txn.is_active(), "Transaction should still be Active");
+        }
+
+        /// BUG HUNT: Abort already committed transaction
+        #[test]
+        fn test_abort_committed_transaction_fails() {
+            let mut txn = create_test_txn();
+
+            // Go through proper state machine
+            txn.mark_validating().unwrap();
+            txn.mark_committed().unwrap();
+
+            // Try to abort committed transaction
+            let result = txn.mark_aborted("late abort".to_string());
+            assert!(result.is_err(), "Cannot abort committed transaction");
+        }
+
+        /// BUG HUNT: Double abort
+        #[test]
+        fn test_double_abort_fails() {
+            let mut txn = create_test_txn();
+
+            // First abort succeeds
+            assert!(txn.mark_aborted("first".to_string()).is_ok());
+
+            // Second abort fails
+            let result = txn.mark_aborted("second".to_string());
+            assert!(result.is_err(), "Cannot abort twice");
+        }
+
+        /// BUG HUNT: Operations on Validating transaction
+        ///
+        /// Once validating, no more operations should be allowed.
+        #[test]
+        fn test_operations_blocked_during_validating() {
+            let run_id = RunId::new();
+            let mut txn = TransactionContext::new(1, run_id, 0);
+            let key = create_test_key(run_id, "test");
+
+            txn.mark_validating().unwrap();
+
+            // All operations should fail
+            assert!(txn.put(key.clone(), Value::Int(1)).is_err());
+            assert!(txn.delete(key.clone()).is_err());
+            assert!(txn.cas(key.clone(), 0, Value::Int(1)).is_err());
+            // get() also requires Active state
+            assert!(txn.get(&key).is_err());
+        }
+
+        /// BUG HUNT: Operations on Committed transaction
+        #[test]
+        fn test_operations_blocked_after_commit() {
+            let run_id = RunId::new();
+            let mut txn = TransactionContext::new(1, run_id, 0);
+            let key = create_test_key(run_id, "test");
+
+            txn.mark_validating().unwrap();
+            txn.mark_committed().unwrap();
+
+            // All operations should fail
+            assert!(txn.put(key.clone(), Value::Int(1)).is_err());
+            assert!(txn.delete(key.clone()).is_err());
+            assert!(txn.cas(key.clone(), 0, Value::Int(1)).is_err());
+        }
+
+        /// BUG HUNT: Read-your-writes with same key overwritten multiple times
+        #[test]
+        fn test_read_your_writes_multiple_overwrites() {
+            let run_id = RunId::new();
+            let mut txn = TransactionContext::new(1, run_id, 0);
+            let key = create_test_key(run_id, "counter");
+
+            // Write multiple times
+            txn.put(key.clone(), Value::Int(1)).unwrap();
+            assert_eq!(txn.get(&key).unwrap(), Some(Value::Int(1)));
+
+            txn.put(key.clone(), Value::Int(2)).unwrap();
+            assert_eq!(txn.get(&key).unwrap(), Some(Value::Int(2)));
+
+            txn.put(key.clone(), Value::Int(3)).unwrap();
+            assert_eq!(txn.get(&key).unwrap(), Some(Value::Int(3)));
+
+            // Final value should be 3
+            assert_eq!(txn.write_set.get(&key), Some(&Value::Int(3)));
+        }
+
+        /// BUG HUNT: Delete then put same key
+        #[test]
+        fn test_delete_then_put_same_key() {
+            let run_id = RunId::new();
+            let mut txn = TransactionContext::new(1, run_id, 0);
+            let key = create_test_key(run_id, "toggle");
+
+            // Put a value
+            txn.put(key.clone(), Value::Int(1)).unwrap();
+            assert_eq!(txn.get(&key).unwrap(), Some(Value::Int(1)));
+
+            // Delete it
+            txn.delete(key.clone()).unwrap();
+            assert_eq!(txn.get(&key).unwrap(), None);
+
+            // Put again
+            txn.put(key.clone(), Value::Int(2)).unwrap();
+            assert_eq!(txn.get(&key).unwrap(), Some(Value::Int(2)));
+
+            // Key should be in write_set and NOT in delete_set
+            assert!(txn.write_set.contains_key(&key));
+            assert!(!txn.delete_set.contains(&key));
+        }
+
+        /// BUG HUNT: Put then delete same key
+        #[test]
+        fn test_put_then_delete_same_key() {
+            let run_id = RunId::new();
+            let mut txn = TransactionContext::new(1, run_id, 0);
+            let key = create_test_key(run_id, "ephemeral");
+
+            // Put a value
+            txn.put(key.clone(), Value::Int(1)).unwrap();
+
+            // Delete it
+            txn.delete(key.clone()).unwrap();
+
+            // Key should be in delete_set and NOT in write_set
+            assert!(!txn.write_set.contains_key(&key));
+            assert!(txn.delete_set.contains(&key));
+
+            // Read should return None
+            assert_eq!(txn.get(&key).unwrap(), None);
+        }
+
+        /// BUG HUNT: CAS on write_set key (should use write_set value, not storage)
+        #[test]
+        fn test_cas_after_put_same_transaction() {
+            let run_id = RunId::new();
+            let mut txn = TransactionContext::new(1, run_id, 0);
+            let key = create_test_key(run_id, "cas_test");
+
+            // Put a value (this goes to write_set)
+            txn.put(key.clone(), Value::Int(100)).unwrap();
+
+            // CAS with expected_version=0 (as if key doesn't exist in storage)
+            // This should succeed because CAS validates against STORAGE, not write_set
+            // The CAS operation is added to cas_set for validation at commit time
+            let result = txn.cas(key.clone(), 0, Value::Int(200));
+            assert!(result.is_ok());
+
+            // Both operations are in their respective sets
+            assert!(txn.write_set.contains_key(&key));
+            assert!(!txn.cas_set.is_empty());
+        }
+
+        /// BUG HUNT: Very large read_set
+        #[test]
+        fn test_large_read_set() {
+            let run_id = RunId::new();
+            let mut txn = TransactionContext::new(1, run_id, 0);
+
+            // Add many reads (simulating tracking many keys)
+            for i in 0..10000 {
+                let key = create_test_key(run_id, &format!("key{}", i));
+                // Directly add to read_set since we don't have a snapshot
+                txn.read_set.insert(key, i as u64);
+            }
+
+            assert_eq!(txn.read_set.len(), 10000);
+
+            // Transaction should still work
+            assert!(txn.is_active());
+            assert!(txn.mark_validating().is_ok());
+        }
+
+        /// BUG HUNT: Transaction with no snapshot trying to read
+        #[test]
+        fn test_read_without_snapshot_fails() {
+            let run_id = RunId::new();
+            let mut txn = TransactionContext::new(1, run_id, 0);
+            let key = create_test_key(run_id, "test");
+
+            // Put works (goes to write_set)
+            assert!(txn.put(key.clone(), Value::Int(1)).is_ok());
+
+            // Read from write_set works
+            assert_eq!(txn.get(&key).unwrap(), Some(Value::Int(1)));
+
+            // But reading a key NOT in write_set fails (no snapshot)
+            let other_key = create_test_key(run_id, "other");
+            let result = txn.get(&other_key);
+            assert!(result.is_err(), "Read without snapshot should fail");
+        }
+
+        /// BUG HUNT: PendingOperations counts
+        #[test]
+        fn test_pending_operations_counts() {
+            let run_id = RunId::new();
+            let mut txn = TransactionContext::new(1, run_id, 0);
+
+            // Initially empty
+            let pending = txn.pending_operations();
+            assert!(pending.is_empty());
+            assert_eq!(pending.total(), 0);
+
+            // Add some operations
+            let key1 = create_test_key(run_id, "k1");
+            let key2 = create_test_key(run_id, "k2");
+            let key3 = create_test_key(run_id, "k3");
+
+            txn.put(key1, Value::Int(1)).unwrap();
+            txn.delete(key2).unwrap();
+            txn.cas(key3, 0, Value::Int(1)).unwrap();
+
+            let pending = txn.pending_operations();
+            assert_eq!(pending.puts, 1);
+            assert_eq!(pending.deletes, 1);
+            assert_eq!(pending.cas, 1);
+            assert_eq!(pending.total(), 3);
+            assert!(!pending.is_empty());
+        }
+
+        /// BUG HUNT: Abort clears all buffered operations
+        #[test]
+        fn test_abort_clears_all_operations() {
+            let run_id = RunId::new();
+            let mut txn = TransactionContext::new(1, run_id, 0);
+
+            // Add operations
+            let key1 = create_test_key(run_id, "k1");
+            let key2 = create_test_key(run_id, "k2");
+            let key3 = create_test_key(run_id, "k3");
+
+            txn.put(key1, Value::Int(1)).unwrap();
+            txn.delete(key2).unwrap();
+            txn.cas(key3, 0, Value::Int(1)).unwrap();
+
+            // Verify operations are buffered
+            assert!(!txn.write_set.is_empty());
+            assert!(!txn.delete_set.is_empty());
+            assert!(!txn.cas_set.is_empty());
+
+            // Abort
+            txn.mark_aborted("test".to_string()).unwrap();
+
+            // All operations should be cleared
+            assert!(txn.write_set.is_empty(), "write_set should be cleared");
+            assert!(txn.delete_set.is_empty(), "delete_set should be cleared");
+            assert!(txn.cas_set.is_empty(), "cas_set should be cleared");
+        }
+
+        /// BUG HUNT: can_rollback state checks
+        #[test]
+        fn test_can_rollback_states() {
+            // Active can rollback
+            let mut txn1 = create_test_txn();
+            assert!(txn1.can_rollback());
+
+            // Validating can rollback
+            let mut txn2 = create_test_txn();
+            txn2.mark_validating().unwrap();
+            assert!(txn2.can_rollback());
+
+            // Committed cannot rollback
+            let mut txn3 = create_test_txn();
+            txn3.mark_validating().unwrap();
+            txn3.mark_committed().unwrap();
+            assert!(!txn3.can_rollback());
+
+            // Aborted cannot rollback (already rolled back)
+            let mut txn4 = create_test_txn();
+            txn4.mark_aborted("test".to_string()).unwrap();
+            assert!(!txn4.can_rollback());
+        }
+
+        /// BUG HUNT: is_read_only edge cases
+        #[test]
+        fn test_is_read_only_edge_cases() {
+            let run_id = RunId::new();
+            let key = create_test_key(run_id, "test");
+
+            // Empty transaction is read-only
+            let txn1 = TransactionContext::new(1, run_id, 0);
+            assert!(txn1.is_read_only());
+
+            // Transaction with only reads is read-only
+            let mut txn2 = TransactionContext::new(2, run_id, 0);
+            txn2.read_set.insert(key.clone(), 1);
+            assert!(txn2.is_read_only());
+
+            // Transaction with write is not read-only
+            let mut txn3 = TransactionContext::new(3, run_id, 0);
+            txn3.put(key.clone(), Value::Int(1)).unwrap();
+            assert!(!txn3.is_read_only());
+
+            // Transaction with delete is not read-only
+            let mut txn4 = TransactionContext::new(4, run_id, 0);
+            txn4.delete(key.clone()).unwrap();
+            assert!(!txn4.is_read_only());
+
+            // Transaction with CAS is not read-only
+            let mut txn5 = TransactionContext::new(5, run_id, 0);
+            txn5.cas(key.clone(), 0, Value::Int(1)).unwrap();
+            assert!(!txn5.is_read_only());
+        }
+    }
 }
