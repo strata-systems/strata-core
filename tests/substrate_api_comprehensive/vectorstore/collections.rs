@@ -59,9 +59,8 @@ fn test_vector_collection_info() {
         db.vector_create_collection(&run, collection, 256, DistanceMetric::Cosine).unwrap();
 
         let info = db.vector_collection_info(&run, collection).unwrap().unwrap();
-        let (dimension, count, _metric) = info;
-        assert_eq!(dimension, 256);
-        assert_eq!(count, 0); // No vectors yet
+        assert_eq!(info.dimension, 256);
+        assert_eq!(info.count, 0); // No vectors yet
 
         // Add vectors and check count
         let vec: Vec<f32> = (0..256).map(|i| i as f32 / 256.0).collect();
@@ -69,8 +68,7 @@ fn test_vector_collection_info() {
         db.vector_upsert(&run, collection, "v2", &vec, None).unwrap();
 
         let info = db.vector_collection_info(&run, collection).unwrap().unwrap();
-        let (_, count, _) = info;
-        assert_eq!(count, 2);
+        assert_eq!(info.count, 2);
     });
 }
 
@@ -169,13 +167,13 @@ fn test_vector_explicit_vs_implicit_creation() {
         // Explicit creation
         db.vector_create_collection(&run, "explicit", 100, DistanceMetric::Cosine).unwrap();
         let info = db.vector_collection_info(&run, "explicit").unwrap().unwrap();
-        assert_eq!(info.0, 100);
+        assert_eq!(info.dimension, 100);
 
         // Implicit creation via insert
         let vec50: Vec<f32> = vec![0.0; 50];
         db.vector_upsert(&run, "implicit", "v", &vec50, None).unwrap();
         let info = db.vector_collection_info(&run, "implicit").unwrap().unwrap();
-        assert_eq!(info.0, 50);
+        assert_eq!(info.dimension, 50);
     });
 }
 
@@ -201,8 +199,8 @@ fn test_vector_collection_run_isolation() {
         // Both should exist independently
         let info1 = db.vector_collection_info(&run1, "isolated").unwrap().unwrap();
         let info2 = db.vector_collection_info(&run2, "isolated").unwrap().unwrap();
-        assert_eq!(info1.0, 32);
-        assert_eq!(info2.0, 64);
+        assert_eq!(info1.dimension, 32);
+        assert_eq!(info2.dimension, 64);
     });
 }
 
@@ -224,6 +222,49 @@ fn test_vector_recreate_after_drop() {
         db.vector_create_collection(&run, collection, 64, DistanceMetric::Euclidean).unwrap();
 
         let info = db.vector_collection_info(&run, collection).unwrap().unwrap();
-        assert_eq!(info.0, 64);
+        assert_eq!(info.dimension, 64);
+    });
+}
+
+/// Test vector_count method
+#[test]
+fn test_vector_count() {
+    test_across_substrate_modes(|db| {
+        let run = ApiRunId::default_run_id();
+        let collection = "count_test";
+
+        // Non-existent collection returns 0
+        assert_eq!(db.vector_count(&run, "nonexistent").unwrap(), 0);
+
+        // Create collection
+        db.vector_create_collection(&run, collection, 3, DistanceMetric::Cosine).unwrap();
+        assert_eq!(db.vector_count(&run, collection).unwrap(), 0);
+
+        // Add vectors
+        db.vector_upsert(&run, collection, "v1", &[1.0, 0.0, 0.0], None).unwrap();
+        assert_eq!(db.vector_count(&run, collection).unwrap(), 1);
+
+        db.vector_upsert(&run, collection, "v2", &[0.0, 1.0, 0.0], None).unwrap();
+        db.vector_upsert(&run, collection, "v3", &[0.0, 0.0, 1.0], None).unwrap();
+        assert_eq!(db.vector_count(&run, collection).unwrap(), 3);
+
+        // Upsert existing key doesn't increase count
+        db.vector_upsert(&run, collection, "v1", &[0.5, 0.5, 0.0], None).unwrap();
+        assert_eq!(db.vector_count(&run, collection).unwrap(), 3);
+
+        // Delete decreases count
+        db.vector_delete(&run, collection, "v2").unwrap();
+        assert_eq!(db.vector_count(&run, collection).unwrap(), 2);
+    });
+}
+
+/// Test vector_count is blocked for internal collections
+#[test]
+fn test_vector_count_internal_blocked() {
+    test_across_substrate_modes(|db| {
+        let run = ApiRunId::default_run_id();
+
+        let result = db.vector_count(&run, "_internal");
+        assert!(result.is_err(), "vector_count should be blocked for internal collections");
     });
 }

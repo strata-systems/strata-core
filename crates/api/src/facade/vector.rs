@@ -24,6 +24,17 @@ pub struct VectorResult {
     pub metadata: Value,
 }
 
+/// Vector collection summary
+#[derive(Debug, Clone)]
+pub struct VectorCollectionSummary {
+    /// Collection name
+    pub name: String,
+    /// Vector dimension
+    pub dimension: usize,
+    /// Number of vectors in the collection
+    pub count: u64,
+}
+
 /// Search options
 #[derive(Debug, Clone, Default)]
 pub struct VectorSearchOptions {
@@ -96,6 +107,12 @@ pub trait VectorFacade {
     /// Returns `None` if key doesn't exist.
     fn vget(&self, collection: &str, key: &str) -> StrataResult<Option<(Vec<f32>, Value)>>;
 
+    /// Get a vector by key with version information
+    ///
+    /// Returns `None` if key doesn't exist.
+    /// Returns (vector, metadata, version) if key exists.
+    fn vgetv(&self, collection: &str, key: &str) -> StrataResult<Option<(Vec<f32>, Value, u64)>>;
+
     /// Delete a vector
     ///
     /// Returns `true` if the vector existed.
@@ -141,6 +158,129 @@ pub trait VectorFacade {
     ///
     /// Removes the collection and all its vectors.
     fn vcollection_drop(&self, collection: &str) -> StrataResult<bool>;
+
+    /// List all collections
+    ///
+    /// Returns a list of collection names with their dimension and count.
+    fn vcollection_list(&self) -> StrataResult<Vec<VectorCollectionSummary>>;
+
+    /// Get the count of vectors in a collection
+    ///
+    /// Returns 0 if the collection doesn't exist.
+    fn vcount(&self, collection: &str) -> StrataResult<u64>;
+
+    // =========================================================================
+    // Batch Operations
+    // =========================================================================
+
+    /// Add or update multiple vectors
+    ///
+    /// More efficient than calling `vadd` multiple times.
+    ///
+    /// ## Parameters
+    /// - `collection`: Collection name
+    /// - `vectors`: Vector of (key, vector, metadata) tuples
+    ///
+    /// ## Returns
+    /// Number of vectors successfully added/updated.
+    ///
+    /// ## Example
+    /// ```ignore
+    /// let vectors = vec![
+    ///     ("doc:1", vec![0.1, 0.2, 0.3].as_slice(), None),
+    ///     ("doc:2", vec![0.4, 0.5, 0.6].as_slice(), Some(metadata)),
+    /// ];
+    /// let count = facade.vadd_batch("embeddings", vectors)?;
+    /// ```
+    fn vadd_batch(
+        &self,
+        collection: &str,
+        vectors: Vec<(&str, &[f32], Option<Value>)>,
+    ) -> StrataResult<usize>;
+
+    /// Get multiple vectors by key
+    ///
+    /// More efficient than calling `vget` multiple times.
+    ///
+    /// ## Parameters
+    /// - `collection`: Collection name
+    /// - `keys`: Keys to retrieve
+    ///
+    /// ## Returns
+    /// Vector of results in the same order as input keys.
+    /// Missing keys return `None`.
+    fn vget_batch(
+        &self,
+        collection: &str,
+        keys: &[&str],
+    ) -> StrataResult<Vec<Option<(Vec<f32>, Value)>>>;
+
+    /// Delete multiple vectors by key
+    ///
+    /// More efficient than calling `vdel` multiple times.
+    ///
+    /// ## Parameters
+    /// - `collection`: Collection name
+    /// - `keys`: Keys to delete
+    ///
+    /// ## Returns
+    /// Number of vectors that existed and were deleted.
+    fn vdel_batch(&self, collection: &str, keys: &[&str]) -> StrataResult<usize>;
+
+    /// Get version history for a vector
+    ///
+    /// Returns all historical versions of a vector, newest first.
+    ///
+    /// ## Parameters
+    /// - `collection`: Collection name
+    /// - `key`: Vector key
+    /// - `limit`: Maximum number of versions to return (None = all)
+    ///
+    /// ## Returns
+    /// Vector of (embedding, metadata, version) tuples in descending version order.
+    /// Empty if the key doesn't exist.
+    fn vhistory(
+        &self,
+        collection: &str,
+        key: &str,
+        limit: Option<usize>,
+    ) -> StrataResult<Vec<(Vec<f32>, Value, u64)>>;
+
+    /// List all vector keys in a collection
+    ///
+    /// Returns keys in lexicographical order with optional pagination.
+    ///
+    /// ## Parameters
+    /// - `collection`: Collection name
+    /// - `limit`: Maximum number of keys to return (None = all)
+    /// - `cursor`: Start from key greater than this (for pagination)
+    ///
+    /// ## Returns
+    /// Vector of keys in lexicographical order.
+    fn vlist(
+        &self,
+        collection: &str,
+        limit: Option<usize>,
+        cursor: Option<&str>,
+    ) -> StrataResult<Vec<String>>;
+
+    /// Scan vectors in a collection
+    ///
+    /// Returns vectors in lexicographical key order with optional pagination.
+    ///
+    /// ## Parameters
+    /// - `collection`: Collection name
+    /// - `limit`: Maximum number of vectors to return (None = all)
+    /// - `cursor`: Start from key greater than this (for pagination)
+    ///
+    /// ## Returns
+    /// Vector of (key, embedding, metadata) tuples in key order.
+    fn vscan(
+        &self,
+        collection: &str,
+        limit: Option<usize>,
+        cursor: Option<&str>,
+    ) -> StrataResult<Vec<(String, Vec<f32>, Value)>>;
 }
 
 // =============================================================================
@@ -181,6 +321,18 @@ impl VectorFacade for FacadeImpl {
     fn vget(&self, collection: &str, key: &str) -> StrataResult<Option<(Vec<f32>, Value)>> {
         let result = self.substrate().vector_get(self.default_run(), collection, key)?;
         Ok(result.map(|v| v.value))
+    }
+
+    fn vgetv(&self, collection: &str, key: &str) -> StrataResult<Option<(Vec<f32>, Value, u64)>> {
+        let result = self.substrate().vector_get(self.default_run(), collection, key)?;
+        Ok(result.map(|v| {
+            let version = match v.version {
+                strata_core::Version::Txn(txn) => txn,
+                strata_core::Version::Counter(c) => c,
+                strata_core::Version::Sequence(s) => s,
+            };
+            (v.value.0, v.value.1, version)
+        }))
     }
 
     fn vdel(&self, collection: &str, key: &str) -> StrataResult<bool> {
@@ -237,11 +389,141 @@ impl VectorFacade for FacadeImpl {
 
     fn vcollection_info(&self, collection: &str) -> StrataResult<Option<(usize, u64)>> {
         let info = self.substrate().vector_collection_info(self.default_run(), collection)?;
-        Ok(info.map(|(dim, count, _metric)| (dim, count)))
+        Ok(info.map(|i| (i.dimension, i.count)))
     }
 
     fn vcollection_drop(&self, collection: &str) -> StrataResult<bool> {
         self.substrate().vector_drop_collection(self.default_run(), collection)
+    }
+
+    fn vcollection_list(&self) -> StrataResult<Vec<VectorCollectionSummary>> {
+        let collections = self.substrate().vector_list_collections(self.default_run())?;
+        Ok(collections.into_iter().map(|c| VectorCollectionSummary {
+            name: c.name,
+            dimension: c.dimension,
+            count: c.count,
+        }).collect())
+    }
+
+    fn vcount(&self, collection: &str) -> StrataResult<u64> {
+        self.substrate().vector_count(self.default_run(), collection)
+    }
+
+    fn vadd_batch(
+        &self,
+        collection: &str,
+        vectors: Vec<(&str, &[f32], Option<Value>)>,
+    ) -> StrataResult<usize> {
+        if vectors.is_empty() {
+            return Ok(0);
+        }
+
+        // Ensure collection exists (using first vector's dimension)
+        let info = self.substrate().vector_collection_info(self.default_run(), collection)?;
+        if info.is_none() {
+            if let Some((_, first_vec, _)) = vectors.iter().find(|(_, v, _)| !v.is_empty()) {
+                let _version = self.substrate().vector_create_collection(
+                    self.default_run(),
+                    collection,
+                    first_vec.len(),
+                    DistanceMetric::Cosine,
+                )?;
+            }
+        }
+
+        let results = self.substrate().vector_upsert_batch(
+            self.default_run(),
+            collection,
+            vectors,
+        )?;
+
+        // Count successful inserts
+        Ok(results.into_iter().filter(|r| r.is_ok()).count())
+    }
+
+    fn vget_batch(
+        &self,
+        collection: &str,
+        keys: &[&str],
+    ) -> StrataResult<Vec<Option<(Vec<f32>, Value)>>> {
+        let results = self.substrate().vector_get_batch(
+            self.default_run(),
+            collection,
+            keys,
+        )?;
+
+        Ok(results
+            .into_iter()
+            .map(|opt| opt.map(|v| v.value))
+            .collect())
+    }
+
+    fn vdel_batch(&self, collection: &str, keys: &[&str]) -> StrataResult<usize> {
+        let results = self.substrate().vector_delete_batch(
+            self.default_run(),
+            collection,
+            keys,
+        )?;
+
+        // Count successful deletes (true = existed and was deleted)
+        Ok(results.into_iter().filter(|&deleted| deleted).count())
+    }
+
+    fn vhistory(
+        &self,
+        collection: &str,
+        key: &str,
+        limit: Option<usize>,
+    ) -> StrataResult<Vec<(Vec<f32>, Value, u64)>> {
+        let history = self.substrate().vector_history(
+            self.default_run(),
+            collection,
+            key,
+            limit,
+            None, // No before_version pagination in facade
+        )?;
+
+        Ok(history.into_iter().map(|v| {
+            let version = match v.version {
+                strata_core::Version::Txn(txn) => txn,
+                strata_core::Version::Counter(c) => c,
+                strata_core::Version::Sequence(s) => s,
+            };
+            (v.value.0, v.value.1, version)
+        }).collect())
+    }
+
+    fn vlist(
+        &self,
+        collection: &str,
+        limit: Option<usize>,
+        cursor: Option<&str>,
+    ) -> StrataResult<Vec<String>> {
+        self.substrate().vector_list_keys(
+            self.default_run(),
+            collection,
+            limit,
+            cursor,
+        )
+    }
+
+    fn vscan(
+        &self,
+        collection: &str,
+        limit: Option<usize>,
+        cursor: Option<&str>,
+    ) -> StrataResult<Vec<(String, Vec<f32>, Value)>> {
+        let results = self.substrate().vector_scan(
+            self.default_run(),
+            collection,
+            limit,
+            cursor,
+        )?;
+
+        Ok(results
+            .into_iter()
+            .map(|(key, (embedding, metadata))| (key, embedding, metadata))
+            .collect())
     }
 }
 

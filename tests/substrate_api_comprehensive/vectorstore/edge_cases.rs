@@ -344,18 +344,285 @@ fn test_vector_collection_count_accuracy() {
 
         // Create collection
         db.vector_create_collection(&run, collection, 4, DistanceMetric::Cosine).unwrap();
-        assert_eq!(db.vector_collection_info(&run, collection).unwrap().unwrap().1, 0);
+        assert_eq!(db.vector_collection_info(&run, collection).unwrap().unwrap().count, 0);
 
         // Add vectors
         for i in 0..10 {
             db.vector_upsert(&run, collection, &format!("v{}", i), &[1.0, 2.0, 3.0, 4.0], None).unwrap();
         }
-        assert_eq!(db.vector_collection_info(&run, collection).unwrap().unwrap().1, 10);
+        assert_eq!(db.vector_collection_info(&run, collection).unwrap().unwrap().count, 10);
 
         // Delete some
         for i in 0..5 {
             db.vector_delete(&run, collection, &format!("v{}", i)).unwrap();
         }
-        assert_eq!(db.vector_collection_info(&run, collection).unwrap().unwrap().1, 5);
+        assert_eq!(db.vector_collection_info(&run, collection).unwrap().unwrap().count, 5);
+    });
+}
+
+// =============================================================================
+// INTERNAL COLLECTION BLOCKING TESTS (Phase 0)
+// =============================================================================
+
+/// Test that internal collections (prefixed with '_') are blocked for upsert
+#[test]
+fn test_vector_internal_collection_upsert_blocked() {
+    test_across_substrate_modes(|db| {
+        let run = ApiRunId::default_run_id();
+
+        // Internal collection names should be blocked
+        let internal_names = vec![
+            "_internal",
+            "_json_embeddings",
+            "_system",
+            "_reserved",
+        ];
+
+        for name in internal_names {
+            let result = db.vector_upsert(&run, name, "v", &[1.0, 2.0], None);
+            assert!(result.is_err(), "Internal collection '{}' should be blocked for upsert", name);
+            let err_msg = format!("{:?}", result.unwrap_err());
+            assert!(err_msg.contains("internal") || err_msg.contains("reserved"),
+                "Error should mention internal/reserved: {}", err_msg);
+        }
+    });
+}
+
+/// Test that internal collections are blocked for create_collection
+#[test]
+fn test_vector_internal_collection_create_blocked() {
+    test_across_substrate_modes(|db| {
+        let run = ApiRunId::default_run_id();
+
+        let result = db.vector_create_collection(&run, "_internal", 128, DistanceMetric::Cosine);
+        assert!(result.is_err(), "Creating internal collection should be blocked");
+    });
+}
+
+/// Test that internal collections are blocked for get
+#[test]
+fn test_vector_internal_collection_get_blocked() {
+    test_across_substrate_modes(|db| {
+        let run = ApiRunId::default_run_id();
+
+        let result = db.vector_get(&run, "_internal", "key");
+        assert!(result.is_err(), "Getting from internal collection should be blocked");
+    });
+}
+
+/// Test that internal collections are blocked for delete
+#[test]
+fn test_vector_internal_collection_delete_blocked() {
+    test_across_substrate_modes(|db| {
+        let run = ApiRunId::default_run_id();
+
+        let result = db.vector_delete(&run, "_internal", "key");
+        assert!(result.is_err(), "Deleting from internal collection should be blocked");
+    });
+}
+
+/// Test that internal collections are blocked for search
+#[test]
+fn test_vector_internal_collection_search_blocked() {
+    test_across_substrate_modes(|db| {
+        let run = ApiRunId::default_run_id();
+
+        let result = db.vector_search(&run, "_internal", &[1.0, 2.0], 10, None, None);
+        assert!(result.is_err(), "Searching internal collection should be blocked");
+    });
+}
+
+/// Test that internal collections are blocked for drop_collection
+#[test]
+fn test_vector_internal_collection_drop_blocked() {
+    test_across_substrate_modes(|db| {
+        let run = ApiRunId::default_run_id();
+
+        let result = db.vector_drop_collection(&run, "_internal");
+        assert!(result.is_err(), "Dropping internal collection should be blocked");
+    });
+}
+
+/// Test that internal collections are blocked for collection_exists
+#[test]
+fn test_vector_internal_collection_exists_blocked() {
+    test_across_substrate_modes(|db| {
+        let run = ApiRunId::default_run_id();
+
+        let result = db.vector_collection_exists(&run, "_internal");
+        assert!(result.is_err(), "Checking existence of internal collection should be blocked");
+    });
+}
+
+/// Test that internal collections are blocked for collection_info
+#[test]
+fn test_vector_internal_collection_info_blocked() {
+    test_across_substrate_modes(|db| {
+        let run = ApiRunId::default_run_id();
+
+        let result = db.vector_collection_info(&run, "_internal");
+        assert!(result.is_err(), "Getting info of internal collection should be blocked");
+    });
+}
+
+/// Test that internal collections are hidden from list_collections
+/// Note: This tests that if internal collections exist (e.g., created by primitives directly),
+/// they are filtered out of the list_collections result.
+#[test]
+fn test_vector_internal_collections_hidden_from_list() {
+    test_across_substrate_modes(|db| {
+        let run = ApiRunId::default_run_id();
+
+        // Create some normal collections
+        db.vector_upsert(&run, "public1", "v", &[1.0, 2.0], None).unwrap();
+        db.vector_upsert(&run, "public2", "v", &[1.0, 2.0], None).unwrap();
+
+        // List collections - should only see public ones
+        let collections = db.vector_list_collections(&run).unwrap();
+
+        // Verify no internal collections are listed
+        for info in &collections {
+            assert!(!info.name.starts_with('_'),
+                "Internal collection '{}' should not be listed", info.name);
+        }
+
+        // Verify public collections are listed
+        let names: Vec<&str> = collections.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"public1"), "public1 should be listed");
+        assert!(names.contains(&"public2"), "public2 should be listed");
+    });
+}
+
+/// Test that normal collections (not prefixed with '_') still work
+#[test]
+fn test_vector_normal_collections_work() {
+    test_across_substrate_modes(|db| {
+        let run = ApiRunId::default_run_id();
+
+        // Edge case: collection names that are almost internal but not
+        let valid_names = vec![
+            "underscore_in_middle",
+            "trailing_",
+            "a_b_c",
+            "not_internal",
+        ];
+
+        for name in valid_names {
+            let result = db.vector_upsert(&run, name, "v", &[1.0, 2.0], None);
+            assert!(result.is_ok(), "Collection '{}' should be allowed", name);
+        }
+    });
+}
+
+// =============================================================================
+// SOURCE REFERENCE TESTS (Phase 0)
+// =============================================================================
+
+/// Test vector_upsert_with_source stores and retrieves source reference
+#[test]
+fn test_vector_upsert_with_source_basic() {
+    test_across_substrate_modes(|db| {
+        let run = ApiRunId::default_run_id();
+        let collection = "source_ref_test";
+        let key = "vec_with_source";
+        let vector = vec![1.0, 2.0, 3.0];
+
+        // Create a source reference (simulating a KV entry)
+        let source_ref = strata_core::EntityRef::kv(run.to_run_id(), "my_source_key");
+
+        // Upsert with source reference
+        let version = db.vector_upsert_with_source(
+            &run,
+            collection,
+            key,
+            &vector,
+            None,
+            Some(source_ref.clone()),
+        ).unwrap();
+
+        assert!(matches!(version, Version::Txn(_) | Version::Counter(_)));
+
+        // Verify vector was stored
+        let result = db.vector_get(&run, collection, key).unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().value.0, vector);
+    });
+}
+
+/// Test vector_upsert_with_source with metadata
+#[test]
+fn test_vector_upsert_with_source_and_metadata() {
+    test_across_substrate_modes(|db| {
+        let run = ApiRunId::default_run_id();
+        let collection = "source_meta_test";
+        let key = "vec_source_meta";
+        let vector = vec![0.5, 0.5, 0.5];
+        let metadata = obj([
+            ("category", Value::String("test".to_string())),
+        ]);
+
+        // Use KV entity reference which accepts a string directly
+        let source_ref = strata_core::EntityRef::kv(run.to_run_id(), "source_key");
+
+        // Upsert with source reference and metadata
+        db.vector_upsert_with_source(
+            &run,
+            collection,
+            key,
+            &vector,
+            Some(metadata.clone()),
+            Some(source_ref),
+        ).unwrap();
+
+        // Verify both vector and metadata stored
+        let result = db.vector_get(&run, collection, key).unwrap().unwrap();
+        assert_eq!(result.value.0, vector);
+        assert!(result.value.1.is_object());
+    });
+}
+
+/// Test vector_upsert_with_source with None source_ref
+#[test]
+fn test_vector_upsert_with_source_none() {
+    test_across_substrate_modes(|db| {
+        let run = ApiRunId::default_run_id();
+        let collection = "source_none_test";
+        let key = "vec_no_source";
+        let vector = vec![1.0, 2.0, 3.0];
+
+        // Upsert with None source reference (same as regular upsert)
+        db.vector_upsert_with_source(
+            &run,
+            collection,
+            key,
+            &vector,
+            None,
+            None,
+        ).unwrap();
+
+        // Verify vector was stored
+        let result = db.vector_get(&run, collection, key).unwrap();
+        assert!(result.is_some());
+    });
+}
+
+/// Test that source reference is blocked for internal collections
+#[test]
+fn test_vector_upsert_with_source_internal_blocked() {
+    test_across_substrate_modes(|db| {
+        let run = ApiRunId::default_run_id();
+        // Use KV entity reference which accepts a string directly
+        let source_ref = strata_core::EntityRef::kv(run.to_run_id(), "doc");
+
+        let result = db.vector_upsert_with_source(
+            &run,
+            "_internal",
+            "key",
+            &[1.0, 2.0],
+            None,
+            Some(source_ref),
+        );
+
+        assert!(result.is_err(), "upsert_with_source should be blocked for internal collections");
     });
 }

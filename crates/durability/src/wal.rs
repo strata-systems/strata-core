@@ -249,6 +249,13 @@ pub enum WALEntry {
         metadata: Option<Vec<u8>>,
         /// Version assigned
         version: u64,
+        /// Optional reference to source document (e.g., JSON doc, KV entry)
+        ///
+        /// Used by internal search infrastructure to link embeddings back to
+        /// their source documents for hydration during search result assembly.
+        /// Backwards compatible: old WAL entries without this field default to None.
+        #[serde(default)]
+        source_ref: Option<strata_core::EntityRef>,
     },
 
     /// Vector delete (0x73)

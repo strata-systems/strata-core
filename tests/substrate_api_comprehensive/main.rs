@@ -29,12 +29,22 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 
 use strata_api::substrate::{ApiRunId, EventLog, JsonStore, KVStore, KVStoreBatch, RunIndex, StateCell, SubstrateImpl, VectorStore};
 use strata_core::{Value, Version};
 use strata_engine::Database;
+use strata_primitives::register_vector_recovery;
 use tempfile::TempDir;
+
+// Ensure vector recovery is registered exactly once
+static INIT_VECTOR_RECOVERY: Once = Once::new();
+
+fn ensure_vector_recovery_registered() {
+    INIT_VECTOR_RECOVERY.call_once(|| {
+        register_vector_recovery();
+    });
+}
 
 /// Helper to create Value::Object from a list of key-value pairs
 ///
@@ -61,6 +71,7 @@ pub mod test_data;
 pub mod eventlog;
 pub mod jsonstore;
 pub mod kv;
+pub mod runindex;
 pub mod statecell;
 pub mod vectorstore;
 
@@ -273,7 +284,12 @@ where
 }
 
 /// Create a persistent database at the given path
+///
+/// Ensures vector recovery is registered before opening the database.
 pub fn create_persistent_db(path: &std::path::Path) -> SubstrateImpl {
+    // Ensure vector recovery participant is registered before opening
+    ensure_vector_recovery_registered();
+
     let db = Arc::new(
         Database::builder()
             .path(path)

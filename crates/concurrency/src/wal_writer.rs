@@ -196,6 +196,7 @@ impl<'a> TransactionWALWriter<'a> {
     /// * `embedding` - Full embedding data
     /// * `metadata` - Optional metadata (MessagePack serialized)
     /// * `version` - Commit version
+    /// * `source_ref` - Optional reference to source document
     pub fn write_vector_upsert(
         &mut self,
         collection: String,
@@ -204,6 +205,7 @@ impl<'a> TransactionWALWriter<'a> {
         embedding: Vec<f32>,
         metadata: Option<Vec<u8>>,
         version: u64,
+        source_ref: Option<strata_core::EntityRef>,
     ) -> Result<()> {
         let entry = WALEntry::VectorUpsert {
             run_id: self.run_id,
@@ -213,6 +215,7 @@ impl<'a> TransactionWALWriter<'a> {
             embedding,
             metadata,
             version,
+            source_ref,
         };
         self.wal.append(&entry)?;
         Ok(())

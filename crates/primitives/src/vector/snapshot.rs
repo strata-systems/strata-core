@@ -312,8 +312,8 @@ impl VectorStore {
                     None
                 };
 
-                // Store VectorRecord in KV (key -> vector_id + metadata mapping)
-                let record = VectorRecord::new(vector_id, metadata);
+                // Store VectorRecord in KV (includes embedding for history support)
+                let record = VectorRecord::new(vector_id, embedding.clone(), metadata);
                 let kv_key = self.vector_key_internal(header.run_id, &header.name, &key);
                 let record_bytes = record.to_bytes()?;
                 self.db()

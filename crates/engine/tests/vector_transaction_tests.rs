@@ -517,6 +517,7 @@ fn test_wal_replayer() {
             VectorId::new(1),
             &[1.0, 0.0, 0.0],
             None,
+            None,
         )
         .unwrap();
 
@@ -528,6 +529,7 @@ fn test_wal_replayer() {
             VectorId::new(2),
             &[0.0, 1.0, 0.0],
             None,
+            None,
         )
         .unwrap();
 
@@ -538,6 +540,7 @@ fn test_wal_replayer() {
             "key3",
             VectorId::new(3),
             &[0.0, 0.0, 1.0],
+            None,
             None,
         )
         .unwrap();
@@ -583,6 +586,7 @@ fn test_replay_maintains_id_ordering() {
             VectorId::new(1),
             &[1.0, 0.0, 0.0, 0.0],
             None,
+            None,
         )
         .unwrap();
 
@@ -594,6 +598,7 @@ fn test_replay_maintains_id_ordering() {
             VectorId::new(5),
             &[0.0, 1.0, 0.0, 0.0],
             None,
+            None,
         )
         .unwrap();
 
@@ -604,6 +609,7 @@ fn test_replay_maintains_id_ordering() {
             "c",
             VectorId::new(100),
             &[0.0, 0.0, 1.0, 0.0],
+            None,
             None,
         )
         .unwrap();

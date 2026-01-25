@@ -17,7 +17,7 @@
 //!    replaying from WAL). Normal operations use the VectorStore methods which write WAL.
 
 use crate::vector::{VectorConfig, VectorConfigSerde, VectorError, VectorId, VectorResult};
-use strata_core::RunId;
+use strata_core::{EntityRef, RunId};
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -79,6 +79,13 @@ pub struct WalVectorUpsert {
     pub metadata: Option<serde_json::Value>,
     /// Timestamp of operation (microseconds since epoch)
     pub timestamp: u64,
+    /// Optional reference to source document (e.g., JSON doc, KV entry)
+    ///
+    /// Used by internal search infrastructure to link embeddings back to
+    /// their source documents for hydration during search result assembly.
+    /// Backwards compatible: old WAL entries without this field will deserialize as None.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_ref: Option<EntityRef>,
 }
 
 /// WAL payload for vector deletion
@@ -203,6 +210,32 @@ pub fn create_wal_upsert(
         embedding: embedding.to_vec(),
         metadata,
         timestamp: now_micros(),
+        source_ref: None,
+    }
+}
+
+/// Create a WalVectorUpsert payload with a source reference
+///
+/// Use this when the embedding is derived from another entity (e.g., a JSON document)
+/// and you want to maintain a link back to the source for search result hydration.
+pub fn create_wal_upsert_with_source(
+    run_id: RunId,
+    collection: &str,
+    key: &str,
+    vector_id: VectorId,
+    embedding: &[f32],
+    metadata: Option<serde_json::Value>,
+    source_ref: Option<EntityRef>,
+) -> WalVectorUpsert {
+    WalVectorUpsert {
+        run_id,
+        collection: collection.to_string(),
+        key: key.to_string(),
+        vector_id: vector_id.as_u64(),
+        embedding: embedding.to_vec(),
+        metadata,
+        timestamp: now_micros(),
+        source_ref,
     }
 }
 
@@ -276,6 +309,7 @@ impl<'a> VectorWalReplayer<'a> {
                     VectorId::new(wal.vector_id),
                     &wal.embedding,
                     wal.metadata,
+                    wal.source_ref,
                 )
             }
             WalEntryType::VectorDelete => {

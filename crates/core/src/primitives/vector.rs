@@ -3,6 +3,7 @@
 //! These types define the structure of vector embeddings and search results.
 //! Implementation logic (distance calculations, indexing, ANN) remains in primitives.
 
+use crate::contract::EntityRef;
 use crate::error::StrataError;
 use crate::types::RunId;
 use serde::{Deserialize, Serialize};
@@ -219,6 +220,13 @@ pub struct VectorEntry {
 
     /// Version for optimistic concurrency
     pub version: u64,
+
+    /// Optional reference to source document (e.g., JSON doc, KV entry)
+    ///
+    /// Used by internal search infrastructure to link embeddings back to
+    /// their source documents for hydration during search result assembly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_ref: Option<EntityRef>,
 }
 
 impl VectorEntry {
@@ -235,6 +243,28 @@ impl VectorEntry {
             metadata,
             vector_id,
             version: 1,
+            source_ref: None,
+        }
+    }
+
+    /// Create a new VectorEntry with a source reference
+    ///
+    /// Use this when the embedding is derived from another entity (e.g., a JSON document)
+    /// and you want to maintain a link back to the source for search result hydration.
+    pub fn new_with_source(
+        key: String,
+        embedding: Vec<f32>,
+        metadata: Option<serde_json::Value>,
+        vector_id: VectorId,
+        source_ref: EntityRef,
+    ) -> Self {
+        VectorEntry {
+            key,
+            embedding,
+            metadata,
+            vector_id,
+            version: 1,
+            source_ref: Some(source_ref),
         }
     }
 
@@ -251,6 +281,11 @@ impl VectorEntry {
     /// Get the vector ID
     pub fn vector_id(&self) -> VectorId {
         self.vector_id
+    }
+
+    /// Get the source reference, if any
+    pub fn source_ref(&self) -> Option<&EntityRef> {
+        self.source_ref.as_ref()
     }
 }
 
