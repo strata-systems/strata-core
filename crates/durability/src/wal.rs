@@ -812,13 +812,15 @@ impl WAL {
                     }
                     Err(Error::Corruption(msg)) => {
                         // CRC mismatch or deserialization failure - actual corruption!
-                        // Unlike incomplete entries, corruption must be reported.
+                        // Return entries read so far and stop (conservative approach:
+                        // don't skip past corruption, return valid entries before it)
                         error!(
                             offset = file_offset,
                             error = %msg,
-                            "WAL corruption detected - data may be lost"
+                            entries_recovered = entries.len(),
+                            "WAL corruption detected - returning valid entries before corruption"
                         );
-                        return Err(Error::Corruption(msg));
+                        return Ok(entries);
                     }
                     Err(e) => {
                         // Other unexpected error - return it
