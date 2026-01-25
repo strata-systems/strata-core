@@ -71,6 +71,7 @@ pub mod test_data;
 pub mod eventlog;
 pub mod jsonstore;
 pub mod kv;
+pub mod runindex;
 pub mod statecell;
 pub mod vectorstore;
 

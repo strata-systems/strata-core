@@ -636,9 +636,11 @@ impl RunIndex {
             .ok_or_else(|| Error::InvalidOperation(format!("Run '{}' not found", run_id)))?
             .value;
 
-        // Parse run_id string to get actual RunId for namespace
-        let actual_run_id = RunId::from_string(&run_meta.run_id).ok_or_else(|| {
-            Error::InvalidOperation(format!("Invalid run_id format: {}", run_meta.run_id))
+        // Use run_meta.name (user-provided key) for namespace, not run_meta.run_id (internal UUID).
+        // Other primitives (KV, State, etc.) use the user-provided name/key for namespacing,
+        // so cascade delete must use the same identifier.
+        let actual_run_id = RunId::from_string(&run_meta.name).ok_or_else(|| {
+            Error::InvalidOperation(format!("Invalid run name format: {}", run_meta.name))
         })?;
 
         // First, delete all run-scoped data (cascading delete)
@@ -682,12 +684,21 @@ impl RunIndex {
     /// - KV entries
     /// - Events
     /// - State cells
+    /// - JSON documents
+    /// - Vector entries
     fn delete_run_data_internal(&self, run_id: RunId) -> Result<()> {
         let ns = Namespace::for_run(run_id);
 
         // Delete data for each type tag (including deprecated Trace for backwards compatibility)
         #[allow(deprecated)]
-        for type_tag in [TypeTag::KV, TypeTag::Event, TypeTag::State, TypeTag::Trace] {
+        for type_tag in [
+            TypeTag::KV,
+            TypeTag::Event,
+            TypeTag::State,
+            TypeTag::Trace,
+            TypeTag::Json,
+            TypeTag::Vector,
+        ] {
             self.db.transaction(run_id, |txn| {
                 let prefix = Key::new(ns.clone(), type_tag, vec![]);
                 let entries = txn.scan_prefix(&prefix)?;
