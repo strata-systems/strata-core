@@ -118,6 +118,7 @@ impl Strata {
             transactions_aborted: txn_metrics.total_aborted,
             transactions_active: txn_metrics.active_count,
             commit_rate: txn_metrics.commit_rate,
+            operations: txn_metrics.total_committed + txn_metrics.total_aborted,
         }
     }
 }
@@ -133,6 +134,8 @@ pub struct DatabaseMetrics {
     pub transactions_active: u64,
     /// Commit success rate (0.0 - 1.0)
     pub commit_rate: f64,
+    /// Total operations (commits + aborts)
+    pub operations: u64,
 }
 
 /// Builder for database configuration.
