@@ -152,13 +152,16 @@ impl VectorStore {
         self.db.durability_mode().requires_wal()
     }
 
-    /// Write a WAL entry (if not InMemory mode)
+    /// Write a WAL entry (if not InMemory mode and WAL exists)
     fn write_wal_entry(&self, entry: WALEntry) -> VectorResult<()> {
         if !self.requires_wal() {
             return Ok(());
         }
 
-        let wal = self.db.wal();
+        let wal = match self.db.wal() {
+            Some(w) => w,
+            None => return Ok(()), // Ephemeral database - no WAL
+        };
         let mut wal_guard = wal.lock();
         wal_guard
             .append(&entry)
@@ -191,7 +194,10 @@ impl VectorStore {
             return Ok(RecoveryStats::default());
         }
 
-        let wal = self.db.wal();
+        let wal = match self.db.wal() {
+            Some(w) => w,
+            None => return Ok(RecoveryStats::default()), // Ephemeral database - no recovery
+        };
         let wal_guard = wal.lock();
 
         // Read all WAL entries

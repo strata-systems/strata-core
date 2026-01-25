@@ -70,6 +70,46 @@ impl Strata {
         Self::builder().path(path).open()
     }
 
+    /// Create an ephemeral database with no disk I/O.
+    ///
+    /// This creates a truly in-memory database that:
+    /// - Creates no files or directories
+    /// - Has no WAL (write-ahead log)
+    /// - Cannot recover after crash
+    /// - Loses all data when dropped
+    ///
+    /// Use this for:
+    /// - Unit tests that need maximum isolation and speed
+    /// - Caching scenarios
+    /// - Temporary computations
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use stratadb::prelude::*;
+    ///
+    /// let db = Strata::ephemeral()?;
+    ///
+    /// // All operations work normally
+    /// db.kv.set("key", "value")?;
+    /// let value = db.kv.get("key")?;
+    ///
+    /// // But data is gone when db is dropped
+    /// drop(db);
+    /// ```
+    ///
+    /// # Comparison
+    ///
+    /// | Method | Disk Files | Recovery |
+    /// |--------|------------|----------|
+    /// | `Strata::ephemeral()` | None | No |
+    /// | `Strata::open_temp()` | Temp dir | Yes |
+    /// | `Strata::open(path)` | User dir | Yes |
+    pub fn ephemeral() -> Result<Self> {
+        let db = Arc::new(strata_engine::Database::ephemeral().map_err(Error::from)?);
+        Ok(Self::from_engine(db))
+    }
+
     /// Create a builder for database configuration.
     ///
     /// # Example
@@ -77,7 +117,7 @@ impl Strata {
     /// ```ignore
     /// let db = Strata::builder()
     ///     .path("./my-db")
-    ///     .in_memory()
+    ///     .no_durability()
     ///     .open()?;
     /// ```
     pub fn builder() -> StrataBuilder {
@@ -108,6 +148,13 @@ impl Strata {
     /// Get the current durability mode.
     pub fn durability_mode(&self) -> strata_engine::DurabilityMode {
         self.inner.durability_mode()
+    }
+
+    /// Check if this is an ephemeral (no-disk) database.
+    ///
+    /// Returns `true` if created with [`Strata::ephemeral()`].
+    pub fn is_ephemeral(&self) -> bool {
+        self.inner.is_ephemeral()
     }
 
     /// Get database metrics.
@@ -143,15 +190,19 @@ pub struct DatabaseMetrics {
 /// # Example
 ///
 /// ```ignore
+/// // Production: disk-backed with durability
 /// let db = Strata::builder()
 ///     .path("./my-db")
 ///     .buffered()  // Default, good for production
 ///     .open()?;
 ///
-/// // Or for testing
+/// // Integration testing: temp directory, no durability
 /// let db = Strata::builder()
-///     .in_memory()
+///     .no_durability()
 ///     .open_temp()?;
+///
+/// // Unit testing: truly ephemeral (no disk at all)
+/// let db = Strata::ephemeral()?;
 /// ```
 pub struct StrataBuilder {
     inner: strata_engine::DatabaseBuilder,
@@ -171,12 +222,34 @@ impl StrataBuilder {
         self
     }
 
-    /// Use in-memory mode (no persistence).
+    /// Use no-durability mode (no WAL sync, files still created).
     ///
-    /// Fastest mode. All data is lost on shutdown or crash.
-    /// Use for testing, caching, or ephemeral data.
+    /// This sets the WAL to skip fsync, providing fast writes.
+    /// **Note**: Disk files are still created. For truly file-free operation,
+    /// use [`Strata::ephemeral()`] instead.
+    ///
+    /// All data is lost on shutdown or crash.
+    /// Use for integration testing where you want file isolation but not durability.
+    pub fn no_durability(mut self) -> Self {
+        self.inner = self.inner.no_durability();
+        self
+    }
+
+    /// Deprecated: Use `no_durability()` instead.
+    ///
+    /// This method name was confusing because it only affects WAL sync behavior,
+    /// not storage location. Files are still created on disk.
+    ///
+    /// For truly in-memory operation with no disk files, use [`Strata::ephemeral()`].
+    #[deprecated(
+        since = "0.14.0",
+        note = "Use .no_durability() instead - this sets WAL mode, not storage location. For no disk files, use Strata::ephemeral()"
+    )]
     pub fn in_memory(mut self) -> Self {
-        self.inner = self.inner.in_memory();
+        #[allow(deprecated)]
+        {
+            self.inner = self.inner.in_memory();
+        }
         self
     }
 

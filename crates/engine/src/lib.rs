@@ -33,7 +33,7 @@ pub mod transaction;
 pub mod transaction_ops; // Story #473: TransactionOps Trait Definition
 
 pub use coordinator::{TransactionCoordinator, TransactionMetrics};
-pub use database::{Database, DatabaseBuilder, RetryConfig};
+pub use database::{Database, DatabaseBuilder, PersistenceMode, RetryConfig};
 pub use recovery_participant::{
     recover_all_participants, register_recovery_participant, RecoveryFn, RecoveryParticipant,
 };

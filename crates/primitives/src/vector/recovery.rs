@@ -47,7 +47,8 @@ fn recover_from_db(db: &Database) -> Result<()> {
     use std::collections::{HashMap, HashSet};
 
     // Skip if InMemory mode (no WAL)
-    if !db.durability_mode().requires_wal() {
+    // Skip recovery for ephemeral databases (no WAL)
+    if !db.durability_mode().requires_wal() || db.is_ephemeral() {
         return Ok(());
     }
 
@@ -56,7 +57,10 @@ fn recover_from_db(db: &Database) -> Result<()> {
     let factory = IndexBackendFactory::default();
 
     // Read all WAL entries
-    let wal = db.wal();
+    let wal = match db.wal() {
+        Some(w) => w,
+        None => return Ok(()), // Ephemeral database - no recovery needed
+    };
     let wal_guard = wal.lock();
     let entries = wal_guard
         .read_all()

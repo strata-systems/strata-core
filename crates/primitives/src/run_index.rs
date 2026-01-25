@@ -999,7 +999,11 @@ impl RunIndex {
     /// Get all WAL entries for a specific run
     fn get_wal_entries_for_run(&self, run_id: &RunId) -> RunBundleResult<Vec<WALEntry>> {
         // Lock WAL and read all entries
-        let wal = self.db.wal();
+        // For ephemeral databases, there's no WAL so we return an empty list
+        let wal = match self.db.wal() {
+            Some(w) => w,
+            None => return Ok(Vec::new()), // Ephemeral databases have no WAL entries
+        };
         let wal_guard = wal.lock();
 
         let all_entries = wal_guard.read_all().map_err(|e| {
@@ -1119,7 +1123,7 @@ impl RunIndex {
     /// Replay imported WAL entries to storage and WAL
     fn replay_imported_entries(&self, entries: &[WALEntry]) -> RunBundleResult<u64> {
         let storage = self.db.storage();
-        let wal = self.db.wal();
+        let wal = self.db.wal(); // Option<Arc<Mutex<WAL>>>
 
         let mut entries_applied = 0u64;
 
@@ -1158,8 +1162,8 @@ impl RunIndex {
             }
         }
 
-        // Lock WAL for writing
-        let mut wal_guard = wal.lock();
+        // Lock WAL for writing (if available - ephemeral databases skip WAL writes)
+        let mut wal_guard = wal.as_ref().map(|w| w.lock());
 
         // Apply each committed transaction
         for (_txn_id, _run_id, txn_entries) in committed_txns {
@@ -1245,17 +1249,21 @@ impl RunIndex {
                     _ => {}
                 }
 
-                // Also write to WAL for durability
-                wal_guard.append(entry).map_err(|e| {
-                    RunBundleError::WalReplay(format!("WAL append failed: {}", e))
-                })?;
+                // Also write to WAL for durability (skip for ephemeral databases)
+                if let Some(ref mut wg) = wal_guard {
+                    wg.append(entry).map_err(|e| {
+                        RunBundleError::WalReplay(format!("WAL append failed: {}", e))
+                    })?;
+                }
             }
         }
 
-        // Flush WAL
-        wal_guard.flush().map_err(|e| {
-            RunBundleError::WalReplay(format!("WAL flush failed: {}", e))
-        })?;
+        // Flush WAL (skip for ephemeral databases)
+        if let Some(ref mut wg) = wal_guard {
+            wg.flush().map_err(|e| {
+                RunBundleError::WalReplay(format!("WAL flush failed: {}", e))
+            })?;
+        }
 
         Ok(entries_applied)
     }

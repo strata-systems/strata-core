@@ -20,7 +20,13 @@ pub use crate::error::{Error, Result};
 pub use crate::primitives::{Events, Json, Runs, State, Vectors, KV};
 
 // Core types
-pub use crate::types::{RunId, Value, Version, Versioned};
+pub use crate::types::{RunId, Value, Version, Versioned, Timestamp};
+
+// Vector types
+pub use crate::types::DistanceMetric;
+
+// Run types
+pub use crate::types::{RunState, RetentionPolicy};
 
 // Re-export serde_json for convenience
 pub use serde_json::json;

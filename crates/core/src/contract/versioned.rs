@@ -155,12 +155,109 @@ impl<T> AsMut<T> for Versioned<T> {
 // ============================================================================
 
 use crate::value::Value;
+use std::collections::HashMap;
 
 /// Versioned value for the Value enum
 ///
 /// This is the most common use case - versioned arbitrary values.
 /// Equivalent to the old `VersionedValue` struct.
 pub type VersionedValue = Versioned<Value>;
+
+// ============================================================================
+// Convenience methods for Versioned<Value>
+// ============================================================================
+
+impl Versioned<Value> {
+    /// Check if the inner value is null
+    #[inline]
+    pub fn is_null(&self) -> bool {
+        self.value.is_null()
+    }
+
+    /// Check if the inner value is a boolean
+    #[inline]
+    pub fn is_bool(&self) -> bool {
+        self.value.is_bool()
+    }
+
+    /// Check if the inner value is an integer
+    #[inline]
+    pub fn is_int(&self) -> bool {
+        self.value.is_int()
+    }
+
+    /// Check if the inner value is a float
+    #[inline]
+    pub fn is_float(&self) -> bool {
+        self.value.is_float()
+    }
+
+    /// Check if the inner value is a string
+    #[inline]
+    pub fn is_string(&self) -> bool {
+        self.value.is_string()
+    }
+
+    /// Check if the inner value is bytes
+    #[inline]
+    pub fn is_bytes(&self) -> bool {
+        self.value.is_bytes()
+    }
+
+    /// Check if the inner value is an array
+    #[inline]
+    pub fn is_array(&self) -> bool {
+        self.value.is_array()
+    }
+
+    /// Check if the inner value is an object
+    #[inline]
+    pub fn is_object(&self) -> bool {
+        self.value.is_object()
+    }
+
+    /// Get the inner value as a bool
+    #[inline]
+    pub fn as_bool(&self) -> Option<bool> {
+        self.value.as_bool()
+    }
+
+    /// Get the inner value as an i64
+    #[inline]
+    pub fn as_int(&self) -> Option<i64> {
+        self.value.as_int()
+    }
+
+    /// Get the inner value as an f64
+    #[inline]
+    pub fn as_float(&self) -> Option<f64> {
+        self.value.as_float()
+    }
+
+    /// Get the inner value as a string slice
+    #[inline]
+    pub fn as_str(&self) -> Option<&str> {
+        self.value.as_str()
+    }
+
+    /// Get the inner value as a byte slice
+    #[inline]
+    pub fn as_bytes(&self) -> Option<&[u8]> {
+        self.value.as_bytes()
+    }
+
+    /// Get the inner value as an array slice
+    #[inline]
+    pub fn as_array(&self) -> Option<&[Value]> {
+        self.value.as_array()
+    }
+
+    /// Get the inner value as an object
+    #[inline]
+    pub fn as_object(&self) -> Option<&HashMap<String, Value>> {
+        self.value.as_object()
+    }
+}
 
 // ============================================================================
 // Tests
