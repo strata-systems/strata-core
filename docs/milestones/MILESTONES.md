@@ -454,7 +454,21 @@ If Strata becomes successful, people will build servers on top of it. But the va
 
 **Deliverable**: Frozen core contract with working Facade and Substrate APIs, validated by core contract tests
 
-**Status**: Not Started
+**Status**: In Progress
+
+**Work Completed**:
+- Comprehensive API audit comparing against best-in-class databases (Redis, DynamoDB, MongoDB, Pinecone)
+- 47 issues identified across naming, patterns, and missing features
+- Capabilities audit documenting all user-facing operations
+- Unified API design proposal created
+- API encapsulation strategy defined
+
+**Architecture Docs Created**:
+- `UNIFIED_API_DESIGN.md` - Target API surface
+- `API_AUDIT_REPORT.md` - Gap analysis and issues
+- `CAPABILITIES_AUDIT.md` - All user capabilities
+- `API_ENCAPSULATION.md` - Visibility strategy
+- `EXPOSED_API_SURFACE.md` - Current API analysis
 
 **Philosophy**: M11a establishes the **foundation contract** that cannot change. Value model, wire encoding, error codes, and the API layers (Facade + Substrate) are frozen here. This must be rock-solid before building consumer surfaces (CLI, SDK) on top.
 
@@ -514,7 +528,7 @@ If Strata becomes successful, people will build servers on top of it. But the va
 
 **Deliverable**: CLI with all facade operations, Rust SDK, Python/JS mapping definitions, comprehensive contract validation suite
 
-**Status**: Not Started
+**Status**: Not Started (blocked on M11a completion)
 
 **Philosophy**: M11b builds **user-facing surfaces** on top of the frozen contract from M11a. CLI and SDK are thin layers that expose the Facade API. The validation suite ensures no regressions.
 
@@ -556,7 +570,7 @@ If Strata becomes successful, people will build servers on top of it. But the va
 - Consumer groups for events
 - Vector search query DSL
 - JSONPath filters/wildcards
-- Python SDK implementation (M14)
+- Python SDK implementation (M15)
 - MessagePack wire (optional, not required)
 - Run deletion/garbage collection
 
@@ -564,14 +578,83 @@ If Strata becomes successful, people will build servers on top of it. But the va
 
 ---
 
-## Milestone 12: Server & Wire Protocol
+## Milestone 12: Unified API Surface
+**Goal**: Transform Strata's API from a two-layer system (Facade + Substrate) into a single, unified, intuitive API surface
+
+**Deliverable**: Clean public API via `strata` crate with single entry point, consistent naming, and progressive disclosure pattern
+
+**Status**: Not Started (blocked on M11b completion)
+
+**Philosophy**: M12 is the "API unification milestone". It consolidates the confusing Facade/Substrate split into a single clean API that matches best-in-class databases like Redis and DynamoDB. The API should feel familiar to developers coming from any background.
+
+**Success Criteria**:
+
+### Gate 1: Create `strata` Crate
+- [ ] `strata` crate at workspace root as sole public entry point
+- [ ] `use strata::prelude::*` provides all needed imports
+- [ ] Internal crates (`strata-core`, `strata-api`, etc.) marked `publish = false`
+- [ ] `#[doc(hidden)]` on internal-but-public items
+- [ ] `cargo doc` shows only public API
+
+### Gate 2: Unified Primitive Access
+- [ ] `db.kv` for key-value operations
+- [ ] `db.json` for JSON document operations
+- [ ] `db.events` for event stream operations
+- [ ] `db.state` for state cell operations
+- [ ] `db.vectors` for vector similarity search
+- [ ] `db.runs` for run lifecycle management
+
+### Gate 3: Clean Method Naming
+- [ ] No redundant prefixes (`set` not `kv_set`)
+- [ ] No Store/Log suffixes in external names (KV not KVStore)
+- [ ] Consistent verb patterns across primitives (set/get/delete)
+- [ ] Progressive disclosure: simple → run-scoped → full control
+
+### Gate 4: Missing Capabilities
+- [ ] `json.get_at(version)` for versioned reads
+- [ ] `state.get_at(version)` for versioned reads
+- [ ] `storage_stats()` for storage usage information
+- [ ] `runs.size(&run)` for run size estimation
+- [ ] Checkpoint API design (named persistent snapshots)
+
+### Gate 5: Visibility & Encapsulation
+- [ ] `publish = false` on all internal crates
+- [ ] Sealed traits for extension points
+- [ ] Clear separation: public types vs internal implementation
+- [ ] No internal errors leak to users
+
+### Gate 6: Deprecation & Migration
+- [ ] Old API marked `#[deprecated(since = "0.12.0")]`
+- [ ] Migration guide (v0.11 → v0.12)
+- [ ] Old tests updated to new API
+- [ ] Examples updated to new API
+
+### Gate 7: Documentation & Validation
+- [ ] README updated with new API
+- [ ] Example files (quickstart, transactions, versioning, vectors)
+- [ ] All doc examples compile
+- [ ] 100% test coverage on new API
+
+**Risk**: Breaking changes. Mitigated by deprecation path (old API works with warnings).
+
+**Implementation Plan**: [M12_UNIFIED_API_PLAN.md](M12_UNIFIED_API_PLAN.md)
+
+**Reference Documents**:
+- [UNIFIED_API_DESIGN.md](../architecture/UNIFIED_API_DESIGN.md) - Target API surface
+- [API_AUDIT_REPORT.md](../architecture/API_AUDIT_REPORT.md) - 47 issues to fix
+- [CAPABILITIES_AUDIT.md](../architecture/CAPABILITIES_AUDIT.md) - All user capabilities
+- [API_ENCAPSULATION.md](../architecture/API_ENCAPSULATION.md) - Visibility strategy
+
+---
+
+## Milestone 13: Server & Wire Protocol
 **Goal**: Add server deployment mode for multi-process and multi-language access
 
-**Deliverable**: `strata-server` binary that exposes the M11 contract over the network, plus a Rust client library
+**Deliverable**: `strata-server` binary that exposes the unified API over the network, plus a Rust client library
 
-**Status**: Not Started
+**Status**: Not Started (blocked on M12 completion)
 
-**Philosophy**: M12 adds a **deployment mode**, not a new product. Strata remains an embedded library; the server is a thin adapter for cases requiring multi-process sharing or language-agnostic clients. The server adds no new semantics—`request → core API → response`. If the server is adding logic beyond transport, something is wrong. This is the SQLite/rqlite pattern, not the Redis pattern.
+**Philosophy**: M13 adds a **deployment mode**, not a new product. Strata remains an embedded library; the server is a thin adapter for cases requiring multi-process sharing or language-agnostic clients. The server adds no new semantics—`request → core API → response`. If the server is adding logic beyond transport, something is wrong. This is the SQLite/rqlite pattern, not the Redis pattern.
 
 **Success Criteria**:
 
@@ -610,23 +693,23 @@ If Strata becomes successful, people will build servers on top of it. But the va
 
 **Risk**: Protocol design can over-engineer. Start minimal (no auth, no TLS, no multiplexing). Add features in later milestones.
 
-**Non-Goals for M12**:
-- Authentication/authorization (M15)
-- TLS encryption (M15)
+**Non-Goals for M13**:
+- Authentication/authorization (M16)
+- TLS encryption (M16)
 - Connection multiplexing
 - Clustering/replication
 - Admin commands beyond basic health
 
 ---
 
-## Milestone 13: Performance & Indexing
+## Milestone 14: Performance & Indexing
 **Goal**: Optimize hot paths and add secondary indexing capabilities
 
 **Deliverable**: Faster queries, better scaling, and indexing infrastructure for all primitives
 
 **Status**: Not Started
 
-**Philosophy**: M13 is the "make it fast" milestone. By now we have real workloads from M7/M8, a stable API from M9/M11, storage from M10, and a server from M12. Optimize based on data, not speculation. HNSW refinement belongs here if not completed in M8.
+**Philosophy**: M14 is the "make it fast" milestone. By now we have real workloads from M7/M8, a stable API from M9/M12, storage from M10, and a server from M13. Optimize based on data, not speculation. HNSW refinement belongs here if not completed in M8.
 
 **Success Criteria**:
 
@@ -654,14 +737,14 @@ If Strata becomes successful, people will build servers on top of it. But the va
 
 ---
 
-## Milestone 14: Python Client
+## Milestone 15: Python Client
 **Goal**: First-class Python client for AI agent developers
 
 **Deliverable**: Python SDK with ergonomic API, async support, and comprehensive documentation
 
 **Status**: Not Started
 
-**Philosophy**: Python dominates AI/ML tooling. A clean Python client unlocks the majority of agent developers. This is the MVP client library. Requires stable API from M11 and server from M12.
+**Philosophy**: Python dominates AI/ML tooling. A clean Python client unlocks the majority of agent developers. This is the MVP client library. Requires unified API from M12 and server from M13.
 
 **Success Criteria**:
 
@@ -673,7 +756,7 @@ If Strata becomes successful, people will build servers on top of it. But the va
 ### Gate 2: Ergonomic API
 - [ ] Pythonic API design (context managers, iterators, type hints)
 - [ ] Async support (asyncio)
-- [ ] Error handling with clear exception hierarchy (per M11 contract)
+- [ ] Error handling with clear exception hierarchy (per M12 unified API)
 
 ### Gate 3: Search Integration
 - [ ] Search API with query builders
@@ -689,7 +772,7 @@ If Strata becomes successful, people will build servers on top of it. But the va
 
 ---
 
-## Milestone 15: Security & Multi-Tenancy
+## Milestone 16: Security & Multi-Tenancy
 **Goal**: Production security features and tenant isolation
 
 **Deliverable**: Authentication, authorization, and multi-tenant support
@@ -725,14 +808,14 @@ If Strata becomes successful, people will build servers on top of it. But the va
 
 ---
 
-## Milestone 16: Production Readiness
+## Milestone 17: Production Readiness
 **Goal**: Operational excellence for production deployment
 
 **Deliverable**: Observable, maintainable, deployable system
 
 **Status**: Not Started
 
-**Philosophy**: M16 is the capstone milestone. Everything needed to run in production with confidence: monitoring, deployment, documentation.
+**Philosophy**: M17 is the capstone milestone. Everything needed to run in production with confidence: monitoring, deployment, documentation.
 
 **Success Criteria**:
 
@@ -842,7 +925,7 @@ These APIs transform Strata from "agent storage" into "a substrate for reasoning
 
 ## MVP Definition
 
-**MVP = Milestones 1-16 Complete**
+**MVP = Milestones 1-17 Complete**
 
 At MVP completion, the system should:
 1. Store agent state in 7 primitives (KV, Events, StateCell, Trace, RunIndex, JSON, **Vector**)
@@ -854,16 +937,17 @@ At MVP completion, the system should:
 7. **Disk-backed storage with retention policies and compaction**
 8. **Portable database artifacts (SQLite-like copy portability)**
 9. **Frozen public API contract with two-layer model (Facade + Substrate)**
-10. **Run as standalone server with wire protocol access**
-11. Scale near-linearly for disjoint keys (multi-thread)
-12. Have >90% test coverage
-13. **JSON primitive with path-level mutations and region-based conflict detection**
-14. **Retrieval surface with primitive-native search and composite hybrid search**
-15. **Vector primitive with semantic search and hybrid retrieval (keyword + vector)**
-16. **Stable, universal API with documented invariants and consistent patterns**
-17. **Python client library for AI agent developers**
-18. **Security: authentication, authorization, multi-tenancy**
-19. **Production-ready: observability, deployment, documentation**
+10. **Unified API surface with single entry point and clean naming**
+11. **Run as standalone server with wire protocol access**
+12. Scale near-linearly for disjoint keys (multi-thread)
+13. Have >90% test coverage
+14. **JSON primitive with path-level mutations and region-based conflict detection**
+15. **Retrieval surface with primitive-native search and composite hybrid search**
+16. **Vector primitive with semantic search and hybrid retrieval (keyword + vector)**
+17. **Stable, universal API with documented invariants and consistent patterns**
+18. **Python client library for AI agent developers**
+19. **Security: authentication, authorization, multi-tenancy**
+20. **Production-ready: observability, deployment, documentation**
 
 **Not in MVP**:
 - JSON structural optimization (post-MVP enhancement)
@@ -896,11 +980,12 @@ Current:
 
 Remaining:
 - M11b (Consumer Surfaces: CLI, SDK)
-- M12 (Server & Wire Protocol)
-- M13 (Performance & Indexing)
-- M14 (Python Client)
-- M15 (Security & Multi-Tenancy)
-- M16 (Production Readiness)
+- M12 (Unified API Surface)
+- M13 (Server & Wire Protocol)
+- M14 (Performance & Indexing)
+- M15 (Python Client)
+- M16 (Security & Multi-Tenancy)
+- M17 (Production Readiness)
 ```
 
 ---
@@ -932,15 +1017,17 @@ M11a (Core Contract & API) ← Current
   ↓
 M11b (Consumer Surfaces: CLI, SDK)
   ↓
-M12 (Server & Wire Protocol)
+M12 (Unified API Surface)
   ↓
-M13 (Performance & Indexing)
+M13 (Server & Wire Protocol)
   ↓
-M14 (Python Client)
+M14 (Performance & Indexing)
   ↓
-M15 (Security & Multi-Tenancy)
+M15 (Python Client)
   ↓
-M16 (Production Readiness)
+M16 (Security & Multi-Tenancy)
+  ↓
+M17 (Production Readiness)
 ```
 
 **Notes**:
@@ -953,9 +1040,10 @@ M16 (Production Readiness)
 - **M10 adds production storage: disk-backed backend, retention policies, compaction, portable artifacts.**
 - **M11a freezes the core contract: value model, wire encoding, error model, and two-layer API (Facade + Substrate).**
 - **M11b builds consumer surfaces: CLI, Rust SDK, Python/JS mappings, and complete validation suite.**
-- **M12 makes Strata a server. External clients can connect over the network.**
-- M13 optimizes based on real workloads with stable API, storage, and server. HNSW refinement if needed.
-- M14 Python client connects to strata-server - requires M11 contract and M12 server.
+- **M12 unifies the API: transforms Facade + Substrate into single clean `strata` crate with progressive disclosure.**
+- **M13 makes Strata a server. External clients can connect over the network.**
+- M14 optimizes based on real workloads with stable API, storage, and server. HNSW refinement if needed.
+- M15 Python client connects to strata-server - requires M12 unified API and M13 server.
 
 ---
 
@@ -986,9 +1074,11 @@ M16 (Production Readiness)
    - Mitigation: Thorough crash recovery tests, retention enforcement tests, compaction invariance tests
 7. **Contract over-specification (M11)**: Risk of freezing too much too early
    - Mitigation: Explicit "What M11 Does NOT Freeze" section; focus on essential semantics
-8. **Protocol over-engineering (M12)**: Wire protocol can grow unbounded
-   - Mitigation: Start minimal (no auth, no TLS); add features in M15
-9. **Security scope creep (M15)**: Security features can expand infinitely
+8. **API unification (M12)**: Breaking changes can disrupt users
+   - Mitigation: Deprecation path (old API works with warnings); comprehensive migration guide
+9. **Protocol over-engineering (M13)**: Wire protocol can grow unbounded
+   - Mitigation: Start minimal (no auth, no TLS); add features in M16
+10. **Security scope creep (M16)**: Security features can expand infinitely
    - Mitigation: Scope to essential production needs; iterate post-MVP
 
 ### Low-Risk Areas
@@ -996,9 +1086,10 @@ M16 (Production Readiness)
 2. **API design (M3)**: Can iterate post-MVP ✅ Complete
 3. **JSON API (M5)**: Follows established primitive patterns ✅ Complete
 4. **Public contract (M11)**: Builds on M9 stabilization; main risk is scope creep
-5. **Server implementation (M12)**: Well-understood; main risk is scope creep
-6. **Python client (M14)**: Well-understood; main risk is API bike-shedding; mitigated by stable contract from M11
-7. **Production readiness (M16)**: Standard practices; just needs execution
+5. **API unification (M12)**: Clear design with deprecation path
+6. **Server implementation (M13)**: Well-understood; main risk is scope creep
+7. **Python client (M15)**: Well-understood; main risk is API bike-shedding; mitigated by unified API from M12
+8. **Production readiness (M17)**: Standard practices; just needs execution
 
 ---
 
@@ -1036,3 +1127,4 @@ M16 (Production Readiness)
 | 12.0 | 2026-01-20 | Inserted M10 (Storage Backend, Retention & Compaction); renumbered M10→M11, M11→M12, M12→M13, M13→M14, M14→M15. MVP now 15 milestones (M1-M15). |
 | 13.0 | 2026-01-21 | M10 Storage Backend complete. Inserted M11 (Public API & SDK Contract) based on M11_CONTRACT.md; renumbered M11→M12, M12→M13, M13→M14, M14→M15, M15→M16. MVP now 16 milestones (M1-M16). |
 | 14.0 | 2026-01-21 | Split M11 into M11a (Core Contract & API) and M11b (Consumer Surfaces). M11a: Value Model, Wire Encoding, Error Model, Facade API, Substrate API, Core Validation. M11b: CLI, SDK Foundation, Full Validation. |
+| 15.0 | 2026-01-24 | Inserted M12 (Unified API Surface) based on comprehensive API audit. Created architecture docs: UNIFIED_API_DESIGN.md, API_AUDIT_REPORT.md, CAPABILITIES_AUDIT.md, API_ENCAPSULATION.md. Renumbered M12→M13, M13→M14, M14→M15, M15→M16, M16→M17. MVP now 17 milestones (M1-M17). |
