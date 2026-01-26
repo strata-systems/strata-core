@@ -87,7 +87,7 @@ fn get_durability_mode() -> DurabilityMode {
     std::env::var("INMEM_DURABILITY_MODE")
         .ok()
         .and_then(|s| match s.to_lowercase().as_str() {
-            "inmemory" | "in_memory" | "in-memory" => Some(DurabilityMode::InMemory),
+            "inmemory" | "in_memory" | "in-memory" => Some(DurabilityMode::None),
             "batched" | "buffered" => Some(DurabilityMode::buffered_default()),
             "strict" => Some(DurabilityMode::Strict),
             _ => None,

@@ -17,7 +17,7 @@ use std::sync::Arc;
 pub fn create_test_db() -> Arc<Database> {
     Arc::new(
         Database::builder()
-            .durability(DurabilityMode::InMemory)
+            .durability(DurabilityMode::None)
             .open_temp()
             .expect("Failed to create test database"),
     )
@@ -44,7 +44,7 @@ pub fn create_persistent_db(path: &std::path::Path) -> Arc<Database> {
 /// All durability modes for cross-mode testing
 pub fn all_durability_modes() -> Vec<DurabilityMode> {
     vec![
-        DurabilityMode::InMemory,
+        DurabilityMode::None,
         DurabilityMode::default(), // Batched
         DurabilityMode::Strict,
     ]

@@ -32,8 +32,8 @@ The WAL controls crash recovery:
 
 ```rust
 pub enum DurabilityMode {
-    InMemory,   // WAL bypassed, no fsync
-    Buffered,   // Periodic fsync
+    None,       // WAL bypassed, no fsync
+    Batched,    // Periodic fsync
     Strict,     // fsync every commit
 }
 ```
@@ -416,7 +416,7 @@ Option E (Hybrid) has been implemented with the following changes:
    - `db.is_ephemeral()` returns `true`
 
 2. **`.no_durability()`** - Renamed from `.in_memory()`
-   - Sets `DurabilityMode::InMemory` (no fsync)
+   - Sets `DurabilityMode::None` (no fsync)
    - Files still created (WAL exists but doesn't sync)
    - Data can survive restarts if process doesn't crash
 
@@ -451,9 +451,26 @@ let db = Strata::open("./data")?;
 | Production | `Strata::open(p)` | User dir | Yes (sync) | Yes |
 | Critical | `.path(p).strict().open()` | User dir | Yes (immediate sync) | Yes |
 
+### Final Enum (Post-M13 Cleanup)
+
+The `DurabilityMode` enum has been simplified to 3 variants:
+
+```rust
+pub enum DurabilityMode {
+    None,     // No fsync (fastest, data lost on crash)
+    Batched { interval_ms: u64, batch_size: usize },  // Periodic fsync
+    Strict,   // fsync every write (slowest, safest)
+}
+```
+
+**Changes made:**
+- `InMemory` renamed to `None` for clarity
+- `Async` variant removed (was redundant with `Batched`)
+
 ### Resolved Questions
 
 1. **Should `ephemeral()` support durability modes?** → No, it ignores durability settings
 2. **What happens on `db.flush()` for ephemeral?** → No-op, returns `Ok(())`
 3. **Persistence without durability?** → Yes, supported via `.no_durability().open(path)`
 4. **Deprecation timeline** → `.in_memory()` deprecated in v0.14.0, removal in v0.16.0
+5. **Why remove Async mode?** → `Async` was essentially the same as `Batched` with just time-based triggers; consolidating to one mode reduces complexity

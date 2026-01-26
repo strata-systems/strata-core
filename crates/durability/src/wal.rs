@@ -33,7 +33,7 @@
 //!
 //! - `Strict` - fsync after every commit (slow, maximum durability)
 //! - `Batched` - fsync every N commits OR T ms (DEFAULT, good balance)
-//! - `Async` - background thread fsyncs periodically (fast, may lose recent writes)
+//! - `None` - no fsync, data lost on crash (fastest, for testing)
 
 use crate::encoding::{decode_entry, encode_entry};
 use strata_core::{
@@ -49,10 +49,9 @@ use tracing::error;
 use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use parking_lot::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use uuid::Uuid;
 
 /// WAL entry types
@@ -367,8 +366,7 @@ impl WALEntry {
 ///
 /// - `Strict` - Maximum durability, fsync after every write (slow)
 /// - `Batched` - Balance of speed and safety (DEFAULT)
-/// - `Async` - Maximum speed, background fsync (may lose recent writes)
-/// - `InMemory` - No persistence (fastest mode for dev/testing)
+/// - `None` - No persistence (fastest mode for dev/testing)
 ///
 /// # Default
 ///
@@ -379,12 +377,12 @@ impl WALEntry {
 ///
 /// | Mode | Latency Target | Use Case |
 /// |------|----------------|----------|
-/// | InMemory | <3µs | Tests, caches, ephemeral data |
-/// | Batched/Async | <30µs | Production (balanced) |
+/// | None | <3µs | Tests, caches, ephemeral data |
+/// | Batched | <30µs | Production (balanced) |
 /// | Strict | ~2ms | Checkpoints, audit logs |
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DurabilityMode {
-    /// No persistence - all data lost on crash (fastest mode)
+    /// No durability - all data lost on crash (fastest mode)
     ///
     /// Bypasses WAL entirely. No fsync, no file I/O.
     /// Target latency: <3µs for engine/put_direct.
@@ -393,7 +391,7 @@ pub enum DurabilityMode {
     /// # Performance
     ///
     /// This mode enables 250K+ ops/sec by eliminating I/O entirely.
-    InMemory,
+    None,
 
     /// fsync after every commit (slow, maximum durability)
     ///
@@ -405,32 +403,21 @@ pub enum DurabilityMode {
     ///
     /// Good balance of speed and safety. May lose up to batch_size
     /// writes or interval_ms of data on crash.
-    /// Target latency: <30µs (M4 Buffered equivalent).
+    /// Target latency: <30µs.
     Batched {
         /// Maximum time between fsyncs in milliseconds
         interval_ms: u64,
         /// Maximum writes between fsyncs
         batch_size: usize,
     },
-
-    /// Background thread fsyncs periodically
-    ///
-    /// Maximum speed, minimal latency. May lose up to interval_ms
-    /// of writes on crash. Best for agent workloads where speed
-    /// matters more than perfect durability.
-    /// Target latency: <30µs (M4 Buffered equivalent).
-    Async {
-        /// Time between fsyncs in milliseconds
-        interval_ms: u64,
-    },
 }
 
 impl DurabilityMode {
     /// Check if this mode requires WAL persistence
     ///
-    /// Returns false for InMemory mode, true for all others.
+    /// Returns false for None mode, true for all others.
     pub fn requires_wal(&self) -> bool {
-        !matches!(self, DurabilityMode::InMemory)
+        !matches!(self, DurabilityMode::None)
     }
 
     /// Check if this mode requires immediate fsync on every commit
@@ -443,14 +430,13 @@ impl DurabilityMode {
     /// Human-readable description of the mode
     pub fn description(&self) -> &'static str {
         match self {
-            DurabilityMode::InMemory => "No persistence (fastest, all data lost on crash)",
+            DurabilityMode::None => "No durability (fastest, all data lost on crash)",
             DurabilityMode::Strict => "Sync fsync (safest, slowest)",
             DurabilityMode::Batched { .. } => "Batched fsync (balanced speed/safety)",
-            DurabilityMode::Async { .. } => "Async fsync (fast, may lose recent writes)",
         }
     }
 
-    /// Create a buffered mode with M4 recommended defaults
+    /// Create a buffered mode with recommended defaults
     ///
     /// Returns `Batched { interval_ms: 100, batch_size: 1000 }`.
     ///
@@ -467,7 +453,6 @@ impl DurabilityMode {
     /// - Both thresholds work together - whichever is reached first triggers fsync
     ///
     /// This is the recommended mode for production workloads.
-    /// Equivalent to M4's "Buffered" mode concept.
     pub fn buffered_default() -> Self {
         DurabilityMode::Batched {
             interval_ms: 100,
@@ -500,7 +485,7 @@ impl Default for DurabilityMode {
 /// The WAL supports three durability modes:
 /// - `Strict` - fsync after every write (slow but safest)
 /// - `Batched` - fsync periodically by time or count (DEFAULT)
-/// - `Async` - background thread handles fsync (fastest)
+/// - `None` - no fsync, data lost on crash (fastest, for testing)
 ///
 /// # Example
 ///
@@ -520,7 +505,7 @@ pub struct WAL {
     /// File path
     path: PathBuf,
 
-    /// File handle (buffered writer for appends, shared for async mode)
+    /// File handle (buffered writer for appends)
     writer: Arc<Mutex<BufWriter<File>>>,
 
     /// Current file offset (atomic for thread-safe access)
@@ -534,12 +519,6 @@ pub struct WAL {
 
     /// Writes since last fsync (for batched mode)
     writes_since_fsync: Arc<AtomicU64>,
-
-    /// Background fsync thread handle (for async mode)
-    fsync_thread: Option<JoinHandle<()>>,
-
-    /// Shutdown flag for async thread
-    shutdown: Arc<AtomicBool>,
 }
 
 impl WAL {
@@ -590,34 +569,6 @@ impl WAL {
         let writer = Arc::new(Mutex::new(BufWriter::new(file)));
         let last_fsync = Arc::new(Mutex::new(Instant::now()));
         let writes_since_fsync = Arc::new(AtomicU64::new(0));
-        let shutdown = Arc::new(AtomicBool::new(false));
-
-        // Spawn background fsync thread for async mode
-        let fsync_thread = if let DurabilityMode::Async { interval_ms } = durability_mode {
-            let writer: Arc<Mutex<BufWriter<File>>> = Arc::clone(&writer);
-            let shutdown = Arc::clone(&shutdown);
-            let interval = Duration::from_millis(interval_ms);
-
-            Some(thread::spawn(move || {
-                while !shutdown.load(Ordering::Acquire) {
-                    thread::sleep(interval);
-
-                    if shutdown.load(Ordering::Acquire) {
-                        break;
-                    }
-
-                    let mut w = writer.lock();
-                    if let Err(e) = w.flush() {
-                        error!(error = %e, "WAL async flush failed - data may not be durable");
-                    }
-                    if let Err(e) = w.get_mut().sync_all() {
-                        error!(error = %e, "WAL async sync_all failed - data may not be durable");
-                    }
-                }
-            }))
-        } else {
-            None
-        };
 
         Ok(Self {
             path,
@@ -626,8 +577,6 @@ impl WAL {
             durability_mode,
             last_fsync,
             writes_since_fsync,
-            fsync_thread,
-            shutdown,
         })
     }
 
@@ -637,7 +586,7 @@ impl WAL {
     /// Handles fsync based on configured durability mode:
     /// - Strict: fsync after every write
     /// - Batched: fsync after batch_size writes OR interval_ms elapsed
-    /// - Async: just flush, background thread handles fsync
+    /// - None: just flush, no fsync (data may be lost on crash)
     ///
     /// # Arguments
     ///
@@ -667,10 +616,10 @@ impl WAL {
 
         // Handle durability mode
         match self.durability_mode {
-            DurabilityMode::InMemory => {
-                // No fsync for InMemory mode
+            DurabilityMode::None => {
+                // No fsync for None mode
                 // Just flush buffer for consistency - in practice, engine should
-                // check requires_wal() and skip WAL entirely for InMemory mode
+                // check requires_wal() and skip WAL entirely for None mode
                 let mut writer = self.writer.lock();
                 writer
                     .flush()
@@ -699,14 +648,6 @@ impl WAL {
                     self.writes_since_fsync.store(0, Ordering::SeqCst);
                     *self.last_fsync.lock() = Instant::now();
                 }
-            }
-            DurabilityMode::Async { .. } => {
-                // Background thread handles fsync
-                // Just flush buffer to ensure writes are visible to reader
-                let mut writer = self.writer.lock();
-                writer
-                    .flush()
-                    .map_err(|e| Error::StorageError(format!("Failed to flush: {}", e)))?;
             }
         }
 
@@ -870,16 +811,6 @@ impl WAL {
 
 impl Drop for WAL {
     fn drop(&mut self) {
-        // Shutdown async fsync thread if running
-        // Uses Release ordering to ensure writes before drop are visible to the background thread
-        self.shutdown.store(true, Ordering::Release);
-
-        if let Some(handle) = self.fsync_thread.take() {
-            if let Err(e) = handle.join() {
-                error!("WAL fsync thread panicked: {:?}", e);
-            }
-        }
-
         // Final fsync to ensure all data is durable
         if let Err(e) = self.fsync() {
             error!(
@@ -895,6 +826,8 @@ impl Drop for WAL {
 mod tests {
     use super::*;
     use strata_core::types::Namespace;
+    use std::thread;
+    use std::time::Duration;
 
     /// Helper to get current timestamp
     fn now() -> Timestamp {
@@ -1413,11 +1346,12 @@ mod tests {
     }
 
     #[test]
-    fn test_async_mode() {
+    fn test_none_mode() {
         let temp_dir = TempDir::new().unwrap();
-        let wal_path = temp_dir.path().join("async.wal");
+        let wal_path = temp_dir.path().join("none.wal");
 
-        let mut wal = WAL::open(&wal_path, DurabilityMode::Async { interval_ms: 50 }).unwrap();
+        let mut wal = WAL::open(&wal_path, DurabilityMode::None).unwrap();
+        assert_eq!(wal.durability_mode(), DurabilityMode::None);
 
         let run_id = RunId::new();
         let entry = WALEntry::BeginTxn {
@@ -1428,11 +1362,9 @@ mod tests {
 
         wal.append(&entry).unwrap();
 
-        // Wait for background fsync
-        thread::sleep(Duration::from_millis(100));
-
+        // Drop performs final fsync, so entry should be readable
         drop(wal);
-        let wal = WAL::open(&wal_path, DurabilityMode::Async { interval_ms: 50 }).unwrap();
+        let wal = WAL::open(&wal_path, DurabilityMode::None).unwrap();
         let entries = wal.read_all().unwrap();
         assert_eq!(entries.len(), 1);
     }
@@ -1449,10 +1381,9 @@ mod tests {
             timestamp: now(),
         };
 
-        // Use async mode with long interval - data won't be synced by background thread
+        // Use None mode - data won't be synced during append
         {
-            let mut wal =
-                WAL::open(&wal_path, DurabilityMode::Async { interval_ms: 10000 }).unwrap();
+            let mut wal = WAL::open(&wal_path, DurabilityMode::None).unwrap();
             wal.append(&entry).unwrap();
             // Drop should call final fsync
         }
@@ -1469,13 +1400,12 @@ mod tests {
 
     #[test]
     fn test_durability_mode_requires_wal() {
-        // InMemory does not require WAL
-        assert!(!DurabilityMode::InMemory.requires_wal());
+        // None does not require WAL
+        assert!(!DurabilityMode::None.requires_wal());
 
         // All others require WAL
         assert!(DurabilityMode::Strict.requires_wal());
         assert!(DurabilityMode::default().requires_wal());
-        assert!(DurabilityMode::Async { interval_ms: 50 }.requires_wal());
         assert!(DurabilityMode::buffered_default().requires_wal());
     }
 
@@ -1485,21 +1415,17 @@ mod tests {
         assert!(DurabilityMode::Strict.requires_immediate_fsync());
 
         // Others do not
-        assert!(!DurabilityMode::InMemory.requires_immediate_fsync());
+        assert!(!DurabilityMode::None.requires_immediate_fsync());
         assert!(!DurabilityMode::default().requires_immediate_fsync());
-        assert!(!DurabilityMode::Async { interval_ms: 50 }.requires_immediate_fsync());
         assert!(!DurabilityMode::buffered_default().requires_immediate_fsync());
     }
 
     #[test]
     fn test_durability_mode_description() {
         // All modes have non-empty descriptions
-        assert!(!DurabilityMode::InMemory.description().is_empty());
+        assert!(!DurabilityMode::None.description().is_empty());
         assert!(!DurabilityMode::Strict.description().is_empty());
         assert!(!DurabilityMode::default().description().is_empty());
-        assert!(!DurabilityMode::Async { interval_ms: 50 }
-            .description()
-            .is_empty());
     }
 
     #[test]
@@ -1518,12 +1444,12 @@ mod tests {
     }
 
     #[test]
-    fn test_durability_mode_inmemory_variant() {
-        // Ensure InMemory is a valid variant and can be used
-        let mode = DurabilityMode::InMemory;
+    fn test_durability_mode_none_variant() {
+        // Ensure None is a valid variant and can be used
+        let mode = DurabilityMode::None;
         assert!(!mode.requires_wal());
         assert!(!mode.requires_immediate_fsync());
-        assert!(mode.description().contains("persistence"));
+        assert!(mode.description().contains("durability"));
     }
 
     // ========================================================================

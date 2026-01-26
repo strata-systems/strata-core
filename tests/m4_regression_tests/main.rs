@@ -53,13 +53,13 @@ pub fn create_test_db(mode: DurabilityMode) -> Arc<Database> {
 
 /// Create an in-memory test database (fastest)
 pub fn create_inmemory_db() -> Arc<Database> {
-    create_test_db(DurabilityMode::InMemory)
+    create_test_db(DurabilityMode::None)
 }
 
 /// The three durability modes we test against
 pub fn all_durability_modes() -> Vec<DurabilityMode> {
     vec![
-        DurabilityMode::InMemory,
+        DurabilityMode::None,
         DurabilityMode::default(), // Batched
         DurabilityMode::Strict,
     ]

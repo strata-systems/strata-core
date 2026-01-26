@@ -256,7 +256,7 @@ impl DatabaseBuilder {
 
     /// Use no-durability mode (no WAL sync, files still created)
     ///
-    /// This sets `DurabilityMode::InMemory` which bypasses WAL fsync.
+    /// This sets `DurabilityMode::None` which bypasses WAL fsync.
     /// **Note**: Disk files are still created. For truly file-free operation,
     /// use [`Database::ephemeral()`] instead.
     ///
@@ -265,7 +265,7 @@ impl DatabaseBuilder {
     ///
     /// All data lost on crash. Use for tests, caches, ephemeral data.
     pub fn no_durability(mut self) -> Self {
-        self.durability = DurabilityMode::InMemory;
+        self.durability = DurabilityMode::None;
         self
     }
 
@@ -280,7 +280,7 @@ impl DatabaseBuilder {
         note = "Use .no_durability() instead - this sets WAL mode, not storage location. For no disk files, use Database::ephemeral()"
     )]
     pub fn in_memory(mut self) -> Self {
-        self.durability = DurabilityMode::InMemory;
+        self.durability = DurabilityMode::None;
         self
     }
 
@@ -633,7 +633,7 @@ impl Database {
             persistence_mode: PersistenceMode::Ephemeral,
             coordinator,
             commit_locks: DashMap::new(),
-            durability_mode: DurabilityMode::InMemory, // Irrelevant but set for consistency
+            durability_mode: DurabilityMode::None, // Irrelevant but set for consistency
             accepting_transactions: AtomicBool::new(true),
             extensions: DashMap::new(),
         };
@@ -1920,11 +1920,11 @@ mod tests {
             assert!(db.data_dir().exists());
         }
 
-        // Async mode
+        // None mode
         {
             let db = Database::open_with_mode(
-                temp_dir.path().join("async"),
-                DurabilityMode::Async { interval_ms: 50 },
+                temp_dir.path().join("none"),
+                DurabilityMode::None,
             )
             .unwrap();
             assert!(db.data_dir().exists());
@@ -2847,7 +2847,7 @@ mod tests {
     #[test]
     fn test_database_builder_no_durability() {
         let builder = DatabaseBuilder::new().no_durability();
-        assert_eq!(builder.get_durability(), DurabilityMode::InMemory);
+        assert_eq!(builder.get_durability(), DurabilityMode::None);
     }
 
     #[test]
@@ -2950,7 +2950,7 @@ mod tests {
         let key = Key::new_kv(ns, "durability_override");
 
         // Override to InMemory mode for this transaction
-        let result = db.transaction_with_durability(run_id, DurabilityMode::InMemory, |txn| {
+        let result = db.transaction_with_durability(run_id, DurabilityMode::None, |txn| {
             txn.put(key.clone(), Value::Int(42))?;
             Ok(42)
         });
@@ -3004,7 +3004,7 @@ mod tests {
 
         // Read value with durability override
         let result: Result<i64> =
-            db.transaction_with_durability(run_id, DurabilityMode::InMemory, |txn| {
+            db.transaction_with_durability(run_id, DurabilityMode::None, |txn| {
                 let val = txn.get(&key)?.unwrap();
                 if let Value::Int(n) = val {
                     Ok(n)
@@ -3079,7 +3079,7 @@ mod tests {
         db.shutdown().unwrap();
 
         // Durability override transactions should also be rejected
-        let result = db.transaction_with_durability(run_id, DurabilityMode::InMemory, |txn| {
+        let result = db.transaction_with_durability(run_id, DurabilityMode::None, |txn| {
             txn.put(key.clone(), Value::Int(42))?;
             Ok(())
         });
@@ -3147,7 +3147,7 @@ mod tests {
                 .no_durability()
                 .open()
                 .unwrap();
-            assert_eq!(db.durability_mode(), DurabilityMode::InMemory);
+            assert_eq!(db.durability_mode(), DurabilityMode::None);
         }
     }
 }
