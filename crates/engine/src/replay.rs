@@ -28,6 +28,7 @@
 use strata_core::run_types::{RunEventOffsets, RunMetadata, RunStatus};
 use strata_core::types::{Key, RunId};
 use strata_core::value::Value;
+use strata_core::PrimitiveType;
 use strata_core::{EntityRef, StrataError};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -303,31 +304,13 @@ impl ReadOnlyView {
 // Run Diff
 // ============================================================================
 
-/// Primitive kind for diff entries
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum DiffPrimitiveKind {
-    /// Key-value store
-    Kv,
-    /// Event log
-    Event,
-}
-
-impl std::fmt::Display for DiffPrimitiveKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DiffPrimitiveKind::Kv => write!(f, "KV"),
-            DiffPrimitiveKind::Event => write!(f, "Event"),
-        }
-    }
-}
-
 /// A single diff entry
 #[derive(Debug, Clone)]
 pub struct DiffEntry {
     /// Key that changed
     pub key: String,
     /// Primitive type
-    pub primitive: DiffPrimitiveKind,
+    pub primitive: PrimitiveType,
     /// Value in run A (if present)
     pub value_a: Option<String>,
     /// Value in run B (if present)
@@ -336,7 +319,7 @@ pub struct DiffEntry {
 
 impl DiffEntry {
     /// Create a new diff entry for an added key
-    pub fn added(key: String, primitive: DiffPrimitiveKind, value: String) -> Self {
+    pub fn added(key: String, primitive: PrimitiveType, value: String) -> Self {
         DiffEntry {
             key,
             primitive,
@@ -346,7 +329,7 @@ impl DiffEntry {
     }
 
     /// Create a new diff entry for a removed key
-    pub fn removed(key: String, primitive: DiffPrimitiveKind, value: String) -> Self {
+    pub fn removed(key: String, primitive: PrimitiveType, value: String) -> Self {
         DiffEntry {
             key,
             primitive,
@@ -358,7 +341,7 @@ impl DiffEntry {
     /// Create a new diff entry for a modified key
     pub fn modified(
         key: String,
-        primitive: DiffPrimitiveKind,
+        primitive: PrimitiveType,
         old_value: String,
         new_value: String,
     ) -> Self {
@@ -437,7 +420,7 @@ pub fn diff_views(view_a: &ReadOnlyView, view_b: &ReadOnlyView) -> RunDiff {
             for (event_type, data) in &view_b.events[a_count..] {
                 diff.added.push(DiffEntry::added(
                     event_type.clone(),
-                    DiffPrimitiveKind::Event,
+                    PrimitiveType::Event,
                     format!("{:?}", data),
                 ));
             }
@@ -446,7 +429,7 @@ pub fn diff_views(view_a: &ReadOnlyView, view_b: &ReadOnlyView) -> RunDiff {
             for (event_type, data) in &view_a.events[b_count..] {
                 diff.removed.push(DiffEntry::removed(
                     event_type.clone(),
-                    DiffPrimitiveKind::Event,
+                    PrimitiveType::Event,
                     format!("{:?}", data),
                 ));
             }
@@ -465,7 +448,7 @@ fn diff_kv_maps(map_a: &HashMap<Key, Value>, map_b: &HashMap<Key, Value>, diff: 
                 .unwrap_or_else(|| format!("{:?}", key.user_key));
             diff.added.push(DiffEntry::added(
                 key_str,
-                DiffPrimitiveKind::Kv,
+                PrimitiveType::Kv,
                 format!("{:?}", value_b),
             ));
         }
@@ -479,7 +462,7 @@ fn diff_kv_maps(map_a: &HashMap<Key, Value>, map_b: &HashMap<Key, Value>, diff: 
                 .unwrap_or_else(|| format!("{:?}", key.user_key));
             diff.removed.push(DiffEntry::removed(
                 key_str,
-                DiffPrimitiveKind::Kv,
+                PrimitiveType::Kv,
                 format!("{:?}", value_a),
             ));
         }
@@ -494,7 +477,7 @@ fn diff_kv_maps(map_a: &HashMap<Key, Value>, map_b: &HashMap<Key, Value>, diff: 
                     .unwrap_or_else(|| format!("{:?}", key.user_key));
                 diff.modified.push(DiffEntry::modified(
                     key_str,
-                    DiffPrimitiveKind::Kv,
+                    PrimitiveType::Kv,
                     format!("{:?}", value_a),
                     format!("{:?}", value_b),
                 ));
@@ -762,16 +745,16 @@ mod tests {
             run_b: RunId::new(),
             added: vec![DiffEntry::added(
                 "a".into(),
-                DiffPrimitiveKind::Kv,
+                PrimitiveType::Kv,
                 "1".into(),
             )],
             removed: vec![
-                DiffEntry::removed("b".into(), DiffPrimitiveKind::Kv, "2".into()),
-                DiffEntry::removed("c".into(), DiffPrimitiveKind::Kv, "3".into()),
+                DiffEntry::removed("b".into(), PrimitiveType::Kv, "2".into()),
+                DiffEntry::removed("c".into(), PrimitiveType::Kv, "3".into()),
             ],
             modified: vec![DiffEntry::modified(
                 "d".into(),
-                DiffPrimitiveKind::Kv,
+                PrimitiveType::Kv,
                 "4".into(),
                 "5".into(),
             )],
@@ -1035,7 +1018,7 @@ mod tests {
 
         // B has fewer events than A - should show as removed
         assert_eq!(diff.removed.len(), 2);
-        assert!(diff.removed.iter().all(|e| e.primitive == DiffPrimitiveKind::Event));
+        assert!(diff.removed.iter().all(|e| e.primitive == PrimitiveType::Event));
     }
 
     #[test]
@@ -1117,17 +1100,17 @@ mod tests {
 
     #[test]
     fn test_diff_entry_constructors() {
-        let added = DiffEntry::added("key".into(), DiffPrimitiveKind::Kv, "value".into());
+        let added = DiffEntry::added("key".into(), PrimitiveType::Kv, "value".into());
         assert!(added.value_a.is_none());
         assert!(added.value_b.is_some());
 
-        let removed = DiffEntry::removed("key".into(), DiffPrimitiveKind::Kv, "value".into());
+        let removed = DiffEntry::removed("key".into(), PrimitiveType::Kv, "value".into());
         assert!(removed.value_a.is_some());
         assert!(removed.value_b.is_none());
 
         let modified = DiffEntry::modified(
             "key".into(),
-            DiffPrimitiveKind::Kv,
+            PrimitiveType::Kv,
             "old".into(),
             "new".into(),
         );
@@ -1136,8 +1119,8 @@ mod tests {
     }
 
     #[test]
-    fn test_diff_primitive_kind_display() {
-        assert_eq!(format!("{}", DiffPrimitiveKind::Kv), "KV");
-        assert_eq!(format!("{}", DiffPrimitiveKind::Event), "Event");
+    fn test_primitive_type_display() {
+        assert_eq!(format!("{}", PrimitiveType::Kv), "KVStore");
+        assert_eq!(format!("{}", PrimitiveType::Event), "EventLog");
     }
 }

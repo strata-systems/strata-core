@@ -97,7 +97,7 @@ pub trait TransactionOps {
     fn state_cas(
         &mut self,
         name: &str,
-        expected_version: u64,
+        expected_version: Version,
         value: Value,
     ) -> Result<Version, StrataError>;
 
@@ -265,7 +265,7 @@ mod tests {
             Err(StrataError::Internal { message: "state_init not implemented in mock".to_string() })
         }
 
-        fn state_cas(&mut self, _name: &str, _expected: u64, _value: Value) -> Result<Version, StrataError> {
+        fn state_cas(&mut self, _name: &str, _expected: Version, _value: Value) -> Result<Version, StrataError> {
             Err(StrataError::Internal { message: "state_cas not implemented in mock".to_string() })
         }
 

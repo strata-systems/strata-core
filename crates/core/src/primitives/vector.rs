@@ -3,7 +3,7 @@
 //! These types define the structure of vector embeddings and search results.
 //! Implementation logic (distance calculations, indexing, ANN) remains in primitives.
 
-use crate::contract::EntityRef;
+use crate::contract::{EntityRef, Version};
 use crate::error::StrataError;
 use crate::types::RunId;
 use serde::{Deserialize, Serialize};
@@ -218,8 +218,8 @@ pub struct VectorEntry {
     /// Internal ID (for index backend)
     pub vector_id: VectorId,
 
-    /// Version for optimistic concurrency
-    pub version: u64,
+    /// Version for optimistic concurrency (Txn-based)
+    pub version: Version,
 
     /// Optional reference to source document (e.g., JSON doc, KV entry)
     ///
@@ -242,7 +242,7 @@ impl VectorEntry {
             embedding,
             metadata,
             vector_id,
-            version: 1,
+            version: Version::txn(1),
             source_ref: None,
         }
     }
@@ -263,7 +263,7 @@ impl VectorEntry {
             embedding,
             metadata,
             vector_id,
-            version: 1,
+            version: Version::txn(1),
             source_ref: Some(source_ref),
         }
     }
@@ -273,8 +273,8 @@ impl VectorEntry {
         self.embedding.len()
     }
 
-    /// Get the version number
-    pub fn version(&self) -> u64 {
+    /// Get the version
+    pub fn version(&self) -> Version {
         self.version
     }
 

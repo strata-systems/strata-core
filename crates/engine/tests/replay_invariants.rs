@@ -14,7 +14,8 @@
 
 use strata_core::types::{Key, Namespace, RunId};
 use strata_core::value::Value;
-use strata_engine::{diff_views, DiffPrimitiveKind, ReadOnlyView};
+use strata_core::PrimitiveType;
+use strata_engine::{diff_views, ReadOnlyView};
 use std::collections::HashMap;
 
 /// Helper to create a test namespace
@@ -668,5 +669,5 @@ fn test_diff_events() {
 
     // B has 1 more event than A
     assert_eq!(diff.added.len(), 1);
-    assert_eq!(diff.added[0].primitive, DiffPrimitiveKind::Event);
+    assert_eq!(diff.added[0].primitive, PrimitiveType::Event);
 }

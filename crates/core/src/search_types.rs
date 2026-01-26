@@ -7,22 +7,15 @@
 //! - SearchHit: Individual search result with score and rank
 //! - SearchStats: Execution statistics for debugging/monitoring
 //!
-//! ## Migration
-//!
-//! - `DocRef` is now `EntityRef` (re-exported from contract module)
-//! - `PrimitiveKind` is now `PrimitiveType` (re-exported from contract module)
-//!
-//! Import from crate root: `use strata_core::{EntityRef, DocRef, PrimitiveType};`
 //!
 //! These types define the interface contracts for search operations.
 //! See `the architecture documentation` for authoritative specification.
 
-use crate::contract::EntityRef;
 use crate::types::RunId;
 use std::collections::HashMap;
 
-// Re-export contract types for backwards compatibility with legacy code
-pub use crate::contract::EntityRef as DocRef;
+// Re-export contract types
+pub use crate::contract::EntityRef;
 pub use crate::contract::PrimitiveType;
 
 

@@ -5,7 +5,7 @@
 
 use strata_core::error::Result;
 use strata_core::search_types::{
-    DocRef, SearchHit, SearchRequest, SearchResponse, SearchStats,
+    EntityRef, SearchHit, SearchRequest, SearchResponse, SearchStats,
 };
 use strata_core::PrimitiveType;
 
@@ -35,7 +35,7 @@ pub trait Searchable {
 #[derive(Debug, Clone)]
 pub struct SearchCandidate {
     /// Back-pointer to source record
-    pub doc_ref: DocRef,
+    pub doc_ref: EntityRef,
     /// Extracted text for scoring
     pub text: String,
     /// Timestamp for time-based filtering/ordering
@@ -44,7 +44,7 @@ pub struct SearchCandidate {
 
 impl SearchCandidate {
     /// Create a new search candidate
-    pub fn new(doc_ref: DocRef, text: String, timestamp: Option<u64>) -> Self {
+    pub fn new(doc_ref: EntityRef, text: String, timestamp: Option<u64>) -> Self {
         SearchCandidate {
             doc_ref,
             text,
@@ -204,13 +204,13 @@ mod tests {
     fn test_score_and_rank() {
         let run_id = RunId::new();
         let candidates = vec![
-            SearchCandidate::new(DocRef::Run { run_id }, "hello world".to_string(), None),
+            SearchCandidate::new(EntityRef::Run { run_id }, "hello world".to_string(), None),
             SearchCandidate::new(
-                DocRef::Run { run_id },
+                EntityRef::Run { run_id },
                 "hello hello hello".to_string(),
                 None,
             ),
-            SearchCandidate::new(DocRef::Run { run_id }, "goodbye world".to_string(), None),
+            SearchCandidate::new(EntityRef::Run { run_id }, "goodbye world".to_string(), None),
         ];
 
         let hits = SimpleScorer::score_and_rank(candidates, "hello", 10);
@@ -226,7 +226,7 @@ mod tests {
         let candidates: Vec<_> = (0..100)
             .map(|i| {
                 SearchCandidate::new(
-                    DocRef::Run { run_id },
+                    EntityRef::Run { run_id },
                     format!("hello document {}", i),
                     None,
                 )

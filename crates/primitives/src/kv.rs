@@ -537,7 +537,7 @@ impl KVStore {
         req: &strata_core::SearchRequest,
     ) -> strata_core::error::Result<strata_core::SearchResponse> {
         use crate::searchable::{build_search_response, SearchCandidate};
-        use strata_core::search_types::DocRef;
+        use strata_core::search_types::EntityRef;
         use strata_core::traits::SnapshotView;
         use std::time::Instant;
 
@@ -572,11 +572,11 @@ impl KVStore {
             // Extract searchable text
             let text = self.extract_search_text(&key, &versioned_value.value);
 
-            // Extract user key as string for DocRef
+            // Extract user key as string for EntityRef
             let user_key_str = String::from_utf8_lossy(&key.user_key).to_string();
 
             candidates.push(SearchCandidate::new(
-                DocRef::Kv { run_id: req.run_id, key: user_key_str },
+                EntityRef::Kv { run_id: req.run_id, key: user_key_str },
                 text,
                 Some(versioned_value.timestamp.as_micros()),
             ));

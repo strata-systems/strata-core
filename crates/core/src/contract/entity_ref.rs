@@ -287,16 +287,6 @@ impl std::fmt::Display for EntityRef {
 }
 
 // ============================================================================
-// DocRef Alias (backwards compatibility)
-// ============================================================================
-
-/// Alias for EntityRef
-///
-/// DocRef was the original name used in search types.
-/// New code should use EntityRef directly.
-pub type DocRef = EntityRef;
-
-// ============================================================================
 // Tests
 // ============================================================================
 
@@ -439,14 +429,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_doc_ref_alias() {
-        // DocRef should be an alias for EntityRef
-        let run_id = RunId::new();
-        let doc_ref: DocRef = EntityRef::kv(run_id, "key");
-        let entity_ref: EntityRef = EntityRef::kv(run_id, "key");
-        assert_eq!(doc_ref, entity_ref);
-    }
 
     #[test]
     fn test_wrong_extraction_returns_none() {

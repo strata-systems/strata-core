@@ -33,7 +33,7 @@ use crate::vector::{
 };
 use strata_concurrency::TransactionContext;
 use strata_core::contract::{Timestamp, Version, Versioned};
-use strata_core::search_types::{DocRef, SearchBudget, SearchHit, SearchResponse, SearchStats};
+use strata_core::search_types::{EntityRef, SearchBudget, SearchHit, SearchResponse, SearchStats};
 use strata_core::types::{Key, Namespace, RunId};
 use strata_core::value::Value;
 use strata_durability::wal::WALEntry;
@@ -905,7 +905,7 @@ impl VectorStore {
             embedding: embedding.to_vec(),
             metadata: record.metadata,
             vector_id,
-            version: record.version,
+            version: Version::txn(record.version),
             source_ref: record.source_ref,
         };
 
@@ -976,7 +976,7 @@ impl VectorStore {
                 embedding: record.embedding.clone(),
                 metadata: record.metadata,
                 vector_id: VectorId::new(record.vector_id),
-                version: record.version,
+                version: Version::txn(record.version),
                 source_ref: record.source_ref,
             };
 
@@ -1008,7 +1008,7 @@ impl VectorStore {
         run_id: RunId,
         collection: &str,
         key: &str,
-        version: u64,
+        version: Version,
     ) -> VectorResult<Option<Versioned<VectorEntry>>> {
         // Get full history and find the specific version
         // This is not the most efficient implementation, but it's correct
@@ -1166,7 +1166,7 @@ impl VectorStore {
         collection: &str,
         limit: Option<usize>,
         cursor: Option<&str>,
-    ) -> VectorResult<Vec<(String, Vec<f32>, Option<JsonValue>, u64)>> {
+    ) -> VectorResult<Vec<(String, Vec<f32>, Option<JsonValue>, Version)>> {
         // Get keys first
         let keys = self.list_keys(run_id, collection, limit, cursor)?;
 
@@ -1473,7 +1473,7 @@ impl VectorStore {
             .into_iter()
             .enumerate()
             .map(|(rank, m)| {
-                let doc_ref = DocRef::vector(run_id, collection, &m.key);
+                let doc_ref = EntityRef::vector(run_id, collection, &m.key);
                 SearchHit::new(doc_ref, m.score, (rank + 1) as u32)
             })
             .collect();
@@ -1871,7 +1871,7 @@ impl VectorStore {
                                         embedding: embedding.to_vec(),
                                         metadata: record.metadata,
                                         vector_id,
-                                        version: record.version,
+                                        version: Version::txn(record.version),
                                         source_ref: record.source_ref,
                                     };
                                     Some(Versioned::with_timestamp(

@@ -36,7 +36,7 @@ pub mod version;
 pub mod versioned;
 
 // Re-exports
-pub use entity_ref::{DocRef, EntityRef};
+pub use entity_ref::EntityRef;
 pub use primitive_type::PrimitiveType;
 pub use run_name::{RunName, RunNameError, MAX_RUN_NAME_LENGTH};
 pub use timestamp::Timestamp;

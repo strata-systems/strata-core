@@ -9,7 +9,7 @@
 //! - Error: Error type hierarchy
 //! - Traits: Core trait definitions (Storage, SnapshotView)
 //! - Primitive types: Event, State, JSON, Vector types (in `primitives` module)
-//! - Search types: SearchRequest, SearchResponse, SearchHit, DocRef, PrimitiveKind
+//! - Search types: SearchRequest, SearchResponse, SearchHit, EntityRef, PrimitiveType
 //! - Contract types: EntityRef, Versioned<T>, Version, Timestamp, PrimitiveType, RunName
 
 #![warn(missing_docs)]
@@ -38,7 +38,7 @@ pub use value::Value;
 
 // Re-export contract types at crate root for convenience
 pub use contract::{
-    DocRef, EntityRef, PrimitiveType, RunName, RunNameError, Timestamp, Version, Versioned,
+    EntityRef, PrimitiveType, RunName, RunNameError, Timestamp, Version, Versioned,
     VersionedValue, MAX_RUN_NAME_LENGTH,
 };
 

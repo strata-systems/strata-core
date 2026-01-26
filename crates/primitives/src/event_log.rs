@@ -973,7 +973,7 @@ impl EventLog {
         req: &strata_core::SearchRequest,
     ) -> strata_core::error::Result<strata_core::SearchResponse> {
         use crate::searchable::{build_search_response, SearchCandidate};
-        use strata_core::search_types::DocRef;
+        use strata_core::search_types::EntityRef;
         use strata_core::traits::SnapshotView;
         use std::time::Instant;
 
@@ -1022,7 +1022,7 @@ impl EventLog {
                 let text = self.extract_event_text(&event);
 
                 candidates.push(SearchCandidate::new(
-                    DocRef::Event {
+                    EntityRef::Event {
                         run_id: req.run_id,
                         sequence: seq,
                     },

@@ -10,7 +10,7 @@
 //!
 //! # Architectural Rules
 //!
-//! - Rule 1: No Data Movement - index stores DocRef only, not content
+//! - Rule 1: No Data Movement - index stores EntityRef only, not content
 //! - Rule 5: Zero Overhead When Disabled - NOOP when disabled
 //!
 //! # Usage
@@ -20,7 +20,7 @@
 
 use crate::tokenizer::tokenize;
 use dashmap::DashMap;
-use strata_core::search_types::DocRef;
+use strata_core::search_types::EntityRef;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
@@ -31,11 +31,11 @@ use std::time::{Duration, Instant};
 
 /// Entry in a posting list
 ///
-/// Contains the DocRef and term statistics for scoring.
+/// Contains the EntityRef and term statistics for scoring.
 #[derive(Debug, Clone)]
 pub struct PostingEntry {
     /// Reference to the source document
-    pub doc_ref: DocRef,
+    pub doc_ref: EntityRef,
     /// Term frequency in this document
     pub tf: u32,
     /// Document length in tokens
@@ -46,7 +46,7 @@ pub struct PostingEntry {
 
 impl PostingEntry {
     /// Create a new posting entry
-    pub fn new(doc_ref: DocRef, tf: u32, doc_len: u32, ts_micros: Option<u64>) -> Self {
+    pub fn new(doc_ref: EntityRef, tf: u32, doc_len: u32, ts_micros: Option<u64>) -> Self {
         PostingEntry {
             doc_ref,
             tf,
@@ -78,8 +78,8 @@ impl PostingList {
         self.entries.push(entry);
     }
 
-    /// Remove entries matching a DocRef
-    pub fn remove(&mut self, doc_ref: &DocRef) -> usize {
+    /// Remove entries matching a EntityRef
+    pub fn remove(&mut self, doc_ref: &EntityRef) -> usize {
         let before = self.entries.len();
         self.entries.retain(|e| &e.doc_ref != doc_ref);
         before - self.entries.len()
@@ -132,9 +132,9 @@ pub struct InvertedIndex {
     /// Sum of all document lengths (for average calculation)
     total_doc_len: AtomicUsize,
 
-    /// DocRef -> document length mapping for proper removal tracking
+    /// EntityRef -> document length mapping for proper removal tracking
     /// Fixes #608 (total_doc_len drift) and #609 (double-counting)
-    doc_lengths: DashMap<DocRef, u32>,
+    doc_lengths: DashMap<EntityRef, u32>,
 }
 
 impl Default for InvertedIndex {
@@ -265,7 +265,7 @@ impl InvertedIndex {
     ///
     /// NOOP if index is disabled.
     /// If document is already indexed, removes old version first (fixes #609).
-    pub fn index_document(&self, doc_ref: &DocRef, text: &str, ts_micros: Option<u64>) {
+    pub fn index_document(&self, doc_ref: &EntityRef, text: &str, ts_micros: Option<u64>) {
         if !self.is_enabled() {
             return; // Zero overhead when disabled
         }
@@ -309,7 +309,7 @@ impl InvertedIndex {
     ///
     /// NOOP if index is disabled.
     /// Properly decrements total_doc_len using tracked document length (fixes #608).
-    pub fn remove_document(&self, doc_ref: &DocRef) {
+    pub fn remove_document(&self, doc_ref: &EntityRef) {
         if !self.is_enabled() {
             return;
         }
@@ -370,9 +370,9 @@ mod tests {
     use super::*;
     use strata_core::types::RunId;
 
-    fn test_doc_ref(name: &str) -> DocRef {
+    fn test_doc_ref(name: &str) -> EntityRef {
         let run_id = RunId::new();
-        DocRef::Kv {
+        EntityRef::Kv {
             run_id,
             key: name.to_string(),
         }

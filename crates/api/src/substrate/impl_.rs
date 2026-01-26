@@ -9,7 +9,7 @@
 //! `SubstrateImpl` is a **semantic boundary** between unified API types and
 //! domain-specific primitive types. It performs:
 //!
-//! - Type normalization: `Value` ↔ `JsonValue`, `&str` ↔ `JsonDocId`/`JsonPath`
+//! - Type normalization: `Value` ↔ `JsonValue`, `&str` ↔ `JsonPath`
 //! - Run ID mapping: `ApiRunId("default")` → `RunId(UUID::nil)`
 //! - Version normalization: Primitive versions → unified `Version` enum
 //! - Error normalization: Primitive errors → `StrataError`

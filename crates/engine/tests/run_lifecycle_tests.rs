@@ -12,12 +12,13 @@
 use strata_core::run_types::{RunMetadata, RunStatus};
 use strata_core::types::{Key, Namespace, RunId};
 use strata_core::value::Value;
+use strata_core::PrimitiveType;
 use strata_durability::wal::DurabilityMode;
 use strata_durability::{
     create_run_begin_entry, create_run_end_entry, parse_run_begin_payload, parse_run_end_payload,
     WalEntry, WalWriter,
 };
-use strata_engine::{diff_views, DiffEntry, DiffPrimitiveKind, ReadOnlyView, RunDiff, RunIndex};
+use strata_engine::{diff_views, DiffEntry, ReadOnlyView, RunDiff, RunIndex};
 use tempfile::TempDir;
 
 // ============================================================================
@@ -467,18 +468,18 @@ fn test_diff_summary() {
         run_a: RunId::new(),
         run_b: RunId::new(),
         added: vec![
-            DiffEntry::added("a".into(), DiffPrimitiveKind::Kv, "1".into()),
-            DiffEntry::added("b".into(), DiffPrimitiveKind::Kv, "2".into()),
+            DiffEntry::added("a".into(), PrimitiveType::Kv, "1".into()),
+            DiffEntry::added("b".into(), PrimitiveType::Kv, "2".into()),
         ],
         removed: vec![DiffEntry::removed(
             "c".into(),
-            DiffPrimitiveKind::Kv,
+            PrimitiveType::Kv,
             "3".into(),
         )],
         modified: vec![
-            DiffEntry::modified("d".into(), DiffPrimitiveKind::Kv, "4".into(), "5".into()),
-            DiffEntry::modified("e".into(), DiffPrimitiveKind::Kv, "6".into(), "7".into()),
-            DiffEntry::modified("f".into(), DiffPrimitiveKind::Kv, "8".into(), "9".into()),
+            DiffEntry::modified("d".into(), PrimitiveType::Kv, "4".into(), "5".into()),
+            DiffEntry::modified("e".into(), PrimitiveType::Kv, "6".into(), "7".into()),
+            DiffEntry::modified("f".into(), PrimitiveType::Kv, "8".into(), "9".into()),
         ],
     };
 

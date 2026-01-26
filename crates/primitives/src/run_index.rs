@@ -847,7 +847,7 @@ impl RunIndex {
         req: &strata_core::SearchRequest,
     ) -> strata_core::error::Result<strata_core::SearchResponse> {
         use crate::searchable::{build_search_response, SearchCandidate};
-        use strata_core::search_types::DocRef;
+        use strata_core::search_types::EntityRef;
         use strata_core::traits::SnapshotView;
         use std::time::Instant;
 
@@ -893,7 +893,7 @@ impl RunIndex {
             let text = self.extract_run_text(&meta);
 
             candidates.push(SearchCandidate::new(
-                DocRef::Run {
+                EntityRef::Run {
                     run_id: strata_core::types::RunId::from_string(&meta.run_id)
                         .unwrap_or_default(),
                 },

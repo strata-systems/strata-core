@@ -340,7 +340,7 @@ impl<'a> TransactionOps for Transaction<'a> {
             })?;
             return Ok(Some(Versioned::new(
                 state.clone(),
-                Version::counter(state.version),
+                state.version,
             )));
         }
 
@@ -378,13 +378,13 @@ impl<'a> TransactionOps for Transaction<'a> {
 
         self.ctx.put(full_key, Value::Bytes(state_bytes)).map_err(StrataError::from)?;
 
-        Ok(Version::counter(version))
+        Ok(version)
     }
 
     fn state_cas(
         &mut self,
         name: &str,
-        expected_version: u64,
+        expected_version: Version,
         value: Value,
     ) -> Result<Version, StrataError> {
         let full_key = self.state_key(name);
@@ -410,14 +410,14 @@ impl<'a> TransactionOps for Transaction<'a> {
         if current.version != expected_version {
             return Err(StrataError::version_conflict(
                 EntityRef::state(self.run_id(), name),
-                Version::counter(expected_version),
-                Version::counter(current.version),
+                expected_version,
+                current.version,
             ));
         }
 
         // Create new state with incremented version
-        let new_state = State::with_version(value, expected_version + 1);
-        let new_version = new_state.version;
+        let new_version = expected_version.increment();
+        let new_state = State::with_version(value, new_version);
 
         // Serialize and store
         let state_bytes = serde_json::to_vec(&new_state).map_err(|e| {
@@ -428,7 +428,7 @@ impl<'a> TransactionOps for Transaction<'a> {
 
         self.ctx.put(full_key, Value::Bytes(state_bytes)).map_err(StrataError::from)?;
 
-        Ok(Version::counter(new_version))
+        Ok(new_version)
     }
 
     fn state_delete(&mut self, name: &str) -> Result<bool, StrataError> {
@@ -838,7 +838,7 @@ mod tests {
         assert!(result.is_some());
         let versioned = result.unwrap();
         assert_eq!(versioned.value.value, Value::Int(0));
-        assert_eq!(versioned.value.version, 1);
+        assert_eq!(versioned.value.version, Version::counter(1));
     }
 
     #[test]
@@ -849,13 +849,13 @@ mod tests {
 
         // Initialize then CAS
         txn.state_init("counter", Value::Int(0)).unwrap();
-        let new_version = txn.state_cas("counter", 1, Value::Int(1)).unwrap();
+        let new_version = txn.state_cas("counter", Version::counter(1), Value::Int(1)).unwrap();
         assert_eq!(new_version, Version::counter(2)); // Version incremented
 
         // Verify the value changed
         let result = txn.state_read("counter").unwrap().unwrap();
         assert_eq!(result.value.value, Value::Int(1));
-        assert_eq!(result.value.version, 2);
+        assert_eq!(result.value.version, Version::counter(2));
     }
 
     #[test]
@@ -866,7 +866,7 @@ mod tests {
 
         // Initialize then CAS with wrong version
         txn.state_init("counter", Value::Int(0)).unwrap();
-        let result = txn.state_cas("counter", 99, Value::Int(1)); // Wrong version
+        let result = txn.state_cas("counter", Version::counter(99), Value::Int(1)); // Wrong version
 
         assert!(result.is_err());
         match result.unwrap_err() {

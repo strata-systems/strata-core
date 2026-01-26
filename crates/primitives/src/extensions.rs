@@ -76,10 +76,10 @@ pub trait StateCellExt {
     fn state_read(&mut self, name: &str) -> Result<Option<Value>>;
 
     /// Compare-and-swap update, returns new version
-    fn state_cas(&mut self, name: &str, expected_version: u64, new_value: Value) -> Result<u64>;
+    fn state_cas(&mut self, name: &str, expected_version: Version, new_value: Value) -> Result<Version>;
 
     /// Unconditional set, returns new version
-    fn state_set(&mut self, name: &str, value: Value) -> Result<u64>;
+    fn state_set(&mut self, name: &str, value: Value) -> Result<Version>;
 }
 
 /// JSON store operations within a transaction

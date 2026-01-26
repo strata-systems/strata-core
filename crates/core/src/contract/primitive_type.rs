@@ -138,6 +138,40 @@ impl PrimitiveType {
     pub const fn is_append_only(&self) -> bool {
         !self.supports_crud()
     }
+
+    /// Get the WAL entry type range for this primitive
+    ///
+    /// Each primitive has a reserved byte range in the WAL format:
+    /// - KV: 0x10-0x1F
+    /// - JSON: 0x20-0x2F
+    /// - Event: 0x30-0x3F
+    /// - State: 0x40-0x4F
+    /// - Run: 0x60-0x6F
+    /// - Vector: 0x70-0x7F
+    pub const fn entry_type_range(&self) -> (u8, u8) {
+        match self {
+            PrimitiveType::Kv => (0x10, 0x1F),
+            PrimitiveType::Json => (0x20, 0x2F),
+            PrimitiveType::Event => (0x30, 0x3F),
+            PrimitiveType::State => (0x40, 0x4F),
+            PrimitiveType::Run => (0x60, 0x6F),
+            PrimitiveType::Vector => (0x70, 0x7F),
+        }
+    }
+
+    /// Get the primitive ID for snapshot sections
+    ///
+    /// These IDs are used in snapshot file format to identify sections.
+    pub const fn primitive_id(&self) -> u8 {
+        match self {
+            PrimitiveType::Kv => 1,
+            PrimitiveType::Json => 2,
+            PrimitiveType::Event => 3,
+            PrimitiveType::State => 4,
+            PrimitiveType::Run => 6,
+            PrimitiveType::Vector => 7,
+        }
+    }
 }
 
 impl std::fmt::Display for PrimitiveType {
@@ -279,5 +313,25 @@ mod tests {
         assert_eq!(PrimitiveType::Kv, PrimitiveType::Kv);
         assert_ne!(PrimitiveType::Kv, PrimitiveType::Event);
         assert_ne!(PrimitiveType::Event, PrimitiveType::State);
+    }
+
+    #[test]
+    fn test_entry_type_range() {
+        assert_eq!(PrimitiveType::Kv.entry_type_range(), (0x10, 0x1F));
+        assert_eq!(PrimitiveType::Json.entry_type_range(), (0x20, 0x2F));
+        assert_eq!(PrimitiveType::Event.entry_type_range(), (0x30, 0x3F));
+        assert_eq!(PrimitiveType::State.entry_type_range(), (0x40, 0x4F));
+        assert_eq!(PrimitiveType::Run.entry_type_range(), (0x60, 0x6F));
+        assert_eq!(PrimitiveType::Vector.entry_type_range(), (0x70, 0x7F));
+    }
+
+    #[test]
+    fn test_primitive_id() {
+        assert_eq!(PrimitiveType::Kv.primitive_id(), 1);
+        assert_eq!(PrimitiveType::Json.primitive_id(), 2);
+        assert_eq!(PrimitiveType::Event.primitive_id(), 3);
+        assert_eq!(PrimitiveType::State.primitive_id(), 4);
+        assert_eq!(PrimitiveType::Run.primitive_id(), 6);
+        assert_eq!(PrimitiveType::Vector.primitive_id(), 7);
     }
 }

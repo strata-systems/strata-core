@@ -712,7 +712,7 @@ impl RunIndex for SubstrateImpl {
         // Convert hits back to RunInfo by looking up each run
         let mut results = Vec::new();
         for hit in response.hits {
-            if let strata_core::search_types::DocRef::Run { run_id } = hit.doc_ref {
+            if let strata_core::search_types::EntityRef::Run { run_id } = hit.doc_ref {
                 let api_run_id = ApiRunId::from_uuid(uuid::Uuid::from_bytes(*run_id.as_bytes()));
                 if let Some(info) = self.run_get(&api_run_id)? {
                     results.push(info);

@@ -7,7 +7,7 @@
 //!
 //! See `docs/architecture/M6_ARCHITECTURE.md` for authoritative specification.
 
-use strata_core::search_types::{DocRef, SearchHit, SearchResponse};
+use strata_core::search_types::{EntityRef, SearchHit, SearchResponse};
 use strata_core::PrimitiveType;
 
 // ============================================================================
@@ -178,8 +178,8 @@ impl Fuser for RRFFuser {
         use std::collections::HashMap;
         use std::hash::{Hash, Hasher};
 
-        let mut rrf_scores: HashMap<DocRef, f32> = HashMap::new();
-        let mut hit_data: HashMap<DocRef, SearchHit> = HashMap::new();
+        let mut rrf_scores: HashMap<EntityRef, f32> = HashMap::new();
+        let mut hit_data: HashMap<EntityRef, SearchHit> = HashMap::new();
 
         for (_primitive, response) in results {
             for hit in response.hits {
@@ -203,7 +203,7 @@ impl Fuser for RRFFuser {
                     let orig_b = hit_data.get(&b.0).map(|h| h.score).unwrap_or(0.0);
                     match orig_b.partial_cmp(&orig_a) {
                         Some(std::cmp::Ordering::Equal) | None => {
-                            // Tie-breaker 2: DocRef hash (stable ordering)
+                            // Tie-breaker 2: EntityRef hash (stable ordering)
                             let hash_a = {
                                 let mut hasher = DefaultHasher::new();
                                 a.0.hash(&mut hasher);
@@ -252,10 +252,10 @@ impl Fuser for RRFFuser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use strata_core::search_types::{DocRef, SearchStats};
+    use strata_core::search_types::{EntityRef, SearchStats};
     use strata_core::types::RunId;
 
-    fn make_hit(doc_ref: DocRef, score: f32, rank: u32) -> SearchHit {
+    fn make_hit(doc_ref: EntityRef, score: f32, rank: u32) -> SearchHit {
         SearchHit {
             doc_ref,
             score,
@@ -272,9 +272,9 @@ mod tests {
         }
     }
 
-    /// Helper to create a KV DocRef
-    fn make_kv_doc_ref(run_id: &RunId, key: &str) -> DocRef {
-        DocRef::Kv {
+    /// Helper to create a KV EntityRef
+    fn make_kv_doc_ref(run_id: &RunId, key: &str) -> EntityRef {
+        EntityRef::Kv {
             run_id: run_id.clone(),
             key: key.to_string(),
         }
@@ -314,7 +314,7 @@ mod tests {
         let run_id = RunId::new();
 
         let kv_ref = make_kv_doc_ref(&run_id, "test");
-        let run_ref = DocRef::Run { run_id: run_id.clone() };
+        let run_ref = EntityRef::Run { run_id: run_id.clone() };
 
         let kv_hits = vec![make_hit(kv_ref, 0.7, 1)];
         let run_hits = vec![make_hit(run_ref, 0.9, 1)];
@@ -402,7 +402,7 @@ mod tests {
         let run_id = RunId::new();
         let doc_ref_shared = make_kv_doc_ref(&run_id, "shared");
 
-        // Same DocRef in both lists
+        // Same EntityRef in both lists
         let list1_hits = vec![make_hit(doc_ref_shared.clone(), 0.9, 1)];
         let list2_hits = vec![make_hit(doc_ref_shared.clone(), 0.8, 1)];
 

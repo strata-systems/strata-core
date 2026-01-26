@@ -19,6 +19,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
 
+use strata_core::contract::Version;
 use strata_core::types::RunId;
 use strata_core::value::Value;
 use strata_engine::Database;
@@ -529,7 +530,7 @@ fn test_statecell_concurrent_cas_conflict_detection() {
             thread::spawn(move || {
                 barrier.wait();
                 // All threads try to CAS from version 1 to their value
-                let result = state_cell.cas(&run_id, "cell", 1, Value::Int(thread_id as i64));
+                let result = state_cell.cas(&run_id, "cell", Version::counter(1), Value::Int(thread_id as i64));
                 match result {
                     Ok(_) => {
                         success_count.fetch_add(1, Ordering::Relaxed);
@@ -617,7 +618,7 @@ fn test_statecell_version_monotonicity_under_transitions() {
     let init_version = state_cell
         .init(&run_id, "mono", Value::Int(0))
         .unwrap();
-    assert_eq!(init_version.value, 1, "Init should return version 1");
+    assert_eq!(init_version.value, Version::counter(1), "Init should return version 1");
 
     let num_threads = 4;
     let transitions_per_thread = 20;
@@ -636,10 +637,11 @@ fn test_statecell_version_monotonicity_under_transitions() {
                 for _ in 0..transitions_per_thread {
                     let result = state_cell.transition(&run_id, "mono", |state| {
                         let current = state.value.as_int().unwrap_or(0);
-                        Ok((Value::Int(current + 1), state.version + 1))
+                        // Return the expected new version (counter-based)
+                        Ok((Value::Int(current + 1), state.version.as_u64() + 1))
                     });
                     if let Ok((_value, versioned)) = result {
-                        versions.lock().push(versioned.value);
+                        versions.lock().push(versioned.value.as_u64());
                     }
                 }
             })
@@ -696,7 +698,7 @@ fn test_statecell_cas_nonexistent_fails() {
     let state_cell = StateCell::new(db.clone());
 
     // CAS on nonexistent cell should fail
-    let result = state_cell.cas(&run_id, "nonexistent", 1, Value::Int(42));
+    let result = state_cell.cas(&run_id, "nonexistent", Version::counter(1), Value::Int(42));
     assert!(result.is_err(), "CAS on nonexistent cell should fail");
 }
 

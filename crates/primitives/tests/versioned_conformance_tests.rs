@@ -242,8 +242,8 @@ mod invariant_2_versioned {
         let state = StateCell::new(db);
 
         let versioned = state.init(&run_id, "cell", Value::Int(0)).unwrap();
-        // init returns Versioned<u64> with initial version
-        assert_eq!(versioned.value, 1);
+        // init returns Versioned<Version> with initial version
+        assert_eq!(versioned.value, Version::counter(1));
     }
 
     #[test]
@@ -1050,12 +1050,12 @@ mod version_monotonicity {
 
         state.init(&run_id, "cell", Value::Int(0)).unwrap();
 
-        let mut last_version = 1u64;
+        let mut last_version = Version::counter(1);
         for i in 1..10 {
             let versioned = state
                 .set(&run_id, "cell", Value::Int(i as i64))
                 .unwrap();
-            assert!(versioned.value > last_version);
+            assert!(versioned.value.as_u64() > last_version.as_u64());
             last_version = versioned.value;
         }
     }

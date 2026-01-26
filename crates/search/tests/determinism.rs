@@ -77,7 +77,7 @@ fn test_search_deterministic() {
 
     // Hits should be in same order
     for (h1, h2) in r1.hits.iter().zip(r2.hits.iter()) {
-        assert_eq!(h1.doc_ref, h2.doc_ref, "DocRefs should be in same order");
+        assert_eq!(h1.doc_ref, h2.doc_ref, "EntityRefs should be in same order");
         assert_eq!(h1.rank, h2.rank, "Ranks should be identical");
         assert!(
             (h1.score - h2.score).abs() < 0.0001,
@@ -109,7 +109,7 @@ fn test_primitive_search_deterministic() {
         );
 
         for (h1, h2) in result.hits.iter().zip(results[0].hits.iter()) {
-            assert_eq!(h1.doc_ref, h2.doc_ref, "DocRefs should match");
+            assert_eq!(h1.doc_ref, h2.doc_ref, "EntityRefs should match");
         }
     }
 }

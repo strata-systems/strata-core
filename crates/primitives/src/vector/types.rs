@@ -442,6 +442,7 @@ mod tests {
 
     #[test]
     fn test_vector_entry_with_metadata() {
+        use strata_core::contract::Version;
         let metadata = serde_json::json!({"category": "test"});
         let entry = VectorEntry::new(
             "test".to_string(),
@@ -450,7 +451,7 @@ mod tests {
             VectorId::new(1),
         );
         assert_eq!(entry.metadata, Some(metadata));
-        assert_eq!(entry.version(), 1);
+        assert_eq!(entry.version(), Version::txn(1));
     }
 
     #[test]

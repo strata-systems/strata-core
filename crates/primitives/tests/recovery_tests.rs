@@ -6,6 +6,7 @@
 //! - Secondary indices: Replayed, not rebuilt
 //! - Derived keys (hashes): Stored, not recomputed
 
+use strata_core::contract::Version;
 use strata_core::types::RunId;
 use strata_core::value::Value;
 use strata_engine::Database;
@@ -237,18 +238,18 @@ fn test_state_cell_version_survives_recovery() {
 
     // CAS increments version
     state_cell
-        .cas(&run_id, "counter", 1, Value::Int(10))
+        .cas(&run_id, "counter", Version::counter(1), Value::Int(10))
         .unwrap(); // -> v2
     state_cell
-        .cas(&run_id, "counter", 2, Value::Int(20))
+        .cas(&run_id, "counter", Version::counter(2), Value::Int(20))
         .unwrap(); // -> v3
     state_cell
-        .cas(&run_id, "counter", 3, Value::Int(30))
+        .cas(&run_id, "counter", Version::counter(3), Value::Int(30))
         .unwrap(); // -> v4
 
     // Verify before crash
     let state = state_cell.read(&run_id, "counter").unwrap().unwrap();
-    assert_eq!(state.value.version, 4);
+    assert_eq!(state.value.version, Version::counter(4));
     assert_eq!(state.value.value, Value::Int(30));
 
     // Simulate crash
@@ -261,17 +262,17 @@ fn test_state_cell_version_survives_recovery() {
 
     // Version is correct (4, not 1)
     let state = state_cell.read(&run_id, "counter").unwrap().unwrap();
-    assert_eq!(state.value.version, 4);
+    assert_eq!(state.value.version, Version::counter(4));
     assert_eq!(state.value.value, Value::Int(30));
 
     // CAS works with correct version
     let new_versioned = state_cell
-        .cas(&run_id, "counter", 4, Value::Int(40))
+        .cas(&run_id, "counter", Version::counter(4), Value::Int(40))
         .unwrap();
-    assert_eq!(new_versioned.value, 5);
+    assert_eq!(new_versioned.value, Version::counter(5));
 
     // CAS with old version fails
-    let result = state_cell.cas(&run_id, "counter", 4, Value::Int(999));
+    let result = state_cell.cas(&run_id, "counter", Version::counter(4), Value::Int(999));
     assert!(result.is_err());
 }
 
@@ -302,7 +303,7 @@ fn test_state_cell_set_survives_recovery() {
     // Value preserved
     let state = state_cell.read(&run_id, "status").unwrap().unwrap();
     assert_eq!(state.value.value, Value::String("updated".into()));
-    assert_eq!(state.value.version, 2); // init = 1, set = 2
+    assert_eq!(state.value.version, Version::counter(2)); // init = 1, set = 2
 }
 
 /// Test RunIndex status survives recovery
@@ -560,7 +561,7 @@ fn test_all_primitives_recover_together() {
             .init(&run_id, "full_state", Value::Int(0))
             .unwrap();
         state_cell
-            .cas(&run_id, "full_state", 1, Value::Int(100))
+            .cas(&run_id, "full_state", Version::counter(1), Value::Int(100))
             .unwrap();
     }
 
@@ -590,6 +591,6 @@ fn test_all_primitives_recover_together() {
         // StateCell
         let state = state_cell.read(&run_id, "full_state").unwrap().unwrap();
         assert_eq!(state.value.value, Value::Int(100));
-        assert_eq!(state.value.version, 2);
+        assert_eq!(state.value.version, Version::counter(2));
     }
 }

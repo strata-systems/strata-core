@@ -2,6 +2,7 @@
 //!
 //! Tests verifying that multiple primitives can participate in atomic transactions.
 
+use strata_core::contract::Version;
 use strata_core::types::RunId;
 use strata_core::value::Value;
 use strata_engine::Database;
@@ -53,8 +54,8 @@ fn test_kv_event_state_atomic() {
         assert_eq!(seq, 0);
 
         // State operation (CAS from version 1 after init)
-        let new_version = txn.state_cas("workflow", 1, Value::String("step1".into()))?;
-        assert_eq!(new_version, 2);
+        let new_version = txn.state_cas("workflow", Version::counter(1), Value::String("step1".into()))?;
+        assert_eq!(new_version, Version::counter(2));
 
         Ok(())
     });
@@ -73,7 +74,7 @@ fn test_kv_event_state_atomic() {
 
     let state = state_cell.read(&run_id, "workflow").unwrap().unwrap();
     assert_eq!(state.value.value, Value::String("step1".into()));
-    assert_eq!(state.value.version, 2);
+    assert_eq!(state.value.version, Version::counter(2));
 }
 
 /// Test that a failed operation causes full rollback of all primitives
@@ -95,7 +96,7 @@ fn test_cross_primitive_rollback() {
 
         // StateCell CAS with WRONG version (should fail)
         // State is at version 1, but we try version 999
-        txn.state_cas("cell", 999, Value::Int(200))?;
+        txn.state_cas("cell", Version::counter(999), Value::Int(200))?;
 
         Ok(())
     });
@@ -114,7 +115,7 @@ fn test_cross_primitive_rollback() {
     // Verify StateCell unchanged
     let state = state_cell.read(&run_id, "cell").unwrap().unwrap();
     assert_eq!(state.value.value, Value::Int(100));
-    assert_eq!(state.value.version, 1);
+    assert_eq!(state.value.version, Version::counter(1));
 }
 
 /// Test that all 3 extension traits compose correctly in single transaction
@@ -137,7 +138,7 @@ fn test_all_extension_traits_compose() {
 
         // StateCellExt::state_set() (unconditional) - version 2 after init
         let version = txn.state_set("counter", Value::Int(1))?;
-        assert_eq!(version, 2);
+        assert_eq!(version, Version::counter(2));
 
         Ok(())
     });
@@ -171,7 +172,7 @@ fn test_partial_failure_full_rollback() {
         txn.event_append("partial_event", empty_payload())?;
 
         // 3. State CAS with wrong version - FAILURE
-        txn.state_cas("state", 999, Value::Int(100))?;
+        txn.state_cas("state", Version::counter(999), Value::Int(100))?;
 
         Ok(())
     });
@@ -187,7 +188,7 @@ fn test_partial_failure_full_rollback() {
     assert_eq!(event_log.len(&run_id).unwrap(), 0);
 
     let state = state_cell.read(&run_id, "state").unwrap().unwrap();
-    assert_eq!(state.value.version, 1); // Unchanged
+    assert_eq!(state.value.version, Version::counter(1)); // Unchanged
 }
 
 /// Test nested/chained primitive operations within single transaction
@@ -335,5 +336,5 @@ fn test_read_only_transaction() {
     // Data unchanged
     assert_eq!(kv.get(&run_id, "existing").unwrap().map(|v| v.value), Some(Value::Int(100)));
     let state = state_cell.read(&run_id, "cell").unwrap().unwrap();
-    assert_eq!(state.value.version, 1);
+    assert_eq!(state.value.version, Version::counter(1));
 }

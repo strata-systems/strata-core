@@ -24,50 +24,8 @@
 //! 3. **Backward Compatibility**: Existing entry types maintain their values
 //! 4. **Self-Describing**: Each entry type includes version for format evolution
 
+use strata_core::PrimitiveType;
 use thiserror::Error;
-
-/// Primitive kind for categorization
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PrimitiveKind {
-    /// Key-value store
-    Kv,
-    /// JSON document store
-    Json,
-    /// Event log
-    Event,
-    /// State cell
-    State,
-    /// Run index
-    Run,
-    /// Vector store
-    Vector,
-}
-
-impl PrimitiveKind {
-    /// Get the entry type range for this primitive
-    pub fn entry_type_range(&self) -> (u8, u8) {
-        match self {
-            PrimitiveKind::Kv => (0x10, 0x1F),
-            PrimitiveKind::Json => (0x20, 0x2F),
-            PrimitiveKind::Event => (0x30, 0x3F),
-            PrimitiveKind::State => (0x40, 0x4F),
-            PrimitiveKind::Run => (0x60, 0x6F),
-            PrimitiveKind::Vector => (0x70, 0x7F),
-        }
-    }
-
-    /// Get the primitive ID for snapshot sections
-    pub fn primitive_id(&self) -> u8 {
-        match self {
-            PrimitiveKind::Kv => 1,
-            PrimitiveKind::Json => 2,
-            PrimitiveKind::Event => 3,
-            PrimitiveKind::State => 4,
-            PrimitiveKind::Run => 6,
-            PrimitiveKind::Vector => 7,
-        }
-    }
-}
 
 /// WAL entry types with explicit byte values
 ///
@@ -221,17 +179,17 @@ impl WalEntryType {
     /// Get the primitive this entry type belongs to
     ///
     /// Returns None for control entries (0x00-0x0F range).
-    pub fn primitive_kind(&self) -> Option<PrimitiveKind> {
+    pub fn primitive_kind(&self) -> Option<PrimitiveType> {
         let value = *self as u8;
         match value {
             0x00..=0x0F => None, // Core/control entries
-            0x10..=0x1F => Some(PrimitiveKind::Kv),
-            0x20..=0x2F => Some(PrimitiveKind::Json),
-            0x30..=0x3F => Some(PrimitiveKind::Event),
-            0x40..=0x4F => Some(PrimitiveKind::State),
+            0x10..=0x1F => Some(PrimitiveType::Kv),
+            0x20..=0x2F => Some(PrimitiveType::Json),
+            0x30..=0x3F => Some(PrimitiveType::Event),
+            0x40..=0x4F => Some(PrimitiveType::State),
             0x50..=0x5F => None, // Reserved for future primitives
-            0x60..=0x6F => Some(PrimitiveKind::Run),
-            0x70..=0x7F => Some(PrimitiveKind::Vector),
+            0x60..=0x6F => Some(PrimitiveType::Run),
+            0x70..=0x7F => Some(PrimitiveType::Vector),
             _ => None, // Reserved for future
         }
     }
@@ -538,39 +496,39 @@ mod tests {
         // Primitive entries
         assert_eq!(
             WalEntryType::KvPut.primitive_kind(),
-            Some(PrimitiveKind::Kv)
+            Some(PrimitiveType::Kv)
         );
         assert_eq!(
             WalEntryType::KvDelete.primitive_kind(),
-            Some(PrimitiveKind::Kv)
+            Some(PrimitiveType::Kv)
         );
         assert_eq!(
             WalEntryType::JsonCreate.primitive_kind(),
-            Some(PrimitiveKind::Json)
+            Some(PrimitiveType::Json)
         );
         assert_eq!(
             WalEntryType::JsonSet.primitive_kind(),
-            Some(PrimitiveKind::Json)
+            Some(PrimitiveType::Json)
         );
         assert_eq!(
             WalEntryType::EventAppend.primitive_kind(),
-            Some(PrimitiveKind::Event)
+            Some(PrimitiveType::Event)
         );
         assert_eq!(
             WalEntryType::StateInit.primitive_kind(),
-            Some(PrimitiveKind::State)
+            Some(PrimitiveType::State)
         );
         assert_eq!(
             WalEntryType::RunCreate.primitive_kind(),
-            Some(PrimitiveKind::Run)
+            Some(PrimitiveType::Run)
         );
         assert_eq!(
             WalEntryType::VectorCollectionCreate.primitive_kind(),
-            Some(PrimitiveKind::Vector)
+            Some(PrimitiveType::Vector)
         );
         assert_eq!(
             WalEntryType::VectorUpsert.primitive_kind(),
-            Some(PrimitiveKind::Vector)
+            Some(PrimitiveType::Vector)
         );
     }
 
@@ -643,33 +601,33 @@ mod tests {
     #[test]
     fn test_primitive_kind_range() {
         // Verify primitive ranges are correct
-        let kv_range = PrimitiveKind::Kv.entry_type_range();
+        let kv_range = PrimitiveType::Kv.entry_type_range();
         assert_eq!(kv_range, (0x10, 0x1F));
 
-        let json_range = PrimitiveKind::Json.entry_type_range();
+        let json_range = PrimitiveType::Json.entry_type_range();
         assert_eq!(json_range, (0x20, 0x2F));
 
-        let event_range = PrimitiveKind::Event.entry_type_range();
+        let event_range = PrimitiveType::Event.entry_type_range();
         assert_eq!(event_range, (0x30, 0x3F));
 
-        let state_range = PrimitiveKind::State.entry_type_range();
+        let state_range = PrimitiveType::State.entry_type_range();
         assert_eq!(state_range, (0x40, 0x4F));
 
-        let run_range = PrimitiveKind::Run.entry_type_range();
+        let run_range = PrimitiveType::Run.entry_type_range();
         assert_eq!(run_range, (0x60, 0x6F));
 
-        let vector_range = PrimitiveKind::Vector.entry_type_range();
+        let vector_range = PrimitiveType::Vector.entry_type_range();
         assert_eq!(vector_range, (0x70, 0x7F));
     }
 
     #[test]
     fn test_primitive_id() {
-        assert_eq!(PrimitiveKind::Kv.primitive_id(), 1);
-        assert_eq!(PrimitiveKind::Json.primitive_id(), 2);
-        assert_eq!(PrimitiveKind::Event.primitive_id(), 3);
-        assert_eq!(PrimitiveKind::State.primitive_id(), 4);
-        assert_eq!(PrimitiveKind::Run.primitive_id(), 6);
-        assert_eq!(PrimitiveKind::Vector.primitive_id(), 7);
+        assert_eq!(PrimitiveType::Kv.primitive_id(), 1);
+        assert_eq!(PrimitiveType::Json.primitive_id(), 2);
+        assert_eq!(PrimitiveType::Event.primitive_id(), 3);
+        assert_eq!(PrimitiveType::State.primitive_id(), 4);
+        assert_eq!(PrimitiveType::Run.primitive_id(), 6);
+        assert_eq!(PrimitiveType::Vector.primitive_id(), 7);
     }
 
     #[test]

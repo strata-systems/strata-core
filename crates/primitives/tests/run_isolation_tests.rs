@@ -3,6 +3,7 @@
 //! Tests verifying that different runs are completely isolated from each other.
 //! Each run has its own namespace and cannot see or affect other runs' data.
 
+use strata_core::contract::Version;
 use strata_core::types::RunId;
 use strata_core::value::Value;
 use strata_engine::Database;
@@ -123,19 +124,19 @@ fn test_state_cell_isolation() {
     assert_eq!(state2.value.value, Value::Int(100));
 
     // Both start at version 1
-    assert_eq!(state1.value.version, 1);
-    assert_eq!(state2.value.version, 1);
+    assert_eq!(state1.value.version, Version::counter(1));
+    assert_eq!(state2.value.version, Version::counter(1));
 
     // CAS on run1 doesn't affect run2
-    state_cell.cas(&run1, "counter", 1, Value::Int(10)).unwrap();
+    state_cell.cas(&run1, "counter", Version::counter(1), Value::Int(10)).unwrap();
 
     let state1 = state_cell.read(&run1, "counter").unwrap().unwrap();
     let state2 = state_cell.read(&run2, "counter").unwrap().unwrap();
 
     assert_eq!(state1.value.value, Value::Int(10));
-    assert_eq!(state1.value.version, 2);
+    assert_eq!(state1.value.version, Version::counter(2));
     assert_eq!(state2.value.value, Value::Int(100)); // Unchanged
-    assert_eq!(state2.value.version, 1); // Unchanged
+    assert_eq!(state2.value.version, Version::counter(1)); // Unchanged
 }
 
 /// Test that queries in one run context NEVER return data from another run
@@ -280,10 +281,10 @@ fn test_state_cell_cas_isolation() {
     state_cell.init(&run2, "cell", Value::Int(0)).unwrap();
 
     // CAS on run1 with version 1
-    state_cell.cas(&run1, "cell", 1, Value::Int(10)).unwrap();
+    state_cell.cas(&run1, "cell", Version::counter(1), Value::Int(10)).unwrap();
 
     // CAS on run2 with version 1 should ALSO succeed (independent versions)
-    let result = state_cell.cas(&run2, "cell", 1, Value::Int(20));
+    let result = state_cell.cas(&run2, "cell", Version::counter(1), Value::Int(20));
     assert!(result.is_ok());
 
     // Both have been updated
@@ -291,9 +292,9 @@ fn test_state_cell_cas_isolation() {
     let s2 = state_cell.read(&run2, "cell").unwrap().unwrap();
 
     assert_eq!(s1.value.value, Value::Int(10));
-    assert_eq!(s1.value.version, 2);
+    assert_eq!(s1.value.version, Version::counter(2));
     assert_eq!(s2.value.value, Value::Int(20));
-    assert_eq!(s2.value.version, 2);
+    assert_eq!(s2.value.version, Version::counter(2));
 }
 
 /// Test EventLog chain isolation - chains are independent per run

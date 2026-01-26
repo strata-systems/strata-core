@@ -43,9 +43,9 @@ pub use durability::{
 };
 pub use instrumentation::PerfTrace;
 pub use replay::{
-    diff_views, DiffEntry, DiffPrimitiveKind, ReadOnlyView, ReplayError, RunDiff, RunError,
-    RunIndex,
+    diff_views, DiffEntry, ReadOnlyView, ReplayError, RunDiff, RunError, RunIndex,
 };
+// Note: Use strata_core::PrimitiveType for DiffEntry.primitive field
 pub use transaction::{Transaction, TransactionPool, MAX_POOL_SIZE};
 pub use transaction_ops::TransactionOps;
 

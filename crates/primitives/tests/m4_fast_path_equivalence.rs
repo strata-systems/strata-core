@@ -10,6 +10,7 @@
 //!
 //! "Latest committed at snapshot acquisition" is the correct semantic.
 
+use strata_core::contract::Version;
 use strata_core::types::RunId;
 use strata_core::value::Value;
 use strata_engine::Database;
@@ -216,7 +217,7 @@ fn statecell_version_monotonicity() {
         sc.set(&run_id, "counter", Value::Int(i)).unwrap();
 
         let state = sc.read(&run_id, "counter").unwrap().unwrap();
-        assert_eq!(state.value.version, (i + 1) as u64, "version should increment");
+        assert_eq!(state.value.version, Version::counter((i + 1) as u64), "version should increment");
         assert_eq!(state.value.value, Value::Int(i), "value should update");
     }
 }

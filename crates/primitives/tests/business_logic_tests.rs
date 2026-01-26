@@ -16,6 +16,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use strata_core::contract::Version;
 use strata_core::types::RunId;
 use strata_core::value::Value;
 use strata_engine::Database;
@@ -369,7 +370,7 @@ fn test_statecell_set_unconditional_update() {
 
     // Set ignores current value
     let versioned = state_cell.set(&run_id, "cell", Value::Int(999)).unwrap();
-    assert_eq!(versioned.value, 2, "Version should be 2 after set");
+    assert_eq!(versioned.value, Version::counter(2), "Version should be 2 after set");
 
     let state = state_cell.read(&run_id, "cell").unwrap().unwrap();
     assert_eq!(state.value.value, Value::Int(999));
@@ -403,7 +404,7 @@ fn test_statecell_transition_or_init() {
         .unwrap();
 
     assert_eq!(result, 0, "Should have seen initial value 0");
-    assert_eq!(versioned.value, 2, "Version should be 2 (init=1, transition=2)");
+    assert_eq!(versioned.value, Version::counter(2), "Version should be 2 (init=1, transition=2)");
 
     let state = state_cell.read(&run_id, "cell").unwrap().unwrap();
     assert_eq!(state.value.value, Value::Int(1));

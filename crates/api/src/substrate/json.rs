@@ -624,7 +624,7 @@ impl JsonStore for SubstrateImpl {
 
         Ok(response.hits.into_iter().map(|hit| {
             let key = match hit.doc_ref {
-                strata_core::search_types::DocRef::Json { doc_id, .. } => doc_id.to_string(),
+                strata_core::search_types::EntityRef::Json { doc_id, .. } => doc_id.to_string(),
                 _ => String::new(),
             };
             JsonSearchHit {

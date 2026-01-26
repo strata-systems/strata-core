@@ -62,7 +62,8 @@ pub use snapshot_types::{
 };
 pub use transaction_log::{Transaction, TxEntry};
 pub use wal::{DurabilityMode, WALEntry as LegacyWALEntry, WAL};
-pub use wal_entry_types::{PrimitiveKind, WalEntryType, WalEntryTypeError};
+pub use wal_entry_types::{WalEntryType, WalEntryTypeError};
+// Note: PrimitiveType is exported from strata_core, not duplicated here
 pub use wal_manager::{WalManager, WalStats};
 pub use wal_reader::WalReader;
 pub use wal_types::{TxId, WalEntry, WalEntryError, MAX_WAL_ENTRY_SIZE, WAL_FORMAT_VERSION};

@@ -798,7 +798,7 @@ impl VectorStore for SubstrateImpl {
                 .unwrap_or(Value::Null);
             Versioned {
                 value: (e.value.embedding.clone(), api_metadata),
-                version: Version::Txn(e.value.version),
+                version: e.value.version,
                 timestamp: e.timestamp,
             }
         }))
@@ -1100,7 +1100,7 @@ impl VectorStore for SubstrateImpl {
                         .unwrap_or(Value::Null);
                     Versioned {
                         value: (e.value.embedding.clone(), api_metadata),
-                        version: Version::Txn(e.value.version),
+                        version: e.value.version,
                         timestamp: e.timestamp,
                     }
                 })
@@ -1184,7 +1184,7 @@ impl VectorStore for SubstrateImpl {
 
         let entry = self
             .vector()
-            .get_at(run_id, collection, key, version)
+            .get_at(run_id, collection, key, Version::txn(version))
             .map_err(convert_vector_error)?;
 
         Ok(entry.map(|e| {

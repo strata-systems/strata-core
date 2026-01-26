@@ -305,7 +305,7 @@ impl StateCell for SubstrateImpl {
             }
             Some(expected) => {
                 // CAS with expected version
-                match self.state().cas(&run_id, cell, expected, value) {
+                match self.state().cas(&run_id, cell, Version::counter(expected), value) {
                     Ok(versioned) => Ok(Some(versioned.version)),
                     Err(_) => Ok(None), // Version mismatch
                 }

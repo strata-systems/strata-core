@@ -97,7 +97,7 @@ fn test_run_index_primitive_returns_search_response() {
     let _ = run_response.is_empty();
 }
 
-/// DocRef from each primitive correctly reports its primitive kind
+/// EntityRef from each primitive correctly reports its primitive kind
 #[test]
 fn test_docref_primitive_kind_matches() {
     let db = test_db();
@@ -113,12 +113,12 @@ fn test_docref_primitive_kind_matches() {
         assert_eq!(
             hit.doc_ref.primitive_type(),
             PrimitiveType::Kv,
-            "DocRef from KV search should report Kv primitive kind"
+            "EntityRef from KV search should report Kv primitive kind"
         );
         assert_eq!(
             hit.doc_ref.run_id(),
             run_id,
-            "DocRef should contain correct run_id"
+            "EntityRef should contain correct run_id"
         );
     }
 }

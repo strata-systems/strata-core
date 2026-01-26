@@ -1423,7 +1423,7 @@ impl JsonStore {
         req: &strata_core::SearchRequest,
     ) -> strata_core::error::Result<strata_core::SearchResponse> {
         use crate::searchable::{build_search_response, SearchCandidate};
-        use strata_core::search_types::DocRef;
+        use strata_core::search_types::EntityRef;
         use std::time::Instant;
 
         let start = Instant::now();
@@ -1464,7 +1464,7 @@ impl JsonStore {
             let text = self.flatten_json(&doc.value);
 
             candidates.push(SearchCandidate::new(
-                DocRef::Json {
+                EntityRef::Json {
                     run_id: req.run_id,
                     doc_id: doc.id,
                 },
