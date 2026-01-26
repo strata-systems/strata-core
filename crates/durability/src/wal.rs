@@ -39,7 +39,7 @@ use crate::encoding::{decode_entry, encode_entry};
 use strata_core::{
     error::{Error, Result},
     json::JsonPath,
-    types::{JsonDocId, Key, RunId},
+    types::{Key, RunId},
     value::Value,
     Timestamp,
 };
@@ -147,7 +147,7 @@ pub enum WALEntry {
         /// Run this operation belongs to
         run_id: RunId,
         /// Document identifier
-        doc_id: JsonDocId,
+        doc_id: String,
         /// Initial JSON value (msgpack serialized)
         value_bytes: Vec<u8>,
         /// Version assigned to this document
@@ -164,7 +164,7 @@ pub enum WALEntry {
         /// Run this operation belongs to
         run_id: RunId,
         /// Document identifier
-        doc_id: JsonDocId,
+        doc_id: String,
         /// Path to set value at
         path: JsonPath,
         /// New value at path (msgpack serialized)
@@ -180,7 +180,7 @@ pub enum WALEntry {
         /// Run this operation belongs to
         run_id: RunId,
         /// Document identifier
-        doc_id: JsonDocId,
+        doc_id: String,
         /// Path to delete
         path: JsonPath,
         /// New document version after this operation
@@ -194,7 +194,7 @@ pub enum WALEntry {
         /// Run this operation belongs to
         run_id: RunId,
         /// Document identifier
-        doc_id: JsonDocId,
+        doc_id: String,
     },
 
     // ========================================================================
@@ -1457,18 +1457,17 @@ mod tests {
     // ========================================================================
 
     use strata_core::json::JsonPath;
-    use strata_core::types::JsonDocId;
 
     #[test]
     fn test_json_create_entry() {
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         // Simulate msgpack-serialized empty object
         let value_bytes = vec![0x80]; // msgpack empty map
 
         let entry = WALEntry::JsonCreate {
             run_id,
-            doc_id,
+            doc_id: doc_id.to_string(),
             value_bytes,
             version: 1,
             timestamp: now(),
@@ -1484,14 +1483,14 @@ mod tests {
     #[test]
     fn test_json_set_entry() {
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         let path = "user.name".parse::<JsonPath>().unwrap();
         // Simulate msgpack-serialized string "Alice"
         let value_bytes = b"\xa5Alice".to_vec();
 
         let entry = WALEntry::JsonSet {
             run_id,
-            doc_id,
+            doc_id: doc_id.to_string(),
             path: path.clone(),
             value_bytes,
             version: 2,
@@ -1516,12 +1515,12 @@ mod tests {
     #[test]
     fn test_json_delete_entry() {
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         let path = "temp.field".parse::<JsonPath>().unwrap();
 
         let entry = WALEntry::JsonDelete {
             run_id,
-            doc_id,
+            doc_id: doc_id.to_string(),
             path,
             version: 3,
         };
@@ -1535,9 +1534,9 @@ mod tests {
     #[test]
     fn test_json_destroy_entry() {
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
-        let entry = WALEntry::JsonDestroy { run_id, doc_id };
+        let entry = WALEntry::JsonDestroy { run_id, doc_id: doc_id.to_string() };
 
         assert_eq!(entry.run_id(), Some(run_id));
         assert_eq!(entry.version(), None); // JsonDestroy has no version
@@ -1548,30 +1547,30 @@ mod tests {
     #[test]
     fn test_json_entries_serialize() {
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let entries = vec![
             WALEntry::JsonCreate {
                 run_id,
-                doc_id,
+                doc_id: doc_id.to_string(),
                 value_bytes: vec![0x80], // msgpack empty map
                 version: 1,
                 timestamp: now(),
             },
             WALEntry::JsonSet {
                 run_id,
-                doc_id,
+                doc_id: doc_id.to_string(),
                 path: "name".parse().unwrap(),
                 value_bytes: b"\xa4test".to_vec(), // msgpack string "test"
                 version: 2,
             },
             WALEntry::JsonDelete {
                 run_id,
-                doc_id,
+                doc_id: doc_id.to_string(),
                 path: "temp".parse().unwrap(),
                 version: 3,
             },
-            WALEntry::JsonDestroy { run_id, doc_id },
+            WALEntry::JsonDestroy { run_id, doc_id: doc_id.to_string() },
         ];
 
         for entry in entries {

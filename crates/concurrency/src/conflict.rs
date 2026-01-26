@@ -353,10 +353,10 @@ pub fn check_all_conflicts(
 mod tests {
     use super::*;
     use strata_core::json::JsonPatch;
-    use strata_core::types::{JsonDocId, Namespace, RunId};
+    use strata_core::types::{Namespace, RunId};
 
     fn test_key() -> Key {
-        Key::new_json(Namespace::for_run(RunId::new()), &JsonDocId::new())
+        Key::new_json(Namespace::for_run(RunId::new()), "test-doc")
     }
 
     #[test]

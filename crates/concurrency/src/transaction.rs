@@ -3647,16 +3647,16 @@ mod tests {
     mod json_types_tests {
         use super::*;
         use strata_core::json::JsonPath;
-        use strata_core::types::{JsonDocId, Namespace};
+        use strata_core::types::Namespace;
 
-        fn create_json_key(run_id: RunId, doc_id: &JsonDocId) -> Key {
+        fn create_json_key(run_id: RunId, doc_id: &str) -> Key {
             Key::new_json(Namespace::for_run(run_id), doc_id)
         }
 
         #[test]
         fn test_json_path_read_creation() {
             let run_id = RunId::new();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(run_id, &doc_id);
             let path = "foo.bar".parse::<JsonPath>().unwrap();
 
@@ -3670,7 +3670,7 @@ mod tests {
         #[test]
         fn test_json_path_read_root() {
             let run_id = RunId::new();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(run_id, &doc_id);
             let path = JsonPath::root();
 
@@ -3683,7 +3683,7 @@ mod tests {
         #[test]
         fn test_json_path_read_nested_path() {
             let run_id = RunId::new();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(run_id, &doc_id);
             let path = "users[0].profile.name".parse::<JsonPath>().unwrap();
 
@@ -3698,7 +3698,7 @@ mod tests {
             use strata_core::json::JsonValue;
 
             let run_id = RunId::new();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(run_id, &doc_id);
             let path = "count".parse::<JsonPath>().unwrap();
             let patch = JsonPatch::set_at(path, JsonValue::from(42i64));
@@ -3712,7 +3712,7 @@ mod tests {
         #[test]
         fn test_json_patch_entry_delete() {
             let run_id = RunId::new();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(run_id, &doc_id);
             let path = "temp_field".parse::<JsonPath>().unwrap();
             let patch = JsonPatch::delete_at(path);
@@ -3726,7 +3726,7 @@ mod tests {
         #[test]
         fn test_json_path_read_clone() {
             let run_id = RunId::new();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(run_id, &doc_id);
             let path = "data".parse::<JsonPath>().unwrap();
 
@@ -3743,7 +3743,7 @@ mod tests {
             use strata_core::json::JsonValue;
 
             let run_id = RunId::new();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(run_id, &doc_id);
             let path = "value".parse::<JsonPath>().unwrap();
             let patch = JsonPatch::set_at(path, JsonValue::from("test"));
@@ -3771,7 +3771,7 @@ mod tests {
         fn test_json_reads_lazy_init() {
             let mut txn = create_test_txn();
             let run_id = RunId::new();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(run_id, &doc_id);
             let path = "data.field".parse::<JsonPath>().unwrap();
 
@@ -3794,7 +3794,7 @@ mod tests {
 
             let mut txn = create_test_txn();
             let run_id = RunId::new();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(run_id, &doc_id);
             let path = "data.value".parse::<JsonPath>().unwrap();
             let patch = JsonPatch::set_at(path, JsonValue::from(42));
@@ -3816,7 +3816,7 @@ mod tests {
         fn test_json_snapshot_versions_lazy_init() {
             let mut txn = create_test_txn();
             let run_id = RunId::new();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(run_id, &doc_id);
 
             // Initially not allocated
@@ -3838,7 +3838,7 @@ mod tests {
             let run_id = RunId::new();
 
             for i in 0..3 {
-                let doc_id = JsonDocId::new();
+                let doc_id = "test-doc";
                 let key = create_json_key(run_id, &doc_id);
                 let path_str = format!("field{}", i);
                 let path = path_str.parse::<JsonPath>().unwrap();
@@ -3854,7 +3854,7 @@ mod tests {
 
             let mut txn = create_test_txn();
             let run_id = RunId::new();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(run_id, &doc_id);
             let path = "test".parse::<JsonPath>().unwrap();
 
@@ -3905,7 +3905,7 @@ mod tests {
 
             let mut txn = create_test_txn();
             let run_id = RunId::new();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(run_id, &doc_id);
             let path = "data.field".parse::<JsonPath>().unwrap();
 
@@ -3922,7 +3922,7 @@ mod tests {
         fn test_json_delete_records_write() {
             let mut txn = create_test_txn();
             let run_id = RunId::new();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(run_id, &doc_id);
             let path = "data.field".parse::<JsonPath>().unwrap();
 
@@ -3940,7 +3940,7 @@ mod tests {
 
             let mut txn = create_test_txn();
             let run_id = RunId::new();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(run_id, &doc_id);
             let path = "data".parse::<JsonPath>().unwrap();
 
@@ -3958,7 +3958,7 @@ mod tests {
 
             let mut txn = create_test_txn();
             let run_id = RunId::new();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(run_id, &doc_id);
             let parent_path = "data".parse::<JsonPath>().unwrap();
             let child_path: JsonPath = "data.name".parse().unwrap();
@@ -3985,7 +3985,7 @@ mod tests {
 
             let mut txn = create_test_txn();
             let run_id = RunId::new();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(run_id, &doc_id);
             let path = "data".parse::<JsonPath>().unwrap();
 
@@ -4006,7 +4006,7 @@ mod tests {
 
             let mut txn = create_test_txn();
             let run_id = RunId::new();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(run_id, &doc_id);
             let path = "data".parse::<JsonPath>().unwrap();
 

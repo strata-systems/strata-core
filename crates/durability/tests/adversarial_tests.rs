@@ -21,7 +21,7 @@ use std::thread;
 use strata_core::error::Result;
 use strata_core::json::JsonPath;
 use strata_core::traits::Storage;
-use strata_core::types::{JsonDocId, Key, Namespace, RunId};
+use strata_core::types::{Key, Namespace, RunId};
 use strata_core::value::Value;
 use strata_core::Timestamp;
 use strata_durability::recovery::replay_wal;
@@ -217,7 +217,7 @@ fn test_json_set_to_nonexistent_document_skipped() {
     let wal_path = temp_dir.path().join("json_set.wal");
 
     let run_id = RunId::new();
-    let doc_id = JsonDocId::new();
+    let doc_id = "test-doc";
     let path = JsonPath::root().key("missing").key("deeply").key("nested");
     let value_bytes = rmp_serde::to_vec(&serde_json::json!(42)).unwrap();
 
@@ -234,7 +234,7 @@ fn test_json_set_to_nonexistent_document_skipped() {
 
         wal.append(&WALEntry::JsonSet {
             run_id,
-            doc_id,
+            doc_id: doc_id.to_string(),
             path,
             value_bytes,
             version: 1,
@@ -264,7 +264,7 @@ fn test_json_delete_to_nonexistent_document_skipped() {
     let wal_path = temp_dir.path().join("json_del.wal");
 
     let run_id = RunId::new();
-    let doc_id = JsonDocId::new();
+    let doc_id = "test-doc";
     let path = JsonPath::root().key("missing");
 
     // Write JsonDelete without creating document first
@@ -280,7 +280,7 @@ fn test_json_delete_to_nonexistent_document_skipped() {
 
         wal.append(&WALEntry::JsonDelete {
             run_id,
-            doc_id,
+            doc_id: doc_id.to_string(),
             path,
             version: 1,
         })
@@ -309,7 +309,7 @@ fn test_json_create_then_set_replay_order() {
     let wal_path = temp_dir.path().join("json_order.wal");
 
     let run_id = RunId::new();
-    let doc_id = JsonDocId::new();
+    let doc_id = "test-doc";
     let initial_value = serde_json::json!({"name": "test"});
     let initial_bytes = rmp_serde::to_vec(&initial_value).unwrap();
 
@@ -330,7 +330,7 @@ fn test_json_create_then_set_replay_order() {
 
         wal.append(&WALEntry::JsonCreate {
             run_id,
-            doc_id,
+            doc_id: doc_id.to_string(),
             value_bytes: initial_bytes,
             version: 1,
             timestamp: now(),
@@ -339,7 +339,7 @@ fn test_json_create_then_set_replay_order() {
 
         wal.append(&WALEntry::JsonSet {
             run_id,
-            doc_id,
+            doc_id: doc_id.to_string(),
             path,
             value_bytes: new_bytes,
             version: 2,

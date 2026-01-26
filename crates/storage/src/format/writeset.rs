@@ -22,7 +22,7 @@
 //! └──────────────────┴──────────────────┴────────────────────────────┘
 //! ```
 
-use strata_core::{EntityRef, JsonDocId, RunId};
+use strata_core::{EntityRef, RunId};
 
 /// Mutation tag bytes
 const MUTATION_PUT: u8 = 0x01;
@@ -313,7 +313,7 @@ impl Writeset {
             EntityRef::Json { run_id, doc_id } => {
                 bytes.push(ENTITY_JSON);
                 bytes.extend_from_slice(run_id.as_bytes());
-                bytes.extend_from_slice(doc_id.as_bytes());
+                Self::write_string(bytes, doc_id);
             }
             EntityRef::Vector {
                 run_id,
@@ -373,12 +373,8 @@ impl Writeset {
             }
             ENTITY_RUN => Ok((EntityRef::Run { run_id }, cursor)),
             ENTITY_JSON => {
-                if bytes.len() < cursor + 16 {
-                    return Err(WritesetError::InsufficientData);
-                }
-                let doc_id = JsonDocId::try_from_bytes(&bytes[cursor..cursor + 16])
-                    .ok_or(WritesetError::InvalidEntityRef)?;
-                cursor += 16;
+                let (doc_id, consumed) = Self::read_string(&bytes[cursor..])?;
+                cursor += consumed;
                 Ok((EntityRef::Json { run_id, doc_id }, cursor))
             }
             ENTITY_VECTOR => {
@@ -564,14 +560,13 @@ mod tests {
     #[test]
     fn test_entity_ref_all_variants() {
         let run_id = test_run_id();
-        let doc_id = JsonDocId::new();
 
         let refs = vec![
             EntityRef::kv(run_id, "key"),
             EntityRef::event(run_id, 42),
             EntityRef::state(run_id, "state"),
             EntityRef::run(run_id),
-            EntityRef::json(run_id, doc_id),
+            EntityRef::json(run_id, "test-doc"),
             EntityRef::vector(run_id, "collection", "vec-key"),
         ];
 

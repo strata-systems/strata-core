@@ -193,74 +193,6 @@ impl TypeTag {
     }
 }
 
-/// Unique identifier for a JSON document within a run
-///
-/// Each document has a unique ID that persists for its lifetime.
-/// IDs are UUIDs to ensure global uniqueness. JsonDocId is designed
-/// to be small (Copy) and efficient for use as keys.
-///
-/// # Examples
-///
-/// ```
-/// use strata_core::JsonDocId;
-///
-/// let id1 = JsonDocId::new();
-/// let id2 = JsonDocId::new();
-/// assert_ne!(id1, id2); // UUIDs are unique
-///
-/// // Round-trip through bytes
-/// let bytes = id1.as_bytes();
-/// let recovered = JsonDocId::try_from_bytes(bytes).unwrap();
-/// assert_eq!(id1, recovered);
-/// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct JsonDocId(Uuid);
-
-impl JsonDocId {
-    /// Create a new unique document ID using UUID v4
-    pub fn new() -> Self {
-        JsonDocId(Uuid::new_v4())
-    }
-
-    /// Create from existing UUID (for deserialization/recovery)
-    pub fn from_uuid(uuid: Uuid) -> Self {
-        JsonDocId(uuid)
-    }
-
-    /// Get the underlying UUID
-    pub fn as_uuid(&self) -> &Uuid {
-        &self.0
-    }
-
-    /// Get bytes for key encoding (16 bytes)
-    pub fn as_bytes(&self) -> &[u8] {
-        self.0.as_bytes()
-    }
-
-    /// Try to parse from bytes (for key decoding)
-    ///
-    /// Returns None if bytes length is not exactly 16.
-    pub fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() == 16 {
-            Uuid::from_slice(bytes).ok().map(JsonDocId)
-        } else {
-            None
-        }
-    }
-}
-
-impl Default for JsonDocId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl fmt::Display for JsonDocId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
 /// Unified key for all storage types
 ///
 /// A Key combines namespace, type tag, and user-defined key bytes to create
@@ -382,20 +314,19 @@ impl Key {
     /// Create key for JSON document storage
     ///
     /// Helper that automatically sets type_tag to TypeTag::Json and
-    /// uses the JsonDocId bytes as the key.
+    /// uses the document ID string as the key (consistent with KV, State).
     ///
     /// # Example
     ///
     /// ```
-    /// use strata_core::{Key, Namespace, TypeTag, RunId, JsonDocId};
+    /// use strata_core::{Key, Namespace, TypeTag, RunId};
     ///
     /// let run_id = RunId::new();
-    /// let doc_id = JsonDocId::new();
     /// let namespace = Namespace::for_run(run_id);
-    /// let key = Key::new_json(namespace, &doc_id);
+    /// let key = Key::new_json(namespace, "my-document");
     /// assert_eq!(key.type_tag, TypeTag::Json);
     /// ```
-    pub fn new_json(namespace: Namespace, doc_id: &JsonDocId) -> Self {
+    pub fn new_json(namespace: Namespace, doc_id: &str) -> Self {
         Self::new(namespace, TypeTag::Json, doc_id.as_bytes().to_vec())
     }
 
@@ -1430,121 +1361,6 @@ mod tests {
         );
     }
 
-    // ========================================
-    // JsonDocId Tests
-    // ========================================
-
-    #[test]
-    fn test_json_doc_id_unique() {
-        let id1 = JsonDocId::new();
-        let id2 = JsonDocId::new();
-        assert_ne!(id1, id2, "JsonDocIds should be unique");
-    }
-
-    #[test]
-    fn test_json_doc_id_bytes_roundtrip() {
-        let id = JsonDocId::new();
-        let bytes = id.as_bytes();
-        let recovered = JsonDocId::try_from_bytes(bytes).unwrap();
-        assert_eq!(id, recovered, "JsonDocId should roundtrip through bytes");
-    }
-
-    #[test]
-    fn test_json_doc_id_is_copy() {
-        let id = JsonDocId::new();
-        let id_copy = id; // Copy
-        assert_eq!(id, id_copy, "JsonDocId should be Copy");
-    }
-
-    #[test]
-    fn test_json_doc_id_display() {
-        let id = JsonDocId::new();
-        let s = format!("{}", id);
-        assert!(!s.is_empty(), "Display should produce non-empty string");
-        assert_eq!(
-            s.len(),
-            36,
-            "UUID v4 should format as 36 characters with hyphens"
-        );
-    }
-
-    #[test]
-    fn test_json_doc_id_default() {
-        let id1 = JsonDocId::default();
-        let id2 = JsonDocId::default();
-        assert_ne!(id1, id2, "Default JsonDocIds should be unique");
-    }
-
-    #[test]
-    fn test_json_doc_id_hash() {
-        use std::collections::HashSet;
-
-        let id1 = JsonDocId::new();
-        let id2 = id1; // Copy
-
-        let mut set = HashSet::new();
-        set.insert(id1);
-
-        assert!(
-            set.contains(&id2),
-            "Hash should be consistent for copied JsonDocId"
-        );
-
-        let id3 = JsonDocId::new();
-        set.insert(id3);
-
-        assert_eq!(
-            set.len(),
-            2,
-            "Different JsonDocIds should have different hashes"
-        );
-    }
-
-    #[test]
-    fn test_json_doc_id_bytes_length() {
-        let id = JsonDocId::new();
-        let bytes = id.as_bytes();
-        assert_eq!(bytes.len(), 16, "JsonDocId bytes should be 16 bytes (UUID)");
-    }
-
-    #[test]
-    fn test_json_doc_id_try_from_bytes_invalid() {
-        // Too short
-        let short = vec![0u8; 10];
-        assert!(
-            JsonDocId::try_from_bytes(&short).is_none(),
-            "Should reject short bytes"
-        );
-
-        // Too long
-        let long = vec![0u8; 20];
-        assert!(
-            JsonDocId::try_from_bytes(&long).is_none(),
-            "Should reject long bytes"
-        );
-
-        // Empty
-        assert!(
-            JsonDocId::try_from_bytes(&[]).is_none(),
-            "Should reject empty bytes"
-        );
-    }
-
-    #[test]
-    fn test_json_doc_id_from_uuid() {
-        use uuid::Uuid;
-        let uuid = Uuid::new_v4();
-        let id = JsonDocId::from_uuid(uuid);
-        assert_eq!(id.as_uuid(), &uuid, "Should preserve underlying UUID");
-    }
-
-    #[test]
-    fn test_json_doc_id_serialization() {
-        let id = JsonDocId::new();
-        let json = serde_json::to_string(&id).unwrap();
-        let id2: JsonDocId = serde_json::from_str(&json).unwrap();
-        assert_eq!(id, id2, "JsonDocId should roundtrip through JSON");
-    }
 
     // ========================================
     // Key::new_json Tests
@@ -1553,9 +1369,9 @@ mod tests {
     #[test]
     fn test_key_new_json() {
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         let namespace = Namespace::for_run(run_id);
-        let key = Key::new_json(namespace.clone(), &doc_id);
+        let key = Key::new_json(namespace.clone(), doc_id);
 
         assert_eq!(key.type_tag, TypeTag::Json);
         assert_eq!(key.namespace, namespace);
@@ -1573,8 +1389,8 @@ mod tests {
         assert!(prefix.user_key.is_empty());
 
         // Test prefix matching
-        let doc_id = JsonDocId::new();
-        let key = Key::new_json(namespace.clone(), &doc_id);
+        let doc_id = "test-doc";
+        let key = Key::new_json(namespace.clone(), doc_id);
         assert!(
             key.starts_with(&prefix),
             "JSON key should match JSON prefix"
@@ -1585,11 +1401,11 @@ mod tests {
     fn test_key_json_different_docs_different_keys() {
         let run_id = RunId::new();
         let namespace = Namespace::for_run(run_id);
-        let doc_id1 = JsonDocId::new();
-        let doc_id2 = JsonDocId::new();
+        let doc_id1 = "doc-1";
+        let doc_id2 = "doc-2";
 
-        let key1 = Key::new_json(namespace.clone(), &doc_id1);
-        let key2 = Key::new_json(namespace.clone(), &doc_id2);
+        let key1 = Key::new_json(namespace.clone(), doc_id1);
+        let key2 = Key::new_json(namespace.clone(), doc_id2);
 
         assert_ne!(key1, key2, "Different docs should have different keys");
     }
@@ -1598,10 +1414,10 @@ mod tests {
     fn test_key_json_same_doc_same_key() {
         let run_id = RunId::new();
         let namespace = Namespace::for_run(run_id);
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
-        let key1 = Key::new_json(namespace.clone(), &doc_id);
-        let key2 = Key::new_json(namespace.clone(), &doc_id);
+        let key1 = Key::new_json(namespace.clone(), doc_id);
+        let key2 = Key::new_json(namespace.clone(), doc_id);
 
         assert_eq!(key1, key2, "Same doc should have same key");
     }
@@ -1610,11 +1426,11 @@ mod tests {
     fn test_key_json_ordering_with_other_types() {
         let run_id = RunId::new();
         let namespace = Namespace::for_run(run_id);
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let kv_key = Key::new_kv(namespace.clone(), "test");
         let event_key = Key::new_event(namespace.clone(), 1);
-        let json_key = Key::new_json(namespace.clone(), &doc_id);
+        let json_key = Key::new_json(namespace.clone(), doc_id);
 
         // JSON keys should sort after all other types (0x11 > 0x10 > 0x05 > ...)
         assert!(kv_key < json_key, "KV should be < JSON");
@@ -1625,9 +1441,9 @@ mod tests {
     fn test_key_json_does_not_match_other_type_prefix() {
         let run_id = RunId::new();
         let namespace = Namespace::for_run(run_id);
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
-        let json_key = Key::new_json(namespace.clone(), &doc_id);
+        let json_key = Key::new_json(namespace.clone(), doc_id);
         let kv_prefix = Key::new_kv(namespace.clone(), "");
 
         assert!(

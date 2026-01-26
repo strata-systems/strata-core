@@ -482,7 +482,7 @@ pub struct JsonListResult {
 use strata_core::json::JsonValue;
 use super::impl_::{
     SubstrateImpl, convert_error,
-    value_to_json, json_to_value, parse_doc_id, parse_path,
+    value_to_json, json_to_value, parse_path,
 };
 
 impl JsonStore for SubstrateImpl {
@@ -494,23 +494,22 @@ impl JsonStore for SubstrateImpl {
         value: Value,
     ) -> StrataResult<Version> {
         let run_id = run.to_run_id();
-        let doc_id = parse_doc_id(key)?;
         let json_path = parse_path(path)?;
         let json_value = value_to_json(value)?;
 
         // Check if document exists
-        let exists = self.json().exists(&run_id, &doc_id).map_err(convert_error)?;
+        let exists = self.json().exists(&run_id, key).map_err(convert_error)?;
 
         if !exists && json_path.is_root() {
             // Create new document at root
-            self.json().create(&run_id, &doc_id, json_value).map_err(convert_error)
+            self.json().create(&run_id, key, json_value).map_err(convert_error)
         } else if !exists {
             // Document doesn't exist and trying to set non-root path - create with empty object first
-            self.json().create(&run_id, &doc_id, JsonValue::object()).map_err(convert_error)?;
-            self.json().set(&run_id, &doc_id, &json_path, json_value).map_err(convert_error)
+            self.json().create(&run_id, key, JsonValue::object()).map_err(convert_error)?;
+            self.json().set(&run_id, key, &json_path, json_value).map_err(convert_error)
         } else {
             // Document exists, update at path
-            self.json().set(&run_id, &doc_id, &json_path, json_value).map_err(convert_error)
+            self.json().set(&run_id, key, &json_path, json_value).map_err(convert_error)
         }
     }
 
@@ -521,10 +520,9 @@ impl JsonStore for SubstrateImpl {
         path: &str,
     ) -> StrataResult<Option<Versioned<Value>>> {
         let run_id = run.to_run_id();
-        let doc_id = parse_doc_id(key)?;
         let json_path = parse_path(path)?;
 
-        let result = self.json().get(&run_id, &doc_id, &json_path).map_err(convert_error)?;
+        let result = self.json().get(&run_id, key, &json_path).map_err(convert_error)?;
 
         match result {
             Some(versioned) => {
@@ -541,16 +539,15 @@ impl JsonStore for SubstrateImpl {
 
     fn json_delete(&self, run: &ApiRunId, key: &str, path: &str) -> StrataResult<u64> {
         let run_id = run.to_run_id();
-        let doc_id = parse_doc_id(key)?;
         let json_path = parse_path(path)?;
 
         if json_path.is_root() {
             // Delete entire document
-            let existed = self.json().destroy(&run_id, &doc_id).map_err(convert_error)?;
+            let existed = self.json().destroy(&run_id, key).map_err(convert_error)?;
             Ok(if existed { 1 } else { 0 })
         } else {
             // Delete at path
-            self.json().delete_at_path(&run_id, &doc_id, &json_path).map_err(convert_error)?;
+            self.json().delete_at_path(&run_id, key, &json_path).map_err(convert_error)?;
             Ok(1)
         }
     }
@@ -564,12 +561,11 @@ impl JsonStore for SubstrateImpl {
     ) -> StrataResult<Version> {
         // Delegate to primitive's atomic merge implementation
         let run_id = run.to_run_id();
-        let doc_id = parse_doc_id(key)?;
         let json_path = parse_path(path)?;
         let patch_json = value_to_json(patch)?;
 
         self.json()
-            .merge(&run_id, &doc_id, &json_path, patch_json)
+            .merge(&run_id, key, &json_path, patch_json)
             .map_err(convert_error)
     }
 
@@ -581,7 +577,6 @@ impl JsonStore for SubstrateImpl {
         before: Option<Version>,
     ) -> StrataResult<Vec<Versioned<Value>>> {
         let run_id = run.to_run_id();
-        let doc_id = parse_doc_id(key)?;
 
         // Extract version number from before (JSON documents use Counter versions)
         let before_version = match before {
@@ -594,7 +589,7 @@ impl JsonStore for SubstrateImpl {
 
         // Get history from primitive
         let history = self.json()
-            .history(&run_id, &doc_id, limit.map(|l| l as usize), before_version)
+            .history(&run_id, key, limit.map(|l| l as usize), before_version)
             .map_err(convert_error)?;
 
         // Convert Versioned<JsonDoc> to Versioned<Value>
@@ -609,14 +604,12 @@ impl JsonStore for SubstrateImpl {
 
     fn json_exists(&self, run: &ApiRunId, key: &str) -> StrataResult<bool> {
         let run_id = run.to_run_id();
-        let doc_id = parse_doc_id(key)?;
-        self.json().exists(&run_id, &doc_id).map_err(convert_error)
+        self.json().exists(&run_id, key).map_err(convert_error)
     }
 
     fn json_get_version(&self, run: &ApiRunId, key: &str) -> StrataResult<Option<u64>> {
         let run_id = run.to_run_id();
-        let doc_id = parse_doc_id(key)?;
-        self.json().get_version(&run_id, &doc_id).map_err(convert_error)
+        self.json().get_version(&run_id, key).map_err(convert_error)
     }
 
     fn json_search(
@@ -668,12 +661,11 @@ impl JsonStore for SubstrateImpl {
         value: Value,
     ) -> StrataResult<Version> {
         let run_id = run.to_run_id();
-        let doc_id = parse_doc_id(key)?;
         let json_path = parse_path(path)?;
         let json_value = value_to_json(value)?;
 
         self.json()
-            .cas(&run_id, &doc_id, expected_version, &json_path, json_value)
+            .cas(&run_id, key, expected_version, &json_path, json_value)
             .map_err(convert_error)
     }
 
@@ -707,14 +699,8 @@ impl JsonStore for SubstrateImpl {
     ) -> StrataResult<Vec<Option<Versioned<Value>>>> {
         let run_id = run.to_run_id();
 
-        // Parse all doc_ids first
-        let doc_ids: Vec<_> = keys
-            .iter()
-            .map(|k| parse_doc_id(k))
-            .collect::<Result<_, _>>()?;
-
         let results = self.json()
-            .batch_get(&run_id, &doc_ids)
+            .batch_get(&run_id, keys)
             .map_err(convert_error)?;
 
         // Convert JsonDoc to Value
@@ -741,13 +727,12 @@ impl JsonStore for SubstrateImpl {
     ) -> StrataResult<Vec<Version>> {
         let run_id = run.to_run_id();
 
-        // Parse keys and convert values
+        // Convert values
         let typed_docs: Vec<_> = docs
             .into_iter()
             .map(|(key, value)| {
-                let doc_id = parse_doc_id(key)?;
                 let json_value = value_to_json(value)?;
-                Ok((doc_id, json_value))
+                Ok((key.to_string(), json_value))
             })
             .collect::<StrataResult<Vec<_>>>()?;
 
@@ -764,7 +749,6 @@ impl JsonStore for SubstrateImpl {
         values: Vec<Value>,
     ) -> StrataResult<usize> {
         let run_id = run.to_run_id();
-        let doc_id = parse_doc_id(key)?;
         let json_path = parse_path(path)?;
 
         let json_values: Vec<_> = values
@@ -773,7 +757,7 @@ impl JsonStore for SubstrateImpl {
             .collect::<Result<_, _>>()?;
 
         let (_version, len) = self.json()
-            .array_push(&run_id, &doc_id, &json_path, json_values)
+            .array_push(&run_id, key, &json_path, json_values)
             .map_err(convert_error)?;
 
         Ok(len)
@@ -787,11 +771,10 @@ impl JsonStore for SubstrateImpl {
         delta: f64,
     ) -> StrataResult<f64> {
         let run_id = run.to_run_id();
-        let doc_id = parse_doc_id(key)?;
         let json_path = parse_path(path)?;
 
         let (_version, new_val) = self.json()
-            .increment(&run_id, &doc_id, &json_path, delta)
+            .increment(&run_id, key, &json_path, delta)
             .map_err(convert_error)?;
 
         Ok(new_val)
@@ -804,11 +787,10 @@ impl JsonStore for SubstrateImpl {
         path: &str,
     ) -> StrataResult<Option<Value>> {
         let run_id = run.to_run_id();
-        let doc_id = parse_doc_id(key)?;
         let json_path = parse_path(path)?;
 
         let (_version, popped) = self.json()
-            .array_pop(&run_id, &doc_id, &json_path)
+            .array_pop(&run_id, key, &json_path)
             .map_err(convert_error)?;
 
         match popped {

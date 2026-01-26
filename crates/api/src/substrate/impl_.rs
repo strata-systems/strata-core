@@ -32,7 +32,6 @@
 
 use std::sync::Arc;
 use strata_core::json::{JsonPath, JsonValue};
-use strata_core::types::JsonDocId;
 use strata_core::{StrataError, StrataResult, Value};
 use strata_engine::Database;
 use strata_primitives::{
@@ -164,40 +163,6 @@ fn serde_json_to_value(json: serde_json::Value) -> StrataResult<Value> {
     }
 }
 
-/// Parse a string document ID to JsonDocId
-///
-/// Supports both UUID strings and human-readable IDs (hashed to deterministic UUID).
-pub(crate) fn parse_doc_id(doc_id: &str) -> StrataResult<JsonDocId> {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    // First try to parse as UUID
-    match uuid::Uuid::parse_str(doc_id) {
-        Ok(uuid) => Ok(JsonDocId::from_uuid(uuid)),
-        Err(_) => {
-            // Generate deterministic UUID from string hash
-            let mut hasher = DefaultHasher::new();
-            doc_id.hash(&mut hasher);
-            let hash = hasher.finish();
-
-            // Create UUID v8 from hash bytes (custom namespace)
-            let mut bytes = [0u8; 16];
-            bytes[0..8].copy_from_slice(&hash.to_le_bytes());
-            // Hash again for second half
-            doc_id.hash(&mut hasher);
-            let hash2 = hasher.finish();
-            bytes[8..16].copy_from_slice(&hash2.to_le_bytes());
-
-            // Set version (bits 12-15 of time_hi_and_version) to 8 (custom)
-            bytes[6] = (bytes[6] & 0x0f) | 0x80;
-            // Set variant (bits 6-7 of clock_seq_hi_and_reserved) to 10
-            bytes[8] = (bytes[8] & 0x3f) | 0x80;
-
-            let uuid = uuid::Uuid::from_bytes(bytes);
-            Ok(JsonDocId::from_uuid(uuid))
-        }
-    }
-}
 
 /// Parse a string path to JsonPath
 pub(crate) fn parse_path(path: &str) -> StrataResult<JsonPath> {
@@ -492,24 +457,6 @@ mod tests {
             }
             _ => panic!("Expected Object"),
         }
-    }
-
-    #[test]
-    fn test_parse_doc_id_uuid() {
-        let uuid_str = "550e8400-e29b-41d4-a716-446655440000";
-        let doc_id = parse_doc_id(uuid_str).unwrap();
-        assert_eq!(format!("{}", doc_id), uuid_str);
-    }
-
-    #[test]
-    fn test_parse_doc_id_string() {
-        // Non-UUID strings should produce consistent deterministic UUIDs
-        let doc_id1 = parse_doc_id("my-document").unwrap();
-        let doc_id2 = parse_doc_id("my-document").unwrap();
-        assert_eq!(doc_id1, doc_id2);
-
-        let doc_id3 = parse_doc_id("other-document").unwrap();
-        assert_ne!(doc_id1, doc_id3);
     }
 
     #[test]

@@ -30,7 +30,7 @@
 //! ```
 
 use strata_core::{
-    Event, JsonDocId, JsonPath, JsonValue, MetadataFilter, RunMetadata, RunStatus, State,
+    Event, JsonPath, JsonValue, MetadataFilter, RunMetadata, RunStatus, State,
     StrataError, Value, VectorEntry, VectorMatch, Version, Versioned,
 };
 
@@ -112,34 +112,34 @@ pub trait TransactionOps {
     // =========================================================================
 
     /// Create a JSON document
-    fn json_create(&mut self, doc_id: &JsonDocId, value: JsonValue) -> Result<Version, StrataError>;
+    fn json_create(&mut self, doc_id: &str, value: JsonValue) -> Result<Version, StrataError>;
 
     /// Get an entire JSON document
-    fn json_get(&self, doc_id: &JsonDocId) -> Result<Option<Versioned<JsonValue>>, StrataError>;
+    fn json_get(&self, doc_id: &str) -> Result<Option<Versioned<JsonValue>>, StrataError>;
 
     /// Get a value at a path within a JSON document
     fn json_get_path(
         &self,
-        doc_id: &JsonDocId,
+        doc_id: &str,
         path: &JsonPath,
     ) -> Result<Option<JsonValue>, StrataError>;
 
     /// Set a value at a path within a JSON document
     fn json_set(
         &mut self,
-        doc_id: &JsonDocId,
+        doc_id: &str,
         path: &JsonPath,
         value: JsonValue,
     ) -> Result<Version, StrataError>;
 
     /// Delete a JSON document
-    fn json_delete(&mut self, doc_id: &JsonDocId) -> Result<bool, StrataError>;
+    fn json_delete(&mut self, doc_id: &str) -> Result<bool, StrataError>;
 
     /// Check if a JSON document exists
-    fn json_exists(&self, doc_id: &JsonDocId) -> Result<bool, StrataError>;
+    fn json_exists(&self, doc_id: &str) -> Result<bool, StrataError>;
 
     /// Destroy a JSON document (same as delete, for API consistency)
-    fn json_destroy(&mut self, doc_id: &JsonDocId) -> Result<bool, StrataError>;
+    fn json_destroy(&mut self, doc_id: &str) -> Result<bool, StrataError>;
 
     // =========================================================================
     // Vector Operations (Phase 4)
@@ -278,31 +278,31 @@ mod tests {
         }
 
         // Json operations
-        fn json_create(&mut self, _doc_id: &JsonDocId, _value: JsonValue) -> Result<Version, StrataError> {
+        fn json_create(&mut self, _doc_id: &str, _value: JsonValue) -> Result<Version, StrataError> {
             Err(StrataError::Internal { message: "json_create not implemented in mock".to_string() })
         }
 
-        fn json_get(&self, _doc_id: &JsonDocId) -> Result<Option<Versioned<JsonValue>>, StrataError> {
+        fn json_get(&self, _doc_id: &str) -> Result<Option<Versioned<JsonValue>>, StrataError> {
             Err(StrataError::Internal { message: "json_get not implemented in mock".to_string() })
         }
 
-        fn json_get_path(&self, _doc_id: &JsonDocId, _path: &JsonPath) -> Result<Option<JsonValue>, StrataError> {
+        fn json_get_path(&self, _doc_id: &str, _path: &JsonPath) -> Result<Option<JsonValue>, StrataError> {
             Err(StrataError::Internal { message: "json_get_path not implemented in mock".to_string() })
         }
 
-        fn json_set(&mut self, _doc_id: &JsonDocId, _path: &JsonPath, _value: JsonValue) -> Result<Version, StrataError> {
+        fn json_set(&mut self, _doc_id: &str, _path: &JsonPath, _value: JsonValue) -> Result<Version, StrataError> {
             Err(StrataError::Internal { message: "json_set not implemented in mock".to_string() })
         }
 
-        fn json_delete(&mut self, _doc_id: &JsonDocId) -> Result<bool, StrataError> {
+        fn json_delete(&mut self, _doc_id: &str) -> Result<bool, StrataError> {
             Err(StrataError::Internal { message: "json_delete not implemented in mock".to_string() })
         }
 
-        fn json_exists(&self, _doc_id: &JsonDocId) -> Result<bool, StrataError> {
+        fn json_exists(&self, _doc_id: &str) -> Result<bool, StrataError> {
             Err(StrataError::Internal { message: "json_exists not implemented in mock".to_string() })
         }
 
-        fn json_destroy(&mut self, _doc_id: &JsonDocId) -> Result<bool, StrataError> {
+        fn json_destroy(&mut self, _doc_id: &str) -> Result<bool, StrataError> {
             Err(StrataError::Internal { message: "json_destroy not implemented in mock".to_string() })
         }
 
@@ -441,8 +441,7 @@ mod tests {
         assert!(result.is_err());
 
         // Json operations should return unimplemented error
-        let doc_id = JsonDocId::new();
-        let result = ops.json_get(&doc_id);
+        let result = ops.json_get("test-doc");
         assert!(result.is_err());
 
         // Vector operations should return unimplemented error

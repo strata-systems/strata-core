@@ -39,7 +39,7 @@ use strata_core::contract::{Timestamp, Version, Versioned};
 use strata_core::error::{Error, Result};
 use strata_core::json::{delete_at_path, get_at_path, set_at_path, JsonPath, JsonValue, LimitError};
 use strata_core::traits::SnapshotView;
-use strata_core::types::{JsonDocId, Key, Namespace, RunId};
+use strata_core::types::{Key, Namespace, RunId};
 use strata_core::value::Value;
 use strata_engine::Database;
 use serde::{Deserialize, Serialize};
@@ -74,24 +74,24 @@ fn limit_error_to_error(e: LimitError) -> Error {
 ///
 /// ```rust
 /// use strata_primitives::json_store::JsonDoc;
-/// use strata_core::types::JsonDocId;
 /// use strata_core::json::JsonValue;
 ///
-/// let doc = JsonDoc::new(JsonDocId::new(), JsonValue::from(42i64));
+/// let doc = JsonDoc::new("my-document", JsonValue::from(42i64));
 /// assert_eq!(doc.version, 1);
+/// assert_eq!(doc.id, "my-document");
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonDoc {
-    /// Document unique identifier
-    pub id: JsonDocId,
+    /// Document unique identifier (user-provided string key)
+    pub id: String,
     /// The JSON value (root of document)
     pub value: JsonValue,
     /// Document version (increments on any change)
     pub version: u64,
-    /// Creation timestamp (millis since epoch)
-    pub created_at: i64,
-    /// Last modification timestamp (millis since epoch)
-    pub updated_at: i64,
+    /// Creation timestamp (microseconds since epoch)
+    pub created_at: u64,
+    /// Last modification timestamp (microseconds since epoch)
+    pub updated_at: u64,
 }
 
 /// Result of listing JSON documents
@@ -99,8 +99,8 @@ pub struct JsonDoc {
 /// Contains document IDs and an optional cursor for pagination.
 #[derive(Debug, Clone, PartialEq)]
 pub struct JsonListResult {
-    /// Document IDs returned
-    pub doc_ids: Vec<JsonDocId>,
+    /// Document IDs returned (user-provided string keys)
+    pub doc_ids: Vec<String>,
     /// Cursor for next page, if more results exist
     pub next_cursor: Option<String>,
 }
@@ -109,14 +109,14 @@ impl JsonDoc {
     /// Create a new document with initial value
     ///
     /// Initializes version to 1 and sets timestamps to current time.
-    pub fn new(id: JsonDocId, value: JsonValue) -> Self {
+    pub fn new(id: impl Into<String>, value: JsonValue) -> Self {
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
-            .as_millis() as i64;
+            .as_micros() as u64;
 
         JsonDoc {
-            id,
+            id: id.into(),
             value,
             version: 1,
             created_at: now,
@@ -132,7 +132,7 @@ impl JsonDoc {
         self.updated_at = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
-            .as_millis() as i64;
+            .as_micros() as u64;
     }
 }
 
@@ -160,11 +160,10 @@ impl JsonDoc {
 /// let db = Arc::new(Database::builder().in_memory().open_temp()?);
 /// let json = JsonStore::new(db);
 /// let run_id = RunId::new();
-/// let doc_id = JsonDocId::new();
 ///
 /// // Create and read document
-/// json.create(&run_id, &doc_id, JsonValue::object())?;
-/// let value = json.get(&run_id, &doc_id, &JsonPath::root())?;
+/// json.create(&run_id, "my-doc", JsonValue::object())?;
+/// let value = json.get(&run_id, "my-doc", &JsonPath::root())?;
 /// ```
 #[derive(Clone)]
 pub struct JsonStore {
@@ -188,7 +187,7 @@ impl JsonStore {
     }
 
     /// Build key for JSON document
-    fn key_for(&self, run_id: &RunId, doc_id: &JsonDocId) -> Key {
+    fn key_for(&self, run_id: &RunId, doc_id: &str) -> Key {
         Key::new_json(self.namespace_for_run(run_id), doc_id)
     }
 
@@ -242,12 +241,12 @@ impl JsonStore {
     /// let version = json.create(&run_id, &doc_id, JsonValue::object())?;
     /// assert_eq!(version, Version::counter(1));
     /// ```
-    pub fn create(&self, run_id: &RunId, doc_id: &JsonDocId, value: JsonValue) -> Result<Version> {
+    pub fn create(&self, run_id: &RunId, doc_id: &str, value: JsonValue) -> Result<Version> {
         // Validate document limits (Issue #440)
         value.validate().map_err(limit_error_to_error)?;
 
         let key = self.key_for(run_id, doc_id);
-        let doc = JsonDoc::new(*doc_id, value);
+        let doc = JsonDoc::new(doc_id, value);
 
         self.db.transaction(*run_id, |txn| {
             // Check if document already exists
@@ -291,7 +290,7 @@ impl JsonStore {
     pub fn get(
         &self,
         run_id: &RunId,
-        doc_id: &JsonDocId,
+        doc_id: &str,
         path: &JsonPath,
     ) -> Result<Option<Versioned<JsonValue>>> {
         // Validate path limits (Issue #440)
@@ -307,7 +306,7 @@ impl JsonStore {
                     Some(value) => Ok(Some(Versioned::with_timestamp(
                         value,
                         Version::counter(doc.version),
-                        Timestamp::from_micros((doc.updated_at * 1000) as u64),
+                        Timestamp::from_micros(doc.updated_at),
                     ))),
                     None => Ok(None),
                 }
@@ -319,7 +318,7 @@ impl JsonStore {
     /// Get the full document (FAST PATH)
     ///
     /// Returns the entire JsonDoc including metadata (version, timestamps).
-    pub fn get_doc(&self, run_id: &RunId, doc_id: &JsonDocId) -> Result<Option<Versioned<JsonDoc>>> {
+    pub fn get_doc(&self, run_id: &RunId, doc_id: &str) -> Result<Option<Versioned<JsonDoc>>> {
         let snapshot = self.db.storage().create_snapshot();
         let key = self.key_for(run_id, doc_id);
 
@@ -329,7 +328,7 @@ impl JsonStore {
                 let versioned = Versioned::with_timestamp(
                     doc.clone(),
                     Version::counter(doc.version),
-                    Timestamp::from_micros((doc.updated_at * 1000) as u64),
+                    Timestamp::from_micros(doc.updated_at),
                 );
                 Ok(Some(versioned))
             }
@@ -341,7 +340,7 @@ impl JsonStore {
     ///
     /// Efficient way to check document version without full deserialization.
     /// (In practice, we deserialize but could optimize later)
-    pub fn get_version(&self, run_id: &RunId, doc_id: &JsonDocId) -> Result<Option<u64>> {
+    pub fn get_version(&self, run_id: &RunId, doc_id: &str) -> Result<Option<u64>> {
         let snapshot = self.db.storage().create_snapshot();
         let key = self.key_for(run_id, doc_id);
 
@@ -357,7 +356,7 @@ impl JsonStore {
     /// Check if document exists (FAST PATH)
     ///
     /// Fastest way to check document existence.
-    pub fn exists(&self, run_id: &RunId, doc_id: &JsonDocId) -> Result<bool> {
+    pub fn exists(&self, run_id: &RunId, doc_id: &str) -> Result<bool> {
         let snapshot = self.db.storage().create_snapshot();
         let key = self.key_for(run_id, doc_id);
         Ok(snapshot.get(&key)?.is_some())
@@ -416,7 +415,7 @@ impl JsonStore {
     pub fn history(
         &self,
         run_id: &RunId,
-        doc_id: &JsonDocId,
+        doc_id: &str,
         limit: Option<usize>,
         before_version: Option<u64>,
     ) -> Result<Vec<Versioned<JsonDoc>>> {
@@ -498,7 +497,7 @@ impl JsonStore {
     pub fn set(
         &self,
         run_id: &RunId,
-        doc_id: &JsonDocId,
+        doc_id: &str,
         path: &JsonPath,
         value: JsonValue,
     ) -> Result<Version> {
@@ -553,7 +552,7 @@ impl JsonStore {
     pub fn delete_at_path(
         &self,
         run_id: &RunId,
-        doc_id: &JsonDocId,
+        doc_id: &str,
         path: &JsonPath,
     ) -> Result<Version> {
         // Validate path limits (Issue #440)
@@ -601,7 +600,7 @@ impl JsonStore {
     /// let existed = json.destroy(&run_id, &doc_id)?;
     /// assert!(existed);
     /// ```
-    pub fn destroy(&self, run_id: &RunId, doc_id: &JsonDocId) -> Result<bool> {
+    pub fn destroy(&self, run_id: &RunId, doc_id: &str) -> Result<bool> {
         let key = self.key_for(run_id, doc_id);
 
         self.db.transaction(*run_id, |txn| {
@@ -657,7 +656,7 @@ impl JsonStore {
     pub fn merge(
         &self,
         run_id: &RunId,
-        doc_id: &JsonDocId,
+        doc_id: &str,
         path: &JsonPath,
         patch: JsonValue,
     ) -> Result<Version> {
@@ -677,13 +676,13 @@ impl JsonStore {
                     // Document doesn't exist - create it
                     if path.is_root() {
                         // At root, just create with patch value
-                        let doc = JsonDoc::new(*doc_id, patch.clone());
+                        let doc = JsonDoc::new(doc_id, patch.clone());
                         let serialized = Self::serialize_doc(&doc)?;
                         txn.put(key.clone(), serialized)?;
                         return Ok(Version::counter(doc.version));
                     } else {
                         // At path, create empty object first
-                        JsonDoc::new(*doc_id, JsonValue::object())
+                        JsonDoc::new(doc_id, JsonValue::object())
                     }
                 }
             };
@@ -762,7 +761,7 @@ impl JsonStore {
     pub fn cas(
         &self,
         run_id: &RunId,
-        doc_id: &JsonDocId,
+        doc_id: &str,
         expected_version: u64,
         path: &JsonPath,
         value: JsonValue,
@@ -849,36 +848,8 @@ impl JsonStore {
 
         let mut doc_ids = Vec::with_capacity(limit + 1);
 
-        // Parse cursor into a JsonDocId if provided
-        let cursor_doc_id: Option<JsonDocId> = match cursor {
-            Some(c) => {
-                // Use the same parsing logic as parse_doc_id
-                use std::collections::hash_map::DefaultHasher;
-                use std::hash::{Hash, Hasher};
-
-                match uuid::Uuid::parse_str(c) {
-                    Ok(uuid) => Some(JsonDocId::from_uuid(uuid)),
-                    Err(_) => {
-                        // Hash-based deterministic UUID
-                        let mut hasher = DefaultHasher::new();
-                        c.hash(&mut hasher);
-                        let hash1 = hasher.finish();
-                        hasher.write_u64(0x12345678);
-                        c.hash(&mut hasher);
-                        let hash2 = hasher.finish();
-
-                        let mut bytes = [0u8; 16];
-                        bytes[..8].copy_from_slice(&hash1.to_le_bytes());
-                        bytes[8..].copy_from_slice(&hash2.to_le_bytes());
-                        bytes[6] = (bytes[6] & 0x0f) | 0x40;
-                        bytes[8] = (bytes[8] & 0x3f) | 0x80;
-
-                        Some(JsonDocId::from_uuid(uuid::Uuid::from_bytes(bytes)))
-                    }
-                }
-            }
-            None => None,
-        };
+        // Cursor is now a simple string key (no UUID parsing needed)
+        let cursor_doc_id: Option<&str> = cursor;
 
         let mut past_cursor = cursor_doc_id.is_none();
 
@@ -891,7 +862,7 @@ impl JsonStore {
 
             // Handle cursor: skip until we're past the cursor
             if !past_cursor {
-                if Some(doc.id) == cursor_doc_id {
+                if cursor_doc_id == Some(doc.id.as_str()) {
                     past_cursor = true;
                 }
                 continue;
@@ -899,8 +870,7 @@ impl JsonStore {
 
             // Apply prefix filter if specified
             if let Some(p) = prefix {
-                let doc_id_str = doc.id.to_string();
-                if !doc_id_str.starts_with(p) {
+                if !doc.id.starts_with(p) {
                     continue;
                 }
             }
@@ -916,7 +886,7 @@ impl JsonStore {
         // If we have more than limit, pop the last and use it as cursor
         let next_cursor = if doc_ids.len() > limit {
             doc_ids.pop(); // Remove the extra item
-            doc_ids.last().map(|id| id.to_string())
+            doc_ids.last().cloned()
         } else {
             None
         };
@@ -983,24 +953,24 @@ impl JsonStore {
     ///     }
     /// }
     /// ```
-    pub fn batch_get(
+    pub fn batch_get<S: AsRef<str>>(
         &self,
         run_id: &RunId,
-        doc_ids: &[JsonDocId],
+        doc_ids: &[S],
     ) -> Result<Vec<Option<Versioned<JsonDoc>>>> {
         let snapshot = self.db.storage().create_snapshot();
 
         let results: Vec<Option<Versioned<JsonDoc>>> = doc_ids
             .iter()
             .map(|doc_id| {
-                let key = self.key_for(run_id, doc_id);
+                let key = self.key_for(run_id, doc_id.as_ref());
                 match snapshot.get(&key) {
                     Ok(Some(vv)) => {
                         match Self::deserialize_doc(&vv.value) {
                             Ok(doc) => Some(Versioned::with_timestamp(
                                 doc.clone(),
                                 Version::counter(doc.version),
-                                Timestamp::from_micros((doc.updated_at * 1000) as u64),
+                                Timestamp::from_micros(doc.updated_at),
                             )),
                             Err(_) => None,
                         }
@@ -1042,10 +1012,10 @@ impl JsonStore {
     /// ];
     /// let versions = json.batch_create(&run_id, docs)?;
     /// ```
-    pub fn batch_create(
+    pub fn batch_create<S: AsRef<str> + Clone>(
         &self,
         run_id: &RunId,
-        docs: Vec<(JsonDocId, JsonValue)>,
+        docs: Vec<(S, JsonValue)>,
     ) -> Result<Vec<Version>> {
         // Validate all values first
         for (_doc_id, value) in &docs {
@@ -1056,17 +1026,17 @@ impl JsonStore {
             let mut versions = Vec::with_capacity(docs.len());
 
             for (doc_id, value) in &docs {
-                let key = self.key_for(run_id, doc_id);
+                let key = self.key_for(run_id, doc_id.as_ref());
 
                 // Check if document already exists
                 if txn.get(&key)?.is_some() {
                     return Err(Error::InvalidOperation(format!(
                         "JSON document {} already exists",
-                        doc_id
+                        doc_id.as_ref()
                     )));
                 }
 
-                let doc = JsonDoc::new(*doc_id, value.clone());
+                let doc = JsonDoc::new(doc_id.as_ref(), value.clone());
                 let serialized = Self::serialize_doc(&doc)?;
                 txn.put(key, serialized)?;
                 versions.push(Version::counter(doc.version));
@@ -1116,7 +1086,7 @@ impl JsonStore {
     pub fn array_push(
         &self,
         run_id: &RunId,
-        doc_id: &JsonDocId,
+        doc_id: &str,
         path: &JsonPath,
         values: Vec<JsonValue>,
     ) -> Result<(Version, usize)> {
@@ -1209,7 +1179,7 @@ impl JsonStore {
     pub fn increment(
         &self,
         run_id: &RunId,
-        doc_id: &JsonDocId,
+        doc_id: &str,
         path: &JsonPath,
         delta: f64,
     ) -> Result<(Version, f64)> {
@@ -1304,7 +1274,7 @@ impl JsonStore {
     pub fn array_pop(
         &self,
         run_id: &RunId,
-        doc_id: &JsonDocId,
+        doc_id: &str,
         path: &JsonPath,
     ) -> Result<(Version, Option<JsonValue>)> {
         // Validate path
@@ -1370,7 +1340,7 @@ impl JsonStore {
     ///
     /// # Returns
     ///
-    /// * `Ok(Vec<JsonDocId>)` - Document IDs with matching value at path
+    /// * `Ok(Vec<String>)` - Document IDs with matching value at path
     ///
     /// # Example
     ///
@@ -1397,7 +1367,7 @@ impl JsonStore {
         path: &JsonPath,
         value: &JsonValue,
         limit: usize,
-    ) -> Result<Vec<JsonDocId>> {
+    ) -> Result<Vec<String>> {
         // Validate path limits
         path.validate().map_err(limit_error_to_error)?;
 
@@ -1586,52 +1556,13 @@ impl crate::searchable::Searchable for JsonStore {
 // Extension trait implementation for cross-primitive transactions.
 // Allows JSON operations within a TransactionContext.
 
-/// Parse a doc_id string into a JsonDocId
-///
-/// The string can be either:
-/// - A valid UUID string (parsed via uuid crate)
-/// - Any string (converted to a deterministic UUID using hash)
-fn parse_doc_id(doc_id: &str) -> Result<JsonDocId> {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    // First try to parse as UUID
-    match uuid::Uuid::parse_str(doc_id) {
-        Ok(uuid) => Ok(JsonDocId::from_uuid(uuid)),
-        Err(_) => {
-            // Generate deterministic UUID from string hash
-            // This allows using human-readable doc IDs like "user-profile"
-            let mut hasher = DefaultHasher::new();
-            doc_id.hash(&mut hasher);
-            let hash1 = hasher.finish();
-            // Hash again with different seed for second half
-            hasher.write_u64(0x12345678);
-            doc_id.hash(&mut hasher);
-            let hash2 = hasher.finish();
-
-            // Combine hashes into 16 bytes for UUID
-            let mut bytes = [0u8; 16];
-            bytes[..8].copy_from_slice(&hash1.to_le_bytes());
-            bytes[8..].copy_from_slice(&hash2.to_le_bytes());
-
-            // Set version 4 bits (random UUID format)
-            bytes[6] = (bytes[6] & 0x0f) | 0x40;
-            // Set variant bits
-            bytes[8] = (bytes[8] & 0x3f) | 0x80;
-
-            let uuid = uuid::Uuid::from_bytes(bytes);
-            Ok(JsonDocId::from_uuid(uuid))
-        }
-    }
-}
 
 impl JsonStoreExt for TransactionContext {
     fn json_get(&mut self, doc_id: &str, path: &JsonPath) -> Result<Option<JsonValue>> {
         // Validate path limits (Issue #440)
         path.validate().map_err(limit_error_to_error)?;
 
-        let doc_id = parse_doc_id(doc_id)?;
-        let key = Key::new_json(Namespace::for_run(self.run_id), &doc_id);
+        let key = Key::new_json(Namespace::for_run(self.run_id), doc_id);
 
         // Read from transaction context (respects read-your-writes)
         match self.get(&key)? {
@@ -1648,8 +1579,7 @@ impl JsonStoreExt for TransactionContext {
         path.validate().map_err(limit_error_to_error)?;
         value.validate().map_err(limit_error_to_error)?;
 
-        let doc_id = parse_doc_id(doc_id)?;
-        let key = Key::new_json(Namespace::for_run(self.run_id), &doc_id);
+        let key = Key::new_json(Namespace::for_run(self.run_id), doc_id);
 
         // Load existing document from transaction context
         let stored = self.get(&key)?.ok_or_else(|| {
@@ -1673,9 +1603,8 @@ impl JsonStoreExt for TransactionContext {
         // Validate document limits (Issue #440)
         value.validate().map_err(limit_error_to_error)?;
 
-        let doc_id_typed = parse_doc_id(doc_id)?;
-        let key = Key::new_json(Namespace::for_run(self.run_id), &doc_id_typed);
-        let doc = JsonDoc::new(doc_id_typed, value);
+        let key = Key::new_json(Namespace::for_run(self.run_id), doc_id);
+        let doc = JsonDoc::new(doc_id, value);
 
         // Check if document already exists
         if self.get(&key)?.is_some() {
@@ -1727,7 +1656,7 @@ mod tests {
 
         let run1 = RunId::new();
         let run2 = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let key1 = store.key_for(&run1, &doc_id);
         let key2 = store.key_for(&run2, &doc_id);
@@ -1742,7 +1671,7 @@ mod tests {
         let store = JsonStore::new(db);
 
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let key1 = store.key_for(&run_id, &doc_id);
         let key2 = store.key_for(&run_id, &doc_id);
@@ -1757,7 +1686,7 @@ mod tests {
 
     #[test]
     fn test_json_doc_new() {
-        let id = JsonDocId::new();
+        let id = "test-doc";
         let value = JsonValue::from(42i64);
         let doc = JsonDoc::new(id, value.clone());
 
@@ -1770,7 +1699,7 @@ mod tests {
 
     #[test]
     fn test_json_doc_touch() {
-        let id = JsonDocId::new();
+        let id = "test-doc";
         let value = JsonValue::from(42i64);
         let mut doc = JsonDoc::new(id, value);
 
@@ -1789,7 +1718,7 @@ mod tests {
 
     #[test]
     fn test_json_doc_touch_multiple() {
-        let id = JsonDocId::new();
+        let id = "test-doc";
         let value = JsonValue::object();
         let mut doc = JsonDoc::new(id, value);
 
@@ -1809,7 +1738,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let _store = JsonStore::new(db);
 
-        let doc = JsonDoc::new(JsonDocId::new(), JsonValue::from("test value"));
+        let doc = JsonDoc::new("test-doc", JsonValue::from("test value"));
 
         let serialized = JsonStore::serialize_doc(&doc).unwrap();
         let deserialized = JsonStore::deserialize_doc(&serialized).unwrap();
@@ -1838,7 +1767,7 @@ mod tests {
         })
         .into();
 
-        let doc = JsonDoc::new(JsonDocId::new(), value);
+        let doc = JsonDoc::new("test-doc", value);
 
         let serialized = JsonStore::serialize_doc(&doc).unwrap();
         let deserialized = JsonStore::deserialize_doc(&serialized).unwrap();
@@ -1875,7 +1804,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let _store = JsonStore::new(db);
 
-        let doc = JsonDoc::new(JsonDocId::new(), JsonValue::from(42i64));
+        let doc = JsonDoc::new("test-doc", JsonValue::from(42i64));
 
         let serialized = JsonStore::serialize_doc(&doc).unwrap();
 
@@ -1898,7 +1827,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let version = store
             .create(&run_id, &doc_id, JsonValue::from(42i64))
@@ -1911,7 +1840,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let value: JsonValue = serde_json::json!({
             "name": "Alice",
@@ -1928,7 +1857,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         // First create succeeds
         store
@@ -1946,8 +1875,8 @@ mod tests {
         let store = JsonStore::new(db);
         let run_id = RunId::new();
 
-        let doc1 = JsonDocId::new();
-        let doc2 = JsonDocId::new();
+        let doc1 = "doc-1";
+        let doc2 = "doc-2";
 
         let v1 = store.create(&run_id, &doc1, JsonValue::from(1i64)).unwrap();
         let v2 = store.create(&run_id, &doc2, JsonValue::from(2i64)).unwrap();
@@ -1963,7 +1892,7 @@ mod tests {
 
         let run1 = RunId::new();
         let run2 = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         // Same doc_id can be created in different runs
         let v1 = store.create(&run1, &doc_id, JsonValue::from(1i64)).unwrap();
@@ -1978,7 +1907,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let version = store.create(&run_id, &doc_id, JsonValue::null()).unwrap();
         assert_eq!(version, Version::counter(1));
@@ -1989,7 +1918,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let version = store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
         assert_eq!(version, Version::counter(1));
@@ -2000,7 +1929,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let version = store.create(&run_id, &doc_id, JsonValue::array()).unwrap();
         assert_eq!(version, Version::counter(1));
@@ -2015,7 +1944,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         store
             .create(&run_id, &doc_id, JsonValue::from(42i64))
@@ -2030,7 +1959,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let value: JsonValue = serde_json::json!({
             "name": "Alice",
@@ -2059,7 +1988,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let value: JsonValue = serde_json::json!({
             "user": {
@@ -2086,7 +2015,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let value: JsonValue = serde_json::json!({
             "items": ["a", "b", "c"]
@@ -2109,7 +2038,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let result = store.get(&run_id, &doc_id, &JsonPath::root()).unwrap();
         assert!(result.is_none());
@@ -2120,7 +2049,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
 
@@ -2135,7 +2064,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         store
             .create(&run_id, &doc_id, JsonValue::from(42i64))
@@ -2153,7 +2082,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let result = store.get_doc(&run_id, &doc_id).unwrap();
         assert!(result.is_none());
@@ -2164,7 +2093,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         store
             .create(&run_id, &doc_id, JsonValue::from(42i64))
@@ -2179,7 +2108,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let version = store.get_version(&run_id, &doc_id).unwrap();
         assert!(version.is_none());
@@ -2190,7 +2119,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         assert!(!store.exists(&run_id, &doc_id).unwrap());
 
@@ -2208,7 +2137,7 @@ mod tests {
 
         let run1 = RunId::new();
         let run2 = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         store
             .create(&run1, &doc_id, JsonValue::from(42i64))
@@ -2228,7 +2157,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         store
             .create(&run_id, &doc_id, JsonValue::from(42i64))
@@ -2248,7 +2177,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
 
@@ -2276,7 +2205,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
 
@@ -2305,7 +2234,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
         assert_eq!(store.get_version(&run_id, &doc_id).unwrap(), Some(1));
@@ -2336,7 +2265,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let result = store.set(
             &run_id,
@@ -2352,7 +2281,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let value: JsonValue = serde_json::json!({ "name": "Alice" }).into();
         store.create(&run_id, &doc_id, value).unwrap();
@@ -2380,7 +2309,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let value: JsonValue = serde_json::json!({ "items": [1, 2, 3] }).into();
         store.create(&run_id, &doc_id, value).unwrap();
@@ -2409,7 +2338,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let value: JsonValue = serde_json::json!({
             "name": "Alice",
@@ -2444,7 +2373,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let value: JsonValue = serde_json::json!({
             "user": {
@@ -2485,7 +2414,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let value: JsonValue = serde_json::json!({
             "items": ["a", "b", "c"]
@@ -2516,7 +2445,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let value: JsonValue = serde_json::json!({
             "a": 1,
@@ -2543,7 +2472,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let result = store.delete_at_path(&run_id, &doc_id, &"field".parse().unwrap());
         assert!(result.is_err());
@@ -2554,7 +2483,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         store.create(&run_id, &doc_id, JsonValue::object()).unwrap();
 
@@ -2574,7 +2503,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         store
             .create(&run_id, &doc_id, JsonValue::from(42i64))
@@ -2591,7 +2520,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let existed = store.destroy(&run_id, &doc_id).unwrap();
         assert!(!existed);
@@ -2604,7 +2533,7 @@ mod tests {
 
         let run1 = RunId::new();
         let run2 = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         // Create document in both runs
         store.create(&run1, &doc_id, JsonValue::from(1i64)).unwrap();
@@ -2623,7 +2552,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         // Create, destroy, recreate
         store
@@ -2646,7 +2575,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let value: JsonValue = serde_json::json!({
             "user": {
@@ -2672,7 +2601,7 @@ mod tests {
         let db = Arc::new(Database::builder().in_memory().open_temp().unwrap());
         let store = JsonStore::new(db);
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         store
             .create(&run_id, &doc_id, JsonValue::from(42i64))

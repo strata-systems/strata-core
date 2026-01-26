@@ -17,7 +17,7 @@
 use crate::transaction_ops::TransactionOps;
 use strata_concurrency::TransactionContext;
 use strata_core::{
-    EntityRef, Event, JsonDocId, JsonPath, JsonValue, MetadataFilter, RunMetadata, RunStatus, State,
+    EntityRef, Event, JsonPath, JsonValue, MetadataFilter, RunMetadata, RunStatus, State,
     StrataError, Timestamp, Value, VectorEntry, VectorMatch, Version, Versioned,
 };
 use strata_core::types::{Key, Namespace, RunId, TypeTag};
@@ -244,7 +244,7 @@ impl<'a> TransactionOps for Transaction<'a> {
 
     fn event_append(&mut self, event_type: &str, payload: Value) -> Result<Version, StrataError> {
         let sequence = self.next_sequence();
-        let timestamp = Timestamp::now().as_micros() as i64;
+        let timestamp = Timestamp::now().as_micros();
         let prev_hash = self.last_hash;
 
         // Create the event
@@ -464,17 +464,17 @@ impl<'a> TransactionOps for Transaction<'a> {
     // Json Operations (Phase 4) - Stub implementations
     // =========================================================================
 
-    fn json_create(&mut self, _doc_id: &JsonDocId, _value: JsonValue) -> Result<Version, StrataError> {
+    fn json_create(&mut self, _doc_id: &str, _value: JsonValue) -> Result<Version, StrataError> {
         unimplemented!("Json operations will be implemented in Phase 4")
     }
 
-    fn json_get(&self, _doc_id: &JsonDocId) -> Result<Option<Versioned<JsonValue>>, StrataError> {
+    fn json_get(&self, _doc_id: &str) -> Result<Option<Versioned<JsonValue>>, StrataError> {
         unimplemented!("Json operations will be implemented in Phase 4")
     }
 
     fn json_get_path(
         &self,
-        _doc_id: &JsonDocId,
+        _doc_id: &str,
         _path: &JsonPath,
     ) -> Result<Option<JsonValue>, StrataError> {
         unimplemented!("Json operations will be implemented in Phase 4")
@@ -482,22 +482,22 @@ impl<'a> TransactionOps for Transaction<'a> {
 
     fn json_set(
         &mut self,
-        _doc_id: &JsonDocId,
+        _doc_id: &str,
         _path: &JsonPath,
         _value: JsonValue,
     ) -> Result<Version, StrataError> {
         unimplemented!("Json operations will be implemented in Phase 4")
     }
 
-    fn json_delete(&mut self, _doc_id: &JsonDocId) -> Result<bool, StrataError> {
+    fn json_delete(&mut self, _doc_id: &str) -> Result<bool, StrataError> {
         unimplemented!("Json operations will be implemented in Phase 4")
     }
 
-    fn json_exists(&self, _doc_id: &JsonDocId) -> Result<bool, StrataError> {
+    fn json_exists(&self, _doc_id: &str) -> Result<bool, StrataError> {
         unimplemented!("Json operations will be implemented in Phase 4")
     }
 
-    fn json_destroy(&mut self, _doc_id: &JsonDocId) -> Result<bool, StrataError> {
+    fn json_destroy(&mut self, _doc_id: &str) -> Result<bool, StrataError> {
         unimplemented!("Json operations will be implemented in Phase 4")
     }
 

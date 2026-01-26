@@ -8,7 +8,7 @@
 //! - Value: Unified value enum for all data types
 //! - Error: Error type hierarchy
 //! - Traits: Core trait definitions (Storage, SnapshotView)
-//! - JSON types: JsonValue, JsonPath, JsonPatch, JsonDocId
+//! - JSON types: JsonValue, JsonPath, JsonPatch
 //! - JSON limits: MAX_DOCUMENT_SIZE, MAX_NESTING_DEPTH, MAX_PATH_LENGTH, MAX_ARRAY_SIZE
 //! - Search types: SearchRequest, SearchResponse, SearchHit, DocRef, PrimitiveKind
 //! - Contract types: EntityRef, Versioned<T>, Version, Timestamp, PrimitiveType, RunName
@@ -17,7 +17,6 @@
 #![warn(clippy::all)]
 
 // Module declarations
-pub mod api_error; // API-level error types for wire encoding
 pub mod contract; // contract types
 pub mod error;
 pub mod json; // JSON types
@@ -29,7 +28,6 @@ pub mod types;
 pub mod value;
 
 // Re-export commonly used types and traits
-pub use api_error::{ApiError, WireError};
 pub use error::{
     ConstraintReason, DetailValue, Error, ErrorCode, ErrorDetails, Result, StrataError,
     StrataResult,
@@ -42,7 +40,7 @@ pub use json::{
 pub use run_types::{RunEventOffsets, RunMetadata, RunStatus};
 pub use search_types::{SearchBudget, SearchHit, SearchMode, SearchRequest, SearchResponse, SearchStats};
 pub use traits::{SnapshotView, Storage};
-pub use types::{JsonDocId, Key, Namespace, RunId, TypeTag};
+pub use types::{Key, Namespace, RunId, TypeTag};
 pub use value::Value;
 
 // Re-export contract types at crate root for convenience
@@ -58,23 +56,3 @@ pub use primitives::{
     VectorId, VectorMatch,
 };
 
-// Backwards compatibility: PrimitiveKind is now PrimitiveType
-#[doc(hidden)]
-#[deprecated(since = "0.9.0", note = "Use PrimitiveType instead")]
-pub type PrimitiveKind = PrimitiveType;
-
-/// Placeholder for core functionality
-/// This will be populated by stories #7-11
-pub fn placeholder() {
-    // This crate will contain core types once implemented
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_placeholder() {
-        placeholder();
-    }
-}

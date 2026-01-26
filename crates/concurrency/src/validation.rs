@@ -1186,8 +1186,6 @@ mod tests {
     // === JSON Validation Tests (M5 ) ===
     mod json_validation_tests {
         use super::*;
-        use strata_core::types::TypeTag;
-        use strata_core::JsonDocId;
         use strata_storage::UnifiedStore;
 
         fn create_json_test_store() -> UnifiedStore {
@@ -1198,8 +1196,8 @@ mod tests {
             Namespace::new("test".into(), "app".into(), "agent".into(), RunId::new())
         }
 
-        fn create_json_key(ns: &Namespace, doc_id: &JsonDocId) -> Key {
-            Key::new(ns.clone(), TypeTag::Json, doc_id.as_bytes().to_vec())
+        fn create_json_key(ns: &Namespace, doc_id: &str) -> Key {
+            Key::new_json(ns.clone(), doc_id)
         }
 
         #[test]
@@ -1221,7 +1219,7 @@ mod tests {
         fn test_validate_json_set_version_match() {
             let store = create_json_test_store();
             let ns = create_json_test_namespace();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(&ns, &doc_id);
 
             // Add document to store
@@ -1242,7 +1240,7 @@ mod tests {
         fn test_validate_json_set_version_mismatch() {
             let store = create_json_test_store();
             let ns = create_json_test_namespace();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(&ns, &doc_id);
 
             // Add document to store
@@ -1282,7 +1280,7 @@ mod tests {
         fn test_validate_json_set_document_deleted() {
             let store = create_json_test_store();
             let ns = create_json_test_namespace();
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let key = create_json_key(&ns, &doc_id);
 
             // Add document to store
@@ -1341,11 +1339,11 @@ mod tests {
         use super::*;
         use crate::transaction::{JsonPatchEntry, JsonPathRead};
         use strata_core::json::{JsonPatch, JsonPath};
-        use strata_core::types::{JsonDocId, Namespace, RunId};
+        use strata_core::types::{Namespace, RunId};
 
         fn create_json_key() -> Key {
             let ns = Namespace::for_run(RunId::new());
-            Key::new_json(ns, &JsonDocId::new())
+            Key::new_json(ns, "test-doc")
         }
 
         #[test]

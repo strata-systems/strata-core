@@ -10,7 +10,7 @@
 //!
 //! ### Canonical Error Codes (Frozen)
 //!
-//! The following 9 error codes are the canonical wire representation:
+//! The following 10 error codes are the canonical wire representation:
 //!
 //! | Code | Description |
 //! |------|-------------|
@@ -1947,9 +1947,8 @@ mod strata_error_tests {
     #[test]
     fn test_invalid_operation_constructor() {
         let run_id = RunId::new();
-        let doc_id = crate::types::JsonDocId::new();
         let e = StrataError::invalid_operation(
-            EntityRef::json(run_id, doc_id),
+            EntityRef::json(run_id, "test-doc"),
             "Document already exists",
         );
 
@@ -1984,8 +1983,7 @@ mod strata_error_tests {
     #[test]
     fn test_path_not_found_constructor() {
         let run_id = RunId::new();
-        let doc_id = crate::types::JsonDocId::new();
-        let e = StrataError::path_not_found(EntityRef::json(run_id, doc_id), "/data/items/0");
+        let e = StrataError::path_not_found(EntityRef::json(run_id, "test-doc"), "/data/items/0");
 
         assert!(e.is_not_found());
         assert!(e.entity_ref().is_some());

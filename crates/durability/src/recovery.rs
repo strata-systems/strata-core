@@ -24,7 +24,7 @@ use crate::wal::{WALEntry, WAL};
 use strata_core::error::Result;
 use strata_core::json::{delete_at_path, set_at_path, JsonValue};
 use strata_core::traits::Storage;
-use strata_core::types::{JsonDocId, Key, Namespace, RunId};
+use strata_core::types::{Key, Namespace, RunId};
 use strata_core::value::Value;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -75,8 +75,8 @@ pub struct ReplayStats {
 /// circular dependencies. Uses msgpack serialization for compatibility.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct RecoveryJsonDoc {
-    /// Document identifier
-    id: JsonDocId,
+    /// Document identifier (user-provided string key)
+    id: String,
     /// JSON value
     value: JsonValue,
     /// Document version (increments on any change)
@@ -89,9 +89,9 @@ struct RecoveryJsonDoc {
 
 impl RecoveryJsonDoc {
     /// Create a new document with initial value
-    fn new(id: JsonDocId, value: JsonValue, version: u64, timestamp: i64) -> Self {
+    fn new(id: impl Into<String>, value: JsonValue, version: u64, timestamp: i64) -> Self {
         Self {
-            id,
+            id: id.into(),
             value,
             version,
             created_at: timestamp,
@@ -702,7 +702,7 @@ fn apply_transaction<S: Storage + ?Sized>(
                 // Create the document
                 // Convert Timestamp (u64 microseconds) to i64 seconds for recovery format
                 let timestamp_secs = (timestamp.as_micros() / 1_000_000) as i64;
-                let doc = RecoveryJsonDoc::new(*doc_id, value, *version, timestamp_secs);
+                let doc = RecoveryJsonDoc::new(doc_id.clone(), value, *version, timestamp_secs);
                 let doc_bytes = doc.to_bytes()?;
 
                 // Store using JSON key
@@ -2314,7 +2314,6 @@ mod tests {
     // ========================================================================
 
     use strata_core::json::{JsonPath, JsonValue};
-    use strata_core::types::JsonDocId;
 
     /// Serialize a JsonValue to msgpack bytes (for WAL entry construction)
     fn json_to_msgpack(value: &JsonValue) -> Vec<u8> {
@@ -2327,7 +2326,7 @@ mod tests {
         let wal_path = temp_dir.path().join("json_create.wal");
 
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         let initial_value: JsonValue = serde_json::json!({
             "name": "Alice",
             "age": 30
@@ -2347,7 +2346,7 @@ mod tests {
 
             wal.append(&WALEntry::JsonCreate {
                 run_id,
-                doc_id,
+                doc_id: doc_id.to_string(),
                 value_bytes: json_to_msgpack(&initial_value),
                 version: 1,
                 timestamp: now(),
@@ -2387,7 +2386,7 @@ mod tests {
         let wal_path = temp_dir.path().join("json_set.wal");
 
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         let initial_value: JsonValue = serde_json::json!({ "count": 0 }).into();
         let new_value: JsonValue = serde_json::json!(42).into();
 
@@ -2404,7 +2403,7 @@ mod tests {
             .unwrap();
             wal.append(&WALEntry::JsonCreate {
                 run_id,
-                doc_id,
+                doc_id: doc_id.to_string(),
                 value_bytes: json_to_msgpack(&initial_value),
                 version: 1,
                 timestamp: now(),
@@ -2422,7 +2421,7 @@ mod tests {
             .unwrap();
             wal.append(&WALEntry::JsonSet {
                 run_id,
-                doc_id,
+                doc_id: doc_id.to_string(),
                 path: "count".parse::<JsonPath>().unwrap(),
                 value_bytes: json_to_msgpack(&new_value),
                 version: 2,
@@ -2459,7 +2458,7 @@ mod tests {
         let wal_path = temp_dir.path().join("json_delete.wal");
 
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         let initial_value: JsonValue = serde_json::json!({
             "name": "Bob",
             "temp": "to_be_deleted"
@@ -2479,7 +2478,7 @@ mod tests {
             .unwrap();
             wal.append(&WALEntry::JsonCreate {
                 run_id,
-                doc_id,
+                doc_id: doc_id.to_string(),
                 value_bytes: json_to_msgpack(&initial_value),
                 version: 1,
                 timestamp: now(),
@@ -2497,7 +2496,7 @@ mod tests {
             .unwrap();
             wal.append(&WALEntry::JsonDelete {
                 run_id,
-                doc_id,
+                doc_id: doc_id.to_string(),
                 path: "temp".parse::<JsonPath>().unwrap(),
                 version: 2,
             })
@@ -2534,7 +2533,7 @@ mod tests {
         let wal_path = temp_dir.path().join("json_destroy.wal");
 
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         let initial_value: JsonValue = serde_json::json!({ "data": "test" }).into();
 
         // Write WAL entries: create, then destroy
@@ -2550,7 +2549,7 @@ mod tests {
             .unwrap();
             wal.append(&WALEntry::JsonCreate {
                 run_id,
-                doc_id,
+                doc_id: doc_id.to_string(),
                 value_bytes: json_to_msgpack(&initial_value),
                 version: 1,
                 timestamp: now(),
@@ -2566,7 +2565,7 @@ mod tests {
                 timestamp: now(),
             })
             .unwrap();
-            wal.append(&WALEntry::JsonDestroy { run_id, doc_id })
+            wal.append(&WALEntry::JsonDestroy { run_id, doc_id: doc_id.to_string() })
                 .unwrap();
             wal.append(&WALEntry::CommitTxn { txn_id: 2, run_id })
                 .unwrap();
@@ -2592,7 +2591,7 @@ mod tests {
         let wal_path = temp_dir.path().join("json_incomplete.wal");
 
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         let initial_value: JsonValue = serde_json::json!({ "status": "initial" }).into();
 
         // Simulate crash: begin transaction but no commit
@@ -2608,7 +2607,7 @@ mod tests {
 
             wal.append(&WALEntry::JsonCreate {
                 run_id,
-                doc_id,
+                doc_id: doc_id.to_string(),
                 value_bytes: json_to_msgpack(&initial_value),
                 version: 1,
                 timestamp: now(),
@@ -2639,7 +2638,7 @@ mod tests {
         let wal_path = temp_dir.path().join("json_idempotent.wal");
 
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         let value: JsonValue = serde_json::json!({ "count": 1 }).into();
 
         // Write WAL entries
@@ -2654,7 +2653,7 @@ mod tests {
             .unwrap();
             wal.append(&WALEntry::JsonCreate {
                 run_id,
-                doc_id,
+                doc_id: doc_id.to_string(),
                 value_bytes: json_to_msgpack(&value),
                 version: 1,
                 timestamp: now(),
@@ -2701,7 +2700,7 @@ mod tests {
             "agent".to_string(),
             run_id,
         );
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         let json_value: JsonValue = serde_json::json!({ "type": "json" }).into();
 
         // Write mixed KV and JSON operations
@@ -2727,7 +2726,7 @@ mod tests {
             // JSON create
             wal.append(&WALEntry::JsonCreate {
                 run_id,
-                doc_id,
+                doc_id: doc_id.to_string(),
                 value_bytes: json_to_msgpack(&json_value),
                 version: 2,
                 timestamp: now(),

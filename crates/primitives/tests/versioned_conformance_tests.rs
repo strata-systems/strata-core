@@ -15,7 +15,7 @@
 
 use strata_core::contract::{EntityRef, PrimitiveType, Version};
 use strata_core::json::JsonPath;
-use strata_core::types::{JsonDocId, RunId};
+use strata_core::types::RunId;
 use strata_core::value::Value;
 use strata_engine::Database;
 use strata_primitives::extensions::*;
@@ -111,7 +111,7 @@ mod invariant_1_addressable {
     fn json_has_stable_entity_ref() {
         let (db, run_id) = setup();
         let json = JsonStore::new(db);
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         json.create(&run_id, &doc_id, serde_json::json!({"data": 1}).into())
             .unwrap();
@@ -265,7 +265,7 @@ mod invariant_2_versioned {
     fn json_get_returns_versioned() {
         let (db, run_id) = setup();
         let json = JsonStore::new(db);
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         json.create(&run_id, &doc_id, serde_json::json!(42).into())
             .unwrap();
@@ -281,7 +281,7 @@ mod invariant_2_versioned {
     fn json_create_returns_version() {
         let (db, run_id) = setup();
         let json = JsonStore::new(db);
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let version = json
             .create(&run_id, &doc_id, serde_json::json!({}).into())
@@ -294,7 +294,7 @@ mod invariant_2_versioned {
     fn json_set_returns_version() {
         let (db, run_id) = setup();
         let json = JsonStore::new(db);
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         json.create(&run_id, &doc_id, serde_json::json!({}).into())
             .unwrap();
@@ -427,7 +427,7 @@ mod invariant_3_transactional {
     #[test]
     fn json_participates_in_transaction() {
         let (db, run_id) = setup();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         let doc_id_str = doc_id.to_string();
 
         db.transaction(run_id, |txn| {
@@ -571,7 +571,7 @@ mod invariant_4_lifecycle {
     fn json_full_lifecycle() {
         let (db, run_id) = setup();
         let json = JsonStore::new(db);
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         // Create
         json.create(&run_id, &doc_id, serde_json::json!({"v": 1}).into())
@@ -719,7 +719,7 @@ mod invariant_5_run_scoped {
         let (db, run1) = setup();
         let run2 = RunId::new();
         let json = JsonStore::new(db);
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         json.create(&run1, &doc_id, serde_json::json!({"run": 1}).into())
             .unwrap();
@@ -832,7 +832,7 @@ mod invariant_6_introspectable {
     fn json_has_exists_check() {
         let (db, run_id) = setup();
         let json = JsonStore::new(db);
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         assert!(!json.exists(&run_id, &doc_id).unwrap());
 
@@ -992,7 +992,7 @@ mod invariant_7_read_write {
 
         // Json
         let json = JsonStore::new(db.clone());
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         let _ = json
             .create(&run_id, &doc_id, serde_json::json!({}).into())
             .unwrap(); // write
@@ -1066,7 +1066,7 @@ mod version_monotonicity {
     fn json_versions_are_monotonic() {
         let (db, run_id) = setup();
         let json = JsonStore::new(db);
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         json.create(&run_id, &doc_id, serde_json::json!(0).into())
             .unwrap();

@@ -542,16 +542,15 @@ mod tests {
     // ========================================================================
 
     use strata_core::json::JsonPath;
-    use strata_core::types::JsonDocId;
 
     #[test]
     fn test_json_create_encode_decode() {
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let entry = WALEntry::JsonCreate {
             run_id,
-            doc_id,
+            doc_id: doc_id.to_string(),
             value_bytes: vec![0x80], // msgpack empty map
             version: 1,
             timestamp: now(),
@@ -570,11 +569,11 @@ mod tests {
     #[test]
     fn test_json_set_encode_decode() {
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let entry = WALEntry::JsonSet {
             run_id,
-            doc_id,
+            doc_id: doc_id.to_string(),
             path: "user.name".parse::<JsonPath>().unwrap(),
             value_bytes: b"\xa5Alice".to_vec(),
             version: 2,
@@ -593,11 +592,11 @@ mod tests {
     #[test]
     fn test_json_delete_encode_decode() {
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let entry = WALEntry::JsonDelete {
             run_id,
-            doc_id,
+            doc_id: doc_id.to_string(),
             path: "temp.field".parse::<JsonPath>().unwrap(),
             version: 3,
         };
@@ -615,9 +614,9 @@ mod tests {
     #[test]
     fn test_json_destroy_encode_decode() {
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
-        let entry = WALEntry::JsonDestroy { run_id, doc_id };
+        let entry = WALEntry::JsonDestroy { run_id, doc_id: doc_id.to_string() };
 
         let encoded = encode_entry(&entry).unwrap();
         let (decoded, consumed) = decode_entry(&encoded, 0).unwrap();
@@ -633,24 +632,24 @@ mod tests {
     fn test_json_entries_in_sequence() {
         // Test that multiple JSON entries can be decoded in sequence
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
 
         let entries = vec![
             WALEntry::JsonCreate {
                 run_id,
-                doc_id,
+                doc_id: doc_id.to_string(),
                 value_bytes: vec![0x80],
                 version: 1,
                 timestamp: now(),
             },
             WALEntry::JsonSet {
                 run_id,
-                doc_id,
+                doc_id: doc_id.to_string(),
                 path: "name".parse().unwrap(),
                 value_bytes: b"\xa4test".to_vec(),
                 version: 2,
             },
-            WALEntry::JsonDestroy { run_id, doc_id },
+            WALEntry::JsonDestroy { run_id, doc_id: doc_id.to_string() },
         ];
 
         // Encode all entries into a single buffer

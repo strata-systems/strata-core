@@ -1172,11 +1172,9 @@ mod m5_cross_primitive_tests {
     use super::*;
     use strata_concurrency::JsonStoreExt;
     use strata_core::json::{JsonPath, JsonValue};
-    use strata_core::types::TypeTag;
-    use strata_core::JsonDocId;
 
-    fn create_json_key(ns: &Namespace, doc_id: &JsonDocId) -> Key {
-        Key::new(ns.clone(), TypeTag::Json, doc_id.as_bytes().to_vec())
+    fn create_json_key(ns: &Namespace, doc_id: &str) -> Key {
+        Key::new_json(ns.clone(), doc_id)
     }
 
     /// Test: JSON and KV operations in same transaction share tracking
@@ -1197,7 +1195,7 @@ mod m5_cross_primitive_tests {
             .unwrap();
 
         // JSON operation
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         let json_key = create_json_key(&ns, &doc_id);
         let path = "status".parse::<JsonPath>().unwrap();
         txn.json_set(&json_key, &path, JsonValue::from("active"))
@@ -1231,7 +1229,7 @@ mod m5_cross_primitive_tests {
         assert_eq!(txn.read_count(), 1);
 
         // JSON read (from write set since doc doesn't exist)
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         let json_key = create_json_key(&ns, &doc_id);
         let path = JsonPath::root();
         txn.json_set(&json_key, &path, JsonValue::from("test"))
@@ -1256,7 +1254,7 @@ mod m5_cross_primitive_tests {
         assert!(txn.is_read_only());
 
         // Add JSON write
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         let json_key = create_json_key(&ns, &doc_id);
         let path = "data".parse::<JsonPath>().unwrap();
         txn.json_set(&json_key, &path, JsonValue::from(123))
@@ -1277,7 +1275,7 @@ mod m5_cross_primitive_tests {
 
         let mut txn = begin_transaction(&store, 1, run_id);
 
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         let json_key = create_json_key(&ns, &doc_id);
         let path = "field_to_delete".parse::<JsonPath>().unwrap();
 
@@ -1300,7 +1298,7 @@ mod m5_cross_primitive_tests {
 
         // Create multiple documents
         for i in 0..3 {
-            let doc_id = JsonDocId::new();
+            let doc_id = "test-doc";
             let json_key = create_json_key(&ns, &doc_id);
             let path = "index".parse::<JsonPath>().unwrap();
             txn.json_set(&json_key, &path, JsonValue::from(i as i64))
@@ -1324,7 +1322,7 @@ mod m5_cross_primitive_tests {
         let kv_key = create_key(&ns, "key");
         txn.put(kv_key, Value::Int(1)).unwrap();
 
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         let json_key = create_json_key(&ns, &doc_id);
         let path = "data".parse::<JsonPath>().unwrap();
         txn.json_set(&json_key, &path, JsonValue::from("value"))

@@ -37,7 +37,7 @@
 //! ```
 
 use super::PrimitiveType;
-use crate::types::{JsonDocId, RunId};
+use crate::types::RunId;
 use serde::{Deserialize, Serialize};
 
 /// Universal reference to any entity in the database
@@ -86,8 +86,8 @@ pub enum EntityRef {
     Json {
         /// Run scope
         run_id: RunId,
-        /// Document ID
-        doc_id: JsonDocId,
+        /// Document ID (user-provided string key)
+        doc_id: String,
     },
 
     /// Reference to a vector entry
@@ -133,8 +133,8 @@ impl EntityRef {
     }
 
     /// Create a JSON document entity reference
-    pub fn json(run_id: RunId, doc_id: JsonDocId) -> Self {
-        EntityRef::Json { run_id, doc_id }
+    pub fn json(run_id: RunId, doc_id: impl Into<String>) -> Self {
+        EntityRef::Json { run_id, doc_id: doc_id.into() }
     }
 
     /// Create a vector entity reference
@@ -174,12 +174,6 @@ impl EntityRef {
             EntityRef::Json { .. } => PrimitiveType::Json,
             EntityRef::Vector { .. } => PrimitiveType::Vector,
         }
-    }
-
-    /// Deprecated: Use primitive_type() instead
-    #[deprecated(since = "0.9.0", note = "Use primitive_type() instead")]
-    pub fn primitive_kind(&self) -> PrimitiveType {
-        self.primitive_type()
     }
 
     // =========================================================================
@@ -245,9 +239,9 @@ impl EntityRef {
     }
 
     /// Get the JSON doc ID if this is a JSON reference
-    pub fn json_doc_id(&self) -> Option<JsonDocId> {
+    pub fn json_doc_id(&self) -> Option<&str> {
         match self {
-            EntityRef::Json { doc_id, .. } => Some(*doc_id),
+            EntityRef::Json { doc_id, .. } => Some(doc_id),
             _ => None,
         }
     }
@@ -357,7 +351,7 @@ mod tests {
     #[test]
     fn test_entity_ref_json() {
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
+        let doc_id = "test-doc";
         let ref_ = EntityRef::json(run_id, doc_id);
 
         assert!(ref_.is_json());
@@ -393,8 +387,7 @@ mod tests {
         let run_ref = EntityRef::run(run_id);
         assert!(format!("{}", run_ref).starts_with("run://"));
 
-        let doc_id = JsonDocId::new();
-        let json = EntityRef::json(run_id, doc_id);
+        let json = EntityRef::json(run_id, "test-doc");
         assert!(format!("{}", json).starts_with("json://"));
 
         let vector = EntityRef::vector(run_id, "col", "key");
@@ -435,7 +428,7 @@ mod tests {
             EntityRef::event(run_id, 42),
             EntityRef::state(run_id, "cell"),
             EntityRef::run(run_id),
-            EntityRef::json(run_id, JsonDocId::new()),
+            EntityRef::json(run_id, "test-doc"),
             EntityRef::vector(run_id, "col", "key"),
         ];
 
@@ -470,7 +463,6 @@ mod tests {
     #[test]
     fn test_all_primitive_types_covered() {
         let run_id = RunId::new();
-        let doc_id = JsonDocId::new();
 
         // Create one of each type
         let refs = vec![
@@ -478,7 +470,7 @@ mod tests {
             EntityRef::event(run_id, 0),
             EntityRef::state(run_id, "s"),
             EntityRef::run(run_id),
-            EntityRef::json(run_id, doc_id),
+            EntityRef::json(run_id, "j"),
             EntityRef::vector(run_id, "c", "k"),
         ];
 
