@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 
-use strata_core::json::JsonPath;
+use strata_core::primitives::json::JsonPath;
 use strata_core::types::Key;
 
 use crate::transaction::{JsonPatchEntry, JsonPathRead};
@@ -352,7 +352,7 @@ pub fn check_all_conflicts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use strata_core::json::JsonPatch;
+    use strata_core::primitives::json::JsonPatch;
     use strata_core::types::{Namespace, RunId};
 
     fn test_key() -> Key {

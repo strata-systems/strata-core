@@ -2586,7 +2586,7 @@ impl VectorStoreExt for TransactionContext {
         // To properly support this, TransactionContext would need access to
         // Database::extension::<VectorBackendState>().
         let _ = (collection, key); // Mark as intentionally unused
-        Err(strata_core::error::Error::InvalidOperation(
+        Err(strata_core::StrataError::invalid_input(
             "VectorStore get operations are not supported in cross-primitive transactions. \
              Embeddings are stored in in-memory backends not accessible from TransactionContext. \
              Use VectorStore::get() directly outside of transactions."
@@ -2609,7 +2609,7 @@ impl VectorStoreExt for TransactionContext {
         // Steps 1, 2, and 4 require access to VectorBackendState which is
         // not available from TransactionContext.
         let _ = (collection, key, embedding); // Mark as intentionally unused
-        Err(strata_core::error::Error::InvalidOperation(
+        Err(strata_core::StrataError::invalid_input(
             "VectorStore insert operations are not supported in cross-primitive transactions. \
              Vector operations require access to in-memory backends not accessible from \
              TransactionContext. Use VectorStore::insert() directly outside of transactions."

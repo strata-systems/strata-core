@@ -458,7 +458,7 @@ impl KVStore for SubstrateImpl {
             let current = txn.kv_get(key)?;
             let current_value = match current {
                 Some(Value::Int(n)) => n,
-                Some(_) => return Err(strata_core::error::Error::InvalidOperation(
+                Some(_) => return Err(strata_core::StrataError::invalid_input(
                     "Cannot increment non-integer value".to_string(),
                 )),
                 None => 0,
@@ -466,7 +466,7 @@ impl KVStore for SubstrateImpl {
 
             // Use checked_add to prevent overflow
             let new_value = current_value.checked_add(delta).ok_or_else(|| {
-                strata_core::error::Error::InvalidOperation(
+                strata_core::StrataError::invalid_input(
                     "Integer overflow in increment operation".to_string(),
                 )
             })?;

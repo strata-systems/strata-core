@@ -22,7 +22,7 @@
 
 use crate::wal::{WALEntry, WAL};
 use strata_core::error::Result;
-use strata_core::json::{delete_at_path, set_at_path, JsonValue};
+use strata_core::primitives::json::{delete_at_path, set_at_path, JsonValue};
 use strata_core::traits::Storage;
 use strata_core::types::{Key, Namespace, RunId};
 use strata_core::value::Value;
@@ -102,13 +102,13 @@ impl RecoveryJsonDoc {
     /// Serialize to msgpack bytes
     fn to_bytes(&self) -> Result<Vec<u8>> {
         rmp_serde::to_vec(self)
-            .map_err(|e| strata_core::error::Error::SerializationError(e.to_string()))
+            .map_err(|e| strata_core::StrataError::serialization(e.to_string()))
     }
 
     /// Deserialize from msgpack bytes
     fn from_bytes(bytes: &[u8]) -> Result<Self> {
         rmp_serde::from_slice(bytes)
-            .map_err(|e| strata_core::error::Error::SerializationError(e.to_string()))
+            .map_err(|e| strata_core::StrataError::serialization(e.to_string()))
     }
 }
 
@@ -693,7 +693,7 @@ fn apply_transaction<S: Storage + ?Sized>(
             } => {
                 // Deserialize the JSON value from msgpack bytes
                 let value: JsonValue = rmp_serde::from_slice(value_bytes).map_err(|e| {
-                    strata_core::error::Error::SerializationError(format!(
+                    strata_core::StrataError::serialization(format!(
                         "Failed to deserialize JSON value during recovery: {}",
                         e
                     ))
@@ -728,7 +728,7 @@ fn apply_transaction<S: Storage + ?Sized>(
                     let mut doc = match &vv.value {
                         Value::Bytes(bytes) => RecoveryJsonDoc::from_bytes(bytes)?,
                         _ => {
-                            return Err(strata_core::error::Error::InvalidOperation(
+                            return Err(strata_core::StrataError::invalid_input(
                                 "Expected bytes for JSON document".to_string(),
                             ))
                         }
@@ -736,7 +736,7 @@ fn apply_transaction<S: Storage + ?Sized>(
 
                     // Deserialize the new value
                     let new_value: JsonValue = rmp_serde::from_slice(value_bytes).map_err(|e| {
-                        strata_core::error::Error::SerializationError(format!(
+                        strata_core::StrataError::serialization(format!(
                             "Failed to deserialize JSON value during recovery: {}",
                             e
                         ))
@@ -744,7 +744,7 @@ fn apply_transaction<S: Storage + ?Sized>(
 
                     // Apply the path mutation
                     set_at_path(&mut doc.value, path, new_value).map_err(|e| {
-                        strata_core::error::Error::InvalidOperation(format!(
+                        strata_core::StrataError::invalid_input(format!(
                             "Failed to set path during recovery: {}",
                             e
                         ))
@@ -785,7 +785,7 @@ fn apply_transaction<S: Storage + ?Sized>(
                     let mut doc = match &vv.value {
                         Value::Bytes(bytes) => RecoveryJsonDoc::from_bytes(bytes)?,
                         _ => {
-                            return Err(strata_core::error::Error::InvalidOperation(
+                            return Err(strata_core::StrataError::invalid_input(
                                 "Expected bytes for JSON document".to_string(),
                             ))
                         }
@@ -793,7 +793,7 @@ fn apply_transaction<S: Storage + ?Sized>(
 
                     // Apply the path deletion
                     delete_at_path(&mut doc.value, path).map_err(|e| {
-                        strata_core::error::Error::InvalidOperation(format!(
+                        strata_core::StrataError::invalid_input(format!(
                             "Failed to delete path during recovery: {}",
                             e
                         ))
@@ -2313,7 +2313,7 @@ mod tests {
     // JSON Crash Recovery Tests
     // ========================================================================
 
-    use strata_core::json::{JsonPath, JsonValue};
+    use strata_core::primitives::json::{JsonPath, JsonValue};
 
     /// Serialize a JsonValue to msgpack bytes (for WAL entry construction)
     fn json_to_msgpack(value: &JsonValue) -> Vec<u8> {

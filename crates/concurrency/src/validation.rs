@@ -71,9 +71,9 @@ pub enum ConflictType {
         /// The key of the JSON document
         key: Key,
         /// The path that was read
-        read_path: strata_core::json::JsonPath,
+        read_path: strata_core::primitives::json::JsonPath,
         /// The path that was written (overlaps with read_path)
-        write_path: strata_core::json::JsonPath,
+        write_path: strata_core::primitives::json::JsonPath,
     },
 
     /// JSON path write-write conflict: two writes to overlapping paths
@@ -85,9 +85,9 @@ pub enum ConflictType {
         /// The key of the JSON document
         key: Key,
         /// The first write path
-        path1: strata_core::json::JsonPath,
+        path1: strata_core::primitives::json::JsonPath,
         /// The second write path (overlaps with path1)
-        path2: strata_core::json::JsonPath,
+        path2: strata_core::primitives::json::JsonPath,
     },
 }
 
@@ -1338,7 +1338,7 @@ mod tests {
     mod json_path_validation_tests {
         use super::*;
         use crate::transaction::{JsonPatchEntry, JsonPathRead};
-        use strata_core::json::{JsonPatch, JsonPath};
+        use strata_core::primitives::json::{JsonPatch, JsonPath};
         use strata_core::types::{Namespace, RunId};
 
         fn create_json_key() -> Key {

@@ -317,7 +317,7 @@ mod tests {
 
         // All results should be KV
         for hit in &response.hits {
-            assert_eq!(hit.doc_ref.primitive_kind(), PrimitiveType::Kv);
+            assert_eq!(hit.doc_ref.primitive_type(), PrimitiveType::Kv);
         }
     }
 

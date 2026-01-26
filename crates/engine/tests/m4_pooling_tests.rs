@@ -177,7 +177,7 @@ fn test_aborted_transactions_return_to_pool() {
 
     // Run a transaction that fails (returns error from closure)
     let result: Result<(), _> = db.transaction(run_id, |_txn| {
-        Err(strata_core::error::Error::InvalidState(
+        Err(strata_core::StrataError::invalid_input(
             "Test error".to_string(),
         ))
     });

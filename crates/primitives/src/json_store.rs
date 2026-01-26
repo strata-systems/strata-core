@@ -36,8 +36,9 @@
 use crate::extensions::JsonStoreExt;
 use strata_concurrency::TransactionContext;
 use strata_core::contract::{Timestamp, Version, Versioned};
-use strata_core::error::{Error, Result};
-use strata_core::json::{delete_at_path, get_at_path, set_at_path, JsonPath, JsonValue, LimitError};
+use strata_core::error::Result;
+use strata_core::primitives::json::{delete_at_path, get_at_path, set_at_path, JsonLimitError, JsonPath, JsonValue};
+use strata_core::StrataError;
 use strata_core::traits::SnapshotView;
 use strata_core::types::{Key, Namespace, RunId};
 use strata_core::value::Value;
@@ -50,9 +51,9 @@ use std::time::SystemTime;
 // Limit Validation Helpers
 // =============================================================================
 
-/// Convert a LimitError to an Error
-fn limit_error_to_error(e: LimitError) -> Error {
-    Error::InvalidOperation(e.to_string())
+/// Convert a JsonLimitError to a StrataError
+fn limit_error_to_error(e: JsonLimitError) -> StrataError {
+    StrataError::invalid_input(e.to_string())
 }
 
 // =============================================================================
@@ -74,7 +75,7 @@ fn limit_error_to_error(e: LimitError) -> Error {
 ///
 /// ```rust
 /// use strata_primitives::json_store::JsonDoc;
-/// use strata_core::json::JsonValue;
+/// use strata_core::primitives::json::JsonValue;
 ///
 /// let doc = JsonDoc::new("my-document", JsonValue::from(42i64));
 /// assert_eq!(doc.version, 1);
@@ -155,7 +156,7 @@ impl JsonDoc {
 /// use strata_primitives::JsonStore;
 /// use strata_engine::Database;
 /// use strata_core::types::RunId;
-/// use strata_core::json::JsonValue;
+/// use strata_core::primitives::json::JsonValue;
 ///
 /// let db = Arc::new(Database::builder().in_memory().open_temp()?);
 /// let json = JsonStore::new(db);
@@ -199,7 +200,7 @@ impl JsonStore {
     ///
     /// Uses MessagePack for efficient binary serialization.
     pub(crate) fn serialize_doc(doc: &JsonDoc) -> Result<Value> {
-        let bytes = rmp_serde::to_vec(doc).map_err(|e| Error::SerializationError(e.to_string()))?;
+        let bytes = rmp_serde::to_vec(doc).map_err(|e| StrataError::serialization(e.to_string()))?;
         Ok(Value::Bytes(bytes))
     }
 
@@ -209,9 +210,9 @@ impl JsonStore {
     pub(crate) fn deserialize_doc(value: &Value) -> Result<JsonDoc> {
         match value {
             Value::Bytes(bytes) => {
-                rmp_serde::from_slice(bytes).map_err(|e| Error::SerializationError(e.to_string()))
+                rmp_serde::from_slice(bytes).map_err(|e| StrataError::serialization(e.to_string()))
             }
-            _ => Err(Error::InvalidOperation("expected bytes for JsonDoc".into())),
+            _ => Err(StrataError::invalid_input("expected bytes for JsonDoc")),
         }
     }
 
@@ -251,7 +252,7 @@ impl JsonStore {
         self.db.transaction(*run_id, |txn| {
             // Check if document already exists
             if txn.get(&key)?.is_some() {
-                return Err(Error::InvalidOperation(format!(
+                return Err(StrataError::invalid_input(format!(
                     "JSON document {} already exists",
                     doc_id
                 )));
@@ -510,13 +511,13 @@ impl JsonStore {
         self.db.transaction(*run_id, |txn| {
             // Load existing document
             let stored = txn.get(&key)?.ok_or_else(|| {
-                Error::InvalidOperation(format!("JSON document {} not found", doc_id))
+                StrataError::invalid_input(format!("JSON document {} not found", doc_id))
             })?;
             let mut doc = Self::deserialize_doc(&stored)?;
 
             // Apply mutation
             set_at_path(&mut doc.value, path, value)
-                .map_err(|e| Error::InvalidOperation(format!("Path error: {}", e)))?;
+                .map_err(|e| StrataError::invalid_input(format!("Path error: {}", e)))?;
             doc.touch();
 
             // Store updated document
@@ -563,13 +564,13 @@ impl JsonStore {
         self.db.transaction(*run_id, |txn| {
             // Load existing document
             let stored = txn.get(&key)?.ok_or_else(|| {
-                Error::InvalidOperation(format!("JSON document {} not found", doc_id))
+                StrataError::invalid_input(format!("JSON document {} not found", doc_id))
             })?;
             let mut doc = Self::deserialize_doc(&stored)?;
 
             // Apply deletion
             delete_at_path(&mut doc.value, path)
-                .map_err(|e| Error::InvalidOperation(format!("Path error: {}", e)))?;
+                .map_err(|e| StrataError::invalid_input(format!("Path error: {}", e)))?;
             doc.touch();
 
             // Store updated document
@@ -660,7 +661,7 @@ impl JsonStore {
         path: &JsonPath,
         patch: JsonValue,
     ) -> Result<Version> {
-        use strata_core::json::merge_patch;
+        use strata_core::primitives::json::merge_patch;
 
         // Validate path and patch limits
         path.validate().map_err(limit_error_to_error)?;
@@ -698,12 +699,12 @@ impl JsonStore {
                         // Merge into existing value
                         merge_patch(&mut current, &patch);
                         set_at_path(&mut doc.value, path, current)
-                            .map_err(|e| Error::InvalidOperation(format!("Path error: {}", e)))?;
+                            .map_err(|e| StrataError::invalid_input(format!("Path error: {}", e)))?;
                     }
                     None => {
                         // Path doesn't exist - set patch value directly
                         set_at_path(&mut doc.value, path, patch)
-                            .map_err(|e| Error::InvalidOperation(format!("Path error: {}", e)))?;
+                            .map_err(|e| StrataError::invalid_input(format!("Path error: {}", e)))?;
                     }
                 }
             }
@@ -752,8 +753,8 @@ impl JsonStore {
     /// // Try to update only if version is still 5
     /// match json.cas(&run_id, &doc_id, 5, &"name".parse()?, new_value) {
     ///     Ok(new_ver) => println!("Updated to version {}", new_ver),
-    ///     Err(Error::VersionMismatch { actual, .. }) => {
-    ///         println!("Conflict! Current version is {}", actual);
+    ///     Err(StrataError::Conflict { reason, .. }) => {
+    ///         println!("Conflict! {}", reason);
     ///     }
     ///     Err(e) => return Err(e),
     /// }
@@ -775,21 +776,21 @@ impl JsonStore {
         self.db.transaction(*run_id, |txn| {
             // Load existing document
             let stored = txn.get(&key)?.ok_or_else(|| {
-                Error::InvalidOperation(format!("JSON document {} not found", doc_id))
+                StrataError::invalid_input(format!("JSON document {} not found", doc_id))
             })?;
             let mut doc = Self::deserialize_doc(&stored)?;
 
             // Check version
             if doc.version != expected_version {
-                return Err(Error::VersionMismatch {
-                    expected: expected_version,
-                    actual: doc.version,
-                });
+                return Err(StrataError::conflict(format!(
+                    "Version mismatch: expected {}, got {}",
+                    expected_version, doc.version
+                )));
             }
 
             // Apply mutation
             set_at_path(&mut doc.value, path, value)
-                .map_err(|e| Error::InvalidOperation(format!("Path error: {}", e)))?;
+                .map_err(|e| StrataError::invalid_input(format!("Path error: {}", e)))?;
             doc.touch();
 
             // Store updated document
@@ -1030,7 +1031,7 @@ impl JsonStore {
 
                 // Check if document already exists
                 if txn.get(&key)?.is_some() {
-                    return Err(Error::InvalidOperation(format!(
+                    return Err(StrataError::invalid_input(format!(
                         "JSON document {} already exists",
                         doc_id.as_ref()
                     )));
@@ -1101,7 +1102,7 @@ impl JsonStore {
         self.db.transaction(*run_id, |txn| {
             // Load existing document
             let stored = txn.get(&key)?.ok_or_else(|| {
-                Error::InvalidOperation(format!("JSON document {} not found", doc_id))
+                StrataError::invalid_input(format!("JSON document {} not found", doc_id))
             })?;
             let mut doc = Self::deserialize_doc(&stored)?;
 
@@ -1110,14 +1111,14 @@ impl JsonStore {
                 Some(val) => match val.as_array() {
                     Some(arr) => arr.clone(),
                     None => {
-                        return Err(Error::InvalidOperation(format!(
+                        return Err(StrataError::invalid_input(format!(
                             "Path '{}' does not point to an array",
                             path
                         )));
                     }
                 },
                 None => {
-                    return Err(Error::InvalidOperation(format!(
+                    return Err(StrataError::invalid_input(format!(
                         "Path '{}' does not exist",
                         path
                     )));
@@ -1132,7 +1133,7 @@ impl JsonStore {
             // Update document
             let new_array = JsonValue::from(serde_json::Value::Array(new_arr));
             set_at_path(&mut doc.value, path, new_array)
-                .map_err(|e| Error::InvalidOperation(format!("Path error: {}", e)))?;
+                .map_err(|e| StrataError::invalid_input(format!("Path error: {}", e)))?;
             doc.touch();
 
             // Store updated document
@@ -1191,7 +1192,7 @@ impl JsonStore {
         self.db.transaction(*run_id, |txn| {
             // Load existing document
             let stored = txn.get(&key)?.ok_or_else(|| {
-                Error::InvalidOperation(format!("JSON document {} not found", doc_id))
+                StrataError::invalid_input(format!("JSON document {} not found", doc_id))
             })?;
             let mut doc = Self::deserialize_doc(&stored)?;
 
@@ -1204,14 +1205,14 @@ impl JsonStore {
                     } else if let Some(n) = val.as_i64() {
                         n as f64
                     } else {
-                        return Err(Error::InvalidOperation(format!(
+                        return Err(StrataError::invalid_input(format!(
                             "Path '{}' does not point to a number",
                             path
                         )));
                     }
                 }
                 None => {
-                    return Err(Error::InvalidOperation(format!(
+                    return Err(StrataError::invalid_input(format!(
                         "Path '{}' does not exist",
                         path
                     )));
@@ -1229,7 +1230,7 @@ impl JsonStore {
                 JsonValue::from(new_value)
             };
             set_at_path(&mut doc.value, path, new_json_value)
-                .map_err(|e| Error::InvalidOperation(format!("Path error: {}", e)))?;
+                .map_err(|e| StrataError::invalid_input(format!("Path error: {}", e)))?;
             doc.touch();
 
             // Store updated document
@@ -1285,7 +1286,7 @@ impl JsonStore {
         self.db.transaction(*run_id, |txn| {
             // Load existing document
             let stored = txn.get(&key)?.ok_or_else(|| {
-                Error::InvalidOperation(format!("JSON document {} not found", doc_id))
+                StrataError::invalid_input(format!("JSON document {} not found", doc_id))
             })?;
             let mut doc = Self::deserialize_doc(&stored)?;
 
@@ -1294,14 +1295,14 @@ impl JsonStore {
                 Some(val) => match val.as_array() {
                     Some(arr) => arr.clone(),
                     None => {
-                        return Err(Error::InvalidOperation(format!(
+                        return Err(StrataError::invalid_input(format!(
                             "Path '{}' does not point to an array",
                             path
                         )));
                     }
                 },
                 None => {
-                    return Err(Error::InvalidOperation(format!(
+                    return Err(StrataError::invalid_input(format!(
                         "Path '{}' does not exist",
                         path
                     )));
@@ -1314,7 +1315,7 @@ impl JsonStore {
             // Update document
             let new_array = JsonValue::from(serde_json::Value::Array(arr));
             set_at_path(&mut doc.value, path, new_array)
-                .map_err(|e| Error::InvalidOperation(format!("Path error: {}", e)))?;
+                .map_err(|e| StrataError::invalid_input(format!("Path error: {}", e)))?;
             doc.touch();
 
             // Store updated document
@@ -1583,13 +1584,13 @@ impl JsonStoreExt for TransactionContext {
 
         // Load existing document from transaction context
         let stored = self.get(&key)?.ok_or_else(|| {
-            Error::InvalidOperation(format!("JSON document {} not found", doc_id))
+            StrataError::invalid_input(format!("JSON document {} not found", doc_id))
         })?;
         let mut doc = JsonStore::deserialize_doc(&stored)?;
 
         // Apply mutation
         set_at_path(&mut doc.value, path, value)
-            .map_err(|e| Error::InvalidOperation(format!("Path error: {}", e)))?;
+            .map_err(|e| StrataError::invalid_input(format!("Path error: {}", e)))?;
         doc.touch();
 
         // Store updated document in transaction write set
@@ -1608,7 +1609,7 @@ impl JsonStoreExt for TransactionContext {
 
         // Check if document already exists
         if self.get(&key)?.is_some() {
-            return Err(Error::InvalidOperation(format!(
+            return Err(StrataError::invalid_input(format!(
                 "JSON document {} already exists",
                 doc_id
             )));

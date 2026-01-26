@@ -1457,14 +1457,14 @@ mod tests {
     #[test]
     fn test_kv_searchable_trait() {
         use crate::searchable::Searchable;
-        use strata_core::search_types::PrimitiveKind;
+        use strata_core::PrimitiveType;
         use strata_core::SearchRequest;
 
         let (_temp, _db, kv) = setup();
         let run_id = RunId::new();
 
         // Test primitive_kind
-        assert_eq!(kv.primitive_kind(), PrimitiveKind::Kv);
+        assert_eq!(kv.primitive_kind(), PrimitiveType::Kv);
 
         // Test search via trait
         kv.put(&run_id, "key", Value::String("searchable test".into()))

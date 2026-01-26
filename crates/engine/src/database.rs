@@ -25,7 +25,8 @@ use dashmap::DashMap;
 use strata_concurrency::{
     validate_transaction, RecoveryCoordinator, TransactionContext, TransactionWALWriter,
 };
-use strata_core::error::{Error, Result};
+use strata_core::error::Result;
+use strata_core::StrataError;
 use strata_core::traits::Storage;
 use strata_core::types::{Key, RunId};
 use strata_core::value::Value;
@@ -532,11 +533,11 @@ impl Database {
         let data_dir = path.as_ref().to_path_buf();
 
         // Create data directory
-        std::fs::create_dir_all(&data_dir).map_err(Error::IoError)?;
+        std::fs::create_dir_all(&data_dir).map_err(StrataError::from)?;
 
         // Create WAL directory
         let wal_dir = data_dir.join("wal");
-        std::fs::create_dir_all(&wal_dir).map_err(Error::IoError)?;
+        std::fs::create_dir_all(&wal_dir).map_err(StrataError::from)?;
 
         let wal_path = wal_dir.join("current.wal");
 
@@ -771,7 +772,7 @@ impl Database {
     {
         // Check if database is accepting transactions
         if !self.accepting_transactions.load(Ordering::SeqCst) {
-            return Err(Error::InvalidOperation(
+            return Err(StrataError::invalid_input(
                 "Database is shutting down".to_string(),
             ));
         }
@@ -821,7 +822,7 @@ impl Database {
     {
         // Check if database is accepting transactions
         if !self.accepting_transactions.load(Ordering::SeqCst) {
-            return Err(Error::InvalidOperation(
+            return Err(StrataError::invalid_input(
                 "Database is shutting down".to_string(),
             ));
         }
@@ -887,7 +888,7 @@ impl Database {
     {
         // Check if database is accepting transactions
         if !self.accepting_transactions.load(Ordering::SeqCst) {
-            return Err(Error::InvalidOperation(
+            return Err(StrataError::invalid_input(
                 "Database is shutting down".to_string(),
             ));
         }
@@ -943,7 +944,7 @@ impl Database {
 
         // Max retries exceeded
         Err(last_error
-            .unwrap_or_else(|| Error::TransactionConflict("Max retries exceeded".to_string())))
+            .unwrap_or_else(|| StrataError::conflict("Max retries exceeded".to_string())))
     }
 
     /// Execute a transaction with timeout
@@ -985,7 +986,7 @@ impl Database {
     {
         // Check if database is accepting transactions
         if !self.accepting_transactions.load(Ordering::SeqCst) {
-            return Err(Error::InvalidOperation(
+            return Err(StrataError::invalid_input(
                 "Database is shutting down".to_string(),
             ));
         }
@@ -1006,10 +1007,9 @@ impl Database {
                     ));
                     self.coordinator.record_abort();
                     self.end_transaction(txn); // Return to pool
-                    return Err(Error::TransactionTimeout(format!(
-                        "Transaction exceeded timeout of {:?} (elapsed: {:?})",
-                        timeout, elapsed
-                    )));
+                    return Err(StrataError::transaction_timeout(
+                        elapsed.as_millis() as u64
+                    ));
                 }
 
                 // Commit on success (ignore the returned version for this API)
@@ -1117,7 +1117,7 @@ impl Database {
         if !validation.is_valid() {
             let _ = txn.mark_aborted(format!("Validation failed: {:?}", validation.conflicts));
             self.coordinator.record_abort();
-            return Err(Error::TransactionConflict(format!(
+            return Err(StrataError::conflict(format!(
                 "Conflicts: {:?}",
                 validation.conflicts
             )));
@@ -1240,7 +1240,7 @@ impl Database {
     {
         // Check if database is accepting transactions
         if !self.accepting_transactions.load(Ordering::SeqCst) {
-            return Err(Error::InvalidOperation(
+            return Err(StrataError::invalid_input(
                 "Database is shutting down".to_string(),
             ));
         }
@@ -1286,7 +1286,7 @@ impl Database {
         if !validation.is_valid() {
             let _ = txn.mark_aborted(format!("Validation failed: {:?}", validation.conflicts));
             self.coordinator.record_abort();
-            return Err(Error::TransactionConflict(format!(
+            return Err(StrataError::conflict(format!(
                 "Conflicts: {:?}",
                 validation.conflicts
             )));
@@ -2009,7 +2009,7 @@ mod tests {
             if let Value::Int(n) = val {
                 Ok(n)
             } else {
-                Err(Error::InvalidState("wrong type".to_string()))
+                Err(StrataError::invalid_input("wrong type".to_string()))
             }
         });
 
@@ -2049,7 +2049,7 @@ mod tests {
         // Transaction that errors
         let result: Result<()> = db.transaction(run_id, |txn| {
             txn.put(key.clone(), Value::Int(999))?;
-            Err(Error::InvalidState("intentional error".to_string()))
+            Err(StrataError::invalid_input("intentional error".to_string()))
         });
 
         assert!(result.is_err());
@@ -2175,7 +2175,7 @@ mod tests {
         // Abort a transaction
         let _: Result<()> = db.transaction(run_id, |txn| {
             txn.put(Key::new_kv(ns.clone(), "key2"), Value::Int(2))?;
-            Err(Error::InvalidState("intentional abort".to_string()))
+            Err(StrataError::invalid_input("intentional abort".to_string()))
         });
 
         let after_abort = db.metrics();
@@ -2527,7 +2527,7 @@ mod tests {
         let result: Result<()> =
             db.transaction_with_retry(run_id, RetryConfig::default(), |_txn| {
                 attempts.fetch_add(1, Ordering::Relaxed);
-                Err(Error::InvalidState("not a conflict".to_string()))
+                Err(StrataError::invalid_input("not a conflict".to_string()))
             });
 
         // Should only try once (non-conflict errors don't retry)
@@ -2557,7 +2557,7 @@ mod tests {
         let result: Result<()> = db.transaction_with_retry(run_id, config, |txn| {
             let count = attempts.fetch_add(1, Ordering::Relaxed);
             if count < 2 {
-                Err(Error::TransactionConflict("simulated conflict".to_string()))
+                Err(StrataError::conflict("simulated conflict".to_string()))
             } else {
                 txn.put(key.clone(), Value::Int(count as i64))?;
                 Ok(())
@@ -2587,7 +2587,7 @@ mod tests {
         // Always return conflict
         let result: Result<()> = db.transaction_with_retry(run_id, config, |_txn| {
             attempts.fetch_add(1, Ordering::Relaxed);
-            Err(Error::TransactionConflict("always conflict".to_string()))
+            Err(StrataError::conflict("always conflict".to_string()))
         });
 
         // Should try 3 times (initial + 2 retries)
@@ -2610,7 +2610,7 @@ mod tests {
         let result: Result<()> =
             db.transaction_with_retry(run_id, RetryConfig::no_retry(), |_txn| {
                 attempts.fetch_add(1, Ordering::Relaxed);
-                Err(Error::TransactionConflict("conflict".to_string()))
+                Err(StrataError::conflict("conflict".to_string()))
             });
 
         // Should try exactly once
@@ -2638,7 +2638,7 @@ mod tests {
                 if let Value::Int(n) = val {
                     Ok(n)
                 } else {
-                    Err(Error::InvalidState("wrong type".to_string()))
+                    Err(StrataError::invalid_input("wrong type".to_string()))
                 }
             });
 
@@ -2675,12 +2675,12 @@ mod tests {
             let val = txn.get(&key)?.unwrap();
             let n = match val {
                 Value::Int(n) => n,
-                _ => return Err(Error::InvalidState("wrong type".to_string())),
+                _ => return Err(StrataError::invalid_input("wrong type".to_string())),
             };
 
             // Simulate conflict on first attempt
             if count == 0 {
-                return Err(Error::TransactionConflict("simulated conflict".to_string()));
+                return Err(StrataError::conflict("simulated conflict".to_string()));
             }
 
             // Write incremented value
@@ -2771,7 +2771,7 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.is_timeout());
+        assert!(matches!(err, StrataError::TransactionTimeout { .. }));
 
         // Data should NOT be committed
         assert!(db.get(&key).unwrap().is_none());
@@ -3009,7 +3009,7 @@ mod tests {
                 if let Value::Int(n) = val {
                     Ok(n)
                 } else {
-                    Err(Error::InvalidState("wrong type".to_string()))
+                    Err(StrataError::invalid_input("wrong type".to_string()))
                 }
             });
 
@@ -3063,7 +3063,7 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(err, Error::InvalidOperation(_)));
+        assert!(matches!(err, StrataError::InvalidInput { .. }));
     }
 
     #[test]
@@ -3086,7 +3086,7 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(err, Error::InvalidOperation(_)));
+        assert!(matches!(err, StrataError::InvalidInput { .. }));
     }
 
     #[test]

@@ -30,7 +30,8 @@
 
 use strata_concurrency::TransactionContext;
 use strata_core::contract::{Timestamp, Version, Versioned};
-use strata_core::error::{Error, Result};
+use strata_core::error::Result;
+use strata_core::StrataError;
 use strata_core::types::{Key, Namespace, RunId, TypeTag};
 use strata_core::value::Value;
 use strata_durability::run_bundle::{
@@ -156,12 +157,12 @@ pub struct RunMetadata {
     pub parent_run: Option<String>,
     /// Current status
     pub status: RunStatus,
-    /// Creation timestamp (milliseconds since epoch)
-    pub created_at: i64,
-    /// Last update timestamp (milliseconds since epoch)
-    pub updated_at: i64,
-    /// Completion timestamp (if finished)
-    pub completed_at: Option<i64>,
+    /// Creation timestamp (microseconds since epoch)
+    pub created_at: u64,
+    /// Last update timestamp (microseconds since epoch)
+    pub updated_at: u64,
+    /// Completion timestamp (microseconds since epoch, if finished)
+    pub completed_at: Option<u64>,
     /// User-defined tags
     pub tags: Vec<String>,
     /// Custom metadata
@@ -206,7 +207,7 @@ impl RunMetadata {
         Versioned::with_timestamp(
             self,
             Version::counter(version),
-            Timestamp::from_micros((timestamp * 1000) as u64),
+            Timestamp::from_micros(timestamp),
         )
     }
 
@@ -216,12 +217,12 @@ impl RunMetadata {
         self.updated_at = Self::now();
     }
 
-    /// Get current timestamp in milliseconds
-    fn now() -> i64 {
+    /// Get current timestamp in microseconds
+    fn now() -> u64 {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_millis() as i64
+            .as_micros() as u64
     }
 }
 
@@ -334,7 +335,7 @@ impl RunIndex {
 
             // Check if run already exists
             if txn.get(&key)?.is_some() {
-                return Err(Error::InvalidOperation(format!(
+                return Err(StrataError::invalid_input(format!(
                     "Run '{}' already exists",
                     run_id
                 )));
@@ -344,7 +345,7 @@ impl RunIndex {
             if let Some(ref parent_id) = parent_run {
                 let parent_key = self.key_for(parent_id);
                 if txn.get(&parent_key)?.is_none() {
-                    return Err(Error::InvalidOperation(format!(
+                    return Err(StrataError::invalid_input(format!(
                         "Parent run '{}' not found",
                         parent_id
                     )));
@@ -376,7 +377,7 @@ impl RunIndex {
             match txn.get(&key)? {
                 Some(v) => {
                     let meta: RunMetadata = from_stored_value(&v)
-                        .map_err(|e| Error::SerializationError(e.to_string()))?;
+                        .map_err(|e| StrataError::serialization(e.to_string()))?;
                     Ok(Some(meta.into_versioned()))
                 }
                 None => Ok(None),
@@ -431,10 +432,10 @@ impl RunIndex {
 
             let mut run_meta: RunMetadata = match txn.get(&key)? {
                 Some(v) => {
-                    from_stored_value(&v).map_err(|e| Error::SerializationError(e.to_string()))?
+                    from_stored_value(&v).map_err(|e| StrataError::serialization(e.to_string()))?
                 }
                 None => {
-                    return Err(Error::InvalidOperation(format!(
+                    return Err(StrataError::invalid_input(format!(
                         "Run '{}' not found",
                         run_id
                     )))
@@ -443,7 +444,7 @@ impl RunIndex {
 
             // Validate transition
             if !run_meta.status.can_transition_to(new_status) {
-                return Err(Error::InvalidOperation(format!(
+                return Err(StrataError::invalid_input(format!(
                     "Invalid status transition: {:?} -> {:?}",
                     run_meta.status, new_status
                 )));
@@ -479,10 +480,10 @@ impl RunIndex {
 
             let mut run_meta: RunMetadata = match txn.get(&key)? {
                 Some(v) => {
-                    from_stored_value(&v).map_err(|e| Error::SerializationError(e.to_string()))?
+                    from_stored_value(&v).map_err(|e| StrataError::serialization(e.to_string()))?
                 }
                 None => {
-                    return Err(Error::InvalidOperation(format!(
+                    return Err(StrataError::invalid_input(format!(
                         "Run '{}' not found",
                         run_id
                     )))
@@ -490,7 +491,7 @@ impl RunIndex {
             };
 
             if !run_meta.status.can_transition_to(RunStatus::Failed) {
-                return Err(Error::InvalidOperation(format!(
+                return Err(StrataError::invalid_input(format!(
                     "Invalid status transition: {:?} -> Failed",
                     run_meta.status
                 )));
@@ -640,7 +641,7 @@ impl RunIndex {
         // First get the run metadata to know what indices to delete
         let run_meta = self
             .get_run(run_id)?
-            .ok_or_else(|| Error::InvalidOperation(format!("Run '{}' not found", run_id)))?
+            .ok_or_else(|| StrataError::invalid_input(format!("Run '{}' not found", run_id)))?
             .value;
 
         // Determine the RunId for namespace deletion.
@@ -651,7 +652,7 @@ impl RunIndex {
         let actual_run_id = RunId::from_string(&run_meta.name)
             .or_else(|| RunId::from_string(&run_meta.run_id))
             .ok_or_else(|| {
-                Error::InvalidOperation(format!(
+                StrataError::invalid_input(format!(
                     "Invalid run identifiers: name='{}', run_id='{}'",
                     run_meta.name, run_meta.run_id
                 ))
@@ -735,10 +736,10 @@ impl RunIndex {
 
             let mut meta: RunMetadata = match txn.get(&key)? {
                 Some(v) => {
-                    from_stored_value(&v).map_err(|e| Error::SerializationError(e.to_string()))?
+                    from_stored_value(&v).map_err(|e| StrataError::serialization(e.to_string()))?
                 }
                 None => {
-                    return Err(Error::InvalidOperation(format!(
+                    return Err(StrataError::invalid_input(format!(
                         "Run '{}' not found",
                         run_id
                     )))
@@ -771,10 +772,10 @@ impl RunIndex {
 
             let mut meta: RunMetadata = match txn.get(&key)? {
                 Some(v) => {
-                    from_stored_value(&v).map_err(|e| Error::SerializationError(e.to_string()))?
+                    from_stored_value(&v).map_err(|e| StrataError::serialization(e.to_string()))?
                 }
                 None => {
-                    return Err(Error::InvalidOperation(format!(
+                    return Err(StrataError::invalid_input(format!(
                         "Run '{}' not found",
                         run_id
                     )))
@@ -807,10 +808,10 @@ impl RunIndex {
 
             let mut meta: RunMetadata = match txn.get(&key)? {
                 Some(v) => {
-                    from_stored_value(&v).map_err(|e| Error::SerializationError(e.to_string()))?
+                    from_stored_value(&v).map_err(|e| StrataError::serialization(e.to_string()))?
                 }
                 None => {
-                    return Err(Error::InvalidOperation(format!(
+                    return Err(StrataError::invalid_input(format!(
                         "Run '{}' not found",
                         run_id
                     )))
@@ -883,7 +884,7 @@ impl RunIndex {
 
             // Time range filter
             if let Some((start_ts, end_ts)) = req.time_range {
-                if meta.created_at < start_ts as i64 || meta.created_at > end_ts as i64 {
+                if meta.created_at < start_ts || meta.created_at > end_ts {
                     continue;
                 }
             }
@@ -1297,7 +1298,7 @@ impl RunIndex {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
-            .as_millis() as i64;
+            .as_micros() as u64;
 
         let run_meta = RunMetadata {
             name: info.name.clone(),
@@ -1320,7 +1321,7 @@ impl RunIndex {
 
                 // Double-check run doesn't exist
                 if txn.get(&key)?.is_some() {
-                    return Err(Error::InvalidOperation(format!(
+                    return Err(StrataError::invalid_input(format!(
                         "Run '{}' already exists",
                         info.name
                     )));
@@ -1358,7 +1359,7 @@ fn metadata_to_bundle_run_info(meta: &RunMetadata) -> BundleRunInfo {
         RunStatus::Paused => "paused",     // Should not happen for export
     };
 
-    // Convert timestamps from millis to ISO 8601
+    // Convert timestamps from microseconds to ISO 8601
     let created_at = format_timestamp_iso8601(meta.created_at);
     let closed_at = meta
         .completed_at
@@ -1381,9 +1382,9 @@ fn metadata_to_bundle_run_info(meta: &RunMetadata) -> BundleRunInfo {
     }
 }
 
-/// Format a timestamp (milliseconds since epoch) as ISO 8601
-fn format_timestamp_iso8601(millis: i64) -> String {
-    let secs = (millis / 1000) as u64;
+/// Format a timestamp (microseconds since epoch) as ISO 8601
+fn format_timestamp_iso8601(micros: u64) -> String {
+    let secs = micros / 1_000_000;
 
     // Calculate date components
     let days = secs / 86400;
@@ -1620,10 +1621,10 @@ mod tests {
 
         assert!(result.is_err());
         match result {
-            Err(Error::InvalidOperation(msg)) => {
-                assert!(msg.contains("already exists"));
+            Err(StrataError::InvalidInput { message }) => {
+                assert!(message.contains("already exists"));
             }
-            _ => panic!("Expected InvalidOperation error"),
+            _ => panic!("Expected InvalidInput error"),
         }
     }
 

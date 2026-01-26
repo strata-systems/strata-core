@@ -1171,7 +1171,7 @@ mod wal_writer_tests {
 mod m5_cross_primitive_tests {
     use super::*;
     use strata_concurrency::JsonStoreExt;
-    use strata_core::json::{JsonPath, JsonValue};
+    use strata_core::primitives::json::{JsonPath, JsonValue};
 
     fn create_json_key(ns: &Namespace, doc_id: &str) -> Key {
         Key::new_json(ns.clone(), doc_id)

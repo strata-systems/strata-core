@@ -117,13 +117,6 @@ impl Version {
         matches!(self, Version::Txn(_))
     }
 
-    /// Check if this is a transaction-based version (deprecated)
-    #[deprecated(since = "0.11.0", note = "Use is_txn() instead")]
-    #[inline]
-    pub const fn is_txn_id(&self) -> bool {
-        self.is_txn()
-    }
-
     /// Check if this is a sequence-based version
     #[inline]
     pub const fn is_sequence(&self) -> bool {
@@ -257,15 +250,15 @@ mod tests {
         let seq = Version::Sequence(1);
         let cnt = Version::Counter(1);
 
-        assert!(txn.is_txn_id());
+        assert!(txn.is_txn());
         assert!(!txn.is_sequence());
         assert!(!txn.is_counter());
 
-        assert!(!seq.is_txn_id());
+        assert!(!seq.is_txn());
         assert!(seq.is_sequence());
         assert!(!seq.is_counter());
 
-        assert!(!cnt.is_txn_id());
+        assert!(!cnt.is_txn());
         assert!(!cnt.is_sequence());
         assert!(cnt.is_counter());
     }

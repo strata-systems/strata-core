@@ -31,7 +31,7 @@
 //! ```
 
 use std::sync::Arc;
-use strata_core::json::{JsonPath, JsonValue};
+use strata_core::primitives::json::{JsonPath, JsonValue};
 use strata_core::{StrataError, StrataResult, Value};
 use strata_engine::Database;
 use strata_primitives::{
@@ -176,9 +176,11 @@ pub(crate) fn parse_path(path: &str) -> StrataResult<JsonPath> {
 }
 
 /// Convert primitive error to StrataError
-pub(crate) fn convert_error(err: strata_core::error::Error) -> StrataError {
-    // Most errors pass through directly since they're already StrataError compatible
-    StrataError::from(err)
+///
+/// With the unified error model, this is now an identity function since
+/// all primitives already return StrataError.
+pub(crate) fn convert_error(err: StrataError) -> StrataError {
+    err
 }
 
 /// Convert VectorError to StrataError

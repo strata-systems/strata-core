@@ -8,8 +8,7 @@
 //! - Value: Unified value enum for all data types
 //! - Error: Error type hierarchy
 //! - Traits: Core trait definitions (Storage, SnapshotView)
-//! - JSON types: JsonValue, JsonPath, JsonPatch
-//! - JSON limits: MAX_DOCUMENT_SIZE, MAX_NESTING_DEPTH, MAX_PATH_LENGTH, MAX_ARRAY_SIZE
+//! - Primitive types: Event, State, JSON, Vector types (in `primitives` module)
 //! - Search types: SearchRequest, SearchResponse, SearchHit, DocRef, PrimitiveKind
 //! - Contract types: EntityRef, Versioned<T>, Version, Timestamp, PrimitiveType, RunName
 
@@ -19,8 +18,7 @@
 // Module declarations
 pub mod contract; // contract types
 pub mod error;
-pub mod json; // JSON types
-pub mod primitives; // primitive types (Event, State, Vector types)
+pub mod primitives; // primitive types (Event, State, Vector, JSON types)
 pub mod run_types; // Run lifecycle types
 pub mod search_types; // search types
 pub mod traits;
@@ -29,13 +27,8 @@ pub mod value;
 
 // Re-export commonly used types and traits
 pub use error::{
-    ConstraintReason, DetailValue, Error, ErrorCode, ErrorDetails, Result, StrataError,
+    ConstraintReason, DetailValue, ErrorCode, ErrorDetails, Result, StrataError,
     StrataResult,
-};
-pub use json::{
-    apply_patches, delete_at_path, get_at_path, get_at_path_mut, merge_patch, set_at_path,
-    JsonPatch, JsonPath, JsonPathError, JsonValue, LimitError, PathParseError, PathSegment,
-    MAX_ARRAY_SIZE, MAX_DOCUMENT_SIZE, MAX_NESTING_DEPTH, MAX_PATH_LENGTH,
 };
 pub use run_types::{RunEventOffsets, RunMetadata, RunStatus};
 pub use search_types::{SearchBudget, SearchHit, SearchMode, SearchRequest, SearchResponse, SearchStats};
@@ -51,8 +44,16 @@ pub use contract::{
 
 // Re-export primitive types at crate root for convenience
 pub use primitives::{
-    ChainVerification, CollectionId, CollectionInfo, DistanceMetric, Event, JsonScalar,
-    MetadataFilter, State, StorageDtype, VectorConfig, VectorEntry,
-    VectorId, VectorMatch,
+    // Event types
+    ChainVerification, Event,
+    // JSON types
+    apply_patches, delete_at_path, get_at_path, get_at_path_mut, merge_patch, set_at_path,
+    JsonLimitError, JsonPatch, JsonPath, JsonPathError, JsonValue, PathParseError, PathSegment,
+    MAX_ARRAY_SIZE, MAX_DOCUMENT_SIZE, MAX_NESTING_DEPTH, MAX_PATH_LENGTH,
+    // State types
+    State,
+    // Vector types
+    CollectionId, CollectionInfo, DistanceMetric, JsonScalar, MetadataFilter, StorageDtype,
+    VectorConfig, VectorEntry, VectorId, VectorMatch,
 };
 

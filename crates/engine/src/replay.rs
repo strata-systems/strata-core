@@ -60,8 +60,8 @@ pub enum RunError {
     Storage(String),
 }
 
-impl From<strata_core::error::Error> for RunError {
-    fn from(e: strata_core::error::Error) -> Self {
+impl From<strata_core::StrataError> for RunError {
+    fn from(e: strata_core::StrataError) -> Self {
         RunError::Storage(e.to_string())
     }
 }

@@ -14,7 +14,7 @@
 //! Total: ~42 tests (6 primitives × 7 invariants)
 
 use strata_core::contract::{EntityRef, PrimitiveType, Version};
-use strata_core::json::JsonPath;
+use strata_core::primitives::json::JsonPath;
 use strata_core::types::RunId;
 use strata_core::value::Value;
 use strata_engine::Database;
@@ -467,14 +467,12 @@ mod invariant_3_transactional {
     fn cross_primitive_transaction_rolls_back_completely() {
         let (db, run_id) = setup();
 
-        let result: Result<(), strata_core::error::Error> = db.transaction(run_id, |txn| {
+        let result: Result<(), strata_core::StrataError> = db.transaction(run_id, |txn| {
             txn.kv_put("key", Value::Int(1))?;
             txn.event_append("event", string_payload("payload"))?;
 
             // Force rollback
-            Err(strata_core::error::Error::InvalidOperation(
-                "intentional".into(),
-            ))
+            Err(strata_core::StrataError::invalid_input("intentional"))
         });
 
         assert!(result.is_err());

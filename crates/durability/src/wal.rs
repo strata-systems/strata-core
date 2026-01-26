@@ -37,11 +37,11 @@
 
 use crate::encoding::{decode_entry, encode_entry};
 use strata_core::{
-    error::{Error, Result},
-    json::JsonPath,
+    error::Result,
+    primitives::json::JsonPath,
     types::{Key, RunId},
     value::Value,
-    Timestamp,
+    StrataError, Timestamp,
 };
 use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
@@ -606,7 +606,7 @@ impl WAL {
         {
             let mut writer = self.writer.lock();
             writer.write_all(&encoded).map_err(|e| {
-                Error::StorageError(format!("Failed to write entry at offset {}: {}", offset, e))
+                StrataError::storage(format!("Failed to write entry at offset {}: {}", offset, e))
             })?;
         }
 
@@ -623,7 +623,7 @@ impl WAL {
                 let mut writer = self.writer.lock();
                 writer
                     .flush()
-                    .map_err(|e| Error::StorageError(format!("Failed to flush: {}", e)))?;
+                    .map_err(|e| StrataError::storage(format!("Failed to flush: {}", e)))?;
             }
             DurabilityMode::Strict => {
                 // Flush and fsync immediately
@@ -662,7 +662,7 @@ impl WAL {
         let mut writer = self.writer.lock();
         writer
             .flush()
-            .map_err(|e| Error::StorageError(format!("Failed to flush WAL: {}", e)))
+            .map_err(|e| StrataError::storage(format!("Failed to flush WAL: {}", e)))
     }
 
     /// Force sync to disk (flush + fsync)
@@ -675,13 +675,13 @@ impl WAL {
         // Flush buffer
         writer
             .flush()
-            .map_err(|e| Error::StorageError(format!("Failed to flush: {}", e)))?;
+            .map_err(|e| StrataError::storage(format!("Failed to flush: {}", e)))?;
 
         // Fsync to disk
         writer
             .get_mut()
             .sync_all()
-            .map_err(|e| Error::StorageError(format!("Failed to fsync: {}", e)))?;
+            .map_err(|e| StrataError::storage(format!("Failed to fsync: {}", e)))?;
 
         Ok(())
     }
@@ -746,18 +746,18 @@ impl WAL {
                         offset_in_buf += bytes_consumed;
                         file_offset += bytes_consumed as u64;
                     }
-                    Err(Error::IncompleteEntry { .. }) => {
+                    Err(StrataError::Storage { ref message, .. }) if message.contains("Incomplete entry") => {
                         // Incomplete entry - need more data, keep the remaining bytes
                         // This is expected when entry spans buffer boundaries
                         break;
                     }
-                    Err(Error::Corruption(msg)) => {
+                    Err(StrataError::Corruption { message }) => {
                         // CRC mismatch or deserialization failure - actual corruption!
                         // Return entries read so far and stop (conservative approach:
                         // don't skip past corruption, return valid entries before it)
                         error!(
                             offset = file_offset,
-                            error = %msg,
+                            error = %message,
                             entries_recovered = entries.len(),
                             "WAL corruption detected - returning valid entries before corruption"
                         );
@@ -1456,7 +1456,7 @@ mod tests {
     // JSON Entry Type Tests
     // ========================================================================
 
-    use strata_core::json::JsonPath;
+    use strata_core::primitives::json::JsonPath;
 
     #[test]
     fn test_json_create_entry() {

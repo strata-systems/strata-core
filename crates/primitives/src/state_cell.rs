@@ -130,7 +130,7 @@ impl StateCell {
 
             // Check if exists
             if txn.get(&key)?.is_some() {
-                return Err(strata_core::error::Error::InvalidOperation(format!(
+                return Err(strata_core::StrataError::invalid_input(format!(
                     "StateCell '{}' already exists",
                     name
                 )));
@@ -160,9 +160,9 @@ impl StateCell {
         match snapshot.get(&key)? {
             Some(vv) => {
                 let state: State = from_stored_value(&vv.value)
-                    .map_err(|e| strata_core::error::Error::SerializationError(e.to_string()))?;
+                    .map_err(|e| strata_core::StrataError::serialization(e.to_string()))?;
                 let version = Version::counter(state.version);
-                let timestamp = Timestamp::from_micros(state.updated_at as u64);
+                let timestamp = Timestamp::from_micros(state.updated_at);
                 Ok(Some(Versioned::with_timestamp(state, version, timestamp)))
             }
             None => Ok(None),
@@ -180,10 +180,10 @@ impl StateCell {
             match txn.get(&key)? {
                 Some(v) => {
                     let state: State = from_stored_value(&v).map_err(|e| {
-                        strata_core::error::Error::SerializationError(e.to_string())
+                        strata_core::StrataError::serialization(e.to_string())
                     })?;
                     let version = Version::counter(state.version);
-                    let timestamp = Timestamp::from_micros(state.updated_at as u64);
+                    let timestamp = Timestamp::from_micros(state.updated_at);
                     Ok(Some(Versioned::with_timestamp(state, version, timestamp)))
                 }
                 None => Ok(None),
@@ -288,7 +288,7 @@ impl StateCell {
             let versioned = Versioned::with_timestamp(
                 state.value,
                 Version::counter(state.version),
-                Timestamp::from_micros(state.updated_at as u64),
+                Timestamp::from_micros(state.updated_at),
             );
 
             results.push(versioned);
@@ -324,9 +324,9 @@ impl StateCell {
 
             let current: State = match txn.get(&key)? {
                 Some(v) => from_stored_value(&v)
-                    .map_err(|e| strata_core::error::Error::SerializationError(e.to_string()))?,
+                    .map_err(|e| strata_core::StrataError::serialization(e.to_string()))?,
                 None => {
-                    return Err(strata_core::error::Error::InvalidOperation(format!(
+                    return Err(strata_core::StrataError::invalid_input(format!(
                         "StateCell '{}' not found",
                         name
                     )))
@@ -334,10 +334,10 @@ impl StateCell {
             };
 
             if current.version != expected_version {
-                return Err(strata_core::error::Error::VersionMismatch {
-                    expected: expected_version,
-                    actual: current.version,
-                });
+                return Err(strata_core::StrataError::conflict(format!(
+                    "Version mismatch: expected {}, got {}",
+                    expected_version, current.version
+                )));
             }
 
             let new_state = State {
@@ -364,7 +364,7 @@ impl StateCell {
             let new_version = match txn.get(&key)? {
                 Some(v) => {
                     let current: State = from_stored_value(&v).map_err(|e| {
-                        strata_core::error::Error::SerializationError(e.to_string())
+                        strata_core::StrataError::serialization(e.to_string())
                     })?;
                     current.version + 1
                 }
@@ -436,10 +436,10 @@ impl StateCell {
                 // Read current state within the transaction
                 let current: State = match txn.get(&key)? {
                     Some(v) => from_stored_value(&v).map_err(|e| {
-                        strata_core::error::Error::SerializationError(e.to_string())
+                        strata_core::StrataError::serialization(e.to_string())
                     })?,
                     None => {
-                        return Err(strata_core::error::Error::InvalidOperation(format!(
+                        return Err(strata_core::StrataError::invalid_input(format!(
                             "StateCell '{}' not found",
                             name_owned
                         )))
@@ -540,7 +540,7 @@ impl StateCell {
 
             // Time range filter
             if let Some((start_ts, end_ts)) = req.time_range {
-                if state.updated_at < start_ts as i64 || state.updated_at > end_ts as i64 {
+                if state.updated_at < start_ts || state.updated_at > end_ts {
                     continue;
                 }
             }
@@ -552,7 +552,7 @@ impl StateCell {
             candidates.push(SearchCandidate::new(
                 DocRef::State { run_id: req.run_id, name: cell_name },
                 text,
-                Some(state.updated_at as u64),
+                Some(state.updated_at),
             ));
         }
 
@@ -600,7 +600,7 @@ impl StateCellExt for TransactionContext {
         match self.get(&key)? {
             Some(v) => {
                 let state: State = from_stored_value(&v)
-                    .map_err(|e| strata_core::error::Error::SerializationError(e.to_string()))?;
+                    .map_err(|e| strata_core::StrataError::serialization(e.to_string()))?;
                 Ok(Some(state.value))
             }
             None => Ok(None),
@@ -613,9 +613,9 @@ impl StateCellExt for TransactionContext {
 
         let current: State = match self.get(&key)? {
             Some(v) => from_stored_value(&v)
-                .map_err(|e| strata_core::error::Error::SerializationError(e.to_string()))?,
+                .map_err(|e| strata_core::StrataError::serialization(e.to_string()))?,
             None => {
-                return Err(strata_core::error::Error::InvalidOperation(format!(
+                return Err(strata_core::StrataError::invalid_input(format!(
                     "StateCell '{}' not found",
                     name
                 )))
@@ -623,10 +623,10 @@ impl StateCellExt for TransactionContext {
         };
 
         if current.version != expected_version {
-            return Err(strata_core::error::Error::VersionMismatch {
-                expected: expected_version,
-                actual: current.version,
-            });
+            return Err(strata_core::StrataError::conflict(format!(
+                "Version mismatch: expected {}, got {}",
+                expected_version, current.version
+            )));
         }
 
         let new_state = State {
@@ -646,7 +646,7 @@ impl StateCellExt for TransactionContext {
         let new_version = match self.get(&key)? {
             Some(v) => {
                 let current: State = from_stored_value(&v)
-                    .map_err(|e| strata_core::error::Error::SerializationError(e.to_string()))?;
+                    .map_err(|e| strata_core::StrataError::serialization(e.to_string()))?;
                 current.version + 1
             }
             None => 1,
@@ -843,7 +843,7 @@ mod tests {
         let result = sc.cas(&run_id, "counter", 999, Value::Int(1));
         assert!(matches!(
             result,
-            Err(strata_core::error::Error::VersionMismatch { .. })
+            Err(strata_core::StrataError::Conflict { .. })
         ));
     }
 

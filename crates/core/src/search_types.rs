@@ -25,11 +25,6 @@ use std::collections::HashMap;
 pub use crate::contract::EntityRef as DocRef;
 pub use crate::contract::PrimitiveType;
 
-/// Backwards compatibility alias for PrimitiveType
-///
-/// Legacy code used PrimitiveKind. New code should use PrimitiveType.
-#[deprecated(since = "0.9.0", note = "Use PrimitiveType instead")]
-pub type PrimitiveKind = PrimitiveType;
 
 // ============================================================================
 // SearchBudget

@@ -33,7 +33,7 @@ use crate::extensions::{
 use strata_concurrency::TransactionContext;
 use strata_core::contract::{Timestamp, Version, Versioned};
 use strata_core::error::Result;
-use strata_core::json::{JsonPath, JsonValue};
+use strata_core::primitives::json::{JsonPath, JsonValue};
 use strata_core::types::RunId;
 use strata_core::value::Value;
 use strata_engine::Database;

@@ -8,8 +8,8 @@
 
 use crate::validation::{validate_transaction, ValidationResult};
 use crate::wal_writer::TransactionWALWriter;
-use strata_core::error::{Error, Result};
-use strata_core::json::{get_at_path, JsonPatch, JsonPath, JsonValue};
+use strata_core::error::Result;
+use strata_core::primitives::json::{get_at_path, JsonPatch, JsonPath, JsonValue};
 use strata_core::traits::{SnapshotView, Storage};
 use strata_core::types::{Key, RunId};
 use strata_core::value::Value;
@@ -503,7 +503,7 @@ impl TransactionContext {
     /// - If key doesn't exist in snapshot: tracks `(key, 0)`
     ///
     /// # Errors
-    /// Returns `Error::InvalidState` if transaction is not active.
+    /// Returns `StrataError::invalid_input` if transaction is not active.
     ///
     /// # Example
     ///
@@ -537,7 +537,7 @@ impl TransactionContext {
     /// This is the core read path that tracks reads for conflict detection.
     fn read_from_snapshot(&mut self, key: &Key) -> Result<Option<Value>> {
         let snapshot = self.snapshot.as_ref().ok_or_else(|| {
-            Error::InvalidState("Transaction has no snapshot for reads".to_string())
+            StrataError::invalid_input("Transaction has no snapshot for reads".to_string())
         })?;
 
         let versioned = snapshot.get(key)?;
@@ -562,7 +562,7 @@ impl TransactionContext {
     /// Note: This DOES track the read in read_set if the key is read from snapshot.
     ///
     /// # Errors
-    /// Returns `Error::InvalidState` if transaction is not active.
+    /// Returns `StrataError::invalid_input` if transaction is not active.
     pub fn exists(&mut self, key: &Key) -> Result<bool> {
         Ok(self.get(key)?.is_some())
     }
@@ -577,7 +577,7 @@ impl TransactionContext {
     /// Results are sorted by key order.
     ///
     /// # Errors
-    /// Returns `Error::InvalidState` if transaction is not active or has no snapshot.
+    /// Returns `StrataError::invalid_input` if transaction is not active or has no snapshot.
     ///
     /// # Example
     ///
@@ -592,7 +592,7 @@ impl TransactionContext {
         self.ensure_active()?;
 
         let snapshot = self.snapshot.as_ref().ok_or_else(|| {
-            Error::InvalidState("Transaction has no snapshot for reads".to_string())
+            StrataError::invalid_input("Transaction has no snapshot for reads".to_string())
         })?;
 
         // Get all matching keys from snapshot
@@ -645,7 +645,7 @@ impl TransactionContext {
     /// - Writes are "blind" - no read_set entry unless you explicitly read first
     ///
     /// # Errors
-    /// Returns `Error::InvalidState` if transaction is not active.
+    /// Returns `StrataError::invalid_input` if transaction is not active.
     ///
     /// # Example
     ///
@@ -676,7 +676,7 @@ impl TransactionContext {
     /// - At commit, creates a tombstone in storage
     ///
     /// # Errors
-    /// Returns `Error::InvalidState` if transaction is not active.
+    /// Returns `StrataError::invalid_input` if transaction is not active.
     ///
     /// # Example
     ///
@@ -710,7 +710,7 @@ impl TransactionContext {
     /// - Multiple CAS operations on different keys are allowed
     ///
     /// # Errors
-    /// Returns `Error::InvalidState` if transaction is not active.
+    /// Returns `StrataError::invalid_input` if transaction is not active.
     ///
     /// # Example
     ///
@@ -822,7 +822,7 @@ impl TransactionContext {
     /// Note: Does not change transaction state or snapshot.
     ///
     /// # Errors
-    /// Returns `Error::InvalidState` if transaction is not active.
+    /// Returns `StrataError::invalid_input` if transaction is not active.
     pub fn clear_operations(&mut self) -> Result<()> {
         self.ensure_active()?;
 
@@ -916,12 +916,12 @@ impl TransactionContext {
     /// Check if transaction can accept operations
     ///
     /// # Errors
-    /// Returns `Error::InvalidState` if transaction is not in `Active` state.
+    /// Returns `StrataError::invalid_input` if transaction is not in `Active` state.
     pub fn ensure_active(&self) -> Result<()> {
         if self.is_active() {
             Ok(())
         } else {
-            Err(Error::InvalidState(format!(
+            Err(StrataError::invalid_input(format!(
                 "Transaction {} is not active: {:?}",
                 self.txn_id, self.status
             )))
@@ -934,7 +934,7 @@ impl TransactionContext {
     /// the transaction should be validated against current storage state.
     ///
     /// # Errors
-    /// Returns `Error::InvalidState` if not in `Active` state.
+    /// Returns `StrataError::invalid_input` if not in `Active` state.
     ///
     /// # State Transition
     /// `Active` → `Validating`
@@ -950,7 +950,7 @@ impl TransactionContext {
     /// applied to storage.
     ///
     /// # Errors
-    /// Returns `Error::InvalidState` if not in `Validating` state.
+    /// Returns `StrataError::invalid_input` if not in `Validating` state.
     ///
     /// # State Transition
     /// `Validating` → `Committed`
@@ -960,7 +960,7 @@ impl TransactionContext {
                 self.status = TransactionStatus::Committed;
                 Ok(())
             }
-            _ => Err(Error::InvalidState(format!(
+            _ => Err(StrataError::invalid_input(format!(
                 "Cannot commit transaction {} from state {:?}",
                 self.txn_id, self.status
             ))),
@@ -980,18 +980,18 @@ impl TransactionContext {
     /// * `reason` - Human-readable reason for abort
     ///
     /// # Errors
-    /// Returns `Error::InvalidState` if already `Committed` or `Aborted`.
+    /// Returns `StrataError::invalid_input` if already `Committed` or `Aborted`.
     ///
     /// # State Transitions
     /// - `Active` → `Aborted`
     /// - `Validating` → `Aborted`
     pub fn mark_aborted(&mut self, reason: String) -> Result<()> {
         match &self.status {
-            TransactionStatus::Committed => Err(Error::InvalidState(format!(
+            TransactionStatus::Committed => Err(StrataError::invalid_input(format!(
                 "Cannot abort committed transaction {}",
                 self.txn_id
             ))),
-            TransactionStatus::Aborted { .. } => Err(Error::InvalidState(format!(
+            TransactionStatus::Aborted { .. } => Err(StrataError::invalid_input(format!(
                 "Transaction {} already aborted",
                 self.txn_id
             ))),
@@ -1099,11 +1099,11 @@ impl TransactionContext {
     /// - Transaction must be in Committed state (validation passed)
     ///
     /// # Errors
-    /// - Error::InvalidState if transaction is not in Committed state
+    /// - StrataError::invalid_input if transaction is not in Committed state
     /// - Error from storage operations if they fail
     pub fn apply_writes<S: Storage>(&self, store: &S, commit_version: u64) -> Result<ApplyResult> {
         if !self.is_committed() {
-            return Err(Error::InvalidState(format!(
+            return Err(StrataError::invalid_input(format!(
                 "Cannot apply writes: transaction {} is {:?}, must be Committed",
                 self.txn_id, self.status
             )));
@@ -1157,7 +1157,7 @@ impl TransactionContext {
     /// - Transaction must be in Committed state (validation passed)
     ///
     /// # Errors
-    /// - Error::InvalidState if transaction is not in Committed state
+    /// - StrataError::invalid_input if transaction is not in Committed state
     /// - Errors from WAL write operations
     pub fn write_to_wal(
         &self,
@@ -1165,7 +1165,7 @@ impl TransactionContext {
         commit_version: u64,
     ) -> Result<()> {
         if !self.is_committed() {
-            return Err(Error::InvalidState(format!(
+            return Err(StrataError::invalid_input(format!(
                 "Cannot write to WAL: transaction {} is {:?}, must be Committed",
                 self.txn_id, self.status
             )));
@@ -1362,7 +1362,7 @@ impl JsonStoreExt for TransactionContext {
 
         // Read from snapshot
         let snapshot = self.snapshot.as_ref().ok_or_else(|| {
-            Error::InvalidState("Transaction has no snapshot for reads".to_string())
+            StrataError::invalid_input("Transaction has no snapshot for reads".to_string())
         })?;
 
         // Get the document from snapshot
@@ -1380,7 +1380,7 @@ impl JsonStoreExt for TransactionContext {
         let doc_bytes = match &vv.value {
             Value::Bytes(b) => b,
             _ => {
-                return Err(Error::InvalidOperation(
+                return Err(StrataError::invalid_input(
                     "Expected JSON document to be stored as bytes".to_string(),
                 ))
             }
@@ -1388,7 +1388,7 @@ impl JsonStoreExt for TransactionContext {
 
         // Deserialize using MessagePack
         let doc_value: JsonValue = rmp_serde::from_slice(doc_bytes).map_err(|e| {
-            Error::InvalidOperation(format!("Failed to deserialize JSON document: {}", e))
+            StrataError::invalid_input(format!("Failed to deserialize JSON document: {}", e))
         })?;
 
         // Get value at path
@@ -1455,7 +1455,7 @@ impl JsonStoreExt for TransactionContext {
         // (We track document deletes in json_writes as well)
         // For now, check the snapshot
         let snapshot = self.snapshot.as_ref().ok_or_else(|| {
-            Error::InvalidState("Transaction has no snapshot for reads".to_string())
+            StrataError::invalid_input("Transaction has no snapshot for reads".to_string())
         })?;
 
         Ok(snapshot.get(key)?.is_some())
@@ -1870,7 +1870,7 @@ mod tests {
         txn.mark_committed().unwrap();
         let result = txn.mark_validating();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::InvalidState(_)));
+        assert!(matches!(result.unwrap_err(), StrataError::InvalidInput { .. }));
     }
 
     #[test]
@@ -1879,7 +1879,7 @@ mod tests {
         txn.mark_aborted("test".to_string()).unwrap();
         let result = txn.mark_validating();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::InvalidState(_)));
+        assert!(matches!(result.unwrap_err(), StrataError::InvalidInput { .. }));
     }
 
     #[test]
@@ -1887,7 +1887,7 @@ mod tests {
         let mut txn = create_test_txn();
         let result = txn.mark_committed();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::InvalidState(_)));
+        assert!(matches!(result.unwrap_err(), StrataError::InvalidInput { .. }));
     }
 
     #[test]
@@ -1896,7 +1896,7 @@ mod tests {
         txn.mark_aborted("test".to_string()).unwrap();
         let result = txn.mark_committed();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::InvalidState(_)));
+        assert!(matches!(result.unwrap_err(), StrataError::InvalidInput { .. }));
     }
 
     #[test]
@@ -1906,7 +1906,7 @@ mod tests {
         txn.mark_committed().unwrap();
         let result = txn.mark_committed();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::InvalidState(_)));
+        assert!(matches!(result.unwrap_err(), StrataError::InvalidInput { .. }));
     }
 
     #[test]
@@ -1916,7 +1916,7 @@ mod tests {
         txn.mark_committed().unwrap();
         let result = txn.mark_aborted("too late".to_string());
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::InvalidState(_)));
+        assert!(matches!(result.unwrap_err(), StrataError::InvalidInput { .. }));
     }
 
     #[test]
@@ -1925,7 +1925,7 @@ mod tests {
         txn.mark_aborted("first abort".to_string()).unwrap();
         let result = txn.mark_aborted("second abort".to_string());
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::InvalidState(_)));
+        assert!(matches!(result.unwrap_err(), StrataError::InvalidInput { .. }));
     }
 
     // === ensure_active Tests ===
@@ -1942,7 +1942,7 @@ mod tests {
         txn.mark_validating().unwrap();
         let result = txn.ensure_active();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::InvalidState(_)));
+        assert!(matches!(result.unwrap_err(), StrataError::InvalidInput { .. }));
     }
 
     #[test]
@@ -2150,7 +2150,7 @@ mod tests {
 
         let result = txn.put(key, Value::Bytes(b"value".to_vec()));
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::InvalidState(_)));
+        assert!(matches!(result.unwrap_err(), StrataError::InvalidInput { .. }));
     }
 
     #[test]
@@ -2207,7 +2207,7 @@ mod tests {
 
         let result = txn.delete(key);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::InvalidState(_)));
+        assert!(matches!(result.unwrap_err(), StrataError::InvalidInput { .. }));
     }
 
     #[test]
@@ -2292,7 +2292,7 @@ mod tests {
 
         let result = txn.cas(key, 0, Value::Bytes(b"value".to_vec()));
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::InvalidState(_)));
+        assert!(matches!(result.unwrap_err(), StrataError::InvalidInput { .. }));
     }
 
     #[test]
@@ -2394,7 +2394,7 @@ mod tests {
 
         let result = txn.clear_operations();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::InvalidState(_)));
+        assert!(matches!(result.unwrap_err(), StrataError::InvalidInput { .. }));
     }
 
     #[test]
@@ -3646,7 +3646,7 @@ mod tests {
 
     mod json_types_tests {
         use super::*;
-        use strata_core::json::JsonPath;
+        use strata_core::primitives::json::JsonPath;
         use strata_core::types::Namespace;
 
         fn create_json_key(run_id: RunId, doc_id: &str) -> Key {
@@ -3695,7 +3695,7 @@ mod tests {
 
         #[test]
         fn test_json_patch_entry_creation() {
-            use strata_core::json::JsonValue;
+            use strata_core::primitives::json::JsonValue;
 
             let run_id = RunId::new();
             let doc_id = "test-doc";
@@ -3740,7 +3740,7 @@ mod tests {
 
         #[test]
         fn test_json_patch_entry_clone() {
-            use strata_core::json::JsonValue;
+            use strata_core::primitives::json::JsonValue;
 
             let run_id = RunId::new();
             let doc_id = "test-doc";
@@ -3790,7 +3790,7 @@ mod tests {
 
         #[test]
         fn test_json_writes_lazy_init() {
-            use strata_core::json::JsonValue;
+            use strata_core::primitives::json::JsonValue;
 
             let mut txn = create_test_txn();
             let run_id = RunId::new();
@@ -3850,7 +3850,7 @@ mod tests {
 
         #[test]
         fn test_clear_operations_clears_json() {
-            use strata_core::json::JsonValue;
+            use strata_core::primitives::json::JsonValue;
 
             let mut txn = create_test_txn();
             let run_id = RunId::new();
@@ -3901,7 +3901,7 @@ mod tests {
 
         #[test]
         fn test_json_set_records_write() {
-            use strata_core::json::JsonValue;
+            use strata_core::primitives::json::JsonValue;
 
             let mut txn = create_test_txn();
             let run_id = RunId::new();
@@ -3936,7 +3936,7 @@ mod tests {
 
         #[test]
         fn test_json_read_your_writes_direct_path() {
-            use strata_core::json::JsonValue;
+            use strata_core::primitives::json::JsonValue;
 
             let mut txn = create_test_txn();
             let run_id = RunId::new();
@@ -3954,7 +3954,7 @@ mod tests {
 
         #[test]
         fn test_json_read_your_writes_nested_path() {
-            use strata_core::json::JsonValue;
+            use strata_core::primitives::json::JsonValue;
 
             let mut txn = create_test_txn();
             let run_id = RunId::new();
@@ -3981,7 +3981,7 @@ mod tests {
 
         #[test]
         fn test_json_read_your_deletes() {
-            use strata_core::json::JsonValue;
+            use strata_core::primitives::json::JsonValue;
 
             let mut txn = create_test_txn();
             let run_id = RunId::new();
@@ -4002,7 +4002,7 @@ mod tests {
 
         #[test]
         fn test_json_inactive_txn_errors() {
-            use strata_core::json::JsonValue;
+            use strata_core::primitives::json::JsonValue;
 
             let mut txn = create_test_txn();
             let run_id = RunId::new();

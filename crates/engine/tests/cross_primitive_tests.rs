@@ -4,7 +4,7 @@
 //! Validates that transactions atomically operate across different
 //! Key types (KV and Event) in a single transaction.
 
-use strata_core::error::Error;
+use strata_core::StrataError;
 use strata_core::types::{Key, Namespace, RunId};
 use strata_core::value::Value;
 use strata_engine::Database;
@@ -113,7 +113,7 @@ fn test_cross_primitive_rollback_on_error() {
     db.put(run_id, kv_key.clone(), Value::Int(0)).unwrap();
 
     // Transaction that writes to both but then fails
-    let result: Result<(), Error> = db.transaction(run_id, |txn| {
+    let result: Result<(), StrataError> = db.transaction(run_id, |txn| {
         txn.put(kv_key.clone(), Value::Int(999))?;
         txn.put(
             event_key.clone(),
@@ -121,7 +121,7 @@ fn test_cross_primitive_rollback_on_error() {
         )?;
 
         // Force abort
-        Err(Error::InvalidState("intentional failure".to_string()))
+        Err(StrataError::invalid_input("intentional failure"))
     });
 
     assert!(result.is_err());

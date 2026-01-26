@@ -306,9 +306,9 @@ pub struct StreamInfo {
     /// Last (newest) sequence number in this stream
     pub last_sequence: Option<u64>,
     /// Timestamp of first event (microseconds since epoch)
-    pub first_timestamp: Option<i64>,
+    pub first_timestamp: Option<u64>,
     /// Timestamp of last event (microseconds since epoch)
-    pub last_timestamp: Option<i64>,
+    pub last_timestamp: Option<u64>,
 }
 
 // =============================================================================
@@ -377,7 +377,7 @@ impl EventLog for SubstrateImpl {
             .map(|e| Versioned {
                 value: e.value.payload.clone(),
                 version: e.version,
-                timestamp: strata_core::Timestamp::from_millis(e.value.timestamp as u64),
+                timestamp: strata_core::Timestamp::from_micros(e.value.timestamp),
             })
             .collect();
 
@@ -402,7 +402,7 @@ impl EventLog for SubstrateImpl {
                 Ok(Some(Versioned {
                     value: e.value.payload,
                     version: e.version,
-                    timestamp: strata_core::Timestamp::from_millis(e.value.timestamp as u64),
+                    timestamp: strata_core::Timestamp::from_micros(e.value.timestamp),
                 }))
             }
             _ => Ok(None),
@@ -472,7 +472,7 @@ impl EventLog for SubstrateImpl {
             .map(|e| Versioned {
                 value: e.value.payload.clone(),
                 version: e.version,
-                timestamp: strata_core::Timestamp::from_millis(e.value.timestamp as u64),
+                timestamp: strata_core::Timestamp::from_micros(e.value.timestamp),
             })
             .collect();
 
@@ -501,7 +501,7 @@ impl EventLog for SubstrateImpl {
             Some(e) => Ok(Some(Versioned {
                 value: e.value.payload.clone(),
                 version: e.version,
-                timestamp: strata_core::Timestamp::from_millis(e.value.timestamp as u64),
+                timestamp: strata_core::Timestamp::from_micros(e.value.timestamp),
             })),
             None => Ok(None),
         }

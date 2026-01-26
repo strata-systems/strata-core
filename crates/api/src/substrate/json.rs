@@ -479,7 +479,7 @@ pub struct JsonListResult {
 // Implementation
 // =============================================================================
 
-use strata_core::json::JsonValue;
+use strata_core::primitives::json::JsonValue;
 use super::impl_::{
     SubstrateImpl, convert_error,
     value_to_json, json_to_value, parse_path,

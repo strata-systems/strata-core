@@ -37,7 +37,7 @@
 //! - Easier maintenance and testing
 
 use strata_core::contract::Version;
-use strata_core::json::{JsonPath, JsonValue};
+use strata_core::primitives::json::{JsonPath, JsonValue};
 use strata_core::{Result, Value};
 
 // Forward declarations - traits are defined here, implementations

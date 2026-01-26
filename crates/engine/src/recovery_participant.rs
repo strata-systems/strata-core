@@ -313,7 +313,7 @@ mod tests {
 
         fn failing_recovery(_db: &super::super::Database) -> Result<()> {
             CALLED.lock().push("failing");
-            Err(strata_core::error::Error::Corruption("test failure".to_string()))
+            Err(strata_core::StrataError::corruption("test failure"))
         }
 
         fn should_not_run(_db: &super::super::Database) -> Result<()> {

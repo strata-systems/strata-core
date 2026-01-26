@@ -9,7 +9,7 @@
 //!
 //! Per spec Section 4: These tests validate legacy compatibility and transaction semantics.
 
-use strata_core::error::Error;
+use strata_core::StrataError;
 use strata_core::traits::Storage;
 use strata_core::types::{Key, Namespace, RunId};
 use strata_core::value::Value;
@@ -112,9 +112,9 @@ fn test_e2e_transaction_abort_rollback() {
     db.put(run_id, key.clone(), Value::Int(100)).unwrap();
 
     // Failing transaction
-    let result: Result<(), Error> = db.transaction(run_id, |txn| {
+    let result: Result<(), StrataError> = db.transaction(run_id, |txn| {
         txn.put(key.clone(), Value::Int(999))?;
-        Err(Error::InvalidState("rollback".to_string()))
+        Err(StrataError::invalid_input("rollback".to_string()))
     });
 
     assert!(result.is_err());
@@ -310,7 +310,7 @@ fn test_concurrent_writes_different_keys_no_conflicts() {
                         txn.put(key.clone(), Value::Int(n + 1))?;
                         Ok(())
                     } else {
-                        Err(Error::InvalidState("wrong type".to_string()))
+                        Err(StrataError::invalid_input("wrong type".to_string()))
                     }
                 })
                 .unwrap();
@@ -358,7 +358,7 @@ fn test_retry_simulated_conflict() {
         let count = attempts.fetch_add(1, Ordering::Relaxed);
 
         if count < 2 {
-            Err(Error::TransactionConflict("simulated".to_string()))
+            Err(StrataError::conflict("simulated".to_string()))
         } else {
             txn.put(key.clone(), Value::Int(42))?;
             Ok(())
@@ -474,9 +474,9 @@ fn test_recovery_aborted_transaction_not_visible() {
         let db = Database::open(&db_path).unwrap();
 
         // This will abort
-        let _result: Result<(), Error> = db.transaction(run_id, |txn| {
+        let _result: Result<(), StrataError> = db.transaction(run_id, |txn| {
             txn.put(Key::new_kv(ns.clone(), "aborted_key"), Value::Int(999))?;
-            Err(Error::InvalidState("abort".to_string()))
+            Err(StrataError::invalid_input("abort".to_string()))
         });
     }
 
@@ -656,9 +656,9 @@ fn test_transaction_metrics_with_aborts() {
         .unwrap();
 
     // Failed transaction
-    let _result: Result<(), Error> = db.transaction(run_id, |txn| {
+    let _result: Result<(), StrataError> = db.transaction(run_id, |txn| {
         txn.put(Key::new_kv(ns.clone(), "fail"), Value::Int(2))?;
-        Err(Error::InvalidState("intentional".to_string()))
+        Err(StrataError::invalid_input("intentional".to_string()))
     });
 
     let metrics = db.metrics();

@@ -17,8 +17,8 @@ pub struct State {
     pub value: Value,
     /// Version number (monotonically increasing)
     pub version: u64,
-    /// Last update timestamp (milliseconds since epoch)
-    pub updated_at: i64,
+    /// Last update timestamp (microseconds since epoch)
+    pub updated_at: u64,
 }
 
 impl State {
@@ -40,11 +40,11 @@ impl State {
         }
     }
 
-    /// Get current timestamp in milliseconds
-    pub fn now() -> i64 {
+    /// Get current timestamp in microseconds
+    pub fn now() -> u64 {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_millis() as i64
+            .as_micros() as u64
     }
 }

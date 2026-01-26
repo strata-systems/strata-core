@@ -38,7 +38,8 @@ use crate::extensions::EventLogExt;
 use sha2::{Digest, Sha256};
 use strata_concurrency::TransactionContext;
 use strata_core::contract::{Timestamp, Version, Versioned};
-use strata_core::error::{Error, Result};
+use strata_core::error::Result;
+use strata_core::StrataError;
 use strata_core::types::{Key, Namespace, RunId};
 use strata_core::value::Value;
 use strata_engine::{Database, RetryConfig};
@@ -62,14 +63,14 @@ pub struct StreamMeta {
     pub first_sequence: u64,
     /// Last sequence number in this stream (global sequence)
     pub last_sequence: u64,
-    /// Timestamp of first event in stream (millis since epoch)
-    pub first_timestamp: i64,
-    /// Timestamp of last event in stream (millis since epoch)
-    pub last_timestamp: i64,
+    /// Timestamp of first event in stream (microseconds since epoch)
+    pub first_timestamp: u64,
+    /// Timestamp of last event in stream (microseconds since epoch)
+    pub last_timestamp: u64,
 }
 
 impl StreamMeta {
-    fn new(sequence: u64, timestamp: i64) -> Self {
+    fn new(sequence: u64, timestamp: u64) -> Self {
         Self {
             count: 1,
             first_sequence: sequence,
@@ -79,7 +80,7 @@ impl StreamMeta {
         }
     }
 
-    fn update(&mut self, sequence: u64, timestamp: i64) {
+    fn update(&mut self, sequence: u64, timestamp: u64) {
         self.count += 1;
         self.last_sequence = sequence;
         self.last_timestamp = timestamp;
@@ -120,7 +121,7 @@ fn compute_event_hash_v1(
     sequence: u64,
     event_type: &str,
     payload: &Value,
-    timestamp: i64,
+    timestamp: u64,
     prev_hash: &[u8; 32],
 ) -> [u8; 32] {
     let mut hasher = Sha256::new();
@@ -155,7 +156,7 @@ fn compute_event_hash_v0(
     sequence: u64,
     event_type: &str,
     payload: &Value,
-    timestamp: i64,
+    timestamp: u64,
     prev_hash: &[u8; 32],
 ) -> [u8; 32] {
     use std::collections::hash_map::DefaultHasher;
@@ -182,7 +183,7 @@ fn compute_event_hash(
     sequence: u64,
     event_type: &str,
     payload: &Value,
-    timestamp: i64,
+    timestamp: u64,
     prev_hash: &[u8; 32],
 ) -> [u8; 32] {
     match hash_version {
@@ -349,9 +350,9 @@ impl EventLog {
     ) -> Result<Version> {
         // Validate inputs before entering transaction
         validate_event_type(event_type)
-            .map_err(|e| Error::ValidationError(e.to_string()))?;
+            .map_err(|e| StrataError::invalid_input(e.to_string()))?;
         validate_payload(&payload)
-            .map_err(|e| Error::ValidationError(e.to_string()))?;
+            .map_err(|e| StrataError::invalid_input(e.to_string()))?;
 
         // Use high retry count for contention scenarios
         // EventLog appends serialize through metadata CAS, so conflicts are expected
@@ -379,7 +380,7 @@ impl EventLog {
                 let timestamp = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
-                    .as_millis() as i64;
+                    .as_micros() as u64;
 
                 let hash = compute_event_hash(
                     meta.hash_version,
@@ -446,9 +447,9 @@ impl EventLog {
         // Validate all inputs before entering transaction
         for (event_type, payload) in events {
             validate_event_type(event_type)
-                .map_err(|e| Error::ValidationError(e.to_string()))?;
+                .map_err(|e| StrataError::invalid_input(e.to_string()))?;
             validate_payload(payload)
-                .map_err(|e| Error::ValidationError(e.to_string()))?;
+                .map_err(|e| StrataError::invalid_input(e.to_string()))?;
         }
 
         if events.is_empty() {
@@ -478,7 +479,7 @@ impl EventLog {
                 let timestamp = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
-                    .as_millis() as i64;
+                    .as_micros() as u64;
 
                 let mut versions = Vec::with_capacity(events_owned.len());
                 let mut prev_hash = meta.head_hash;
@@ -549,11 +550,11 @@ impl EventLog {
         match snapshot.get(&event_key)? {
             Some(vv) => {
                 let event: Event = from_stored_value(&vv.value)
-                    .map_err(|e| strata_core::error::Error::SerializationError(e.to_string()))?;
+                    .map_err(|e| strata_core::StrataError::serialization(e.to_string()))?;
                 Ok(Some(Versioned::with_timestamp(
                     event.clone(),
                     Version::Sequence(sequence),
-                    Timestamp::from_millis(event.timestamp as u64),
+                    Timestamp::from_micros(event.timestamp),
                 )))
             }
             None => Ok(None),
@@ -572,12 +573,12 @@ impl EventLog {
             match txn.get(&event_key)? {
                 Some(v) => {
                     let event: Event = from_stored_value(&v).map_err(|e| {
-                        strata_core::error::Error::SerializationError(e.to_string())
+                        strata_core::StrataError::serialization(e.to_string())
                     })?;
                     Ok(Some(Versioned::with_timestamp(
                         event.clone(),
                         Version::Sequence(sequence),
-                        Timestamp::from_millis(event.timestamp as u64),
+                        Timestamp::from_micros(event.timestamp),
                     )))
                 }
                 None => Ok(None),
@@ -597,12 +598,12 @@ impl EventLog {
                 let event_key = Key::new_event(ns.clone(), seq);
                 if let Some(v) = txn.get(&event_key)? {
                     let event: Event = from_stored_value(&v).map_err(|e| {
-                        strata_core::error::Error::SerializationError(e.to_string())
+                        strata_core::StrataError::serialization(e.to_string())
                     })?;
                     events.push(Versioned::with_timestamp(
                         event.clone(),
                         Version::Sequence(seq),
-                        Timestamp::from_millis(event.timestamp as u64),
+                        Timestamp::from_micros(event.timestamp),
                     ));
                 }
             }
@@ -642,12 +643,12 @@ impl EventLog {
                 let event_key = Key::new_event(ns.clone(), seq);
                 if let Some(v) = txn.get(&event_key)? {
                     let event: Event = from_stored_value(&v).map_err(|e| {
-                        strata_core::error::Error::SerializationError(e.to_string())
+                        strata_core::StrataError::serialization(e.to_string())
                     })?;
                     events.push(Versioned::with_timestamp(
                         event.clone(),
                         Version::Sequence(seq),
-                        Timestamp::from_millis(event.timestamp as u64),
+                        Timestamp::from_micros(event.timestamp),
                     ));
                 }
             }
@@ -678,12 +679,12 @@ impl EventLog {
             match txn.get(&event_key)? {
                 Some(v) => {
                     let event: Event = from_stored_value(&v).map_err(|e| {
-                        strata_core::error::Error::SerializationError(e.to_string())
+                        strata_core::StrataError::serialization(e.to_string())
                     })?;
                     Ok(Some(Versioned::with_timestamp(
                         event.clone(),
                         Version::Sequence(sequence),
-                        Timestamp::from_millis(event.timestamp as u64),
+                        Timestamp::from_micros(event.timestamp),
                     )))
                 }
                 None => Ok(None),
@@ -745,7 +746,7 @@ impl EventLog {
                 let event_key = Key::new_event(ns.clone(), seq);
                 let event: Event = match txn.get(&event_key)? {
                     Some(v) => from_stored_value(&v).map_err(|e| {
-                        strata_core::error::Error::SerializationError(e.to_string())
+                        strata_core::StrataError::serialization(e.to_string())
                     })?,
                     None => {
                         return Ok(ChainVerification {
@@ -909,13 +910,13 @@ impl EventLog {
                 let event_key = Key::new_event(ns.clone(), seq);
                 if let Some(v) = txn.get(&event_key)? {
                     let event: Event = from_stored_value(&v).map_err(|e| {
-                        strata_core::error::Error::SerializationError(e.to_string())
+                        strata_core::StrataError::serialization(e.to_string())
                     })?;
                     if event.event_type == event_type {
                         filtered.push(Versioned::with_timestamp(
                             event.clone(),
                             Version::Sequence(seq),
-                            Timestamp::from_millis(event.timestamp as u64),
+                            Timestamp::from_micros(event.timestamp),
                         ));
                     }
                 }
@@ -941,7 +942,7 @@ impl EventLog {
                 let event_key = Key::new_event(ns.clone(), seq);
                 if let Some(v) = txn.get(&event_key)? {
                     let event: Event = from_stored_value(&v).map_err(|e| {
-                        strata_core::error::Error::SerializationError(e.to_string())
+                        strata_core::StrataError::serialization(e.to_string())
                     })?;
                     types.insert(event.event_type);
                 }
@@ -1071,9 +1072,9 @@ impl EventLogExt for TransactionContext {
     fn event_append(&mut self, event_type: &str, payload: Value) -> Result<u64> {
         // Validate inputs
         validate_event_type(event_type)
-            .map_err(|e| Error::ValidationError(e.to_string()))?;
+            .map_err(|e| StrataError::invalid_input(e.to_string()))?;
         validate_payload(&payload)
-            .map_err(|e| Error::ValidationError(e.to_string()))?;
+            .map_err(|e| StrataError::invalid_input(e.to_string()))?;
 
         let ns = Namespace::for_run(self.run_id);
 
@@ -1089,7 +1090,7 @@ impl EventLogExt for TransactionContext {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_millis() as i64;
+            .as_micros() as u64;
 
         let hash = compute_event_hash(
             meta.hash_version,

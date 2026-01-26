@@ -20,8 +20,8 @@ pub struct Event {
     pub event_type: String,
     /// Event payload (arbitrary data)
     pub payload: Value,
-    /// Timestamp when event was appended (milliseconds since epoch)
-    pub timestamp: i64,
+    /// Timestamp when event was appended (microseconds since epoch)
+    pub timestamp: u64,
     /// Hash of previous event (for chaining)
     pub prev_hash: [u8; 32],
     /// Hash of this event

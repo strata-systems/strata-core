@@ -19,7 +19,7 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 
 use strata_core::error::Result;
-use strata_core::json::JsonPath;
+use strata_core::primitives::json::JsonPath;
 use strata_core::traits::Storage;
 use strata_core::types::{Key, Namespace, RunId};
 use strata_core::value::Value;

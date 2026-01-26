@@ -23,7 +23,8 @@
 
 use crate::wal::WALEntry;
 use crc32fast::Hasher;
-use strata_core::error::{Error, Result};
+use strata_core::error::Result;
+use strata_core::StrataError;
 use std::io::{Cursor, Read, Write};
 
 /// Entry type tags for forward compatibility
@@ -111,15 +112,15 @@ pub fn encode_entry(entry: &WALEntry) -> Result<Vec<u8>> {
 
     // Write length
     buf.write_all(&(total_len as u32).to_le_bytes())
-        .map_err(|e| Error::StorageError(format!("Failed to write length: {}", e)))?;
+        .map_err(|e| StrataError::storage(format!("Failed to write length: {}", e)))?;
 
     // Write type tag
     buf.write_all(&[type_tag])
-        .map_err(|e| Error::StorageError(format!("Failed to write type: {}", e)))?;
+        .map_err(|e| StrataError::storage(format!("Failed to write type: {}", e)))?;
 
     // Write payload
     buf.write_all(&payload)
-        .map_err(|e| Error::StorageError(format!("Failed to write payload: {}", e)))?;
+        .map_err(|e| StrataError::storage(format!("Failed to write payload: {}", e)))?;
 
     // Calculate CRC over [type][payload]
     let mut hasher = Hasher::new();
@@ -129,7 +130,7 @@ pub fn encode_entry(entry: &WALEntry) -> Result<Vec<u8>> {
 
     // Write CRC
     buf.write_all(&crc.to_le_bytes())
-        .map_err(|e| Error::StorageError(format!("Failed to write CRC: {}", e)))?;
+        .map_err(|e| StrataError::storage(format!("Failed to write CRC: {}", e)))?;
 
     Ok(buf)
 }
@@ -148,11 +149,11 @@ pub fn encode_entry(entry: &WALEntry) -> Result<Vec<u8>> {
 /// # Returns
 ///
 /// * `Ok((WALEntry, usize))` - Decoded entry and bytes consumed
-/// * `Err(Error::Corruption)` - If CRC mismatch or truncated data
+/// * `Err(StrataError::corruption)` - If CRC mismatch or truncated data
 ///
 /// # Errors
 ///
-/// Returns `Error::Corruption` with offset information when:
+/// Returns `StrataError::corruption` with offset information when:
 /// - Buffer is too short to read length
 /// - Buffer is too short for declared entry size
 /// - CRC32 checksum doesn't match (data corruption)
@@ -175,18 +176,17 @@ pub fn decode_entry(buf: &[u8], offset: u64) -> Result<(WALEntry, usize)> {
     let mut len_buf = [0u8; 4];
     cursor.read_exact(&mut len_buf).map_err(|_| {
         // Buffer too short to read length - incomplete entry, not corruption
-        Error::IncompleteEntry {
-            offset,
-            have: buf.len(),
-            needed: 4,
-        }
+        StrataError::storage(format!(
+            "Incomplete entry at offset {}: need {} bytes, have {}",
+            offset, 4, buf.len()
+        ))
     })?;
     let total_len = u32::from_le_bytes(len_buf) as usize;
 
     // Validate minimum length before arithmetic (prevent underflow)
     // Minimum valid entry: type(1) + crc(4) = 5 bytes
     if total_len < 5 {
-        return Err(Error::Corruption(format!(
+        return Err(StrataError::corruption(format!(
             "offset {}: Invalid entry length {} (minimum is 5 bytes: type(1) + crc(4))",
             offset, total_len
         )));
@@ -194,18 +194,17 @@ pub fn decode_entry(buf: &[u8], offset: u64) -> Result<(WALEntry, usize)> {
 
     // Check buffer has enough bytes - this is incomplete data, not corruption
     if buf.len() < 4 + total_len {
-        return Err(Error::IncompleteEntry {
-            offset,
-            have: buf.len(),
-            needed: 4 + total_len,
-        });
+        return Err(StrataError::storage(format!(
+            "Incomplete entry at offset {}: need {} bytes, have {}",
+            offset, 4 + total_len, buf.len()
+        )));
     }
 
     // Read type tag
     let mut type_buf = [0u8; 1];
     cursor
         .read_exact(&mut type_buf)
-        .map_err(|_| Error::Corruption(format!("offset {}: Failed to read type tag", offset)))?;
+        .map_err(|_| StrataError::corruption(format!("offset {}: Failed to read type tag", offset)))?;
     let type_tag = type_buf[0];
 
     // Read payload (total_len - type(1) - crc(4))
@@ -213,13 +212,13 @@ pub fn decode_entry(buf: &[u8], offset: u64) -> Result<(WALEntry, usize)> {
     let mut payload = vec![0u8; payload_len];
     cursor
         .read_exact(&mut payload)
-        .map_err(|_| Error::Corruption(format!("offset {}: Failed to read payload", offset)))?;
+        .map_err(|_| StrataError::corruption(format!("offset {}: Failed to read payload", offset)))?;
 
     // Read CRC
     let mut crc_buf = [0u8; 4];
     cursor
         .read_exact(&mut crc_buf)
-        .map_err(|_| Error::Corruption(format!("offset {}: Failed to read CRC", offset)))?;
+        .map_err(|_| StrataError::corruption(format!("offset {}: Failed to read CRC", offset)))?;
     let expected_crc = u32::from_le_bytes(crc_buf);
 
     // Verify CRC
@@ -229,7 +228,7 @@ pub fn decode_entry(buf: &[u8], offset: u64) -> Result<(WALEntry, usize)> {
     let actual_crc = hasher.finalize();
 
     if actual_crc != expected_crc {
-        return Err(Error::Corruption(format!(
+        return Err(StrataError::corruption(format!(
             "offset {}: CRC mismatch: expected {:08x}, got {:08x}",
             offset, expected_crc, actual_crc
         )));
@@ -237,7 +236,7 @@ pub fn decode_entry(buf: &[u8], offset: u64) -> Result<(WALEntry, usize)> {
 
     // Deserialize payload
     let entry: WALEntry = bincode::deserialize(&payload).map_err(|e| {
-        Error::Corruption(format!("offset {}: Deserialization failed: {}", offset, e))
+        StrataError::corruption(format!("offset {}: Deserialization failed: {}", offset, e))
     })?;
 
     // Verify type tag matches entry type
@@ -261,7 +260,7 @@ pub fn decode_entry(buf: &[u8], offset: u64) -> Result<(WALEntry, usize)> {
     };
 
     if type_tag != expected_type {
-        return Err(Error::Corruption(format!(
+        return Err(StrataError::corruption(format!(
             "offset {}: Type tag mismatch: expected {}, got {}",
             offset, expected_type, type_tag
         )));
@@ -361,11 +360,12 @@ mod tests {
         let result = decode_entry(&encoded, 100);
         assert!(result.is_err());
 
-        if let Err(Error::Corruption(msg)) = result {
-            assert!(msg.contains("CRC mismatch"), "Expected CRC mismatch error");
-            assert!(msg.contains("100"), "Error should include offset");
-        } else {
-            panic!("Expected Corruption error with CRC mismatch");
+        match result {
+            Err(StrataError::Corruption { message }) => {
+                assert!(message.contains("CRC mismatch"), "Expected CRC mismatch error");
+                assert!(message.contains("100"), "Error should include offset");
+            }
+            _ => panic!("Expected Corruption error with CRC mismatch"),
         }
     }
 
@@ -387,11 +387,12 @@ mod tests {
         let result = decode_entry(truncated, 200);
         assert!(result.is_err());
 
-        if let Err(Error::IncompleteEntry { offset, have, needed }) = result {
-            assert_eq!(offset, 200, "Error should include offset 200");
-            assert!(have < needed, "Should indicate insufficient bytes");
-        } else {
-            panic!("Expected IncompleteEntry error for truncated entry, got {:?}", result);
+        match result {
+            Err(StrataError::Storage { message, .. }) => {
+                assert!(message.contains("Incomplete entry"), "Should indicate incomplete entry");
+                assert!(message.contains("offset 200"), "Should include offset 200");
+            }
+            _ => panic!("Expected Storage error with incomplete entry message, got {:?}", result),
         }
     }
 
@@ -426,12 +427,14 @@ mod tests {
         let result = decode_entry(&short_buf, 12345);
         assert!(result.is_err());
 
-        if let Err(Error::IncompleteEntry { offset, have, needed }) = result {
-            assert_eq!(offset, 12345, "Error should include offset 12345");
-            assert_eq!(have, 2, "Should indicate buffer size");
-            assert_eq!(needed, 4, "Should indicate needed 4 bytes for length");
-        } else {
-            panic!("Expected IncompleteEntry error, got {:?}", result);
+        match result {
+            Err(StrataError::Storage { message, .. }) => {
+                assert!(message.contains("Incomplete entry"), "Should indicate incomplete entry");
+                assert!(message.contains("offset 12345"), "Should include offset 12345");
+                assert!(message.contains("need 4"), "Should indicate needed bytes");
+                assert!(message.contains("have 2"), "Should indicate buffer size");
+            }
+            _ => panic!("Expected Storage error with incomplete entry message, got {:?}", result),
         }
     }
 
@@ -473,7 +476,7 @@ mod tests {
         // - Pre-allocation fills unused space with zeros
         // - Disk corruption zeros out data
         //
-        // The decoder should return Error::Corruption instead of panicking
+        // The decoder should return StrataError::corruption instead of panicking
         // with integer underflow when total_len < 5.
 
         // Create buffer with zero length field
@@ -489,16 +492,16 @@ mod tests {
         );
 
         match result {
-            Err(Error::Corruption(msg)) => {
+            Err(StrataError::Corruption { message }) => {
                 assert!(
-                    msg.contains("Invalid entry length 0"),
+                    message.contains("Invalid entry length 0"),
                     "Error message should mention invalid length: {}",
-                    msg
+                    message
                 );
                 assert!(
-                    msg.contains("minimum is 5"),
+                    message.contains("minimum is 5"),
                     "Error message should mention minimum size: {}",
-                    msg
+                    message
                 );
             }
             _ => panic!("Expected Corruption error, got: {:?}", result),
@@ -521,12 +524,12 @@ mod tests {
             );
 
             match result {
-                Err(Error::Corruption(msg)) => {
+                Err(StrataError::Corruption { message }) => {
                     assert!(
-                        msg.contains(&format!("Invalid entry length {}", invalid_len)),
+                        message.contains(&format!("Invalid entry length {}", invalid_len)),
                         "Error should mention length {}: {}",
                         invalid_len,
-                        msg
+                        message
                     );
                 }
                 _ => panic!(
@@ -541,7 +544,7 @@ mod tests {
     // JSON Entry Encoding Tests
     // ========================================================================
 
-    use strata_core::json::JsonPath;
+    use strata_core::primitives::json::JsonPath;
 
     #[test]
     fn test_json_create_encode_decode() {

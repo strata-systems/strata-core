@@ -26,7 +26,8 @@
 //! 4. `recover()` replays WAL entries into `VectorBackendState` (stored in Database extensions)
 //! 5. The Database is ready with all vector embeddings restored
 
-use strata_core::error::{Error, Result};
+use strata_core::error::Result;
+use strata_core::StrataError;
 use strata_engine::{register_recovery_participant, Database, RecoveryParticipant};
 use tracing::info;
 
@@ -64,7 +65,7 @@ fn recover_from_db(db: &Database) -> Result<()> {
     let wal_guard = wal.lock();
     let entries = wal_guard
         .read_all()
-        .map_err(|e| Error::StorageError(format!("WAL read failed: {}", e)))?;
+        .map_err(|e| StrataError::storage(format!("WAL read failed: {}", e)))?;
     drop(wal_guard);
 
     // Track transactions
@@ -133,7 +134,7 @@ fn recover_from_db(db: &Database) -> Result<()> {
                 let config = VectorConfig {
                     dimension: *dimension,
                     metric: DistanceMetric::from_byte(*metric).ok_or_else(|| {
-                        Error::StorageError(format!("Invalid metric: {}", metric))
+                        StrataError::storage(format!("Invalid metric: {}", metric))
                     })?,
                     storage_dtype: super::StorageDtype::F32,
                 };

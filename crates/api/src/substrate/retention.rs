@@ -212,7 +212,7 @@ impl RetentionSubstrate for SubstrateImpl {
 fn serialize_retention(rv: &RetentionVersion) -> strata_core::Result<Value> {
     // Serialize the policy to JSON string
     let json = serde_json::to_string(&rv.policy)
-        .map_err(|e| strata_core::Error::InvalidState(format!("Serialization failed: {}", e)))?;
+        .map_err(|e| strata_core::StrataError::invalid_input(format!("Serialization failed: {}", e)))?;
 
     // Store as an object with policy JSON, version, and timestamp
     let mut obj = std::collections::HashMap::new();
