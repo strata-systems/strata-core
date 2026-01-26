@@ -6,546 +6,500 @@ This document defines the testing strategy for M13 (Command Execution Layer), fo
 
 ---
 
-## What We're Testing
+## Critical Context
 
-The executor is a **dispatch layer**. It takes Commands, routes them to the Substrate, and returns Outputs. The key bugs we need to catch:
+**After M13, strata-api is deleted.** The executor becomes the sole API surface for Strata. This means:
 
-| Bug Category | Example | Impact |
-|--------------|---------|--------|
-| **Dispatch errors** | `KvPut` routed to `json_set` | Wrong primitive called |
-| **Parameter mapping** | `limit` passed as `offset` | Incorrect results |
-| **Output conversion** | Version lost in conversion | Data corruption |
-| **Error mapping** | `NotFound` becomes `Internal` | Wrong error to client |
-| **Serialization loss** | NaN becomes null, bytes truncated | Data corruption |
+1. All existing `tests/substrate_api_comprehensive/` tests must be **ported** to use Commands
+2. The executor tests are **the API tests** - not a separate translation layer
+3. Test scope includes **durability, concurrency, invariants** - everything
+
+```
+BEFORE M13:                          AFTER M13:
+┌─────────────────────┐              ┌─────────────────────┐
+│  Python/MCP         │              │  Python/MCP         │
+└─────────┬───────────┘              └─────────┬───────────┘
+          │                                    │
+          ▼                                    │
+┌─────────────────────┐                        │
+│  strata-api         │  ◄── DELETED           │
+│  (Substrate/Facade) │                        │
+└─────────┬───────────┘                        │
+          │                                    ▼
+          ▼                          ┌─────────────────────┐
+┌─────────────────────┐              │  strata-executor    │
+│  strata-engine      │              │  (Commands)         │
+└─────────────────────┘              └─────────┬───────────┘
+                                               │
+                                               ▼
+                                     ┌─────────────────────┐
+                                     │  strata-engine      │
+                                     └─────────────────────┘
+```
 
 ---
 
-## What NOT to Test
+## What We're Testing
 
-Following [TESTING_METHODOLOGY.md](../../testing/TESTING_METHODOLOGY.md), we explicitly skip:
+The executor is the **complete API surface**. We test:
 
-### Compiler-Verified Properties
-```rust
-// DON'T - compiler enforces these
-#[test]
-fn test_command_is_clone() {
-    let cmd = Command::Ping;
-    let _ = cmd.clone();
-}
+| Category | What's Tested | Source |
+|----------|---------------|--------|
+| **Correctness** | Commands produce correct results | Port from substrate tests |
+| **Durability** | Data survives crash/recovery | Port from substrate tests |
+| **Concurrency** | Thread-safe execution | Port from substrate tests |
+| **Invariants** | Seven Invariants hold | Port from substrate tests |
+| **Edge cases** | Boundaries, unicode, limits | Port from substrate tests |
+| **Serialization** | Commands/Outputs survive JSON | NEW for M13 |
+| **Error mapping** | Correct error types returned | NEW for M13 |
 
-#[test]
-fn test_output_is_send_sync() {
-    fn assert_send<T: Send>() {}
-    assert_send::<Output>();
-}
+---
+
+## Tests to Port from substrate_api_comprehensive
+
+### Inventory of Existing Tests
+
+```
+tests/substrate_api_comprehensive/
+├── kv/
+│   ├── basic_ops.rs          → executor/kv/basic_ops.rs
+│   ├── atomic_ops.rs         → executor/kv/atomic_ops.rs
+│   ├── batch_ops.rs          → executor/kv/batch_ops.rs
+│   ├── scan_ops.rs           → executor/kv/scan_ops.rs
+│   ├── edge_cases.rs         → executor/kv/edge_cases.rs
+│   ├── value_types.rs        → executor/kv/value_types.rs
+│   ├── durability.rs         → executor/kv/durability.rs
+│   ├── concurrency.rs        → executor/kv/concurrency.rs
+│   ├── transactions.rs       → executor/kv/transactions.rs
+│   └── recovery_invariants.rs→ executor/kv/recovery.rs
+├── jsonstore/
+│   ├── basic_ops.rs          → executor/json/basic_ops.rs
+│   ├── path_ops.rs           → executor/json/path_ops.rs
+│   ├── merge_ops.rs          → executor/json/merge_ops.rs
+│   ├── history_ops.rs        → executor/json/history_ops.rs
+│   ├── tier1_ops.rs          → executor/json/tier1_ops.rs
+│   ├── tier2_ops.rs          → executor/json/tier2_ops.rs
+│   ├── tier3_ops.rs          → executor/json/tier3_ops.rs
+│   ├── edge_cases.rs         → executor/json/edge_cases.rs
+│   ├── durability.rs         → executor/json/durability.rs
+│   └── concurrency.rs        → executor/json/concurrency.rs
+├── eventlog/
+│   ├── basic_ops.rs          → executor/event/basic_ops.rs
+│   ├── streams.rs            → executor/event/streams.rs
+│   ├── invariants.rs         → executor/event/invariants.rs
+│   ├── immutability.rs       → executor/event/immutability.rs
+│   ├── edge_cases.rs         → executor/event/edge_cases.rs
+│   ├── durability.rs         → executor/event/durability.rs
+│   ├── concurrency.rs        → executor/event/concurrency.rs
+│   └── recovery_invariants.rs→ executor/event/recovery.rs
+├── statecell/
+│   ├── basic_ops.rs          → executor/state/basic_ops.rs
+│   ├── cas_ops.rs            → executor/state/cas_ops.rs
+│   ├── transitions.rs        → executor/state/transitions.rs
+│   ├── invariants.rs         → executor/state/invariants.rs
+│   ├── edge_cases.rs         → executor/state/edge_cases.rs
+│   ├── durability.rs         → executor/state/durability.rs
+│   └── concurrency.rs        → executor/state/concurrency.rs
+├── vectorstore/
+│   ├── basic_ops.rs          → executor/vector/basic_ops.rs
+│   ├── search.rs             → executor/vector/search.rs
+│   ├── collections.rs        → executor/vector/collections.rs
+│   ├── batch.rs              → executor/vector/batch.rs
+│   ├── history.rs            → executor/vector/history.rs
+│   ├── edge_cases.rs         → executor/vector/edge_cases.rs
+│   ├── durability.rs         → executor/vector/durability.rs
+│   └── concurrency.rs        → executor/vector/concurrency.rs
+├── runindex/
+│   ├── basic_ops.rs          → executor/run/basic_ops.rs
+│   ├── lifecycle.rs          → executor/run/lifecycle.rs
+│   ├── tags.rs               → executor/run/tags.rs
+│   ├── hierarchy.rs          → executor/run/hierarchy.rs
+│   ├── queries.rs            → executor/run/queries.rs
+│   ├── retention.rs          → executor/run/retention.rs
+│   ├── delete.rs             → executor/run/delete.rs
+│   ├── invariants.rs         → executor/run/invariants.rs
+│   ├── edge_cases.rs         → executor/run/edge_cases.rs
+│   └── concurrency.rs        → executor/run/concurrency.rs
+└── main.rs                   → executor/main.rs
 ```
 
-### Trivial Constructors
-```rust
-// DON'T - trivial round-trip
-#[test]
-fn test_kv_put_construction() {
-    let cmd = Command::KvPut { run: run_id(), key: "k".into(), value: Value::Int(1) };
-    assert!(matches!(cmd, Command::KvPut { .. }));
-}
-```
+### Porting Strategy
 
-### Shallow Assertions
+**Transform pattern**: Direct substrate call → Command execution
+
 ```rust
-// DON'T - just checks is_ok()
+// BEFORE (substrate_api_comprehensive)
 #[test]
-fn test_execute_returns_ok() {
-    let result = executor.execute(Command::Ping);
-    assert!(result.is_ok());
+fn test_kv_put_get_roundtrip() {
+    let (_, substrate) = quick_setup();
+    let run = ApiRunId::default();
+
+    let version = substrate.kv_put(&run, "key", Value::Int(42)).unwrap();
+    let result = substrate.kv_get(&run, "key").unwrap().unwrap();
+
+    assert_eq!(result.value, Value::Int(42));
 }
 
-// DO - verify actual result
+// AFTER (executor_comprehensive)
 #[test]
-fn test_ping_returns_version() {
-    let result = executor.execute(Command::Ping).unwrap();
-    match result {
-        Output::Pong { version } => assert!(!version.is_empty()),
-        _ => panic!("Expected Pong output"),
+fn test_kv_put_get_roundtrip() {
+    let executor = quick_executor();
+    let run = RunId::default();
+
+    let put_result = executor.execute(Command::KvPut {
+        run: run.clone(),
+        key: "key".into(),
+        value: Value::Int(42),
+    }).unwrap();
+
+    let get_result = executor.execute(Command::KvGet {
+        run: run.clone(),
+        key: "key".into(),
+    }).unwrap();
+
+    match get_result {
+        Output::MaybeVersioned(Some(v)) => assert_eq!(v.value, Value::Int(42)),
+        _ => panic!("Expected MaybeVersioned with value"),
     }
 }
 ```
 
+**Key differences**:
+1. `substrate.method()` → `executor.execute(Command::Variant { ... })`
+2. Direct return types → `Output` enum that must be matched
+3. Same assertions on the actual values
+
 ---
 
-## Test Categories
+## New Tests (M13-Specific)
 
-### 1. Parity Tests (CRITICAL)
+### 1. Serialization Round-Trip Tests
 
-**Purpose**: Every command produces identical results to direct Substrate calls.
-
-**Why this catches bugs**: If the executor transforms inputs/outputs incorrectly, parity breaks.
+Commands must survive JSON serialization for Python/MCP clients.
 
 ```rust
-/// KV put through executor matches direct substrate call
+/// All command variants serialize and deserialize correctly
 #[test]
-fn test_kv_put_parity() {
-    let (_, substrate) = quick_setup();
-    let executor = Executor::new(substrate.clone());
-    let run = ApiRunId::default();
+fn test_all_commands_json_roundtrip() {
+    let commands = generate_all_command_variants();
 
-    // Direct substrate call
-    let direct_version = substrate.kv_put(&run, "key", Value::Int(42)).unwrap();
+    for (name, cmd) in commands {
+        let json = serde_json::to_string(&cmd)
+            .expect(&format!("Failed to serialize {}", name));
+        let restored: Command = serde_json::from_str(&json)
+            .expect(&format!("Failed to deserialize {}", name));
 
-    // Reset state
-    substrate.kv_delete(&run, "key").unwrap();
-
-    // Executor call
-    let cmd = Command::KvPut {
-        run: run.clone(),
-        key: "key".into(),
-        value: Value::Int(42),
-    };
-    let exec_result = executor.execute(cmd).unwrap();
-
-    // Extract version from output
-    let exec_version = match exec_result {
-        Output::Version(v) => v,
-        _ => panic!("Expected Version output"),
-    };
-
-    // Versions should follow same pattern (both Txn-based)
-    assert!(matches!(direct_version, Version::Txn(_)));
-    assert!(matches!(exec_version, Version::Txn(_)));
-}
-```
-
-**Coverage**: One parity test per command variant (101 tests).
-
-**Test file**: `tests/executor_comprehensive/parity/`
-
-### 2. Error Mapping Tests (CRITICAL)
-
-**Purpose**: Substrate errors map correctly to Executor errors.
-
-**Why this catches bugs**: Wrong error types break client error handling.
-
-```rust
-/// NotFound error preserved through executor
-#[test]
-fn test_error_not_found_preserved() {
-    let (_, substrate) = quick_setup();
-    let executor = Executor::new(substrate);
-
-    let cmd = Command::KvGet {
-        run: ApiRunId::new(), // Non-existent run
-        key: "anything".into(),
-    };
-
-    let err = executor.execute(cmd).unwrap_err();
-
-    assert!(
-        matches!(err, Error::RunNotFound { .. }),
-        "NotFound should map to RunNotFound, got: {:?}",
-        err
-    );
+        assert_eq!(cmd, restored, "Command {} failed round-trip", name);
+    }
 }
 
-/// Constraint violation errors preserved
+/// Special float values in commands survive round-trip
 #[test]
-fn test_error_constraint_violation_preserved() {
-    let (_, substrate) = quick_setup();
-    let executor = Executor::new(substrate.clone());
-    let run = ApiRunId::default();
-
-    // Create and close a run
-    let (info, _) = substrate.run_create(None, None).unwrap();
-    substrate.run_close(&info.run_id).unwrap();
-
-    // Try to write to closed run
-    let cmd = Command::KvPut {
-        run: info.run_id,
-        key: "key".into(),
-        value: Value::Int(1),
-    };
-
-    let err = executor.execute(cmd).unwrap_err();
-    assert!(matches!(err, Error::ConstraintViolation { .. }));
-}
-```
-
-**Coverage**: One test per error variant (25 tests), testing the specific condition that triggers each error.
-
-**Test file**: `tests/executor_comprehensive/errors/`
-
-### 3. Serialization Round-Trip Tests (CRITICAL)
-
-**Purpose**: Commands and Outputs survive JSON serialization without data loss.
-
-**Why this catches bugs**: Lossy serialization corrupts data for non-Rust clients.
-
-```rust
-/// Special float values survive round-trip
-#[test]
-fn test_serialization_special_floats() {
-    let values = vec![
-        ("positive_infinity", f64::INFINITY),
-        ("negative_infinity", f64::NEG_INFINITY),
-        ("negative_zero", -0.0_f64),
-        // Note: NaN requires special handling - IEEE 754 NaN != NaN
+fn test_special_floats_in_commands() {
+    let test_cases = vec![
+        ("infinity", f64::INFINITY),
+        ("neg_infinity", f64::NEG_INFINITY),
+        ("neg_zero", -0.0_f64),
     ];
 
-    for (name, float_val) in values {
+    for (name, float) in test_cases {
         let cmd = Command::KvPut {
-            run: ApiRunId::default(),
+            run: RunId::default(),
             key: name.into(),
-            value: Value::Float(float_val),
+            value: Value::Float(float),
         };
 
         let json = serde_json::to_string(&cmd).unwrap();
         let restored: Command = serde_json::from_str(&json).unwrap();
 
-        match restored {
-            Command::KvPut { value: Value::Float(f), .. } => {
-                if float_val.is_infinite() {
-                    assert_eq!(f.is_infinite(), true);
-                    assert_eq!(f.signum(), float_val.signum());
-                } else if float_val == -0.0 {
-                    assert!(f.is_sign_negative() && f == 0.0);
-                }
+        if let Command::KvPut { value: Value::Float(f), .. } = restored {
+            if float.is_infinite() {
+                assert!(f.is_infinite() && f.signum() == float.signum());
+            } else if float == -0.0 {
+                assert!(f == 0.0 && f.is_sign_negative());
             }
-            _ => panic!("Command structure lost"),
+        } else {
+            panic!("Wrong command type after round-trip");
         }
     }
 }
 
-/// Binary data survives round-trip
+/// Binary data in commands survives round-trip
 #[test]
-fn test_serialization_bytes_roundtrip() {
+fn test_bytes_in_commands_roundtrip() {
     let test_bytes = vec![
-        vec![],                           // Empty
-        vec![0x00],                       // Single null byte
-        vec![0x00, 0xFF, 0x00, 0xFF],     // Alternating
-        (0..256).map(|i| i as u8).collect::<Vec<_>>(), // All byte values
+        vec![],
+        vec![0x00, 0xFF],
+        (0..=255).collect::<Vec<u8>>(),
     ];
 
     for bytes in test_bytes {
         let cmd = Command::KvPut {
-            run: ApiRunId::default(),
-            key: "bytes_test".into(),
+            run: RunId::default(),
+            key: "bytes".into(),
             value: Value::Bytes(bytes.clone()),
         };
 
         let json = serde_json::to_string(&cmd).unwrap();
         let restored: Command = serde_json::from_str(&json).unwrap();
 
-        match restored {
-            Command::KvPut { value: Value::Bytes(b), .. } => {
-                assert_eq!(b, bytes, "Bytes should survive round-trip");
-            }
-            _ => panic!("Command structure lost"),
+        if let Command::KvPut { value: Value::Bytes(b), .. } = restored {
+            assert_eq!(b, bytes);
+        } else {
+            panic!("Bytes lost in round-trip");
         }
     }
 }
+```
 
-/// Large integers at boundaries survive round-trip
+### 2. Output Serialization Tests
+
+Outputs must also survive JSON for client responses.
+
+```rust
+/// All output variants serialize correctly
 #[test]
-fn test_serialization_integer_boundaries() {
-    let boundaries = vec![
-        i64::MIN,
-        i64::MIN + 1,
-        -1,
-        0,
-        1,
-        i64::MAX - 1,
-        i64::MAX,
+fn test_all_outputs_json_roundtrip() {
+    let outputs = generate_all_output_variants();
+
+    for (name, output) in outputs {
+        let json = serde_json::to_string(&output)
+            .expect(&format!("Failed to serialize output {}", name));
+        let restored: Output = serde_json::from_str(&json)
+            .expect(&format!("Failed to deserialize output {}", name));
+
+        assert_eq!(output, restored, "Output {} failed round-trip", name);
+    }
+}
+```
+
+### 3. Error Serialization Tests
+
+Errors must serialize with structured details preserved.
+
+```rust
+/// Error details survive serialization
+#[test]
+fn test_error_details_preserved() {
+    let errors = vec![
+        Error::KeyNotFound { key: "missing_key".into() },
+        Error::RunNotFound { run: "missing_run".into() },
+        Error::DimensionMismatch { expected: 128, actual: 256 },
+        Error::VersionConflict { expected: 5, actual: 7 },
     ];
 
-    for int_val in boundaries {
-        let cmd = Command::KvPut {
-            run: ApiRunId::default(),
-            key: "int_test".into(),
-            value: Value::Int(int_val),
-        };
+    for err in errors {
+        let json = serde_json::to_string(&err).unwrap();
+        let restored: Error = serde_json::from_str(&json).unwrap();
 
-        let json = serde_json::to_string(&cmd).unwrap();
-        let restored: Command = serde_json::from_str(&json).unwrap();
-
-        match restored {
-            Command::KvPut { value: Value::Int(i), .. } => {
-                assert_eq!(i, int_val, "Integer {} should survive round-trip", int_val);
+        // Verify structured fields preserved
+        match (&err, &restored) {
+            (Error::KeyNotFound { key: k1 }, Error::KeyNotFound { key: k2 }) => {
+                assert_eq!(k1, k2);
             }
-            _ => panic!("Command structure lost"),
+            (Error::DimensionMismatch { expected: e1, actual: a1 },
+             Error::DimensionMismatch { expected: e2, actual: a2 }) => {
+                assert_eq!(e1, e2);
+                assert_eq!(a1, a2);
+            }
+            _ => assert_eq!(err, restored),
         }
     }
 }
 ```
 
-**Coverage**: All 8 Value types, edge cases for each.
+### 4. execute_many Tests
 
-**Test file**: `tests/executor_comprehensive/serialization/`
-
-### 4. Dispatch Coverage Tests (HIGH)
-
-**Purpose**: Every command variant reaches the correct handler.
-
-**Why this catches bugs**: Copy-paste errors in match arms.
+Batch execution semantics.
 
 ```rust
-/// Each command type calls the correct substrate method
+/// execute_many preserves order
 #[test]
-fn test_dispatch_kv_commands_reach_kv_substrate() {
-    let (_, substrate) = quick_setup();
-    let executor = Executor::new(substrate.clone());
-    let run = ApiRunId::default();
-
-    // Setup: create a key
-    substrate.kv_put(&run, "dispatch_test", Value::Int(1)).unwrap();
-
-    // KvGet should read from KV, not JSON or State
-    let cmd = Command::KvGet { run: run.clone(), key: "dispatch_test".into() };
-    let result = executor.execute(cmd).unwrap();
-
-    match result {
-        Output::MaybeVersioned(Some(v)) => {
-            assert_eq!(v.value, Value::Int(1));
-        }
-        _ => panic!("KvGet should return MaybeVersioned with value"),
-    }
-
-    // Verify the same key doesn't exist in JSON namespace
-    assert!(substrate.json_get(&run, "dispatch_test", "$").unwrap().is_none());
-}
-```
-
-**Strategy**: For ambiguous commands (e.g., both KV and JSON have "get"), verify the command hits the right namespace by checking side effects.
-
-**Test file**: `tests/executor_comprehensive/dispatch/`
-
-### 5. Edge Case Tests (HIGH)
-
-**Purpose**: Test boundary conditions that could break the executor.
-
-```rust
-/// Empty batch operations handled correctly
-#[test]
-fn test_edge_empty_batch_operations() {
-    let (_, substrate) = quick_setup();
-    let executor = Executor::new(substrate);
-    let run = ApiRunId::default();
-
-    // Empty mget
-    let cmd = Command::KvMget { run: run.clone(), keys: vec![] };
-    let result = executor.execute(cmd).unwrap();
-    match result {
-        Output::Values(v) => assert!(v.is_empty()),
-        _ => panic!("Expected empty Values"),
-    }
-
-    // Empty mput
-    let cmd = Command::KvMput { run: run.clone(), entries: vec![] };
-    let result = executor.execute(cmd);
-    // Should either succeed with version or explicitly reject
-    assert!(result.is_ok() || matches!(result.unwrap_err(), Error::InvalidInput { .. }));
-}
-
-/// Unicode in all string positions
-#[test]
-fn test_edge_unicode_everywhere() {
-    let (_, substrate) = quick_setup();
-    let executor = Executor::new(substrate);
-    let run = ApiRunId::default();
-
-    let unicode_key = "键_キー_مفتاح_🔑";
-    let unicode_value = Value::String("值_値_قيمة_💎".into());
-
-    let cmd = Command::KvPut {
-        run: run.clone(),
-        key: unicode_key.into(),
-        value: unicode_value.clone(),
-    };
-
-    executor.execute(cmd).unwrap();
-
-    let cmd = Command::KvGet { run: run.clone(), key: unicode_key.into() };
-    let result = executor.execute(cmd).unwrap();
-
-    match result {
-        Output::MaybeVersioned(Some(v)) => assert_eq!(v.value, unicode_value),
-        _ => panic!("Unicode key/value should round-trip"),
-    }
-}
-
-/// Maximum key length
-#[test]
-fn test_edge_max_key_length() {
-    let (_, substrate) = quick_setup();
-    let executor = Executor::new(substrate);
-    let run = ApiRunId::default();
-
-    let max_key = "k".repeat(1024);
-    let cmd = Command::KvPut {
-        run: run.clone(),
-        key: max_key.clone(),
-        value: Value::Int(1),
-    };
-
-    let result = executor.execute(cmd);
-    assert!(result.is_ok(), "Max length key should be accepted");
-
-    let over_key = "k".repeat(1025);
-    let cmd = Command::KvPut {
-        run: run.clone(),
-        key: over_key,
-        value: Value::Int(1),
-    };
-
-    let result = executor.execute(cmd);
-    assert!(result.is_err(), "Over-max length key should be rejected");
-}
-```
-
-**Test file**: `tests/executor_comprehensive/edge_cases/`
-
-### 6. execute_many Sequential Order Tests (MEDIUM)
-
-**Purpose**: Batch execution preserves order and stops on error (or continues, depending on semantics).
-
-```rust
-/// execute_many processes commands in order
-#[test]
-fn test_execute_many_order_preserved() {
-    let (_, substrate) = quick_setup();
-    let executor = Executor::new(substrate);
-    let run = ApiRunId::default();
+fn test_execute_many_order() {
+    let executor = quick_executor();
+    let run = RunId::default();
 
     let commands = vec![
-        Command::KvPut { run: run.clone(), key: "seq".into(), value: Value::Int(1) },
-        Command::KvPut { run: run.clone(), key: "seq".into(), value: Value::Int(2) },
-        Command::KvPut { run: run.clone(), key: "seq".into(), value: Value::Int(3) },
+        Command::KvPut { run: run.clone(), key: "k".into(), value: Value::Int(1) },
+        Command::KvPut { run: run.clone(), key: "k".into(), value: Value::Int(2) },
+        Command::KvPut { run: run.clone(), key: "k".into(), value: Value::Int(3) },
     ];
 
-    let results = executor.execute_many(commands);
+    executor.execute_many(commands);
 
-    // All should succeed
-    assert!(results.iter().all(|r| r.is_ok()));
+    // Final value should be 3
+    let result = executor.execute(Command::KvGet {
+        run: run.clone(),
+        key: "k".into(),
+    }).unwrap();
 
-    // Final value should be 3 (last write wins)
-    let cmd = Command::KvGet { run: run.clone(), key: "seq".into() };
-    let result = executor.execute(cmd).unwrap();
     match result {
         Output::MaybeVersioned(Some(v)) => assert_eq!(v.value, Value::Int(3)),
-        _ => panic!("Expected final value 3"),
+        _ => panic!("Expected value 3"),
     }
 }
 
-/// execute_many with mid-sequence error
+/// execute_many returns results in same order as commands
 #[test]
-fn test_execute_many_error_handling() {
-    let (_, substrate) = quick_setup();
-    let executor = Executor::new(substrate);
-    let run = ApiRunId::default();
+fn test_execute_many_results_order() {
+    let executor = quick_executor();
+    let run = RunId::default();
+
+    // Setup
+    executor.execute(Command::KvPut {
+        run: run.clone(),
+        key: "exists".into(),
+        value: Value::Int(1),
+    }).unwrap();
 
     let commands = vec![
-        Command::KvPut { run: run.clone(), key: "ok1".into(), value: Value::Int(1) },
-        Command::KvPut { run: run.clone(), key: "".into(), value: Value::Int(2) }, // Invalid key
-        Command::KvPut { run: run.clone(), key: "ok2".into(), value: Value::Int(3) },
+        Command::KvGet { run: run.clone(), key: "exists".into() },    // Should succeed
+        Command::KvGet { run: run.clone(), key: "missing".into() },   // Should return None
+        Command::KvExists { run: run.clone(), key: "exists".into() }, // Should return true
     ];
 
     let results = executor.execute_many(commands);
 
-    assert!(results[0].is_ok(), "First command should succeed");
-    assert!(results[1].is_err(), "Second command should fail (empty key)");
-    // Third command behavior depends on semantics - document it
-    // If continue-on-error: results[2].is_ok()
-    // If stop-on-error: results[2] may not exist or be Err
+    assert_eq!(results.len(), 3);
+    assert!(matches!(results[0], Ok(Output::MaybeVersioned(Some(_)))));
+    assert!(matches!(results[1], Ok(Output::MaybeVersioned(None))));
+    assert!(matches!(results[2], Ok(Output::Bool(true))));
 }
 ```
-
-**Test file**: `tests/executor_comprehensive/batch/`
 
 ---
 
-## Test Data Strategy
-
-Following the pattern in `tests/substrate_api_comprehensive/`, use JSONL test data files:
+## Test File Structure
 
 ```
 tests/executor_comprehensive/
+├── main.rs                      # Test harness, shared utilities
+├── test_utils.rs                # quick_executor(), helpers
 ├── testdata/
-│   ├── commands.jsonl          # Command variants with expected outputs
-│   ├── error_cases.jsonl       # Inputs that should produce specific errors
-│   └── serialization.jsonl     # Values that need special serialization handling
-├── parity/
-│   ├── kv_parity.rs
-│   ├── json_parity.rs
-│   ├── event_parity.rs
-│   ├── state_parity.rs
-│   ├── vector_parity.rs
-│   ├── run_parity.rs
-│   ├── transaction_parity.rs
-│   └── retention_parity.rs
-├── errors/
-│   └── error_mapping.rs
-├── serialization/
-│   ├── value_types.rs
-│   ├── special_floats.rs
+│   ├── kv_test_data.jsonl       # Copied from substrate tests
+│   ├── edge_cases.jsonl
+│   └── serialization_cases.jsonl
+│
+├── kv/
+│   ├── mod.rs
+│   ├── basic_ops.rs             # Ported from substrate
+│   ├── atomic_ops.rs            # Ported
+│   ├── batch_ops.rs             # Ported
+│   ├── scan_ops.rs              # Ported
+│   ├── edge_cases.rs            # Ported
+│   ├── value_types.rs           # Ported
+│   ├── durability.rs            # Ported
+│   ├── concurrency.rs           # Ported
+│   └── transactions.rs          # Ported
+│
+├── json/                        # Ported from substrate jsonstore/
+├── event/                       # Ported from substrate eventlog/
+├── state/                       # Ported from substrate statecell/
+├── vector/                      # Ported from substrate vectorstore/
+├── run/                         # Ported from substrate runindex/
+│
+├── transaction/                 # NEW - TransactionControl commands
+│   ├── basic_ops.rs
+│   └── savepoints.rs            # If implemented
+│
+├── retention/                   # NEW - RetentionSubstrate commands
+│   └── basic_ops.rs
+│
+├── serialization/               # NEW - M13 specific
+│   ├── command_roundtrip.rs
+│   ├── output_roundtrip.rs
+│   ├── error_roundtrip.rs
+│   ├── special_values.rs
 │   └── bytes_encoding.rs
-├── dispatch/
-│   └── dispatch_coverage.rs
-├── edge_cases/
-│   └── boundaries.rs
-├── batch/
-│   └── execute_many.rs
-└── main.rs
+│
+└── batch/                       # NEW - execute_many
+    ├── order.rs
+    └── error_handling.rs
+```
+
+---
+
+## What NOT to Test (Anti-Patterns)
+
+Following [TESTING_METHODOLOGY.md](../../testing/TESTING_METHODOLOGY.md):
+
+### Compiler-Verified Properties
+```rust
+// DON'T
+#[test]
+fn test_command_is_clone() { ... }
+
+#[test]
+fn test_executor_is_send_sync() { ... }
+```
+
+### Shallow Assertions
+```rust
+// DON'T
+#[test]
+fn test_kv_put_succeeds() {
+    let result = executor.execute(Command::KvPut { ... });
+    assert!(result.is_ok());  // Doesn't verify the version
+}
+
+// DO
+#[test]
+fn test_kv_put_returns_version() {
+    let result = executor.execute(Command::KvPut { ... }).unwrap();
+    match result {
+        Output::Version(v) => assert!(v > 0),
+        _ => panic!("Expected Version output"),
+    }
+}
+```
+
+### Implementation Details
+```rust
+// DON'T - tests internal dispatch mechanism
+#[test]
+fn test_kv_handler_called() {
+    // Spy on internal handler...
+}
+
+// DO - tests observable behavior
+#[test]
+fn test_kv_put_stores_value() {
+    executor.execute(Command::KvPut { key: "k", value: 42 });
+    let result = executor.execute(Command::KvGet { key: "k" });
+    // Verify value is stored
+}
 ```
 
 ---
 
 ## Test Counts (Estimated)
 
-| Category | Tests | Rationale |
-|----------|-------|-----------|
-| Parity | ~101 | One per command variant |
-| Error mapping | ~25 | One per error variant |
-| Serialization | ~20 | Edge cases for all 8 Value types |
-| Dispatch | ~10 | Verify namespace separation |
-| Edge cases | ~15 | Boundaries, unicode, empty inputs |
-| execute_many | ~5 | Order, error handling |
-| **Total** | **~176** | |
-
-Each test catches a specific bug. No vanity tests.
-
----
-
-## Anti-Pattern Checklist
-
-Before adding a test, verify:
-
-- [ ] **Does this test a specific bug or failure mode?** (If no, don't write it)
-- [ ] **Would this test fail if the code was broken?** (If no, it's useless)
-- [ ] **Is this testing behavior, not implementation?** (Match on behavior, not struct fields)
-- [ ] **Does the assertion check actual values?** (No `is_ok()` without checking content)
-- [ ] **Is this something the compiler doesn't verify?** (No Clone/Send/Sync tests)
+| Category | Tests | Source |
+|----------|-------|--------|
+| KV | ~80 | Ported from substrate |
+| JSON | ~60 | Ported from substrate |
+| Event | ~50 | Ported from substrate |
+| State | ~40 | Ported from substrate |
+| Vector | ~50 | Ported from substrate |
+| Run | ~60 | Ported from substrate |
+| Transaction | ~15 | New |
+| Retention | ~10 | New |
+| Serialization | ~30 | New (M13-specific) |
+| Batch (execute_many) | ~10 | New |
+| **Total** | **~405** | |
 
 ---
 
-## Integration with Existing Tests
+## Porting Checklist
 
-M13 tests should NOT duplicate existing substrate tests. The relationship:
+For each test file in `substrate_api_comprehensive/`:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  tests/substrate_api_comprehensive/                             │
-│  Tests: Substrate API correctness, durability, concurrency      │
-│  (Already exists - DO NOT DUPLICATE)                            │
-└─────────────────────────────────────────────────────────────────┘
-                              ▲
-                              │ Calls
-                              │
-┌─────────────────────────────────────────────────────────────────┐
-│  tests/executor_comprehensive/                                  │
-│  Tests: Command→Substrate dispatch, Output conversion,          │
-│         Error mapping, Serialization fidelity                   │
-│  (NEW - Tests the translation layer only)                       │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-The executor tests assume the Substrate is correct (tested elsewhere). They only test the executor's translation fidelity.
+- [ ] Create corresponding file in `executor_comprehensive/`
+- [ ] Transform `substrate.method()` → `executor.execute(Command::...)`
+- [ ] Transform return type assertions → `Output` enum matching
+- [ ] Verify test still catches the same bug
+- [ ] Remove any tests that become compiler-verified (unlikely)
+- [ ] Keep test data files (`.jsonl`)
 
 ---
 
@@ -553,11 +507,12 @@ The executor tests assume the Substrate is correct (tested elsewhere). They only
 
 M13 testing is complete when:
 
-1. **All 101 commands have parity tests** - Executor produces same results as direct calls
-2. **All error variants have trigger tests** - Each error can be provoked and verified
-3. **All Value types round-trip through JSON** - No serialization loss
-4. **No vanity tests exist** - Every test catches a real bug
-5. **Tests run in < 30 seconds** - Fast feedback loop (in-memory mode)
+1. **All substrate tests ported** - Same behavioral coverage through Commands
+2. **Serialization tests pass** - All Commands/Outputs/Errors survive JSON
+3. **Durability tests pass** - Commands + crash + recovery works
+4. **Concurrency tests pass** - Thread-safe command execution
+5. **No regressions** - Same bugs caught as substrate tests
+6. **Tests run in < 60 seconds** - Fast feedback (in-memory mode)
 
 ---
 
@@ -566,3 +521,4 @@ M13 testing is complete when:
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-01-25 | Initial M13 testing plan |
+| 1.1 | 2026-01-25 | Revised: executor replaces strata-api, port all tests |
