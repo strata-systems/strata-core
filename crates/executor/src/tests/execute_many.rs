@@ -1,0 +1,236 @@
+//! Tests for the execute_many batch execution method.
+//!
+//! These tests verify that batch command execution works correctly,
+//! including error handling and result ordering.
+
+use crate::types::*;
+use crate::{Command, Executor, Output};
+use strata_core::Value;
+use std::sync::Arc;
+
+/// Create a test executor with an in-memory database.
+fn create_test_executor() -> Executor {
+    use strata_api::substrate::SubstrateImpl;
+    use strata_engine::Database;
+
+    let db = Arc::new(Database::builder().no_durability().open_temp().unwrap());
+    let substrate = Arc::new(SubstrateImpl::new(db));
+    Executor::new(substrate)
+}
+
+#[test]
+fn test_execute_many_empty() {
+    let executor = create_test_executor();
+    let results = executor.execute_many(vec![]);
+    assert!(results.is_empty());
+}
+
+#[test]
+fn test_execute_many_single_command() {
+    let executor = create_test_executor();
+    let results = executor.execute_many(vec![Command::Ping]);
+
+    assert_eq!(results.len(), 1);
+    assert!(results[0].is_ok());
+    match &results[0] {
+        Ok(Output::Pong { version }) => {
+            assert!(!version.is_empty());
+        }
+        _ => panic!("Expected Pong output"),
+    }
+}
+
+#[test]
+fn test_execute_many_multiple_commands() {
+    let executor = create_test_executor();
+    let results = executor.execute_many(vec![
+        Command::Ping,
+        Command::Info,
+        Command::Flush,
+    ]);
+
+    assert_eq!(results.len(), 3);
+    assert!(results[0].is_ok());
+    assert!(results[1].is_ok());
+    assert!(results[2].is_ok());
+}
+
+#[test]
+fn test_execute_many_preserves_order() {
+    let executor = create_test_executor();
+
+    // Put three different values
+    let put_results = executor.execute_many(vec![
+        Command::KvPut {
+            run: RunId::from("default"),
+            key: "key1".to_string(),
+            value: Value::Int(1),
+        },
+        Command::KvPut {
+            run: RunId::from("default"),
+            key: "key2".to_string(),
+            value: Value::Int(2),
+        },
+        Command::KvPut {
+            run: RunId::from("default"),
+            key: "key3".to_string(),
+            value: Value::Int(3),
+        },
+    ]);
+
+    assert!(put_results.iter().all(|r| r.is_ok()));
+
+    // Get them back in a specific order
+    let get_results = executor.execute_many(vec![
+        Command::KvGet {
+            run: RunId::from("default"),
+            key: "key3".to_string(),
+        },
+        Command::KvGet {
+            run: RunId::from("default"),
+            key: "key1".to_string(),
+        },
+        Command::KvGet {
+            run: RunId::from("default"),
+            key: "key2".to_string(),
+        },
+    ]);
+
+    assert_eq!(get_results.len(), 3);
+
+    // Verify order is preserved
+    match &get_results[0] {
+        Ok(Output::MaybeVersioned(Some(v))) => {
+            assert_eq!(v.value, Value::Int(3));
+        }
+        _ => panic!("Expected Int(3) for key3"),
+    }
+
+    match &get_results[1] {
+        Ok(Output::MaybeVersioned(Some(v))) => {
+            assert_eq!(v.value, Value::Int(1));
+        }
+        _ => panic!("Expected Int(1) for key1"),
+    }
+
+    match &get_results[2] {
+        Ok(Output::MaybeVersioned(Some(v))) => {
+            assert_eq!(v.value, Value::Int(2));
+        }
+        _ => panic!("Expected Int(2) for key2"),
+    }
+}
+
+#[test]
+fn test_execute_many_continues_after_error() {
+    let executor = create_test_executor();
+
+    // Mix of valid and invalid commands
+    let results = executor.execute_many(vec![
+        Command::Ping, // Should succeed
+        Command::KvGetAt {
+            run: RunId::from("nonexistent-run-12345"),
+            key: "key".to_string(),
+            version: 1,
+        }, // Should fail (invalid run)
+        Command::Ping, // Should succeed even after previous failure
+    ]);
+
+    assert_eq!(results.len(), 3);
+    assert!(results[0].is_ok(), "First Ping should succeed");
+    assert!(results[1].is_err(), "Invalid run should fail");
+    assert!(results[2].is_ok(), "Second Ping should succeed despite previous error");
+}
+
+#[test]
+fn test_execute_many_mixed_operations() {
+    let executor = create_test_executor();
+
+    let results = executor.execute_many(vec![
+        // Store a value
+        Command::KvPut {
+            run: RunId::from("default"),
+            key: "counter".to_string(),
+            value: Value::Int(10),
+        },
+        // Check it exists
+        Command::KvExists {
+            run: RunId::from("default"),
+            key: "counter".to_string(),
+        },
+        // Increment it
+        Command::KvIncr {
+            run: RunId::from("default"),
+            key: "counter".to_string(),
+            delta: 5,
+        },
+        // Get the new value
+        Command::KvGet {
+            run: RunId::from("default"),
+            key: "counter".to_string(),
+        },
+    ]);
+
+    assert_eq!(results.len(), 4);
+    assert!(results[0].is_ok()); // Put
+
+    // Exists should return true
+    match &results[1] {
+        Ok(Output::Bool(exists)) => assert!(*exists),
+        _ => panic!("Expected Bool(true)"),
+    }
+
+    // Incr should return 15
+    match &results[2] {
+        Ok(Output::Int(val)) => assert_eq!(*val, 15),
+        _ => panic!("Expected Int(15)"),
+    }
+
+    // Get should return 15
+    match &results[3] {
+        Ok(Output::MaybeVersioned(Some(v))) => {
+            assert_eq!(v.value, Value::Int(15));
+        }
+        _ => panic!("Expected Int(15)"),
+    }
+}
+
+#[test]
+fn test_execute_many_all_database_commands() {
+    let executor = create_test_executor();
+
+    let results = executor.execute_many(vec![
+        Command::Ping,
+        Command::Info,
+        Command::Flush,
+        Command::Compact,
+    ]);
+
+    assert_eq!(results.len(), 4);
+    assert!(results.iter().all(|r| r.is_ok()));
+
+    // Verify specific outputs
+    matches!(&results[0], Ok(Output::Pong { .. }));
+    matches!(&results[1], Ok(Output::DatabaseInfo(_)));
+    matches!(&results[2], Ok(Output::Unit));
+    matches!(&results[3], Ok(Output::Unit));
+}
+
+#[test]
+fn test_execute_many_large_batch() {
+    let executor = create_test_executor();
+
+    // Create a batch of 100 commands
+    let commands: Vec<Command> = (0..100)
+        .map(|i| Command::KvPut {
+            run: RunId::from("default"),
+            key: format!("key_{}", i),
+            value: Value::Int(i),
+        })
+        .collect();
+
+    let results = executor.execute_many(commands);
+
+    assert_eq!(results.len(), 100);
+    assert!(results.iter().all(|r| r.is_ok()));
+}
