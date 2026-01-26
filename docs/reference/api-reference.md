@@ -1325,15 +1325,15 @@ pub trait TraceStoreExt {
 
 ```rust
 pub enum DurabilityMode {
-    InMemory,
-    Buffered { flush_interval_ms: u64, max_pending_writes: usize },
+    None,
+    Batched { interval_ms: u64, batch_size: usize },
     Strict,
 }
 ```
 
-### InMemory
+### None
 
-No persistence. Data is lost on crash.
+No durability. Data is lost on crash.
 
 | Property | Value |
 |----------|-------|
@@ -1341,9 +1341,9 @@ No persistence. Data is lost on crash.
 | Throughput | 250K+ ops/sec |
 | Data Loss | All |
 
-### Buffered
+### Batched
 
-Background thread fsyncs periodically.
+Periodic fsync based on time interval or write count.
 
 | Property | Value |
 |----------|-------|

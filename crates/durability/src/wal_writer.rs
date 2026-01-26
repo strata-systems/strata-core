@@ -20,8 +20,7 @@
 //!
 //! - `Strict`: fsync after every commit marker
 //! - `Batched`: fsync based on count/time (may lose recent commits)
-//! - `Async`: Background thread handles fsync
-//! - `InMemory`: No persistence
+//! - `None`: No persistence (data lost on crash)
 
 use crate::transaction_log::Transaction;
 use crate::wal::DurabilityMode;
@@ -31,11 +30,10 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use parking_lot::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
-use tracing::{debug, error, info, trace, warn};
+use std::time::Instant;
+use tracing::{debug, info, trace, warn};
 use uuid::Uuid;
 
 /// WAL Writer with transaction framing support
@@ -82,12 +80,6 @@ pub struct WalWriter {
 
     /// Writes since last fsync (for batched mode)
     writes_since_fsync: Arc<AtomicU64>,
-
-    /// Background fsync thread handle (for async mode)
-    fsync_thread: Option<JoinHandle<()>>,
-
-    /// Shutdown flag for async thread
-    shutdown: Arc<AtomicBool>,
 }
 
 impl WalWriter {
@@ -126,38 +118,6 @@ impl WalWriter {
         let writer = Arc::new(Mutex::new(BufWriter::new(file)));
         let last_fsync = Arc::new(Mutex::new(Instant::now()));
         let writes_since_fsync = Arc::new(AtomicU64::new(0));
-        let shutdown = Arc::new(AtomicBool::new(false));
-
-        // Spawn background fsync thread for async mode
-        let fsync_thread = if let DurabilityMode::Async { interval_ms } = durability_mode {
-            let writer: Arc<Mutex<BufWriter<File>>> = Arc::clone(&writer);
-            let shutdown = Arc::clone(&shutdown);
-            let interval = Duration::from_millis(interval_ms);
-            let path_for_log = path.clone();
-
-            Some(thread::spawn(move || {
-                debug!(path = %path_for_log.display(), "Starting async fsync thread");
-                while !shutdown.load(Ordering::Acquire) {
-                    thread::sleep(interval);
-
-                    if shutdown.load(Ordering::Acquire) {
-                        break;
-                    }
-
-                    let mut w = writer.lock();
-                    if let Err(e) = w.flush() {
-                        error!(error = %e, path = %path_for_log.display(), "WAL async flush failed");
-                    }
-                    if let Err(e) = w.get_mut().sync_all() {
-                        error!(error = %e, path = %path_for_log.display(), "WAL async sync_all failed");
-                    }
-                    trace!(path = %path_for_log.display(), "Async fsync completed");
-                }
-                debug!(path = %path_for_log.display(), "Async fsync thread exiting");
-            }))
-        } else {
-            None
-        };
 
         info!(path = %path.display(), ?durability_mode, "Opened WAL for writing");
 
@@ -168,8 +128,6 @@ impl WalWriter {
             durability_mode,
             last_fsync,
             writes_since_fsync,
-            fsync_thread,
-            shutdown,
         })
     }
 
@@ -440,7 +398,7 @@ impl WalWriter {
     /// Handle durability mode after write
     fn handle_durability_mode(&mut self) -> Result<(), WalEntryError> {
         match self.durability_mode {
-            DurabilityMode::InMemory => {
+            DurabilityMode::None => {
                 // Just flush buffer for consistency
                 let mut writer = self.writer.lock();
                 writer.flush()?;
@@ -470,12 +428,6 @@ impl WalWriter {
                     self.writes_since_fsync.store(0, Ordering::SeqCst);
                     *self.last_fsync.lock() = Instant::now();
                 }
-            }
-            DurabilityMode::Async { .. } => {
-                // Background thread handles fsync
-                // Just flush buffer
-                let mut writer = self.writer.lock();
-                writer.flush()?;
             }
         }
 
@@ -517,16 +469,6 @@ impl WalWriter {
 
 impl Drop for WalWriter {
     fn drop(&mut self) {
-        // Shutdown async fsync thread
-        // Uses Release ordering to ensure writes before drop are visible to the background thread
-        self.shutdown.store(true, Ordering::Release);
-
-        if let Some(handle) = self.fsync_thread.take() {
-            if let Err(e) = handle.join() {
-                error!("WalWriter fsync thread panicked on drop: {:?}", e);
-            }
-        }
-
         // Final sync - log errors but don't panic in drop
         if let Err(e) = self.sync() {
             warn!(

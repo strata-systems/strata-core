@@ -67,11 +67,11 @@ mod lifecycle {
     }
 
     #[test]
-    fn test_open_with_mode_async() {
+    fn test_open_with_mode_none() {
         let temp_dir = TempDir::new().unwrap();
         let db = Database::open_with_mode(
             temp_dir.path().join("db"),
-            DurabilityMode::Async { interval_ms: 100 },
+            DurabilityMode::None,
         )
         .unwrap();
 

@@ -53,7 +53,7 @@ fn get_durability_mode() -> DurabilityMode {
     std::env::var("INMEM_DURABILITY_MODE")
         .ok()
         .and_then(|s| match s.to_lowercase().as_str() {
-            "inmemory" | "in_memory" | "in-memory" => Some(DurabilityMode::InMemory),
+            "inmemory" | "in_memory" | "in-memory" => Some(DurabilityMode::None),
             "batched" | "buffered" => Some(DurabilityMode::buffered_default()),
             "strict" => Some(DurabilityMode::Strict),
             _ => None,
@@ -64,9 +64,8 @@ fn get_durability_mode() -> DurabilityMode {
 /// Get durability mode suffix for benchmark naming.
 fn durability_suffix() -> &'static str {
     match get_durability_mode() {
-        DurabilityMode::InMemory => "inmemory",
+        DurabilityMode::None => "none",
         DurabilityMode::Batched { .. } => "batched",
-        DurabilityMode::Async { .. } => "async",
         DurabilityMode::Strict => "strict",
     }
 }
@@ -532,7 +531,7 @@ fn kvstore_key_scaling(c: &mut Criterion) {
 
     // Only test with InMemory mode to avoid slow disk I/O
     for key_count in &[10_000usize, 100_000] {
-        let (db, _temp) = create_db_with_mode(DurabilityMode::InMemory);
+        let (db, _temp) = create_db_with_mode(DurabilityMode::None);
         let run_id = RunId::new();
         let kv = KVStore::new(db.clone());
 
@@ -566,7 +565,7 @@ fn kvstore_fast_path(c: &mut Criterion) {
 
     // Fast path get (outside transaction)
     {
-        let (db, _temp) = create_db_with_mode(DurabilityMode::InMemory);
+        let (db, _temp) = create_db_with_mode(DurabilityMode::None);
         let run_id = RunId::new();
         let kv = KVStore::new(db.clone());
 
@@ -582,7 +581,7 @@ fn kvstore_fast_path(c: &mut Criterion) {
 
     // Transaction path get (using get_in_transaction)
     {
-        let (db, _temp) = create_db_with_mode(DurabilityMode::InMemory);
+        let (db, _temp) = create_db_with_mode(DurabilityMode::None);
         let run_id = RunId::new();
         let kv = KVStore::new(db.clone());
 
@@ -608,7 +607,7 @@ fn kvstore_durability_comparison(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
 
     let modes = [
-        ("inmemory", DurabilityMode::InMemory),
+        ("inmemory", DurabilityMode::None),
         ("buffered", DurabilityMode::buffered_default()),
         ("strict", DurabilityMode::Strict),
     ];

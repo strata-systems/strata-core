@@ -387,15 +387,15 @@ mod durability_modes {
     }
 
     #[test]
-    fn test_async_mode_works() {
+    fn test_none_mode_works() {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("db");
 
         let (run_id, ns) = create_namespace();
-        let key = kv_key(&ns, "async_test");
+        let key = kv_key(&ns, "none_test");
 
         {
-            let db = Database::open_with_mode(&db_path, DurabilityMode::Async { interval_ms: 100 })
+            let db = Database::open_with_mode(&db_path, DurabilityMode::None)
                 .unwrap();
             db.put(run_id, key.clone(), values::int(42)).unwrap();
 

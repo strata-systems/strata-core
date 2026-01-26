@@ -722,34 +722,10 @@ fn durability_benchmarks(c: &mut Criterion) {
     }
 
     // ---------------------------------------------------------------------------
-    // Async Mode (background fsync)
-    // ---------------------------------------------------------------------------
-    {
-        let temp_dir = TempDir::new().unwrap();
-        let db = Database::open_with_mode(
-            temp_dir.path().join("db"),
-            DurabilityMode::Async { interval_ms: 50 },
-        )
-        .unwrap();
-        let run_id = RunId::new();
-        let ns = create_namespace(run_id);
-
-        group.throughput(Throughput::Elements(1));
-        group.bench_function("async_mode_put", |b| {
-            let counter = AtomicU64::new(0);
-            b.iter(|| {
-                let i = counter.fetch_add(1, Ordering::Relaxed);
-                let key = make_key(&ns, &format!("async_{}", i));
-                let result = db.put(run_id, key, Value::Int(i as i64));
-                black_box(result.unwrap());
-            });
-        });
-    }
-
     // ---------------------------------------------------------------------------
     // Transaction Durability Comparison
     // ---------------------------------------------------------------------------
-    for mode_name in ["strict", "batched", "async"] {
+    for mode_name in ["strict", "batched", "none"] {
         let temp_dir = TempDir::new().unwrap();
         let mode = match mode_name {
             "strict" => DurabilityMode::Strict,
@@ -757,7 +733,7 @@ fn durability_benchmarks(c: &mut Criterion) {
                 interval_ms: 100,
                 batch_size: 500,
             },
-            "async" => DurabilityMode::Async { interval_ms: 50 },
+            "none" => DurabilityMode::None,
             _ => unreachable!(),
         };
 

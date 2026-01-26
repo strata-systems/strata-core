@@ -1232,10 +1232,9 @@ mod architectural_rules {
         );
         assert_eq!(result.records[0].txn_id, 1);
 
-        // Test that Batched and Async modes create valid WAL files
+        // Test that Batched mode creates valid WAL files
         for (mode_name, mode) in [
             ("Batched", DurabilityMode::Batched { interval_ms: 100, batch_size: 1000 }),
-            ("Async", DurabilityMode::Async { interval_ms: 50 }),
         ] {
             let mode_dir = dir.path().join(mode_name.to_lowercase());
             std::fs::create_dir_all(&mode_dir).unwrap();
@@ -2232,16 +2231,15 @@ mod success_criteria_tests {
         #[test]
         fn wal_append_with_all_durability_modes() {
             for mode in [
-                DurabilityMode::InMemory,
+                DurabilityMode::None,
                 DurabilityMode::Batched { interval_ms: 100, batch_size: 1000 },
                 DurabilityMode::Strict,
-                DurabilityMode::Async { interval_ms: 50 },
             ] {
                 let dir = tempdir().unwrap();
                 let wal_dir = dir.path();
 
                 // Skip InMemory mode for WAL tests (no WAL in InMemory mode typically)
-                if matches!(mode, DurabilityMode::InMemory) {
+                if matches!(mode, DurabilityMode::None) {
                     continue;
                 }
 

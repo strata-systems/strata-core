@@ -193,18 +193,7 @@ impl WalWriter {
                     self.reset_sync_counters();
                 }
             }
-            DurabilityMode::Async { interval_ms } => {
-                // For now, treat as batched with just time interval
-                if self.last_sync_time.elapsed().as_millis() as u64 >= interval_ms
-                    || self.bytes_since_sync >= self.config.buffered_sync_bytes
-                {
-                    if let Some(ref mut segment) = self.segment {
-                        segment.sync()?;
-                    }
-                    self.reset_sync_counters();
-                }
-            }
-            DurabilityMode::InMemory => {
+            DurabilityMode::None => {
                 // No sync needed
             }
         }
@@ -343,7 +332,7 @@ mod tests {
     fn test_inmemory_mode_no_files() {
         let dir = tempdir().unwrap();
 
-        let mut writer = make_writer(dir.path(), DurabilityMode::InMemory);
+        let mut writer = make_writer(dir.path(), DurabilityMode::None);
         writer.append(&make_record(1)).unwrap();
         writer.append(&make_record(2)).unwrap();
 

@@ -11,17 +11,17 @@
 ///
 /// | Mode | Latency Target | Use Case |
 /// |------|----------------|----------|
-/// | InMemory | <3µs | Tests, caches, ephemeral data |
-/// | Batched/Async | <30µs | Production (balanced) |
+/// | None | <3µs | Tests, caches, ephemeral data |
+/// | Batched | <30µs | Production (balanced) |
 /// | Strict | ~2ms | Checkpoints, audit logs |
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DurabilityMode {
-    /// No persistence - all data lost on crash.
+    /// No durability - all data lost on crash.
     ///
     /// Bypasses WAL entirely. No fsync, no file I/O.
     /// Target latency: <3µs for engine/put_direct.
     /// Use case: Tests, caches, ephemeral data, development.
-    InMemory,
+    None,
 
     /// fsync after every commit (slow, maximum durability).
     ///
@@ -40,25 +40,14 @@ pub enum DurabilityMode {
         /// Maximum writes between fsyncs
         batch_size: usize,
     },
-
-    /// Background thread fsyncs periodically.
-    ///
-    /// Maximum speed, minimal latency. May lose up to interval_ms
-    /// of writes on crash. Best for agent workloads where speed
-    /// matters more than perfect durability.
-    /// Target latency: <30µs.
-    Async {
-        /// Time between fsyncs in milliseconds
-        interval_ms: u64,
-    },
 }
 
 impl DurabilityMode {
     /// Check if this mode requires WAL persistence.
     ///
-    /// Returns false for InMemory mode, true for all others.
+    /// Returns false for None mode, true for all others.
     pub fn requires_wal(&self) -> bool {
-        !matches!(self, DurabilityMode::InMemory)
+        !matches!(self, DurabilityMode::None)
     }
 
     /// Check if this mode requires immediate fsync on every commit.
@@ -71,10 +60,9 @@ impl DurabilityMode {
     /// Human-readable description of the mode.
     pub fn description(&self) -> &'static str {
         match self {
-            DurabilityMode::InMemory => "No persistence (fastest, all data lost on crash)",
+            DurabilityMode::None => "No durability (fastest, all data lost on crash)",
             DurabilityMode::Strict => "Sync fsync (safest, slowest)",
             DurabilityMode::Batched { .. } => "Batched fsync (balanced speed/safety)",
-            DurabilityMode::Async { .. } => "Async fsync (fast, may lose recent writes)",
         }
     }
 
@@ -109,8 +97,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_inmemory_mode() {
-        let mode = DurabilityMode::InMemory;
+    fn test_none_mode() {
+        let mode = DurabilityMode::None;
         assert!(!mode.requires_wal());
         assert!(!mode.requires_immediate_fsync());
     }
@@ -128,13 +116,6 @@ mod tests {
             interval_ms: 100,
             batch_size: 1000,
         };
-        assert!(mode.requires_wal());
-        assert!(!mode.requires_immediate_fsync());
-    }
-
-    #[test]
-    fn test_async_mode() {
-        let mode = DurabilityMode::Async { interval_ms: 50 };
         assert!(mode.requires_wal());
         assert!(!mode.requires_immediate_fsync());
     }
