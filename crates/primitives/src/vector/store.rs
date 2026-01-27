@@ -2521,16 +2521,10 @@ impl strata_storage::PrimitiveStorageExt for VectorStore {
         payload: &[u8],
     ) -> Result<(), strata_storage::PrimitiveExtError> {
         use crate::vector::wal::VectorWalReplayer;
-        use strata_durability::WalEntryType;
-        use std::convert::TryFrom;
-
-        let wal_entry_type = WalEntryType::try_from(entry_type).map_err(|_| {
-            strata_storage::PrimitiveExtError::UnknownEntryType(entry_type)
-        })?;
 
         let replayer = VectorWalReplayer::new(self);
         replayer
-            .apply(wal_entry_type, payload)
+            .apply(entry_type, payload)
             .map_err(|e| strata_storage::PrimitiveExtError::InvalidOperation(e.to_string()))
     }
 

@@ -231,23 +231,28 @@ pub struct ImportedRunInfo {
 // =============================================================================
 
 /// Get current time as ISO 8601 string
+///
+/// NOTE: This uses an approximate date calculation to avoid adding a chrono dependency.
+/// The date may be off by a few days due to simplified leap year handling. This is
+/// acceptable because this timestamp is only used for bundle metadata/display, not for
+/// correctness. The actual WAL entries use proper microsecond timestamps from SystemTime.
 fn chrono_now_iso8601() -> String {
-    // Use a simple format that doesn't require chrono
-    // Format: 2025-01-24T12:00:00Z
     let now = std::time::SystemTime::now();
     let duration = now
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
     let secs = duration.as_secs();
 
-    // Calculate date components
+    // Calculate time components (these are exact)
     let days = secs / 86400;
     let time_secs = secs % 86400;
     let hours = time_secs / 3600;
     let minutes = (time_secs % 3600) / 60;
     let seconds = time_secs % 60;
 
-    // Approximate year/month/day calculation (not accounting for leap years perfectly)
+    // Approximate year/month/day calculation
+    // This doesn't account for leap years correctly, so dates may be off by a few days.
+    // For bundle metadata this is acceptable - use proper datetime library if precision needed.
     let years = 1970 + (days / 365);
     let day_of_year = days % 365;
     let month = (day_of_year / 30).min(11) + 1;

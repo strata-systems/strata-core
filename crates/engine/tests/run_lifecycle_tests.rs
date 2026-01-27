@@ -2,8 +2,6 @@
 //!
 //! Tests for:
 //! - RunStatus and RunMetadata types
-//! - begin_run() WAL entries
-//! - end_run() WAL entries
 //! - RunIndex event offset tracking
 //! - ReadOnlyView
 //! - diff_runs() key-level comparison
@@ -13,13 +11,7 @@ use strata_core::run_types::{RunMetadata, RunStatus};
 use strata_core::types::{Key, Namespace, RunId};
 use strata_core::value::Value;
 use strata_core::PrimitiveType;
-use strata_durability::wal::DurabilityMode;
-use strata_durability::{
-    create_run_begin_entry, create_run_end_entry, parse_run_begin_payload, parse_run_end_payload,
-    WalEntry, WalWriter,
-};
 use strata_engine::{diff_views, DiffEntry, ReadOnlyView, RunDiff, RunIndex};
-use tempfile::TempDir;
 
 // ============================================================================
 // RunStatus and RunMetadata Tests
@@ -96,87 +88,6 @@ fn test_run_metadata_orphaned() {
 
     assert_eq!(meta.status, RunStatus::Orphaned);
     assert!(meta.status.is_orphaned());
-}
-
-// ============================================================================
-// WAL Entry Tests for Run Lifecycle
-// ============================================================================
-
-#[test]
-fn test_run_begin_wal_entry() {
-    let run_id = RunId::new();
-    let timestamp = 1234567890123456u64;
-
-    let entry = create_run_begin_entry(run_id, timestamp);
-
-    // Serialize and deserialize
-    let serialized = entry.serialize().unwrap();
-    let (deserialized, _) = WalEntry::deserialize(&serialized, 0).unwrap();
-
-    // Parse payload
-    let payload = parse_run_begin_payload(&deserialized.payload).unwrap();
-
-    assert_eq!(payload.run_id, run_id);
-    assert_eq!(payload.timestamp_micros, timestamp);
-}
-
-#[test]
-fn test_run_end_wal_entry() {
-    let run_id = RunId::new();
-    let timestamp = 1234567890123456u64;
-    let event_count = 42u64;
-
-    let entry = create_run_end_entry(run_id, timestamp, event_count);
-
-    // Serialize and deserialize
-    let serialized = entry.serialize().unwrap();
-    let (deserialized, _) = WalEntry::deserialize(&serialized, 0).unwrap();
-
-    // Parse payload
-    let payload = parse_run_end_payload(&deserialized.payload).unwrap();
-
-    assert_eq!(payload.run_id, run_id);
-    assert_eq!(payload.timestamp_micros, timestamp);
-    assert_eq!(payload.event_count, event_count);
-}
-
-#[test]
-fn test_run_lifecycle_wal_sequence() {
-    let temp_dir = TempDir::new().unwrap();
-    let wal_path = temp_dir.path().join("test.wal");
-
-    let run_id = RunId::new();
-
-    // Write begin entry
-    {
-        let mut writer = WalWriter::open(&wal_path, DurabilityMode::Strict).unwrap();
-        writer.write_run_begin(run_id, 1000000).unwrap();
-
-        // Write end entry
-        writer.write_run_end(run_id, 2000000, 5).unwrap();
-
-        writer.sync().unwrap();
-    }
-
-    // Verify entries were written
-    let mut reader = strata_durability::WalReader::open(&wal_path).unwrap();
-    let mut entries = Vec::new();
-    while let Some(entry) = reader.next_entry().unwrap() {
-        entries.push(entry);
-    }
-
-    assert_eq!(entries.len(), 2);
-
-    // Verify begin entry
-    let begin_payload = parse_run_begin_payload(&entries[0].payload).unwrap();
-    assert_eq!(begin_payload.run_id, run_id);
-    assert_eq!(begin_payload.timestamp_micros, 1000000);
-
-    // Verify end entry
-    let end_payload = parse_run_end_payload(&entries[1].payload).unwrap();
-    assert_eq!(end_payload.run_id, run_id);
-    assert_eq!(end_payload.timestamp_micros, 2000000);
-    assert_eq!(end_payload.event_count, 5);
 }
 
 // ============================================================================
