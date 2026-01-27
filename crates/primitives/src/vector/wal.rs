@@ -21,6 +21,19 @@ use strata_core::{EntityRef, RunId};
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
+// WAL Entry Type Constants (0x70-0x7F range)
+// ============================================================================
+
+/// WAL entry type for vector collection creation
+pub const VECTOR_COLLECTION_CREATE: u8 = 0x70;
+/// WAL entry type for vector collection deletion
+pub const VECTOR_COLLECTION_DELETE: u8 = 0x71;
+/// WAL entry type for vector upsert
+pub const VECTOR_UPSERT: u8 = 0x72;
+/// WAL entry type for vector deletion
+pub const VECTOR_DELETE: u8 = 0x73;
+
+// ============================================================================
 // WAL Payload Structs
 // ============================================================================
 
@@ -260,7 +273,6 @@ pub fn create_wal_delete(
 // ============================================================================
 
 use crate::vector::{DistanceMetric, VectorStore};
-use strata_durability::WalEntryType;
 
 /// Replayer for Vector WAL entries
 ///
@@ -279,9 +291,14 @@ impl<'a> VectorWalReplayer<'a> {
     /// Apply a WAL entry
     ///
     /// Deserializes the payload and calls the appropriate replay_* method.
-    pub fn apply(&self, entry_type: WalEntryType, payload: &[u8]) -> VectorResult<()> {
+    ///
+    /// # Arguments
+    ///
+    /// * `entry_type` - WAL entry type byte (0x70-0x73 for vector operations)
+    /// * `payload` - Serialized WAL payload
+    pub fn apply(&self, entry_type: u8, payload: &[u8]) -> VectorResult<()> {
         match entry_type {
-            WalEntryType::VectorCollectionCreate => {
+            VECTOR_COLLECTION_CREATE => {
                 let wal = WalVectorCollectionCreate::from_bytes(payload)?;
                 let config = VectorConfig {
                     dimension: wal.config.dimension,
@@ -295,12 +312,12 @@ impl<'a> VectorWalReplayer<'a> {
                 self.store
                     .replay_create_collection(wal.run_id, &wal.collection, config)
             }
-            WalEntryType::VectorCollectionDelete => {
+            VECTOR_COLLECTION_DELETE => {
                 let wal = WalVectorCollectionDelete::from_bytes(payload)?;
                 self.store
                     .replay_delete_collection(wal.run_id, &wal.collection)
             }
-            WalEntryType::VectorUpsert => {
+            VECTOR_UPSERT => {
                 let wal = WalVectorUpsert::from_bytes(payload)?;
                 self.store.replay_upsert(
                     wal.run_id,
@@ -312,7 +329,7 @@ impl<'a> VectorWalReplayer<'a> {
                     wal.source_ref,
                 )
             }
-            WalEntryType::VectorDelete => {
+            VECTOR_DELETE => {
                 let wal = WalVectorDelete::from_bytes(payload)?;
                 self.store.replay_delete(
                     wal.run_id,
@@ -322,7 +339,7 @@ impl<'a> VectorWalReplayer<'a> {
                 )
             }
             _ => {
-                // Not a vector entry type - skip
+                // Not a vector entry type - skip silently
                 Ok(())
             }
         }

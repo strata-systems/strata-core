@@ -26,7 +26,6 @@ pub mod run_bundle; // Portable execution artifacts (RunBundle)
 pub mod snapshot; // Snapshot writer and serialization
 pub mod snapshot_types; // Snapshot envelope and header types
 pub mod wal; // WALEntry types, File operations, Durability modes
-pub mod wal_entry_types; // WAL Entry Type Registry
 
 // Re-export commonly used types
 pub use encoding::{decode_entry, encode_entry};
@@ -43,7 +42,6 @@ pub use snapshot_types::{
     SnapshotInfo, SNAPSHOT_HEADER_SIZE, SNAPSHOT_MAGIC, SNAPSHOT_VERSION_1,
 };
 pub use wal::{DurabilityMode, WalCorruptionInfo, WalReadResult, WALEntry, WAL};
-pub use wal_entry_types::{WalEntryType, WalEntryTypeError};
 
 // RunBundle types
 pub use run_bundle::{
