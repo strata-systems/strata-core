@@ -387,10 +387,10 @@ pub fn validate_transactions(entries: &[WALEntry]) -> ValidationResult {
 /// ```ignore
 /// use strata_durability::recovery::replay_wal;
 /// use strata_durability::wal::{WAL, DurabilityMode};
-/// use strata_storage::UnifiedStore;
+/// use strata_storage::ShardedStore;
 ///
 /// let wal = WAL::open("data/wal/segment.wal", DurabilityMode::default())?;
-/// let storage = UnifiedStore::new();
+/// let storage = ShardedStore::new();
 /// let stats = replay_wal(&wal, &storage)?;
 /// println!("Applied {} transactions, {} writes", stats.txns_applied, stats.writes_applied);
 /// ```
@@ -421,11 +421,11 @@ pub fn replay_wal<S: Storage + ?Sized>(wal: &WAL, storage: &S) -> Result<ReplayS
 /// ```ignore
 /// use strata_durability::recovery::{replay_wal_with_options, ReplayOptions};
 /// use strata_durability::wal::{WAL, DurabilityMode};
-/// use strata_storage::UnifiedStore;
+/// use strata_storage::ShardedStore;
 /// use std::sync::Arc;
 ///
 /// let wal = WAL::open("data/wal/segment.wal", DurabilityMode::default())?;
-/// let storage = UnifiedStore::new();
+/// let storage = ShardedStore::new();
 ///
 /// let options = ReplayOptions {
 ///     filter_run_id: Some(my_run_id),
@@ -858,7 +858,7 @@ mod tests {
     use strata_core::value::Value;
     use strata_core::Timestamp;
     use strata_core::Storage; // Need trait in scope for .get() and .current_version()
-    use strata_storage::UnifiedStore; // Used in tests (still implements Storage)
+    use strata_storage::ShardedStore; // Used in tests (still implements Storage)
     use tempfile::TempDir;
 
     /// Helper to get current timestamp
@@ -872,7 +872,7 @@ mod tests {
         let wal_path = temp_dir.path().join("empty.wal");
 
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
 
         let stats = replay_wal(&wal, &store).unwrap();
 
@@ -930,7 +930,7 @@ mod tests {
 
         // Replay to storage
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
         let stats = replay_wal(&wal, &store).unwrap();
 
         assert_eq!(stats.txns_applied, 1);
@@ -988,7 +988,7 @@ mod tests {
 
         // Replay to storage
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
         let stats = replay_wal(&wal, &store).unwrap();
 
         assert_eq!(stats.txns_applied, 0);
@@ -1038,7 +1038,7 @@ mod tests {
 
         // Replay to storage
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
         let stats = replay_wal(&wal, &store).unwrap();
 
         assert_eq!(stats.txns_applied, 0);
@@ -1121,7 +1121,7 @@ mod tests {
 
         // Replay
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
         let stats = replay_wal(&wal, &store).unwrap();
 
         assert_eq!(stats.txns_applied, 2); // Txn 1 and 3
@@ -1189,7 +1189,7 @@ mod tests {
 
         // Replay
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
         let stats = replay_wal(&wal, &store).unwrap();
 
         assert_eq!(stats.txns_applied, 1);
@@ -1254,7 +1254,7 @@ mod tests {
 
         // Replay
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
         let stats = replay_wal(&wal, &store).unwrap();
 
         assert_eq!(stats.final_version, 300);
@@ -1571,7 +1571,7 @@ mod tests {
 
         // Replay with filter for run_id_1 only
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
 
         let options = ReplayOptions {
             filter_run_id: Some(run_id_1),
@@ -1665,7 +1665,7 @@ mod tests {
 
         // Replay stopping at version 25 (should include txn 1 and 2, not 3)
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
 
         let options = ReplayOptions {
             stop_at_version: Some(25),
@@ -1730,7 +1730,7 @@ mod tests {
 
         // Replay with progress callback
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
 
         let progress_log: Arc<Mutex<Vec<ReplayProgress>>> = Arc::new(Mutex::new(Vec::new()));
         let log_clone = progress_log.clone();
@@ -1875,7 +1875,7 @@ mod tests {
 
         // Replay with both filters
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
 
         let options = ReplayOptions {
             filter_run_id: Some(run_id_target),
@@ -1974,7 +1974,7 @@ mod tests {
 
         // Replay
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
         let stats = replay_wal(&wal, &store).unwrap();
 
         // Both transactions should be applied
@@ -2062,7 +2062,7 @@ mod tests {
 
         // Replay
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
         let stats = replay_wal(&wal, &store).unwrap();
 
         // Run A should be applied, Run B discarded
@@ -2124,7 +2124,7 @@ mod tests {
 
         // Replay
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
         let stats = replay_wal(&wal, &store).unwrap();
 
         assert_eq!(stats.writes_applied, 1);
@@ -2208,7 +2208,7 @@ mod tests {
 
         // Replay
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
         let stats = replay_wal(&wal, &store).unwrap();
 
         assert_eq!(stats.txns_applied, 1);
@@ -2302,7 +2302,7 @@ mod tests {
 
         // Replay
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
         let stats = replay_wal(&wal, &store).unwrap();
 
         assert_eq!(stats.txns_applied, 3);
@@ -2365,7 +2365,7 @@ mod tests {
 
         // Replay to storage (simulating recovery)
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
         let stats = replay_wal(&wal, &store).unwrap();
 
         assert_eq!(stats.txns_applied, 1);
@@ -2439,7 +2439,7 @@ mod tests {
 
         // Replay
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
         let stats = replay_wal(&wal, &store).unwrap();
 
         assert_eq!(stats.txns_applied, 2);
@@ -2513,7 +2513,7 @@ mod tests {
 
         // Replay
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
         let stats = replay_wal(&wal, &store).unwrap();
 
         assert_eq!(stats.txns_applied, 2);
@@ -2579,7 +2579,7 @@ mod tests {
 
         // Replay
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
         let stats = replay_wal(&wal, &store).unwrap();
 
         assert_eq!(stats.txns_applied, 2);
@@ -2625,7 +2625,7 @@ mod tests {
 
         // Replay
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
         let stats = replay_wal(&wal, &store).unwrap();
 
         // Transaction should be discarded (incomplete)
@@ -2670,7 +2670,7 @@ mod tests {
         }
 
         // First replay
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
         {
             let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
             let stats = replay_wal(&wal, &store).unwrap();
@@ -2745,7 +2745,7 @@ mod tests {
 
         // Replay
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
+        let store = ShardedStore::new();
         let stats = replay_wal(&wal, &store).unwrap();
 
         assert_eq!(stats.txns_applied, 1);

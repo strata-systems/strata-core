@@ -18,7 +18,8 @@ use strata_core::Timestamp;
 use strata_core::Storage;
 use strata_durability::recovery::replay_wal;
 use strata_durability::wal::{DurabilityMode, WALEntry, WAL};
-use strata_storage::UnifiedStore;
+use strata_storage::ShardedStore;
+use std::sync::Arc;
 use std::collections::HashSet;
 use tempfile::TempDir;
 
@@ -83,8 +84,8 @@ fn test_recovery_deterministic_r1() {
 
     for iteration in 0..5 {
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
-        let stats = replay_wal(&wal, &store).unwrap();
+        let store = Arc::new(ShardedStore::new());
+        let stats = replay_wal(&wal, &*store).unwrap();
 
         // Collect current state
         let mut current_state: Vec<(String, Value)> = Vec::new();
@@ -170,8 +171,8 @@ fn test_recovery_deterministic_ordering_r1() {
     // Recover multiple times - final value must always be the same
     for iteration in 0..3 {
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
-        replay_wal(&wal, &store).unwrap();
+        let store = Arc::new(ShardedStore::new());
+        replay_wal(&wal, &*store).unwrap();
 
         let key = Key::new_kv(ns.clone(), "counter");
         let result = store.get(&key).unwrap().unwrap();
@@ -234,13 +235,13 @@ fn test_recovery_idempotent_r2() {
 
     // First recovery
     let wal1 = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store1 = UnifiedStore::new();
-    let stats1 = replay_wal(&wal1, &store1).unwrap();
+    let store1 = Arc::new(ShardedStore::new());
+    let stats1 = replay_wal(&wal1, &*store1).unwrap();
 
     // Second recovery (simulating "crash" after first recovery and re-recovery)
     let wal2 = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store2 = UnifiedStore::new();
-    let stats2 = replay_wal(&wal2, &store2).unwrap();
+    let store2 = Arc::new(ShardedStore::new());
+    let stats2 = replay_wal(&wal2, &*store2).unwrap();
 
     // Stats must be identical
     assert_eq!(stats1.txns_applied, stats2.txns_applied);
@@ -325,8 +326,8 @@ fn test_recovery_idempotent_after_partial_r2() {
     // Recovery multiple times must produce same state
     for iteration in 0..3 {
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
-        let stats = replay_wal(&wal, &store).unwrap();
+        let store = Arc::new(ShardedStore::new());
+        let stats = replay_wal(&wal, &*store).unwrap();
 
         // Verify committed data exists
         for i in 0..5u64 {
@@ -446,8 +447,8 @@ fn test_recovery_prefix_consistent_r3() {
 
     // Recovery
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Transaction 1: ALL keys must exist (committed)
     let tx1_count = (0..3)
@@ -568,8 +569,8 @@ fn test_recovery_multi_operation_atomic_r3() {
 
     // Recovery
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Committed transaction: ALL keys should exist
     let kv_key1 = Key::new_kv(ns.clone(), "kv_key1");
@@ -648,8 +649,8 @@ fn test_recovery_never_invents_data_r4() {
 
     // Recovery
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    replay_wal(&wal, &*store).unwrap();
 
     // Verify only known keys exist
     for i in 0..50 {
@@ -758,8 +759,8 @@ fn test_recovery_no_uncommitted_data_r4() {
 
     // Recovery
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Only committed data exists
     assert!(
@@ -838,8 +839,8 @@ fn test_recovery_never_drops_committed_r5() {
 
     // Recovery
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // EVERY committed key must be present
     for (i, key_name) in committed_keys.iter().enumerate() {
@@ -921,8 +922,8 @@ fn test_recovery_preserves_committed_deletes_r5() {
 
     // Recovery
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Key should NOT exist (delete was committed)
     let key = Key::new_kv(ns.clone(), "to_delete");
@@ -996,8 +997,8 @@ fn test_recovery_drops_uncommitted_r6() {
 
     // Recovery
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Committed data exists
     assert!(
@@ -1060,8 +1061,8 @@ fn test_recovery_drops_aborted_r6() {
 
     // Recovery
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // All aborted data should be gone
     for i in 0..10 {
@@ -1179,8 +1180,8 @@ fn test_all_recovery_invariants_combined() {
     // Recover multiple times (R1: deterministic, R2: idempotent)
     for iteration in 0..3 {
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
-        let stats = replay_wal(&wal, &store).unwrap();
+        let store = Arc::new(ShardedStore::new());
+        let stats = replay_wal(&wal, &*store).unwrap();
 
         // R4: Only expected keys exist
         for key_name in &expected_keys {

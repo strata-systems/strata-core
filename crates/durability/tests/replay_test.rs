@@ -13,7 +13,8 @@ use strata_core::Timestamp;
 use strata_core::Storage; // Need trait in scope for .get() and .current_version()
 use strata_durability::recovery::replay_wal;
 use strata_durability::wal::{DurabilityMode, WALEntry, WAL};
-use strata_storage::UnifiedStore;
+use strata_storage::ShardedStore;
+use std::sync::Arc;
 use tempfile::TempDir;
 
 /// Helper to get current timestamp
@@ -68,8 +69,8 @@ fn test_replay_single_committed_transaction() {
 
     // Replay to empty storage
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Verify stats
     assert_eq!(stats.txns_applied, 1);
@@ -119,8 +120,8 @@ fn test_replay_single_incomplete_transaction() {
 
     // Replay to empty storage
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Verify stats - transaction should be discarded
     assert_eq!(stats.txns_applied, 0);
@@ -171,8 +172,8 @@ fn test_replay_multiple_committed_transactions() {
 
     // Replay
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Verify stats
     assert_eq!(stats.txns_applied, 3);
@@ -286,8 +287,8 @@ fn test_replay_mixed_committed_and_incomplete() {
 
     // Replay
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Verify stats
     assert_eq!(stats.txns_applied, 2); // Txn 1 and 3
@@ -372,8 +373,8 @@ fn test_replay_preserves_exact_versions() {
 
     // Replay
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Verify final version reflects max from WAL
     assert_eq!(stats.final_version, 3000);
@@ -452,8 +453,8 @@ fn test_replay_version_ordering_preserved() {
 
     // Replay
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Global version should be the max
     assert_eq!(stats.final_version, 50);
@@ -530,8 +531,8 @@ fn test_replay_write_then_delete_same_key() {
 
     // Replay
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Verify stats
     assert_eq!(stats.txns_applied, 1);
@@ -574,8 +575,8 @@ fn test_replay_delete_nonexistent_key() {
 
     // Replay should succeed (deleting non-existent key is fine)
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Delete was applied
     assert_eq!(stats.txns_applied, 1);
@@ -637,8 +638,8 @@ fn test_replay_multiple_writes_same_key() {
 
     // Replay
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // All 3 writes were applied
     assert_eq!(stats.writes_applied, 3);
@@ -677,8 +678,8 @@ fn test_replay_empty_transaction() {
 
     // Replay
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Empty transaction still counts as applied
     assert_eq!(stats.txns_applied, 1);
@@ -743,8 +744,8 @@ fn test_replay_different_value_types() {
 
     // Replay
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     assert_eq!(stats.writes_applied, 4);
 
@@ -818,8 +819,8 @@ fn test_replay_deterministic_order() {
     // Replay multiple times - should always get same result
     for _ in 0..3 {
         let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-        let store = UnifiedStore::new();
-        let stats = replay_wal(&wal, &store).unwrap();
+        let store = Arc::new(ShardedStore::new());
+        let stats = replay_wal(&wal, &*store).unwrap();
 
         assert_eq!(stats.txns_applied, 5);
         assert_eq!(store.current_version(), 5);
@@ -889,8 +890,8 @@ fn test_replay_twenty_sequential_transactions() {
 
     // Replay to storage
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Verify all transactions were replayed
     assert_eq!(
@@ -965,8 +966,8 @@ fn test_replay_many_sequential_transactions_same_run() {
 
     // Replay
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     assert_eq!(
         stats.txns_applied, NUM_TRANSACTIONS as usize,
@@ -1064,8 +1065,8 @@ fn test_replay_appended_wal_multiple_sessions() {
 
     // Replay to storage
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // This is the assertion that was failing: only 10 of 20 were replayed
     assert_eq!(

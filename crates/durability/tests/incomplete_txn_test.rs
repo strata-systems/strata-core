@@ -13,7 +13,8 @@ use strata_core::Timestamp;
 use strata_core::Storage; // Need trait in scope for .get() and .current_version()
 use strata_durability::recovery::replay_wal;
 use strata_durability::wal::{DurabilityMode, WALEntry, WAL};
-use strata_storage::UnifiedStore;
+use strata_storage::ShardedStore;
+use std::sync::Arc;
 use tempfile::TempDir;
 
 /// Helper to get current timestamp
@@ -67,8 +68,8 @@ fn test_discard_incomplete_transaction() {
 
     // Replay
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Verify: discarded_txns (incomplete_txns) = 1
     assert_eq!(stats.txns_applied, 0);
@@ -112,8 +113,8 @@ fn test_discard_orphaned_entries() {
 
     // Replay
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Verify: orphaned_entries = 2
     assert_eq!(stats.txns_applied, 0);
@@ -177,8 +178,8 @@ fn test_mixed_committed_and_incomplete() {
 
     // Replay
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Verify: txns_applied = 1, discarded_txns = 1
     assert_eq!(stats.txns_applied, 1);
@@ -230,8 +231,8 @@ fn test_aborted_transactions_discarded() {
 
     // Replay
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Verify: aborted_txns = 1
     assert_eq!(stats.txns_applied, 0);
@@ -354,8 +355,8 @@ fn test_multiple_incomplete_transactions() {
 
     // Replay
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Verify counts
     assert_eq!(stats.txns_applied, 2); // txn 2 and 5
@@ -418,8 +419,8 @@ fn test_orphaned_entries_with_valid_transactions() {
 
     // Replay
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Verify
     assert_eq!(stats.txns_applied, 1);
@@ -492,8 +493,8 @@ fn test_interleaved_transactions_different_run_ids() {
 
     // Replay
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Run 2 should be applied, Run 1 should be discarded
     assert_eq!(stats.txns_applied, 1);
@@ -526,8 +527,8 @@ fn test_empty_incomplete_transaction() {
 
     // Replay
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // Should be counted as incomplete
     assert_eq!(stats.txns_applied, 0);
@@ -569,8 +570,8 @@ fn test_crash_during_large_transaction() {
 
     // Replay
     let wal = WAL::open(&wal_path, DurabilityMode::Strict).unwrap();
-    let store = UnifiedStore::new();
-    let stats = replay_wal(&wal, &store).unwrap();
+    let store = Arc::new(ShardedStore::new());
+    let stats = replay_wal(&wal, &*store).unwrap();
 
     // All 100 writes should be discarded
     assert_eq!(stats.txns_applied, 0);

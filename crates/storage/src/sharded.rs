@@ -633,7 +633,6 @@ impl ShardedStore {
         ShardedSnapshot {
             version: self.version.load(Ordering::Acquire),
             store: Arc::clone(self),
-            cache: parking_lot::RwLock::new(FxHashMap::default()),
         }
     }
 
@@ -682,11 +681,18 @@ impl std::fmt::Debug for ShardedStore {
 // ShardedSnapshot
 // ============================================================================
 
-/// Snapshot of ShardedStore at a point in time
+/// Lightweight snapshot view for MVCC reads
 ///
-/// A snapshot captures:
+/// ShardedSnapshot is a thin wrapper that captures:
 /// - The version number at snapshot time
 /// - An Arc reference to the underlying store
+///
+/// All reads delegate to `store.get_versioned(key, version)`, which walks
+/// the version chain to find the correct value. This provides:
+/// - O(1) snapshot creation (just capture version + Arc clone)
+/// - O(1) snapshot cloning (derive Clone)
+/// - No unbounded memory growth (no per-snapshot cache)
+/// - MVCC isolation via the store's version chain
 ///
 /// # Performance
 ///
@@ -695,44 +701,16 @@ impl std::fmt::Debug for ShardedStore {
 /// - Atomic load: ~1-5ns
 /// - Total: well under 500ns
 ///
-/// # MVCC Semantics
-///
-/// For true MVCC, reads would filter by version. The current implementation
-/// provides a stable reference for consistent reads within a transaction.
-/// Full MVCC version filtering can be added if needed.
-///
 /// # Thread Safety
 ///
 /// ShardedSnapshot is Send + Sync since it only holds Arc<ShardedStore>.
 /// Multiple snapshots can exist concurrently without blocking.
-///
-/// # Copy-on-Read Caching
-///
-/// To maintain snapshot isolation when concurrent transactions write to the
-/// same keys, the snapshot caches values on first read. This ensures that
-/// repeated reads of the same key return the same value, even if the key
-/// is overwritten after the snapshot was created.
+#[derive(Clone)]
 pub struct ShardedSnapshot {
     /// Version captured at snapshot time
     version: u64,
     /// Reference to the underlying store
     store: Arc<ShardedStore>,
-    /// Cache of read values for snapshot isolation
-    /// Using parking_lot::RwLock for interior mutability since SnapshotView::get takes &self
-    /// parking_lot::RwLock doesn't poison on panic, preventing cascade failures
-    cache: parking_lot::RwLock<FxHashMap<Key, Option<VersionedValue>>>,
-}
-
-impl Clone for ShardedSnapshot {
-    fn clone(&self) -> Self {
-        Self {
-            version: self.version,
-            store: Arc::clone(&self.store),
-            // Clone the cache contents for independent snapshot views
-            // parking_lot::RwLock doesn't need .unwrap() - it doesn't poison
-            cache: parking_lot::RwLock::new(self.cache.read().clone()),
-        }
-    }
 }
 
 impl ShardedSnapshot {
@@ -756,33 +734,140 @@ impl ShardedSnapshot {
         SnapshotView::get(self, key).ok().flatten().is_some()
     }
 
-    /// List all entries for a run
+    /// List all entries for a run at snapshot version
+    ///
+    /// Returns entries as they existed at the snapshot version,
+    /// filtering out expired values and tombstones.
     pub fn list_run(&self, run_id: &RunId) -> Vec<(Key, VersionedValue)> {
-        self.store.list_run(run_id)
+        self.store
+            .shards
+            .get(run_id)
+            .map(|shard| {
+                let mut results: Vec<_> = shard
+                    .data
+                    .iter()
+                    .filter_map(|(k, chain)| {
+                        chain.get_at_version(self.version).and_then(|sv| {
+                            if !sv.is_expired() && !sv.versioned().value.is_null() {
+                                Some((k.clone(), sv.versioned().clone()))
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                    .collect();
+                results.sort_by(|(a, _), (b, _)| a.cmp(b));
+                results
+            })
+            .unwrap_or_default()
     }
 
-    /// List entries matching a prefix
+    /// List entries matching a prefix at snapshot version
+    ///
+    /// Returns entries as they existed at the snapshot version,
+    /// filtering out expired values and tombstones.
     pub fn list_by_prefix(&self, prefix: &Key) -> Vec<(Key, VersionedValue)> {
-        self.store.list_by_prefix(prefix)
+        let run_id = prefix.namespace.run_id;
+        self.store
+            .shards
+            .get(&run_id)
+            .map(|shard| {
+                let mut results: Vec<_> = shard
+                    .data
+                    .iter()
+                    .filter(|(k, _)| k.starts_with(prefix))
+                    .filter_map(|(k, chain)| {
+                        chain.get_at_version(self.version).and_then(|sv| {
+                            if !sv.is_expired() && !sv.versioned().value.is_null() {
+                                Some((k.clone(), sv.versioned().clone()))
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                    .collect();
+                results.sort_by(|(a, _), (b, _)| a.cmp(b));
+                results
+            })
+            .unwrap_or_default()
     }
 
-    /// List entries of a specific type
+    /// List entries of a specific type at snapshot version
+    ///
+    /// Returns entries as they existed at the snapshot version,
+    /// filtering out expired values and tombstones.
     pub fn list_by_type(
         &self,
         run_id: &RunId,
         type_tag: strata_core::types::TypeTag,
     ) -> Vec<(Key, VersionedValue)> {
-        self.store.list_by_type(run_id, type_tag)
+        self.store
+            .shards
+            .get(run_id)
+            .map(|shard| {
+                let mut results: Vec<_> = shard
+                    .data
+                    .iter()
+                    .filter(|(k, _)| k.type_tag == type_tag)
+                    .filter_map(|(k, chain)| {
+                        chain.get_at_version(self.version).and_then(|sv| {
+                            if !sv.is_expired() && !sv.versioned().value.is_null() {
+                                Some((k.clone(), sv.versioned().clone()))
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                    .collect();
+                results.sort_by(|(a, _), (b, _)| a.cmp(b));
+                results
+            })
+            .unwrap_or_default()
     }
 
-    /// Get count of entries for a run
+    /// Get count of entries for a run at snapshot version
+    ///
+    /// Counts only entries that existed at the snapshot version
+    /// (excludes tombstones and expired values).
     pub fn run_entry_count(&self, run_id: &RunId) -> usize {
-        self.store.run_entry_count(run_id)
+        self.store
+            .shards
+            .get(run_id)
+            .map(|shard| {
+                shard
+                    .data
+                    .iter()
+                    .filter(|(_, chain)| {
+                        chain
+                            .get_at_version(self.version)
+                            .is_some_and(|sv| !sv.is_expired() && !sv.versioned().value.is_null())
+                    })
+                    .count()
+            })
+            .unwrap_or(0)
     }
 
-    /// Get total entries across all runs
+    /// Get total entries across all runs at snapshot version
+    ///
+    /// Counts only entries that existed at the snapshot version
+    /// (excludes tombstones and expired values).
     pub fn total_entries(&self) -> usize {
-        self.store.total_entries()
+        self.store
+            .shards
+            .iter()
+            .map(|entry| {
+                entry
+                    .value()
+                    .data
+                    .iter()
+                    .filter(|(_, chain)| {
+                        chain
+                            .get_at_version(self.version)
+                            .is_some_and(|sv| !sv.is_expired() && !sv.versioned().value.is_null())
+                    })
+                    .count()
+            })
+            .sum()
     }
 
     /// Get number of runs (shards)
@@ -1007,40 +1092,11 @@ use strata_core::traits::SnapshotView;
 impl SnapshotView for ShardedSnapshot {
     /// Get value from snapshot with MVCC version filtering
     ///
-    /// Returns value at or before the snapshot version.
-    /// Caches the result on first read for performance.
+    /// Delegates to `store.get_versioned(key, version)` which walks the
+    /// version chain to find the correct value at the snapshot version.
     fn get(&self, key: &Key) -> Result<Option<VersionedValue>> {
-        // Fast path: check cache first (read lock)
-        // parking_lot::RwLock doesn't need .unwrap() - it doesn't poison
-        {
-            let cache = self.cache.read();
-            if let Some(cached) = cache.get(key) {
-                return Ok(cached.clone());
-            }
-        }
-
-        // Slow path: read from store's version chain and cache (write lock)
-        let run_id = key.namespace.run_id;
-        let result = self.store.shards.get(&run_id).and_then(|shard| {
-            shard.data.get(key).and_then(|chain| {
-                chain.get_at_version(self.version).and_then(|sv| {
-                    // Filter out expired values and tombstones
-                    if !sv.is_expired() && !sv.versioned().value.is_null() {
-                        Some(sv.versioned().clone())
-                    } else {
-                        None
-                    }
-                })
-            })
-        });
-
-        // Cache the result (including None for missing keys)
-        {
-            let mut cache = self.cache.write();
-            cache.insert(key.clone(), result.clone());
-        }
-
-        Ok(result)
+        // Delegate to Storage::get_versioned for MVCC lookup
+        Storage::get_versioned(&*self.store, key, self.version)
     }
 
     /// Scan keys with prefix from snapshot
@@ -1697,15 +1753,18 @@ mod tests {
         let store = Arc::new(ShardedStore::new());
         let run_id = RunId::new();
 
-        // Put some data
+        // Put some data at version 1
         for i in 0..5 {
             let key = create_test_key(run_id, &format!("key{}", i));
             store.put(key, create_stored_value(Value::Int(i), 1));
         }
 
+        // Advance store version to 1 so snapshot will see the data
+        store.next_version();
         let snapshot = store.snapshot();
+        assert_eq!(snapshot.version(), 1);
 
-        // list_run works
+        // list_run works - sees data at version 1
         let results = snapshot.list_run(&run_id);
         assert_eq!(results.len(), 5);
 
