@@ -56,15 +56,9 @@ pub enum RunError {
     #[error("WAL error: {0}")]
     Wal(String),
 
-    /// Storage error
+    /// Storage error (preserves original error for chain)
     #[error("Storage error: {0}")]
-    Storage(String),
-}
-
-impl From<strata_core::StrataError> for RunError {
-    fn from(e: strata_core::StrataError) -> Self {
-        RunError::Storage(e.to_string())
-    }
+    Storage(#[from] StrataError),
 }
 
 // Conversion to StrataError
@@ -84,10 +78,7 @@ impl From<RunError> for StrataError {
                 message: format!("WAL error: {}", msg),
                 source: None,
             },
-            RunError::Storage(msg) => StrataError::Storage {
-                message: msg,
-                source: None,
-            },
+            RunError::Storage(e) => e, // Preserve original error
         }
     }
 }
@@ -1073,7 +1064,11 @@ mod tests {
         let strata_error: StrataError = error.into();
         assert!(matches!(strata_error, StrataError::Storage { .. }));
 
-        let error = RunError::Storage("test".to_string());
+        let storage_err = StrataError::Storage {
+            message: "test".to_string(),
+            source: None,
+        };
+        let error = RunError::Storage(storage_err);
         let strata_error: StrataError = error.into();
         assert!(matches!(strata_error, StrataError::Storage { .. }));
     }

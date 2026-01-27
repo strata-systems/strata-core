@@ -384,9 +384,20 @@ impl Drop for BufferedDurability {
             }
         }
 
-        // Note: We don't call flush_sync() in Drop because it could fail
-        // and Drop can't return errors. The explicit shutdown() should be
-        // called for guaranteed flush.
+        // Best-effort final flush - the background thread should have done this,
+        // but we try again to catch any writes that happened after thread shutdown.
+        // We can't return errors from Drop, so we log failures.
+        let remaining = self.pending_writes.load(Ordering::Relaxed);
+        if remaining > 0 {
+            if let Err(e) = self.flush_sync() {
+                error!(
+                    pending_writes = remaining,
+                    error = %e,
+                    "BufferedDurability failed to flush pending writes on drop - \
+                     data may be lost. Call shutdown() explicitly for guaranteed durability."
+                );
+            }
+        }
     }
 }
 

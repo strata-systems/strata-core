@@ -510,7 +510,7 @@ impl Database {
 
     /// Open database with specific durability mode
     ///
-    /// Allows selecting between Strict, Batched, or Async durability modes.
+    /// Allows selecting between None, Strict, or Batched durability modes.
     ///
     /// # Arguments
     ///
@@ -1100,6 +1100,23 @@ impl Database {
     /// # Contract
     /// Returns the commit version (u64) assigned to all writes in this transaction.
     pub fn commit_transaction(&self, txn: &mut TransactionContext) -> Result<u64> {
+        self.commit_internal(txn, self.durability_mode)
+    }
+
+    /// Internal commit implementation shared by commit_transaction and commit_with_durability
+    ///
+    /// This method handles the full commit sequence:
+    /// 1. Acquire per-run commit lock
+    /// 2. Validate transaction
+    /// 3. Allocate commit version
+    /// 4. Write to WAL (if required by durability mode)
+    /// 5. Apply to storage
+    /// 6. Mark committed
+    fn commit_internal(
+        &self,
+        txn: &mut TransactionContext,
+        durability: DurabilityMode,
+    ) -> Result<u64> {
         // Acquire per-run commit lock to serialize validate → WAL → storage sequence
         // This prevents CAS race conditions where multiple transactions pass validation
         // before any of them writes to storage.
@@ -1126,32 +1143,39 @@ impl Database {
         // 2. Allocate commit version
         let commit_version = self.coordinator.allocate_commit_version();
 
-        // 3. Write to WAL (skip for InMemory mode and ephemeral databases)
-        if self.durability_mode.requires_wal() && self.wal.is_some() {
+        // 3. Write to WAL (skip for None mode and ephemeral databases)
+        if durability.requires_wal() && self.wal.is_some() {
             let mut wal = self.wal.as_ref().unwrap().lock();
-            let mut wal_writer = TransactionWALWriter::new(&mut wal, txn.txn_id, txn.run_id);
+            {
+                let mut wal_writer = TransactionWALWriter::new(&mut wal, txn.txn_id, txn.run_id);
 
-            // Write BeginTxn
-            wal_writer.write_begin()?;
+                // Write BeginTxn
+                wal_writer.write_begin()?;
 
-            // Write all operations (puts, deletes, and CAS)
-            for (key, value) in &txn.write_set {
-                wal_writer.write_put(key.clone(), value.clone(), commit_version)?;
-            }
-            for key in &txn.delete_set {
-                wal_writer.write_delete(key.clone(), commit_version)?;
-            }
-            // CAS operations are written as puts after validation
-            for cas_op in &txn.cas_set {
-                wal_writer.write_put(
-                    cas_op.key.clone(),
-                    cas_op.new_value.clone(),
-                    commit_version,
-                )?;
+                // Write all operations (puts, deletes, and CAS)
+                for (key, value) in &txn.write_set {
+                    wal_writer.write_put(key.clone(), value.clone(), commit_version)?;
+                }
+                for key in &txn.delete_set {
+                    wal_writer.write_delete(key.clone(), commit_version)?;
+                }
+                // CAS operations are written as puts after validation
+                for cas_op in &txn.cas_set {
+                    wal_writer.write_put(
+                        cas_op.key.clone(),
+                        cas_op.new_value.clone(),
+                        commit_version,
+                    )?;
+                }
+
+                // Write CommitTxn (this also flushes to OS buffer)
+                wal_writer.write_commit()?;
             }
 
-            // Write CommitTxn (this also flushes)
-            wal_writer.write_commit()?;
+            // Strict mode: fsync immediately to ensure data is on disk
+            if durability.requires_immediate_fsync() {
+                wal.fsync()?;
+            }
         }
 
         // 4. Apply to storage atomically
@@ -1272,79 +1296,8 @@ impl Database {
         txn: &mut TransactionContext,
         durability: DurabilityMode,
     ) -> Result<()> {
-        // Acquire per-run commit lock
-        let run_lock = self
-            .commit_locks
-            .entry(txn.run_id)
-            .or_insert_with(|| ParkingMutex::new(()));
-        let _commit_guard = run_lock.lock();
-
-        // 1. Validate
-        txn.mark_validating()?;
-        let validation = validate_transaction(txn, self.storage.as_ref());
-
-        if !validation.is_valid() {
-            let _ = txn.mark_aborted(format!("Validation failed: {:?}", validation.conflicts));
-            self.coordinator.record_abort();
-            return Err(StrataError::conflict(format!(
-                "Conflicts: {:?}",
-                validation.conflicts
-            )));
-        }
-
-        // 2. Allocate commit version
-        let commit_version = self.coordinator.allocate_commit_version();
-
-        // 3. Write to WAL based on durability mode
-        // InMemory mode and ephemeral databases skip WAL entirely
-        if durability.requires_wal() && self.wal.is_some() {
-            let mut wal = self.wal.as_ref().unwrap().lock();
-            {
-                let mut wal_writer = TransactionWALWriter::new(&mut wal, txn.txn_id, txn.run_id);
-                wal_writer.write_begin()?;
-
-                for (key, value) in &txn.write_set {
-                    wal_writer.write_put(key.clone(), value.clone(), commit_version)?;
-                }
-                for key in &txn.delete_set {
-                    wal_writer.write_delete(key.clone(), commit_version)?;
-                }
-                for cas_op in &txn.cas_set {
-                    wal_writer.write_put(
-                        cas_op.key.clone(),
-                        cas_op.new_value.clone(),
-                        commit_version,
-                    )?;
-                }
-                wal_writer.write_commit()?;
-            }
-
-            // Strict mode: fsync immediately
-            if durability.requires_immediate_fsync() {
-                wal.fsync()?;
-            }
-        }
-
-        // 4. Apply to storage
-        let mut all_writes: Vec<_> = txn
-            .write_set
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-
-        for cas_op in &txn.cas_set {
-            all_writes.push((cas_op.key.clone(), cas_op.new_value.clone()));
-        }
-
-        let all_deletes: Vec<_> = txn.delete_set.iter().cloned().collect();
-
-        self.storage
-            .apply_batch(&all_writes, &all_deletes, commit_version)?;
-
-        // Mark committed
-        txn.mark_committed()?;
-        self.coordinator.record_commit();
-
+        // Delegate to commit_internal, discarding the commit version
+        self.commit_internal(txn, durability)?;
         Ok(())
     }
 

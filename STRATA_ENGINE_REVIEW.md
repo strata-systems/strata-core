@@ -8,61 +8,13 @@ Thorough expert review of the `strata-engine` crate looking for inconsistencies,
 
 ## Critical Architectural Issues
 
-### 1. Uses Legacy WAL System (Continuation from Lower Layers)
+### ~~1. Uses Legacy WAL System~~ - CLOSED (Not an Issue)
 
-**Location**: `database.rs:33`
+**Status**: CLOSED - The WALEntry system in strata-durability IS the production WAL system, not a legacy system. The WalRecord in strata-storage is a separate lower-level format used for storage compaction, not a competing WAL system. No migration needed.
 
-```rust
-use strata_durability::wal::{DurabilityMode, WAL};
-```
+### ~~2. JSON and Vector Operations Are Stubs~~ - FIXED
 
-The engine crate, like the concurrency crate, uses the Legacy WAL system:
-
-| Layer | WAL System | Impact |
-|-------|------------|--------|
-| Storage | WalRecord (own format) | Unused by engine |
-| Durability | Legacy WALEntry (bincode) | Used by engine |
-| Durability | Modern WalEntry (CRC32) | Unused |
-| Concurrency | Legacy WALEntry | Used by engine |
-| Engine | Legacy WALEntry | Locked in |
-
-**Impact:**
-- Entire transaction stack is tied to deprecated format
-- Cannot migrate to Modern WAL without updating engine + concurrency + durability
-- RunBundle portability depends on Legacy format
-
-### 2. JSON and Vector Operations Are Stubs
-
-**Location**: `transaction/context.rs`
-
-The `Transaction` wrapper implementing `TransactionOps` has stub implementations for JSON and Vector operations:
-
-```rust
-// Json operations - ALL return unimplemented!
-fn json_create(&mut self, _doc_id: &JsonDocId, _value: JsonValue) -> Result<Version, StrataError> {
-    Err(StrataError::Internal {
-        message: "json_create not implemented in engine Transaction".to_string(),
-    })
-}
-
-fn json_get(&self, _doc_id: &JsonDocId) -> Result<Option<Versioned<JsonValue>>, StrataError> {
-    Err(StrataError::Internal {
-        message: "json_get not implemented in engine Transaction".to_string(),
-    })
-}
-
-// Vector operations - ALL return unimplemented!
-fn vector_insert(...) -> Result<Version, StrataError> {
-    Err(StrataError::Internal {
-        message: "vector_insert not implemented in engine Transaction".to_string(),
-    })
-}
-```
-
-**Impact:**
-- `TransactionOps` trait promises JSON/Vector support but engine doesn't deliver
-- Users calling these methods get runtime errors, not compile-time errors
-- Inconsistent primitive support
+**Status**: FIXED (PR #765) - JSON operations now fully implemented in engine's Transaction wrapper, delegating to TransactionContext's JsonStoreExt. Vector operations remain stubs intentionally - VectorHeap is in-memory and non-transactional by design.
 
 ### 3. Global Static Recovery Registry
 
@@ -86,62 +38,17 @@ The recovery participant registry is a global static:
 
 ## Moderate Issues
 
-### 4. commit_transaction and commit_with_durability Have Duplicated Code
+### ~~4. commit_transaction and commit_with_durability Have Duplicated Code~~ - FIXED
 
-**Location**: `database.rs:1102-1182` vs `database.rs:1270-1350+`
+**Status**: FIXED - Extracted shared logic into `commit_internal()` method. Both `commit_transaction` and `commit_with_durability` now delegate to this shared implementation, eliminating ~80 lines of duplicate code.
 
-Both methods contain nearly identical logic:
-1. Acquire per-run commit lock
-2. Validate transaction
-3. Allocate commit version
-4. Write to WAL
-5. Apply to storage
-6. Mark committed
+### ~~5. BufferedDurability Drop Doesn't Call flush_sync~~ - FIXED
 
-The only difference is how WAL sync is handled.
+**Status**: FIXED - Added best-effort flush in Drop implementation. If pending writes remain after thread shutdown, Drop now attempts `flush_sync()` and logs any errors. This prevents silent data loss on unexpected termination.
 
-**Impact:**
-- Maintenance burden (changes must be made in two places)
-- Risk of divergence
-- ~80 lines of duplicate code
+### ~~6. Error Information Loss in RunError~~ - FIXED
 
-### 5. BufferedDurability Drop Doesn't Call flush_sync
-
-**Location**: `durability/buffered.rs:360-391`
-
-```rust
-impl Drop for BufferedDurability {
-    fn drop(&mut self) {
-        // ... signals shutdown, waits for thread ...
-
-        // Note: We don't call flush_sync() in Drop because it could fail
-        // and Drop can't return errors. The explicit shutdown() should be
-        // called for guaranteed flush.
-    }
-}
-```
-
-**Impact:**
-- Data loss possible if `shutdown()` not called explicitly
-- Background thread does final flush but only on normal shutdown
-- Silent data loss on panic or unexpected termination
-
-### 6. Error Information Loss in RunError
-
-**Location**: `replay.rs:63-67`
-
-```rust
-impl From<strata_core::error::Error> for RunError {
-    fn from(e: strata_core::error::Error) -> Self {
-        RunError::Storage(e.to_string())  // Loses error type!
-    }
-}
-```
-
-**Impact:**
-- Original error type lost
-- Cannot match on specific error kinds after conversion
-- Same pattern seen in other error types throughout codebase
+**Status**: FIXED - Changed `RunError::Storage(String)` to `RunError::Storage(StrataError)` using `#[from]` derive. The original error type is now preserved through the conversion chain.
 
 ### 7. TransactionCoordinator::new Starts at Version 1, ephemeral() Also Starts at 1
 
@@ -243,22 +150,9 @@ There's a TOCTOU race between checking the flag and starting the transaction.
 
 ## Dead Code & Unused Items
 
-### 13. DurabilityMode docs mention "Async" mode
+### ~~13. DurabilityMode docs mention "Async" mode~~ - FIXED
 
-**Location**: `database.rs:512` (doc comment)
-
-```rust
-/// Allows selecting between Strict, Batched, or Async durability modes.
-```
-
-But `DurabilityMode` enum only has: `None`, `Strict`, `Batched`.
-
-**Impact:** Documentation inconsistency. The "Async" mode never existed - it was likely a planned feature that was never implemented. The actual modes are:
-- `None` - No persistence (was previously called "InMemory")
-- `Strict` - fsync every commit
-- `Batched` - Periodic fsync
-
-**Fix Required**: Update doc comment to reference actual modes.
+**Status**: FIXED - Updated doc comment to correctly reference "None, Strict, or Batched" durability modes.
 
 ### 14. PersistenceMode::default() May Not Match Usage
 
@@ -283,22 +177,22 @@ But `DatabaseBuilder::new()` uses `PersistenceMode::Disk` explicitly, making the
 ### Immediate Fixes (Low Risk)
 
 1. **Document version 1 reasoning**: Add comment explaining why ephemeral starts at version 1
-2. **Fix documentation**: Remove "Async" mode mention
-3. **Add BufferedDurability drop warning**: Log warning if pending writes > 0 on drop without shutdown (already done)
-4. **Extract commit logic**: Create shared `commit_internal()` called by both commit methods
+2. ~~**Fix documentation**: Remove "Async" mode mention~~ ✅ DONE
+3. ~~**Add BufferedDurability drop warning**: Log warning if pending writes > 0 on drop without shutdown~~ ✅ DONE
+4. ~~**Extract commit logic**: Create shared `commit_internal()` called by both commit methods~~ ✅ DONE
 
 ### Short-Term Improvements
 
-5. **Implement JSON operations**: Wire up JsonStore through TransactionOps
-6. **Implement Vector operations**: Wire up VectorStore through TransactionOps
+5. ~~**Implement JSON operations**: Wire up JsonStore through TransactionOps~~ ✅ DONE (PR #765)
+6. **Implement Vector operations**: Wire up VectorStore through TransactionOps (deferred - intentionally non-transactional)
 7. **Make recovery registry per-Database**: Use Database field instead of global static
-8. **Add flush_sync to Drop**: Best-effort flush even if errors can't be returned
+8. ~~**Add flush_sync to Drop**: Best-effort flush even if errors can't be returned~~ ✅ DONE
 
 ### Long-Term Architectural Changes
 
-9. **Migrate to Modern WAL**: After consolidating WAL systems in lower layers
+9. ~~**Migrate to Modern WAL**: After consolidating WAL systems in lower layers~~ N/A - WALEntry IS the production WAL
 10. **Use compile-time feature flags for primitives**: Instead of runtime unimplemented!() errors
-11. **Add structured error chain**: Preserve error types through conversions
+11. ~~**Add structured error chain**: Preserve error types through conversions~~ ✅ DONE
 12. **Consider larger default pool size**: Or make it configurable
 
 ---
