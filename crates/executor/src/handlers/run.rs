@@ -126,16 +126,10 @@ pub fn run_create(
     run_id: Option<String>,
     metadata: Option<Value>,
 ) -> Result<Output> {
+    // Users can provide any string as a run name (like git branch names).
+    // If not provided, generate a UUID for anonymous runs.
     let run_str = match &run_id {
-        Some(s) => {
-            // Validate the user-provided ID is a valid UUID or "default"
-            if s != "default" {
-                uuid::Uuid::parse_str(s).map_err(|_| Error::InvalidInput {
-                    reason: format!("Invalid run ID format: '{}'", s),
-                })?;
-            }
-            s.clone()
-        }
+        Some(s) => s.clone(),
         None => uuid::Uuid::new_v4().to_string(),
     };
 

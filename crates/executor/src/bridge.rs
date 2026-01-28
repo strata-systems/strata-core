@@ -70,21 +70,32 @@ impl Primitives {
 // RunId Conversion
 // =============================================================================
 
+/// Namespace UUID for generating deterministic run IDs.
+/// This is a fixed UUID used as the namespace for UUID v5 generation.
+const RUN_NAMESPACE: uuid::Uuid = uuid::Uuid::from_bytes([
+    0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1,
+    0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8,
+]);
+
 /// Convert executor's string-based RunId to core RunId.
 ///
 /// - "default" → `RunId` with UUID::nil (all zeros)
 /// - Valid UUID string → `RunId` with parsed UUID bytes
-/// - Anything else → Error
+/// - Any other string → `RunId` with deterministic UUID v5 generated from name
+///
+/// This allows users to use human-readable run names like "main", "experiment-1",
+/// etc. while still providing a unique UUID for internal namespacing.
 pub fn to_core_run_id(run: &RunId) -> crate::Result<strata_core::types::RunId> {
     let s = run.as_str();
     if s == "default" {
         Ok(strata_core::types::RunId::from_bytes([0u8; 16]))
+    } else if let Ok(u) = uuid::Uuid::parse_str(s) {
+        // If it's already a valid UUID, use it directly
+        Ok(strata_core::types::RunId::from_bytes(*u.as_bytes()))
     } else {
-        uuid::Uuid::parse_str(s)
-            .map(|u| strata_core::types::RunId::from_bytes(*u.as_bytes()))
-            .map_err(|_| Error::InvalidInput {
-                reason: format!("Invalid run ID: '{}'", s),
-            })
+        // Generate a deterministic UUID v5 from the run name
+        let uuid = uuid::Uuid::new_v5(&RUN_NAMESPACE, s.as_bytes());
+        Ok(strata_core::types::RunId::from_bytes(*uuid.as_bytes()))
     }
 }
 
