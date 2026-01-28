@@ -247,9 +247,9 @@ impl JsonStore {
         value.validate().map_err(limit_error_to_error)?;
 
         let key = self.key_for(run_id, doc_id);
-        let doc = JsonDoc::new(doc_id, value);
+        let doc = JsonDoc::new(doc_id, value.clone());
 
-        self.db.transaction(*run_id, |txn| {
+        let version = self.db.transaction(*run_id, |txn| {
             // Check if document already exists
             if txn.get(&key)?.is_some() {
                 return Err(StrataError::invalid_input(format!(
@@ -261,7 +261,20 @@ impl JsonStore {
             let serialized = Self::serialize_doc(&doc)?;
             txn.put(key.clone(), serialized)?;
             Ok(Version::counter(doc.version))
-        })
+        })?;
+
+        // Update inverted index (zero overhead when disabled)
+        let index = self.db.extension::<crate::primitives::index::InvertedIndex>();
+        if index.is_enabled() {
+            let text = self.flatten_json(&value);
+            let entity_ref = crate::search_types::EntityRef::Json {
+                run_id: *run_id,
+                doc_id: doc_id.to_string(),
+            };
+            index.index_document(&entity_ref, &text, None);
+        }
+
+        Ok(version)
     }
 
     // ========================================================================
@@ -1411,7 +1424,7 @@ impl JsonStore {
     /// # Example
     ///
     /// ```ignore
-    /// use strata_core::SearchRequest;
+    /// use crate::SearchRequest;
     ///
     /// let response = json.search(&SearchRequest::new(run_id, "Alice"))?;
     /// for hit in response.hits {
@@ -1420,10 +1433,10 @@ impl JsonStore {
     /// ```
     pub fn search(
         &self,
-        req: &strata_core::SearchRequest,
-    ) -> strata_core::error::Result<strata_core::SearchResponse> {
+        req: &crate::SearchRequest,
+    ) -> strata_core::error::Result<crate::SearchResponse> {
         use crate::primitives::searchable::{build_search_response, SearchCandidate};
-        use strata_core::search_types::EntityRef;
+        use crate::search_types::EntityRef;
         use std::time::Instant;
 
         let start = Instant::now();
@@ -1540,8 +1553,8 @@ impl JsonStore {
 impl crate::primitives::searchable::Searchable for JsonStore {
     fn search(
         &self,
-        req: &strata_core::SearchRequest,
-    ) -> strata_core::error::Result<strata_core::SearchResponse> {
+        req: &crate::SearchRequest,
+    ) -> strata_core::error::Result<crate::SearchResponse> {
         self.search(req)
     }
 

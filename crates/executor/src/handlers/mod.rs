@@ -20,6 +20,7 @@ pub mod event;
 pub mod state;
 pub mod vector;
 pub mod run;
+pub mod search;
 
 // Transaction commands are deferred because the Executor is stateless by design.
 // Transactions require session state management which would need additional design work.

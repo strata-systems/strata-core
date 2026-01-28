@@ -13,6 +13,7 @@ description = "Command execution layer for Strata database"
 # Internal crates
 strata-core = { path = "../core" }
 strata-engine = { path = "../engine" }
+strata-intelligence = { path = "../intelligence" }
 
 # Serialization
 serde = { workspace = true }

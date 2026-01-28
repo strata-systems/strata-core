@@ -17,7 +17,7 @@
 
 use crate::fuser::{Fuser, SimpleFuser};
 use strata_core::error::Result;
-use strata_core::search_types::{SearchBudget, SearchRequest, SearchResponse, SearchStats};
+use strata_engine::search_types::{SearchBudget, SearchRequest, SearchResponse, SearchStats};
 use strata_core::PrimitiveType;
 use strata_engine::Database;
 use strata_engine::{EventLog, JsonStore, KVStore, RunIndex, StateCell, VectorStore};

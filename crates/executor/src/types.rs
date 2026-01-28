@@ -288,3 +288,22 @@ pub struct DatabaseInfo {
     pub run_count: u64,
     pub total_keys: u64,
 }
+
+// =============================================================================
+// Intelligence Types
+// =============================================================================
+
+/// A single hit from a cross-primitive search
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SearchResultHit {
+    /// Entity identifier string
+    pub entity: String,
+    /// Primitive type that produced this hit
+    pub primitive: String,
+    /// Relevance score (higher = more relevant)
+    pub score: f32,
+    /// Rank in result set (1-indexed)
+    pub rank: u32,
+    /// Optional text snippet
+    pub snippet: Option<String>,
+}

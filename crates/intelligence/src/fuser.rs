@@ -7,7 +7,7 @@
 //!
 //! See `docs/architecture/M6_ARCHITECTURE.md` for authoritative specification.
 
-use strata_core::search_types::{EntityRef, SearchHit, SearchResponse};
+use strata_engine::search_types::{EntityRef, SearchHit, SearchResponse};
 use strata_core::PrimitiveType;
 
 // ============================================================================
@@ -252,7 +252,7 @@ impl Fuser for RRFFuser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use strata_core::search_types::{EntityRef, SearchStats};
+    use strata_engine::search_types::{EntityRef, SearchStats};
     use strata_core::types::RunId;
 
     fn make_hit(doc_ref: EntityRef, score: f32, rank: u32) -> SearchHit {

@@ -195,17 +195,29 @@ impl StateCell {
     ///
     /// Returns true if deleted, false if didn't exist
     pub fn delete(&self, run_id: &RunId, name: &str) -> Result<bool> {
-        self.db.transaction(*run_id, |txn| {
+        let deleted = self.db.transaction(*run_id, |txn| {
             let key = self.key_for(run_id, name);
 
-            // Check if exists first
             if txn.get(&key)?.is_none() {
                 return Ok(false);
             }
 
             txn.delete(key)?;
             Ok(true)
-        })
+        })?;
+
+        if deleted {
+            let index = self.db.extension::<crate::primitives::index::InvertedIndex>();
+            if index.is_enabled() {
+                let entity_ref = crate::search_types::EntityRef::State {
+                    run_id: *run_id,
+                    name: name.to_string(),
+                };
+                index.remove_document(&entity_ref);
+            }
+        }
+
+        Ok(deleted)
     }
 
     /// Check if a cell exists (FAST PATH)
@@ -359,7 +371,8 @@ impl StateCell {
     ///
     /// # StateCell Versioned Returns
     pub fn set(&self, run_id: &RunId, name: &str, value: Value) -> Result<Versioned<Version>> {
-        self.db.transaction(*run_id, |txn| {
+        let value_for_index = value.clone();
+        let result = self.db.transaction(*run_id, |txn| {
             let key = self.key_for(run_id, name);
 
             let new_version = match txn.get(&key)? {
@@ -380,7 +393,20 @@ impl StateCell {
 
             txn.put(key, to_stored_value(&new_state))?;
             Ok(Versioned::new(new_state.version, new_state.version))
-        })
+        })?;
+
+        // Update inverted index (zero overhead when disabled)
+        let index = self.db.extension::<crate::primitives::index::InvertedIndex>();
+        if index.is_enabled() {
+            let text = format!("{} {}", name, serde_json::to_string(&value_for_index).unwrap_or_default());
+            let entity_ref = crate::search_types::EntityRef::State {
+                run_id: *run_id,
+                name: name.to_string(),
+            };
+            index.index_document(&entity_ref, &text, None);
+        }
+
+        Ok(result)
     }
 
     // ========== Transition Closure Pattern ==========
@@ -497,7 +523,7 @@ impl StateCell {
     /// # Example
     ///
     /// ```ignore
-    /// use strata_core::SearchRequest;
+    /// use crate::SearchRequest;
     ///
     /// let response = state.search(&SearchRequest::new(run_id, "counter"))?;
     /// for hit in response.hits {
@@ -506,10 +532,10 @@ impl StateCell {
     /// ```
     pub fn search(
         &self,
-        req: &strata_core::SearchRequest,
-    ) -> strata_core::error::Result<strata_core::SearchResponse> {
+        req: &crate::SearchRequest,
+    ) -> strata_core::error::Result<crate::SearchResponse> {
         use crate::primitives::searchable::{build_search_response, SearchCandidate};
-        use strata_core::search_types::EntityRef;
+        use crate::search_types::EntityRef;
         use strata_core::traits::SnapshotView;
         use std::time::Instant;
 
@@ -581,8 +607,8 @@ impl StateCell {
 impl crate::primitives::searchable::Searchable for StateCell {
     fn search(
         &self,
-        req: &strata_core::SearchRequest,
-    ) -> strata_core::error::Result<strata_core::SearchResponse> {
+        req: &crate::SearchRequest,
+    ) -> strata_core::error::Result<crate::SearchResponse> {
         self.search(req)
     }
 

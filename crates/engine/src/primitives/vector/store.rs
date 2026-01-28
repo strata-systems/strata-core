@@ -33,7 +33,7 @@ use crate::primitives::vector::{
 };
 use strata_concurrency::TransactionContext;
 use strata_core::contract::{Timestamp, Version, Versioned};
-use strata_core::search_types::{EntityRef, SearchBudget, SearchHit, SearchResponse, SearchStats};
+use crate::search_types::{EntityRef, SearchBudget, SearchHit, SearchResponse, SearchStats};
 use strata_core::types::{Key, Namespace, RunId};
 use strata_core::value::Value;
 use strata_durability::wal::WALEntry;
@@ -2436,9 +2436,9 @@ impl crate::primitives::searchable::Searchable for VectorStore {
     /// 3. Fusing results via RRF
     fn search(
         &self,
-        req: &strata_core::SearchRequest,
-    ) -> strata_core::error::Result<strata_core::SearchResponse> {
-        use strata_core::search_types::{SearchMode, SearchResponse, SearchStats};
+        req: &crate::SearchRequest,
+    ) -> strata_core::error::Result<crate::SearchResponse> {
+        use crate::search_types::{SearchMode, SearchResponse, SearchStats};
         use std::time::Instant;
 
         let start = Instant::now();

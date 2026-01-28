@@ -45,8 +45,10 @@ pub mod json_store;
 pub mod kv;
 pub mod run_handle;
 pub mod run_index;
+pub mod index;
 pub mod searchable;
 pub mod state_cell;
+pub mod tokenizer;
 pub mod vector;
 
 // Re-exports - primitives are exported as they're implemented
@@ -57,7 +59,11 @@ pub use run_handle::{
     EventHandle, JsonHandle, KvHandle, RunHandle, StateHandle, VectorHandle,
 };
 pub use run_index::{RunIndex, RunMetadata, RunStatus};
-pub use searchable::{build_search_response, SearchCandidate, Searchable, SimpleScorer};
+pub use index::{InvertedIndex, PostingEntry, PostingList};
+pub use searchable::{
+    build_search_response, build_search_response_with_index,
+    BM25LiteScorer, Scorer, ScorerContext, SearchCandidate, SearchDoc, Searchable, SimpleScorer,
+};
 pub use state_cell::{State, StateCell};
 pub use vector::{
     register_vector_recovery, validate_collection_name, validate_vector_key, BruteForceBackend,

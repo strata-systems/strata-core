@@ -52,6 +52,10 @@ pub use strata_concurrency::TransactionContext;
 pub use transaction_ops::TransactionOps;
 
 pub mod primitives;
+pub mod search_types;
+
+// Re-export search types at crate root for convenience
+pub use search_types::{SearchBudget, SearchHit, SearchMode, SearchRequest, SearchResponse, SearchStats};
 
 // Re-export submodules for `strata_engine::vector::*` and `strata_engine::extensions::*` access
 pub use primitives::vector;
@@ -65,8 +69,12 @@ pub use primitives::{
     RunIndex, RunMetadata, RunStatus,
     // Handles
     RunHandle, EventHandle, JsonHandle, KvHandle, StateHandle, VectorHandle,
-    // Search
+    // Search & Scoring
     Searchable, SearchCandidate, SimpleScorer,
+    BM25LiteScorer, Scorer, ScorerContext, SearchDoc,
+    build_search_response_with_index,
+    // Index
+    InvertedIndex, PostingEntry, PostingList,
     // Vector types
     VectorConfig, VectorEntry, VectorMatch, DistanceMetric,
     CollectionId, CollectionInfo, VectorIndexBackend, BruteForceBackend, VectorError,

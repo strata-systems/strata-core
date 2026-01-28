@@ -900,6 +900,20 @@ pub enum Command {
 
     /// Trigger compaction
     Compact,
+
+    // ==================== Intelligence (1) ====================
+
+    /// Search across multiple primitives.
+    /// Returns: `Output::SearchResults`
+    Search {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run: Option<RunId>,
+        query: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        k: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        primitives: Option<Vec<String>>,
+    },
 }
 
 impl Command {
@@ -995,7 +1009,9 @@ impl Command {
             | Command::RetentionStats { run, .. }
             | Command::RetentionPreview { run, .. }
             // Transaction begin
-            | Command::TxnBegin { run, .. } => {
+            | Command::TxnBegin { run, .. }
+            // Intelligence
+            | Command::Search { run, .. } => {
                 resolve!(run);
             }
 

@@ -9,7 +9,6 @@
 //! - Error: Error type hierarchy
 //! - Traits: Core trait definitions (Storage, SnapshotView)
 //! - Primitive types: Event, State, JSON, Vector types (in `primitives` module)
-//! - Search types: SearchRequest, SearchResponse, SearchHit, EntityRef, PrimitiveType
 //! - Contract types: EntityRef, Versioned<T>, Version, Timestamp, PrimitiveType, RunName
 
 #![warn(missing_docs)]
@@ -20,7 +19,7 @@ pub mod contract; // contract types
 pub mod error;
 pub mod primitives; // primitive types (Event, State, Vector, JSON types)
 pub mod run_types; // Run lifecycle types
-pub mod search_types; // search types
+pub mod search_types; // search types (EntityRef/PrimitiveType re-exports only; types moved to engine)
 pub mod traits;
 pub mod types;
 pub mod value;
@@ -31,7 +30,6 @@ pub use error::{
     StrataResult,
 };
 pub use run_types::{RunEventOffsets, RunMetadata, RunStatus};
-pub use search_types::{SearchBudget, SearchHit, SearchMode, SearchRequest, SearchResponse, SearchStats};
 pub use traits::{SnapshotView, Storage};
 pub use types::{Key, Namespace, RunId, TypeTag};
 pub use value::Value;

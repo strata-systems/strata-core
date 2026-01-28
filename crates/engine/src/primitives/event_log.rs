@@ -366,7 +366,7 @@ impl EventLog {
         let ns = self.namespace_for_run(run_id);
         let event_type_owned = event_type.to_string();
 
-        self.db
+        let result = self.db
             .transaction_with_retry(*run_id, retry_config, |txn| {
                 // Read current metadata (or default)
                 let meta_key = Key::new_event_meta(ns.clone());
@@ -422,7 +422,22 @@ impl EventLog {
                 txn.put(meta_key, to_stored_value(&meta))?;
 
                 Ok(Version::Sequence(sequence))
-            })
+            })?;
+
+        // Update inverted index (zero overhead when disabled)
+        let idx = self.db.extension::<crate::primitives::index::InvertedIndex>();
+        if idx.is_enabled() {
+            let text = format!("{} {}", event_type, serde_json::to_string(&payload).unwrap_or_default());
+            if let Version::Sequence(seq) = result {
+                let entity_ref = crate::search_types::EntityRef::Event {
+                    run_id: *run_id,
+                    sequence: seq,
+                };
+                idx.index_document(&entity_ref, &text, None);
+            }
+        }
+
+        Ok(result)
     }
 
     /// Append multiple events atomically in a single transaction
@@ -961,7 +976,7 @@ impl EventLog {
     /// # Example
     ///
     /// ```ignore
-    /// use strata_core::SearchRequest;
+    /// use crate::SearchRequest;
     ///
     /// let response = log.search(&SearchRequest::new(run_id, "error"))?;
     /// for hit in response.hits {
@@ -970,10 +985,10 @@ impl EventLog {
     /// ```
     pub fn search(
         &self,
-        req: &strata_core::SearchRequest,
-    ) -> strata_core::error::Result<strata_core::SearchResponse> {
+        req: &crate::SearchRequest,
+    ) -> strata_core::error::Result<crate::SearchResponse> {
         use crate::primitives::searchable::{build_search_response, SearchCandidate};
-        use strata_core::search_types::EntityRef;
+        use crate::search_types::EntityRef;
         use strata_core::traits::SnapshotView;
         use std::time::Instant;
 
@@ -985,7 +1000,7 @@ impl EventLog {
         let meta_key = Key::new_event_meta(ns.clone());
         let meta: EventLogMeta = match snapshot.get(&meta_key)? {
             Some(vv) => from_stored_value(&vv.value).unwrap_or_default(),
-            None => return Ok(strata_core::SearchResponse::empty()),
+            None => return Ok(crate::SearchResponse::empty()),
         };
 
         let mut candidates = Vec::new();
@@ -1056,8 +1071,8 @@ impl EventLog {
 impl crate::primitives::searchable::Searchable for EventLog {
     fn search(
         &self,
-        req: &strata_core::SearchRequest,
-    ) -> strata_core::error::Result<strata_core::SearchResponse> {
+        req: &crate::SearchRequest,
+    ) -> strata_core::error::Result<crate::SearchResponse> {
         self.search(req)
     }
 

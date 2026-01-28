@@ -1,4 +1,8 @@
-//! Search infrastructure for M6 Retrieval Surfaces
+//! Intelligence layer for Strata
+//!
+//! Derived operations over the six primitives: search, indexing, fusion.
+//! Search is the first prototype; future work includes graph traversal,
+//! vector indexing, and other composite intelligence.
 //!
 //! This crate provides:
 //! - Scorer trait for pluggable scoring algorithms
@@ -9,12 +13,10 @@
 //! - HybridSearch for composite search orchestration
 //! - DatabaseSearchExt extension trait for db.hybrid() accessor
 //!
-//! See `docs/architecture/M6_ARCHITECTURE.md` for authoritative specification.
-//!
 //! # Usage
 //!
 //! ```ignore
-//! use strata_search::DatabaseSearchExt;
+//! use strata_intelligence::DatabaseSearchExt;
 //!
 //! let response = db.hybrid().search(&request)?;
 //! ```
@@ -50,7 +52,7 @@ pub use tokenizer::{tokenize, tokenize_unique};
 /// # Example
 ///
 /// ```ignore
-/// use strata_search::DatabaseSearchExt;
+/// use strata_intelligence::DatabaseSearchExt;
 /// use std::sync::Arc;
 ///
 /// let db = Arc::new(Database::builder().in_memory().open_temp()?);
@@ -73,7 +75,7 @@ impl DatabaseSearchExt for Arc<Database> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use strata_core::search_types::SearchRequest;
+    use strata_engine::search_types::SearchRequest;
     use strata_core::types::RunId;
 
     #[test]

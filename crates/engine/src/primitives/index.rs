@@ -18,9 +18,9 @@
 //! Indexing is OPTIONAL. Search works without it (via full scan).
 //! When enabled, search uses the index for candidate lookup.
 
-use crate::tokenizer::tokenize;
+use super::tokenizer::tokenize;
 use dashmap::DashMap;
-use strata_core::search_types::EntityRef;
+use crate::search_types::EntityRef;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};

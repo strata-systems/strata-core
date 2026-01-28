@@ -5,7 +5,8 @@
 
 use std::sync::Arc;
 
-use strata_core::{SearchRequest, Value, Versioned};
+use strata_core::{Value, Versioned};
+use strata_engine::SearchRequest;
 
 use crate::bridge::{
     extract_version, json_to_value, parse_path, to_core_run_id, validate_key, value_to_json,

@@ -330,7 +330,7 @@ impl RunIndex {
         tags: Vec<String>,
         metadata: Value,
     ) -> Result<Versioned<RunMetadata>> {
-        self.db.transaction(global_run_id(), |txn| {
+        let result = self.db.transaction(global_run_id(), |txn| {
             let key = self.key_for(run_id);
 
             // Check if run already exists
@@ -363,7 +363,20 @@ impl RunIndex {
             Self::write_indices_internal(txn, &run_meta)?;
 
             Ok(run_meta.into_versioned())
-        })
+        })?;
+
+        // Update inverted index (zero overhead when disabled)
+        let index = self.db.extension::<crate::primitives::index::InvertedIndex>();
+        if index.is_enabled() {
+            let text = self.extract_run_text(&result.value);
+            let core_run_id = strata_core::types::RunId::new(); // runs use their string ID in EntityRef
+            let entity_ref = crate::search_types::EntityRef::Run {
+                run_id: core_run_id,
+            };
+            index.index_document(&entity_ref, &text, None);
+        }
+
+        Ok(result)
     }
 
     /// Get run metadata
@@ -835,7 +848,7 @@ impl RunIndex {
     /// # Example
     ///
     /// ```ignore
-    /// use strata_core::SearchRequest;
+    /// use crate::SearchRequest;
     ///
     /// let response = run_index.search(&SearchRequest::new(run_id, "active"))?;
     /// for hit in response.hits {
@@ -844,10 +857,10 @@ impl RunIndex {
     /// ```
     pub fn search(
         &self,
-        req: &strata_core::SearchRequest,
-    ) -> strata_core::error::Result<strata_core::SearchResponse> {
+        req: &crate::SearchRequest,
+    ) -> strata_core::error::Result<crate::SearchResponse> {
         use crate::primitives::searchable::{build_search_response, SearchCandidate};
-        use strata_core::search_types::EntityRef;
+        use crate::search_types::EntityRef;
         use strata_core::traits::SnapshotView;
         use std::time::Instant;
 
@@ -1465,8 +1478,8 @@ fn json_to_value(json: &serde_json::Value) -> Value {
 impl crate::primitives::searchable::Searchable for RunIndex {
     fn search(
         &self,
-        req: &strata_core::SearchRequest,
-    ) -> strata_core::error::Result<strata_core::SearchResponse> {
+        req: &crate::SearchRequest,
+    ) -> strata_core::error::Result<crate::SearchResponse> {
         self.search(req)
     }
 

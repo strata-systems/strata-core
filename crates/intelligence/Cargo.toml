@@ -1,8 +1,8 @@
 [package]
-name = "strata-search"
+name = "strata-intelligence"
 version = "0.1.0"
 edition = "2021"
-description = "Search infrastructure for Strata (M6 Retrieval Surfaces)"
+description = "Intelligence layer for Strata — derived operations over primitives"
 license = "MIT"
 publish = false
 

@@ -639,6 +639,12 @@ impl Executor {
                     reason: "Retention commands not yet implemented".to_string(),
                 })
             }
+
+            // Intelligence commands
+            Command::Search { run, query, k, primitives } => {
+                let run = run.expect("resolved by resolve_default_run");
+                crate::handlers::search::search(&self.primitives, run, query, k, primitives)
+            }
         }
     }
 

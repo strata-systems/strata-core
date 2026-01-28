@@ -232,8 +232,20 @@ impl KVStore {
     pub fn put(&self, run_id: &RunId, key: &str, value: Value) -> Result<Version> {
         let ((), commit_version) = self.db.transaction_with_version(*run_id, |txn| {
             let storage_key = self.key_for(run_id, key);
-            txn.put(storage_key, value)
+            txn.put(storage_key, value.clone())
         })?;
+
+        // Update inverted index (zero overhead when disabled)
+        let index = self.db.extension::<crate::primitives::index::InvertedIndex>();
+        if index.is_enabled() {
+            let text = Self::extract_kv_text(key, &value);
+            let entity_ref = crate::search_types::EntityRef::Kv {
+                run_id: *run_id,
+                key: key.to_string(),
+            };
+            index.index_document(&entity_ref, &text, None);
+        }
+
         Ok(Version::Txn(commit_version))
     }
 
@@ -285,15 +297,28 @@ impl KVStore {
     ///
     /// Returns `true` if the key existed and was deleted.
     pub fn delete(&self, run_id: &RunId, key: &str) -> Result<bool> {
-        self.db.transaction(*run_id, |txn| {
+        let existed = self.db.transaction(*run_id, |txn| {
             let storage_key = self.key_for(run_id, key);
-            // Check if key exists before deleting
             let exists = txn.get(&storage_key)?.is_some();
             if exists {
                 txn.delete(storage_key)?;
             }
             Ok(exists)
-        })
+        })?;
+
+        // Update inverted index on delete
+        if existed {
+            let index = self.db.extension::<crate::primitives::index::InvertedIndex>();
+            if index.is_enabled() {
+                let entity_ref = crate::search_types::EntityRef::Kv {
+                    run_id: *run_id,
+                    key: key.to_string(),
+                };
+                index.remove_document(&entity_ref);
+            }
+        }
+
+        Ok(existed)
     }
 
     /// Check if a key exists (FAST PATH)
@@ -525,7 +550,7 @@ impl KVStore {
     ///
     /// ```ignore
     /// use strata_primitives::KVStore;
-    /// use strata_core::SearchRequest;
+    /// use crate::SearchRequest;
     ///
     /// let response = kv.search(&SearchRequest::new(run_id, "hello"))?;
     /// for hit in response.hits {
@@ -534,10 +559,10 @@ impl KVStore {
     /// ```
     pub fn search(
         &self,
-        req: &strata_core::SearchRequest,
-    ) -> strata_core::error::Result<strata_core::SearchResponse> {
+        req: &crate::SearchRequest,
+    ) -> strata_core::error::Result<crate::SearchResponse> {
         use crate::primitives::searchable::{build_search_response, SearchCandidate};
-        use strata_core::search_types::EntityRef;
+        use crate::search_types::EntityRef;
         use strata_core::traits::SnapshotView;
         use std::time::Instant;
 
@@ -589,6 +614,29 @@ impl KVStore {
             truncated,
             start.elapsed().as_micros() as u64,
         ))
+    }
+
+    /// Extract searchable text from user-level key and value (for index updates)
+    fn extract_kv_text(key: &str, value: &Value) -> String {
+        let mut parts = vec![key.to_string()];
+        match value {
+            Value::String(s) => parts.push(s.clone()),
+            Value::Bytes(b) => {
+                if let Ok(s) = std::str::from_utf8(b) {
+                    parts.push(s.to_string());
+                }
+            }
+            Value::Int(n) => parts.push(n.to_string()),
+            Value::Float(n) => parts.push(n.to_string()),
+            Value::Bool(b) => parts.push(b.to_string()),
+            Value::Array(_) | Value::Object(_) => {
+                if let Ok(s) = serde_json::to_string(value) {
+                    parts.push(s);
+                }
+            }
+            Value::Null => {}
+        }
+        parts.join(" ")
     }
 
     /// Extract searchable text from a KV entry
@@ -704,8 +752,8 @@ impl<'a> KVTransaction<'a> {
 impl crate::primitives::searchable::Searchable for KVStore {
     fn search(
         &self,
-        req: &strata_core::SearchRequest,
-    ) -> strata_core::error::Result<strata_core::SearchResponse> {
+        req: &crate::SearchRequest,
+    ) -> strata_core::error::Result<crate::SearchResponse> {
         self.search(req)
     }
 
@@ -1351,7 +1399,7 @@ mod tests {
 
     #[test]
     fn test_kv_search_basic() {
-        use strata_core::SearchRequest;
+        use crate::SearchRequest;
 
         let (_temp, _db, kv) = setup();
         let run_id = RunId::new();
@@ -1372,7 +1420,7 @@ mod tests {
 
     #[test]
     fn test_kv_search_by_key_name() {
-        use strata_core::SearchRequest;
+        use crate::SearchRequest;
 
         let (_temp, _db, kv) = setup();
         let run_id = RunId::new();
@@ -1395,7 +1443,7 @@ mod tests {
 
     #[test]
     fn test_kv_search_respects_k() {
-        use strata_core::SearchRequest;
+        use crate::SearchRequest;
 
         let (_temp, _db, kv) = setup();
         let run_id = RunId::new();
@@ -1418,7 +1466,7 @@ mod tests {
 
     #[test]
     fn test_kv_search_run_isolation() {
-        use strata_core::SearchRequest;
+        use crate::SearchRequest;
 
         let (_temp, _db, kv) = setup();
         let run1 = RunId::new();
@@ -1440,7 +1488,7 @@ mod tests {
 
     #[test]
     fn test_kv_search_empty_results() {
-        use strata_core::SearchRequest;
+        use crate::SearchRequest;
 
         let (_temp, _db, kv) = setup();
         let run_id = RunId::new();
@@ -1458,7 +1506,7 @@ mod tests {
     fn test_kv_searchable_trait() {
         use crate::primitives::searchable::Searchable;
         use strata_core::PrimitiveType;
-        use strata_core::SearchRequest;
+        use crate::SearchRequest;
 
         let (_temp, _db, kv) = setup();
         let run_id = RunId::new();

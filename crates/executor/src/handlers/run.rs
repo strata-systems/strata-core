@@ -303,7 +303,7 @@ pub fn run_search(
     query: String,
     limit: Option<u64>,
 ) -> Result<Output> {
-    use strata_core::{SearchBudget, SearchRequest};
+    use strata_engine::{SearchBudget, SearchRequest};
     use strata_core::types::RunId as CoreRunId;
 
     let req = SearchRequest {
@@ -322,7 +322,7 @@ pub fn run_search(
     // Convert search hits back to RunInfo by looking up each matched run
     let mut results = Vec::new();
     for hit in response.hits {
-        if let strata_core::search_types::EntityRef::Run { run_id } = hit.doc_ref {
+        if let strata_engine::search_types::EntityRef::Run { run_id } = hit.doc_ref {
             let run_uuid = uuid::Uuid::from_bytes(*run_id.as_bytes());
             let run_str = run_uuid.to_string();
             // The run_id in search results is the internal UUID; look up by iterating

@@ -12,7 +12,7 @@ members = [
     "crates/concurrency",
     "crates/durability",
     "crates/engine",
-    "crates/search",
+    "crates/intelligence",
     "crates/executor",
 ]
 
@@ -114,7 +114,7 @@ serde = { workspace = true }
 rustc-hash = { workspace = true }
 proptest = { workspace = true }
 parking_lot = { workspace = true }
-strata-search = { path = "crates/search" }
+strata-intelligence = { path = "crates/intelligence" }
 uuid = { workspace = true }
 crc32fast = "1.3"
 base64 = "0.21"

@@ -187,4 +187,9 @@ pub enum Output {
     Pong {
         version: String,
     },
+
+    // ==================== Intelligence ====================
+
+    /// Search results across primitives
+    SearchResults(Vec<SearchResultHit>),
 }

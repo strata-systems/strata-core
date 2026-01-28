@@ -5,12 +5,12 @@
 //!
 //! See `docs/architecture/M6_ARCHITECTURE.md` for authoritative specification.
 
-use strata_core::search_types::{PrimitiveType, SearchRequest};
+use strata_engine::search_types::{PrimitiveType, SearchRequest};
 use strata_core::types::RunId;
 use strata_core::value::Value;
 use strata_engine::Database;
 use strata_engine::{KVStore, RunIndex};
-use strata_search::{DatabaseSearchExt, HybridSearch, RRFFuser};
+use strata_intelligence::{DatabaseSearchExt, HybridSearch, RRFFuser};
 use std::sync::Arc;
 
 // ============================================================================
