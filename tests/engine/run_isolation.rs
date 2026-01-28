@@ -1,454 +1,319 @@
-//! Run Isolation Comprehensive Tests (Tier 2)
+//! Run Isolation Tests
 //!
-//! Tests that verify complete isolation between runs:
-//! - N-run isolation verification
-//! - Concurrent run operations
-//! - Run delete isolation
-//! - Cross-run data leakage prevention
+//! Tests that verify data isolation between different runs.
 
-use crate::common::{concurrent, values, TestPrimitives};
-use strata_core::types::RunId;
-use std::collections::HashSet;
+use crate::common::*;
+use strata_core::primitives::json::JsonPath;
+use std::collections::HashMap;
 
-// =============================================================================
-// N-Run Isolation
-// =============================================================================
-
-mod n_run_isolation {
-    use super::*;
-
-    #[test]
-    fn test_10_run_isolation() {
-        let tp = TestPrimitives::new();
-        let runs: Vec<_> = (0..10).map(|_| tp.new_run()).collect();
-
-        // Each run writes to all primitives with unique data
-        for (i, run) in runs.iter().enumerate() {
-            tp.kv.put(run, "counter", values::int(i as i64)).unwrap();
-            tp.kv
-                .put(run, "name", values::string(&format!("run_{}", i)))
-                .unwrap();
-            tp.event_log
-                .append(run, &format!("init_{}", i), values::event_payload(values::int(i as i64)))
-                .unwrap();
-            tp.state_cell
-                .init(run, "state", values::int(i as i64))
-                .unwrap();
-        }
-
-        // Verify each run sees only its own data
-        for (i, run) in runs.iter().enumerate() {
-            // KV isolation
-            assert_eq!(
-                tp.kv.get(run, "counter").unwrap().map(|v| v.value),
-                Some(values::int(i as i64))
-            );
-            assert_eq!(
-                tp.kv.get(run, "name").unwrap().map(|v| v.value),
-                Some(values::string(&format!("run_{}", i)))
-            );
-
-            // EventLog isolation
-            let events = tp.event_log.read_range(run, 0, 100).unwrap();
-            assert_eq!(events.len(), 1);
-            assert_eq!(events[0].value.event_type, format!("init_{}", i));
-
-            // StateCell isolation
-            let state = tp.state_cell.read(run, "state").unwrap().unwrap();
-            assert_eq!(state.value.value, values::int(i as i64));
-        }
-    }
-
-    #[test]
-    fn test_50_run_isolation() {
-        let tp = TestPrimitives::new();
-        let runs: Vec<_> = (0..50).map(|_| tp.new_run()).collect();
-
-        // Write unique data to each run
-        for (i, run) in runs.iter().enumerate() {
-            tp.kv.put(run, "id", values::int(i as i64)).unwrap();
-        }
-
-        // Verify isolation
-        for (i, run) in runs.iter().enumerate() {
-            assert_eq!(tp.kv.get(run, "id").unwrap().map(|v| v.value), Some(values::int(i as i64)));
-        }
-    }
-
-    #[test]
-    fn test_shared_key_name_different_runs() {
-        // Same key name used across all runs, but isolated
-        let tp = TestPrimitives::new();
-        let runs: Vec<_> = (0..5).map(|_| tp.new_run()).collect();
-
-        // All runs use same key name
-        for (i, run) in runs.iter().enumerate() {
-            tp.kv.put(run, "shared_key", values::int(i as i64)).unwrap();
-        }
-
-        // Each run has its own value
-        for (i, run) in runs.iter().enumerate() {
-            assert_eq!(
-                tp.kv.get(run, "shared_key").unwrap().map(|v| v.value),
-                Some(values::int(i as i64))
-            );
-        }
-    }
+/// Helper to create an event payload object
+fn event_payload(data: Value) -> Value {
+    Value::Object(HashMap::from([
+        ("data".to_string(), data),
+    ]))
 }
 
-// =============================================================================
-// Concurrent Run Operations
-// =============================================================================
+// ============================================================================
+// KVStore Isolation
+// ============================================================================
 
-mod concurrent_run_operations {
-    use super::*;
-    use std::sync::Arc;
+#[test]
+fn kv_runs_are_isolated() {
+    let test_db = TestDb::new();
+    let kv = test_db.kv();
 
-    #[test]
-    fn test_concurrent_writes_to_different_runs() {
-        let tp = Arc::new(TestPrimitives::new());
-        let num_threads = 10;
+    let run_a = RunId::new();
+    let run_b = RunId::new();
 
-        // Create runs upfront
-        let runs: Vec<_> = (0..num_threads).map(|_| tp.new_run()).collect();
-        let runs = Arc::new(runs);
+    // Same key, different runs
+    kv.put(&run_a, "key", Value::Int(1)).unwrap();
+    kv.put(&run_b, "key", Value::Int(2)).unwrap();
 
-        // Each thread writes to its own run
-        let results = concurrent::run_with_shared(
-            num_threads,
-            (tp.clone(), runs.clone()),
-            |i, (tp, runs)| {
-                let run = &runs[i];
-                tp.kv.put(run, "value", values::int(i as i64)).unwrap();
-                tp.event_log
-                    .append(run, "event", values::event_payload(values::int(i as i64)))
-                    .unwrap();
-                i
-            },
-        );
-
-        // All threads completed
-        assert_eq!(results.len(), num_threads);
-
-        // Verify each run has correct data
-        for (i, run) in runs.iter().enumerate() {
-            assert_eq!(
-                tp.kv.get(run, "value").unwrap().map(|v| v.value),
-                Some(values::int(i as i64))
-            );
-            let events = tp.event_log.read_range(run, 0, 10).unwrap();
-            assert_eq!(events.len(), 1);
-        }
-    }
-
-    #[test]
-    fn test_concurrent_reads_from_different_runs() {
-        let tp = Arc::new(TestPrimitives::new());
-        let num_threads = 10;
-
-        // Setup: create runs with data
-        let runs: Vec<_> = (0..num_threads)
-            .map(|i| {
-                let run = tp.new_run();
-                tp.kv.put(&run, "value", values::int(i as i64)).unwrap();
-                run
-            })
-            .collect();
-        let runs = Arc::new(runs);
-
-        // Concurrent reads
-        let results = concurrent::run_with_shared(
-            num_threads,
-            (tp.clone(), runs.clone()),
-            |i, (tp, runs)| {
-                let run = &runs[i];
-                tp.kv.get(run, "value").unwrap().map(|v| v.value)
-            },
-        );
-
-        // All reads returned correct values
-        for (i, result) in results.iter().enumerate() {
-            assert_eq!(*result, Some(values::int(i as i64)));
-        }
-    }
-
-    #[test]
-    fn test_concurrent_create_and_write() {
-        let tp = Arc::new(TestPrimitives::new());
-        let num_threads = 10;
-
-        // Each thread creates its own run and writes to it
-        let results = concurrent::run_with_shared(num_threads, tp.clone(), |i, tp| {
-            let run = tp.new_run();
-            tp.kv.put(&run, "creator", values::int(i as i64)).unwrap();
-            tp.event_log
-                .append(&run, "created", values::event_payload(values::int(i as i64)))
-                .unwrap();
-            run
-        });
-
-        // Verify all runs were created with correct data
-        for (i, run) in results.iter().enumerate() {
-            assert_eq!(
-                tp.kv.get(run, "creator").unwrap().map(|v| v.value),
-                Some(values::int(i as i64))
-            );
-        }
-    }
+    // Each run sees its own value
+    assert_eq!(kv.get(&run_a, "key").unwrap().unwrap().value, Value::Int(1));
+    assert_eq!(kv.get(&run_b, "key").unwrap().unwrap().value, Value::Int(2));
 }
 
-// =============================================================================
-// Run Delete Isolation
-// =============================================================================
+#[test]
+fn kv_delete_doesnt_affect_other_run() {
+    let test_db = TestDb::new();
+    let kv = test_db.kv();
 
-mod run_delete_isolation {
-    use super::*;
+    let run_a = RunId::new();
+    let run_b = RunId::new();
 
-    #[test]
-    fn test_delete_run_preserves_other_runs() {
-        let tp = TestPrimitives::new();
-        // Create runs using new_run() which returns RunId
-        let run_a = tp.new_run();
-        let run_b = tp.new_run();
+    kv.put(&run_a, "key", Value::Int(1)).unwrap();
+    kv.put(&run_b, "key", Value::Int(2)).unwrap();
 
-        // Also register them in RunIndex for metadata tracking
-        let meta_a = tp.run_index.create_run("run-a").unwrap();
-        let meta_b = tp.run_index.create_run("run-b").unwrap();
+    kv.delete(&run_a, "key").unwrap();
 
-        // Write to both runs
-        tp.kv.put(&run_a, "key", values::string("a")).unwrap();
-        tp.kv.put(&run_b, "key", values::string("b")).unwrap();
-        tp.event_log
-            .append(&run_a, "event_a", values::empty_event_payload())
-            .unwrap();
-        tp.event_log
-            .append(&run_b, "event_b", values::empty_event_payload())
-            .unwrap();
+    // Run A's key is gone
+    assert!(kv.get(&run_a, "key").unwrap().is_none());
 
-        // Delete run A from RunIndex
-        tp.run_index.delete_run(&meta_a.value.name).unwrap();
-
-        // Run B data untouched
-        assert_eq!(tp.kv.get(&run_b, "key").unwrap().map(|v| v.value), Some(values::string("b")));
-        let events = tp.event_log.read_range(&run_b, 0, 10).unwrap();
-        assert_eq!(events.len(), 1);
-        assert_eq!(events[0].value.event_type, "event_b");
-
-        // Note: Deleting from RunIndex doesn't delete the actual primitive data
-        // That would be a separate cleanup operation
-    }
-
-    #[test]
-    fn test_multiple_run_metadata_management() {
-        let tp = TestPrimitives::new();
-
-        // Create run metadata entries
-        let metas: Vec<_> = (0..5)
-            .map(|i| tp.run_index.create_run(&format!("run-{}", i)).unwrap())
-            .collect();
-
-        // Create actual runs for data storage
-        let runs: Vec<_> = (0..5).map(|_| tp.new_run()).collect();
-
-        // Write to all runs
-        for (i, run) in runs.iter().enumerate() {
-            tp.kv.put(run, "value", values::int(i as i64)).unwrap();
-        }
-
-        // Delete some metadata entries (0, 2, 4)
-        tp.run_index.delete_run(&metas[0].value.name).unwrap();
-        tp.run_index.delete_run(&metas[2].value.name).unwrap();
-        tp.run_index.delete_run(&metas[4].value.name).unwrap();
-
-        // Runs 1, 3 still exist in index
-        assert!(tp.run_index.exists(&metas[1].value.name).unwrap());
-        assert!(tp.run_index.exists(&metas[3].value.name).unwrap());
-
-        // Deleted runs no longer in index
-        assert!(!tp.run_index.exists(&metas[0].value.name).unwrap());
-        assert!(!tp.run_index.exists(&metas[2].value.name).unwrap());
-        assert!(!tp.run_index.exists(&metas[4].value.name).unwrap());
-    }
-
-    #[test]
-    fn test_all_primitives_isolation_across_runs() {
-        let tp = TestPrimitives::new();
-        let run_a = tp.new_run();
-        let run_b = tp.new_run();
-
-        // Write to all primitives for both runs
-        for run in [&run_a, &run_b] {
-            tp.kv.put(run, "kv_key", values::int(1)).unwrap();
-            tp.event_log.append(run, "event", values::empty_event_payload()).unwrap();
-            tp.state_cell.init(run, "cell", values::int(0)).unwrap();
-        }
-
-        // Both runs have data
-        assert!(tp.kv.get(&run_a, "kv_key").unwrap().is_some());
-        assert!(tp.kv.get(&run_b, "kv_key").unwrap().is_some());
-        assert_eq!(tp.event_log.len(&run_a).unwrap(), 1);
-        assert_eq!(tp.event_log.len(&run_b).unwrap(), 1);
-        assert!(tp.state_cell.read(&run_a, "cell").unwrap().is_some());
-        assert!(tp.state_cell.read(&run_b, "cell").unwrap().is_some());
-    }
+    // Run B's key still exists
+    assert_eq!(kv.get(&run_b, "key").unwrap().unwrap().value, Value::Int(2));
 }
 
-// =============================================================================
-// Cross-Run Data Leakage Prevention
-// =============================================================================
+#[test]
+fn kv_list_only_shows_run_keys() {
+    let test_db = TestDb::new();
+    let kv = test_db.kv();
 
-mod cross_run_leakage_prevention {
-    use super::*;
+    let run_a = RunId::new();
+    let run_b = RunId::new();
 
-    #[test]
-    fn test_kv_list_returns_only_run_keys() {
-        let tp = TestPrimitives::new();
-        let run1 = tp.new_run();
-        let run2 = tp.new_run();
+    kv.put(&run_a, "a1", Value::Int(1)).unwrap();
+    kv.put(&run_a, "a2", Value::Int(2)).unwrap();
+    kv.put(&run_b, "b1", Value::Int(3)).unwrap();
 
-        // Write different keys to each run
-        tp.kv.put(&run1, "run1_key1", values::int(1)).unwrap();
-        tp.kv.put(&run1, "run1_key2", values::int(2)).unwrap();
-        tp.kv.put(&run2, "run2_key1", values::int(3)).unwrap();
-        tp.kv.put(&run2, "run2_key2", values::int(4)).unwrap();
-        tp.kv.put(&run2, "run2_key3", values::int(5)).unwrap();
+    let keys_a = kv.list(&run_a, None).unwrap();
+    let keys_b = kv.list(&run_b, None).unwrap();
 
-        // list() returns only keys for that run
-        let run1_keys = tp.kv.list(&run1, None).unwrap();
-        let run2_keys = tp.kv.list(&run2, None).unwrap();
+    assert_eq!(keys_a.len(), 2);
+    assert_eq!(keys_b.len(), 1);
 
-        assert_eq!(run1_keys.len(), 2);
-        assert!(run1_keys.contains(&"run1_key1".to_string()));
-        assert!(run1_keys.contains(&"run1_key2".to_string()));
-
-        assert_eq!(run2_keys.len(), 3);
-        assert!(run2_keys.contains(&"run2_key1".to_string()));
-        assert!(run2_keys.contains(&"run2_key2".to_string()));
-        assert!(run2_keys.contains(&"run2_key3".to_string()));
-    }
-
-    #[test]
-    fn test_eventlog_read_range_returns_only_run_events() {
-        let tp = TestPrimitives::new();
-        let run1 = tp.new_run();
-        let run2 = tp.new_run();
-
-        // Append events to each run
-        tp.event_log
-            .append(&run1, "run1_event", values::empty_event_payload())
-            .unwrap();
-        tp.event_log
-            .append(&run2, "run2_event_1", values::empty_event_payload())
-            .unwrap();
-        tp.event_log
-            .append(&run2, "run2_event_2", values::empty_event_payload())
-            .unwrap();
-
-        // read_range() returns only events for that run
-        let run1_events = tp.event_log.read_range(&run1, 0, 100).unwrap();
-        let run2_events = tp.event_log.read_range(&run2, 0, 100).unwrap();
-
-        assert_eq!(run1_events.len(), 1);
-        assert_eq!(run1_events[0].value.event_type, "run1_event");
-
-        assert_eq!(run2_events.len(), 2);
-    }
-
-    #[test]
-    fn test_statecell_list_returns_only_run_cells() {
-        let tp = TestPrimitives::new();
-        let run1 = tp.new_run();
-        let run2 = tp.new_run();
-
-        // Init cells in each run
-        tp.state_cell.init(&run1, "cell_a", values::int(1)).unwrap();
-        tp.state_cell.init(&run2, "cell_b", values::int(2)).unwrap();
-        tp.state_cell.init(&run2, "cell_c", values::int(3)).unwrap();
-
-        // list() returns only cells for that run
-        let run1_cells = tp.state_cell.list(&run1).unwrap();
-        let run2_cells = tp.state_cell.list(&run2).unwrap();
-
-        assert_eq!(run1_cells.len(), 1);
-        assert!(run1_cells.contains(&"cell_a".to_string()));
-
-        assert_eq!(run2_cells.len(), 2);
-        assert!(run2_cells.contains(&"cell_b".to_string()));
-        assert!(run2_cells.contains(&"cell_c".to_string()));
-    }
-
-    #[test]
-    fn test_run_operations_cannot_access_other_run_data() {
-        let tp = TestPrimitives::new();
-        let run1 = tp.new_run();
-        let run2 = tp.new_run();
-
-        // Write to run1
-        tp.kv
-            .put(&run1, "secret", values::string("run1_secret"))
-            .unwrap();
-
-        // run2 cannot see run1's data
-        assert!(tp.kv.get(&run2, "secret").unwrap().is_none());
-
-        // Writing to run2 with same key doesn't affect run1
-        tp.kv
-            .put(&run2, "secret", values::string("run2_secret"))
-            .unwrap();
-        assert_eq!(
-            tp.kv.get(&run1, "secret").unwrap().map(|v| v.value),
-            Some(values::string("run1_secret"))
-        );
-        assert_eq!(
-            tp.kv.get(&run2, "secret").unwrap().map(|v| v.value),
-            Some(values::string("run2_secret"))
-        );
-    }
+    assert!(keys_a.contains(&"a1".to_string()));
+    assert!(keys_a.contains(&"a2".to_string()));
+    assert!(keys_b.contains(&"b1".to_string()));
 }
 
-// =============================================================================
-// Run ID Uniqueness
-// =============================================================================
+// ============================================================================
+// EventLog Isolation
+// ============================================================================
 
-mod run_id_uniqueness {
-    use super::*;
+#[test]
+fn eventlog_runs_are_isolated() {
+    let test_db = TestDb::new();
+    let event = test_db.event();
 
-    #[test]
-    fn test_run_ids_are_unique() {
-        let tp = TestPrimitives::new();
-        let mut ids = HashSet::new();
+    let run_a = RunId::new();
+    let run_b = RunId::new();
 
-        // Create many runs
-        for _ in 0..100 {
-            let run = tp.new_run();
-            assert!(ids.insert(run), "Duplicate run ID generated");
-        }
+    event.append(&run_a, "type", event_payload(Value::String("run_a".into()))).unwrap();
+    event.append(&run_a, "type", event_payload(Value::String("run_a_2".into()))).unwrap();
+    event.append(&run_b, "type", event_payload(Value::String("run_b".into()))).unwrap();
+
+    assert_eq!(event.len(&run_a).unwrap(), 2);
+    assert_eq!(event.len(&run_b).unwrap(), 1);
+}
+
+#[test]
+fn eventlog_sequence_numbers_per_run() {
+    let test_db = TestDb::new();
+    let event = test_db.event();
+
+    let run_a = RunId::new();
+    let run_b = RunId::new();
+
+    // Both runs start sequence at 0
+    let seq_a = event.append(&run_a, "type", event_payload(Value::Int(1))).unwrap();
+    let seq_b = event.append(&run_b, "type", event_payload(Value::Int(1))).unwrap();
+
+    assert_eq!(seq_a.as_u64(), 0);
+    assert_eq!(seq_b.as_u64(), 0);
+}
+
+#[test]
+fn eventlog_hash_chain_per_run() {
+    let test_db = TestDb::new();
+    let event = test_db.event();
+
+    let run_a = RunId::new();
+    let run_b = RunId::new();
+
+    for i in 0..5 {
+        event.append(&run_a, "type", event_payload(Value::Int(i))).unwrap();
+        event.append(&run_b, "type", event_payload(Value::Int(i * 10))).unwrap();
     }
 
-    #[test]
-    fn test_concurrent_run_creation_unique_ids() {
-        use std::sync::Arc;
+    // Both chains should be valid independently
+    let chain_a = event.verify_chain(&run_a).unwrap();
+    let chain_b = event.verify_chain(&run_b).unwrap();
 
-        let tp = Arc::new(TestPrimitives::new());
-        let num_threads = 10;
-        let runs_per_thread = 10;
+    assert!(chain_a.is_valid);
+    assert!(chain_b.is_valid);
+    assert_eq!(chain_a.length, 5);
+    assert_eq!(chain_b.length, 5);
+}
 
-        let all_ids = concurrent::run_with_shared(num_threads, tp.clone(), move |_, tp| {
-            let mut ids = Vec::new();
-            for _ in 0..runs_per_thread {
-                ids.push(tp.new_run());
-            }
-            ids
-        });
+// ============================================================================
+// StateCell Isolation
+// ============================================================================
 
-        // Flatten and check uniqueness
-        let mut all: HashSet<RunId> = HashSet::new();
-        for thread_ids in all_ids {
-            for id in thread_ids {
-                assert!(all.insert(id), "Duplicate run ID from concurrent creation");
-            }
-        }
+#[test]
+fn statecell_runs_are_isolated() {
+    let test_db = TestDb::new();
+    let state = test_db.state();
 
-        assert_eq!(all.len(), num_threads * runs_per_thread);
+    let run_a = RunId::new();
+    let run_b = RunId::new();
+
+    // Same cell name, different runs
+    state.init(&run_a, "cell", Value::Int(1)).unwrap();
+    state.init(&run_b, "cell", Value::Int(2)).unwrap();
+
+    assert_eq!(state.read(&run_a, "cell").unwrap().unwrap().value.value, Value::Int(1));
+    assert_eq!(state.read(&run_b, "cell").unwrap().unwrap().value.value, Value::Int(2));
+}
+
+#[test]
+fn statecell_cas_isolated() {
+    let test_db = TestDb::new();
+    let state = test_db.state();
+
+    let run_a = RunId::new();
+    let run_b = RunId::new();
+
+    state.init(&run_a, "cell", Value::Int(0)).unwrap();
+    state.init(&run_b, "cell", Value::Int(0)).unwrap();
+
+    let version_a = state.read(&run_a, "cell").unwrap().unwrap().version;
+    let version_b = state.read(&run_b, "cell").unwrap().unwrap().version;
+
+    // CAS on run A
+    state.cas(&run_a, "cell", version_a, Value::Int(100)).unwrap();
+
+    // Run B unchanged
+    assert_eq!(state.read(&run_b, "cell").unwrap().unwrap().value.value, Value::Int(0));
+
+    // CAS on run B still works with its original version
+    state.cas(&run_b, "cell", version_b, Value::Int(200)).unwrap();
+
+    // Both have their own values
+    assert_eq!(state.read(&run_a, "cell").unwrap().unwrap().value.value, Value::Int(100));
+    assert_eq!(state.read(&run_b, "cell").unwrap().unwrap().value.value, Value::Int(200));
+}
+
+// ============================================================================
+// JsonStore Isolation
+// ============================================================================
+
+#[test]
+fn jsonstore_runs_are_isolated() {
+    let test_db = TestDb::new();
+    let json = test_db.json();
+
+    let run_a = RunId::new();
+    let run_b = RunId::new();
+
+    json.create(&run_a, "doc", serde_json::json!({"run": "a"}).into()).unwrap();
+    json.create(&run_b, "doc", serde_json::json!({"run": "b"}).into()).unwrap();
+
+    let a_doc = json.get(&run_a, "doc", &JsonPath::root()).unwrap().unwrap();
+    let b_doc = json.get(&run_b, "doc", &JsonPath::root()).unwrap().unwrap();
+
+    assert_eq!(a_doc.value["run"], "a");
+    assert_eq!(b_doc.value["run"], "b");
+}
+
+#[test]
+fn jsonstore_count_per_run() {
+    let test_db = TestDb::new();
+    let json = test_db.json();
+
+    let run_a = RunId::new();
+    let run_b = RunId::new();
+
+    json.create(&run_a, "doc1", serde_json::json!({}).into()).unwrap();
+    json.create(&run_a, "doc2", serde_json::json!({}).into()).unwrap();
+    json.create(&run_b, "doc1", serde_json::json!({}).into()).unwrap();
+
+    assert_eq!(json.count(&run_a).unwrap(), 2);
+    assert_eq!(json.count(&run_b).unwrap(), 1);
+}
+
+// ============================================================================
+// VectorStore Isolation
+// ============================================================================
+
+#[test]
+fn vectorstore_collections_per_run() {
+    let test_db = TestDb::new();
+    let vector = test_db.vector();
+
+    let run_a = RunId::new();
+    let run_b = RunId::new();
+
+    let config = config_small();
+
+    // Same collection name, different runs
+    vector.create_collection(run_a, "coll", config.clone()).unwrap();
+    vector.create_collection(run_b, "coll", config.clone()).unwrap();
+
+    // Both exist independently
+    assert!(vector.collection_exists(run_a, "coll").unwrap());
+    assert!(vector.collection_exists(run_b, "coll").unwrap());
+
+    // Delete from run A doesn't affect run B
+    vector.delete_collection(run_a, "coll").unwrap();
+
+    assert!(!vector.collection_exists(run_a, "coll").unwrap());
+    assert!(vector.collection_exists(run_b, "coll").unwrap());
+}
+
+#[test]
+fn vectorstore_vectors_per_run() {
+    let test_db = TestDb::new();
+    let vector = test_db.vector();
+
+    let run_a = RunId::new();
+    let run_b = RunId::new();
+
+    let config = config_small();
+    vector.create_collection(run_a, "coll", config.clone()).unwrap();
+    vector.create_collection(run_b, "coll", config.clone()).unwrap();
+
+    // Insert different vectors with same key
+    vector.insert(run_a, "coll", "vec", &[1.0f32, 0.0, 0.0], None).unwrap();
+    vector.insert(run_b, "coll", "vec", &[0.0f32, 1.0, 0.0], None).unwrap();
+
+    let a_vec = vector.get(run_a, "coll", "vec").unwrap().unwrap();
+    let b_vec = vector.get(run_b, "coll", "vec").unwrap().unwrap();
+
+    assert_eq!(a_vec.value.embedding, vec![1.0f32, 0.0, 0.0]);
+    assert_eq!(b_vec.value.embedding, vec![0.0f32, 1.0, 0.0]);
+}
+
+// ============================================================================
+// Cross-Primitive Run Isolation
+// ============================================================================
+
+#[test]
+fn all_primitives_isolated_by_run() {
+    let test_db = TestDb::new();
+    let prims = test_db.all_primitives();
+
+    let run_a = RunId::new();
+    let run_b = RunId::new();
+
+    // Write to all primitives in run A
+    prims.kv.put(&run_a, "key", Value::Int(1)).unwrap();
+    prims.event.append(&run_a, "type", event_payload(Value::Int(1))).unwrap();
+    prims.state.init(&run_a, "cell", Value::Int(1)).unwrap();
+    prims.json.create(&run_a, "doc", serde_json::json!({"n": 1}).into()).unwrap();
+
+    // Run B should see nothing
+    assert!(prims.kv.get(&run_b, "key").unwrap().is_none());
+    assert_eq!(prims.event.len(&run_b).unwrap(), 0);
+    assert!(!prims.state.exists(&run_b, "cell").unwrap());
+    assert!(!prims.json.exists(&run_b, "doc").unwrap());
+}
+
+#[test]
+fn many_runs_no_interference() {
+    let test_db = TestDb::new();
+    let kv = test_db.kv();
+
+    // Create 10 runs, each with its own data
+    let runs: Vec<RunId> = (0..10).map(|_| RunId::new()).collect();
+
+    for (i, run_id) in runs.iter().enumerate() {
+        kv.put(run_id, "data", Value::Int(i as i64)).unwrap();
+    }
+
+    // Each run sees only its own data
+    for (i, run_id) in runs.iter().enumerate() {
+        let val = kv.get(run_id, "data").unwrap().unwrap();
+        assert_eq!(val.value, Value::Int(i as i64));
     }
 }
