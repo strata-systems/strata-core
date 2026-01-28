@@ -504,3 +504,608 @@ impl MetadataFilter {
         self.equals.len()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ================================================================
+    // VectorId
+    // ================================================================
+
+    #[test]
+    fn test_vector_id_creation() {
+        let id = VectorId::new(42);
+        assert_eq!(id.as_u64(), 42);
+    }
+
+    #[test]
+    fn test_vector_id_ordering() {
+        let a = VectorId::new(1);
+        let b = VectorId::new(2);
+        assert!(a < b);
+        assert!(b > a);
+        assert_eq!(VectorId::new(5), VectorId::new(5));
+    }
+
+    #[test]
+    fn test_vector_id_zero() {
+        let id = VectorId::new(0);
+        assert_eq!(id.as_u64(), 0);
+    }
+
+    #[test]
+    fn test_vector_id_display() {
+        let id = VectorId::new(42);
+        assert_eq!(format!("{}", id), "VectorId(42)");
+    }
+
+    #[test]
+    fn test_vector_id_hash() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(VectorId::new(1));
+        set.insert(VectorId::new(2));
+        set.insert(VectorId::new(1)); // duplicate
+        assert_eq!(set.len(), 2);
+    }
+
+    // ================================================================
+    // DistanceMetric
+    // ================================================================
+
+    #[test]
+    fn test_distance_metric_variants() {
+        assert_eq!(DistanceMetric::Cosine.name(), "cosine");
+        assert_eq!(DistanceMetric::Euclidean.name(), "euclidean");
+        assert_eq!(DistanceMetric::DotProduct.name(), "dot_product");
+    }
+
+    #[test]
+    fn test_distance_metric_default() {
+        assert_eq!(DistanceMetric::default(), DistanceMetric::Cosine);
+    }
+
+    #[test]
+    fn test_distance_metric_parse() {
+        assert_eq!(DistanceMetric::parse("cosine"), Some(DistanceMetric::Cosine));
+        assert_eq!(DistanceMetric::parse("euclidean"), Some(DistanceMetric::Euclidean));
+        assert_eq!(DistanceMetric::parse("l2"), Some(DistanceMetric::Euclidean));
+        assert_eq!(DistanceMetric::parse("dot_product"), Some(DistanceMetric::DotProduct));
+        assert_eq!(DistanceMetric::parse("dot"), Some(DistanceMetric::DotProduct));
+        assert_eq!(DistanceMetric::parse("inner_product"), Some(DistanceMetric::DotProduct));
+        assert_eq!(DistanceMetric::parse("COSINE"), Some(DistanceMetric::Cosine)); // case-insensitive
+        assert_eq!(DistanceMetric::parse("unknown"), None);
+    }
+
+    #[test]
+    fn test_distance_metric_byte_roundtrip() {
+        for metric in [DistanceMetric::Cosine, DistanceMetric::Euclidean, DistanceMetric::DotProduct] {
+            let byte = metric.to_byte();
+            let restored = DistanceMetric::from_byte(byte).unwrap();
+            assert_eq!(metric, restored);
+        }
+        assert!(DistanceMetric::from_byte(255).is_none());
+    }
+
+    // ================================================================
+    // StorageDtype
+    // ================================================================
+
+    #[test]
+    fn test_storage_dtype_default() {
+        assert_eq!(StorageDtype::default(), StorageDtype::F32);
+    }
+
+    #[test]
+    fn test_storage_dtype_byte_roundtrip() {
+        let dtype = StorageDtype::F32;
+        let byte = dtype.to_byte();
+        let restored = StorageDtype::from_byte(byte).unwrap();
+        assert_eq!(dtype, restored);
+        assert!(StorageDtype::from_byte(255).is_none());
+    }
+
+    // ================================================================
+    // VectorConfig
+    // ================================================================
+
+    #[test]
+    fn test_vector_config_new() {
+        let config = VectorConfig::new(384, DistanceMetric::Cosine).unwrap();
+        assert_eq!(config.dimension, 384);
+        assert_eq!(config.metric, DistanceMetric::Cosine);
+        assert_eq!(config.storage_dtype, StorageDtype::F32);
+    }
+
+    #[test]
+    fn test_vector_config_zero_dimension_rejected() {
+        let result = VectorConfig::new(0, DistanceMetric::Cosine);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_vector_config_presets() {
+        let ada = VectorConfig::for_openai_ada();
+        assert_eq!(ada.dimension, 1536);
+
+        let large = VectorConfig::for_openai_large();
+        assert_eq!(large.dimension, 3072);
+
+        let minilm = VectorConfig::for_minilm();
+        assert_eq!(minilm.dimension, 384);
+
+        let mpnet = VectorConfig::for_mpnet();
+        assert_eq!(mpnet.dimension, 768);
+    }
+
+    #[test]
+    fn test_vector_config_serialization() {
+        let config = VectorConfig::new(384, DistanceMetric::Euclidean).unwrap();
+        let json = serde_json::to_string(&config).unwrap();
+        let restored: VectorConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(config, restored);
+    }
+
+    // ================================================================
+    // VectorEntry
+    // ================================================================
+
+    #[test]
+    fn test_vector_entry_new() {
+        let entry = VectorEntry::new(
+            "doc-1".to_string(),
+            vec![1.0, 2.0, 3.0],
+            None,
+            VectorId::new(1),
+        );
+        assert_eq!(entry.key, "doc-1");
+        assert_eq!(entry.dimension(), 3);
+        assert_eq!(entry.vector_id(), VectorId::new(1));
+        assert_eq!(entry.version(), Version::txn(1));
+        assert!(entry.metadata.is_none());
+        assert!(entry.source_ref().is_none());
+    }
+
+    #[test]
+    fn test_vector_entry_with_metadata() {
+        let meta = serde_json::json!({"category": "science"});
+        let entry = VectorEntry::new(
+            "doc-2".to_string(),
+            vec![0.5; 384],
+            Some(meta.clone()),
+            VectorId::new(2),
+        );
+        assert_eq!(entry.metadata, Some(meta));
+    }
+
+    #[test]
+    fn test_vector_entry_with_source_ref() {
+        let run_id = RunId::new();
+        let source = EntityRef::json(run_id, "source-doc");
+        let entry = VectorEntry::new_with_source(
+            "emb-1".to_string(),
+            vec![1.0, 2.0],
+            None,
+            VectorId::new(3),
+            source.clone(),
+        );
+        assert_eq!(entry.source_ref(), Some(&source));
+    }
+
+    // ================================================================
+    // VectorMatch
+    // ================================================================
+
+    #[test]
+    fn test_vector_match_new() {
+        let m = VectorMatch::new("key-1".to_string(), 0.95, None);
+        assert_eq!(m.key, "key-1");
+        assert!((m.score - 0.95).abs() < f32::EPSILON);
+        assert!(m.metadata.is_none());
+    }
+
+    // ================================================================
+    // CollectionId
+    // ================================================================
+
+    #[test]
+    fn test_collection_id_equality() {
+        let run_id = RunId::new();
+        let c1 = CollectionId::new(run_id, "embeddings");
+        let c2 = CollectionId::new(run_id, "embeddings");
+        assert_eq!(c1, c2);
+    }
+
+    #[test]
+    fn test_collection_id_ordering() {
+        let r1 = RunId::new();
+        let r2 = RunId::new();
+        let c1 = CollectionId::new(r1, "a");
+        let c2 = CollectionId::new(r1, "b");
+        // Same run_id, different name: should have defined ordering
+        assert!(c1 < c2 || c1 > c2 || c1 == c2);
+        // Different run_id
+        let c3 = CollectionId::new(r2, "a");
+        assert_ne!(c1, c3);
+    }
+
+    // ================================================================
+    // JsonScalar
+    // ================================================================
+
+    #[test]
+    fn test_json_scalar_from_conversions() {
+        let s: JsonScalar = true.into();
+        assert_eq!(s, JsonScalar::Bool(true));
+
+        let s: JsonScalar = 42i32.into();
+        assert!(matches!(s, JsonScalar::Number(_)));
+
+        let s: JsonScalar = 3.14f64.into();
+        assert!(matches!(s, JsonScalar::Number(_)));
+
+        let s: JsonScalar = "hello".into();
+        assert_eq!(s, JsonScalar::String("hello".to_string()));
+    }
+
+    #[test]
+    fn test_json_scalar_matches_json() {
+        assert!(JsonScalar::Null.matches_json(&serde_json::Value::Null));
+        assert!(JsonScalar::Bool(true).matches_json(&serde_json::json!(true)));
+        assert!(JsonScalar::Number(42.0).matches_json(&serde_json::json!(42)));
+        assert!(JsonScalar::String("hi".to_string()).matches_json(&serde_json::json!("hi")));
+        // Mismatched types
+        assert!(!JsonScalar::Bool(true).matches_json(&serde_json::json!(1)));
+        assert!(!JsonScalar::Null.matches_json(&serde_json::json!(false)));
+    }
+
+    // ================================================================
+    // MetadataFilter
+    // ================================================================
+
+    #[test]
+    fn test_metadata_filter_empty_matches_all() {
+        let filter = MetadataFilter::new();
+        assert!(filter.is_empty());
+        assert!(filter.matches(&None));
+        assert!(filter.matches(&Some(serde_json::json!({"any": "value"}))));
+    }
+
+    #[test]
+    fn test_metadata_filter_eq_match() {
+        let filter = MetadataFilter::new()
+            .eq("color", "red")
+            .eq("active", true);
+
+        assert_eq!(filter.len(), 2);
+
+        let meta = Some(serde_json::json!({"color": "red", "active": true}));
+        assert!(filter.matches(&meta));
+
+        let meta_wrong = Some(serde_json::json!({"color": "blue", "active": true}));
+        assert!(!filter.matches(&meta_wrong));
+    }
+
+    #[test]
+    fn test_metadata_filter_none_metadata_no_match() {
+        let filter = MetadataFilter::new().eq("key", "val");
+        assert!(!filter.matches(&None));
+    }
+
+    #[test]
+    fn test_metadata_filter_non_object_no_match() {
+        let filter = MetadataFilter::new().eq("key", "val");
+        assert!(!filter.matches(&Some(serde_json::json!("not an object"))));
+    }
+
+    #[test]
+    fn test_metadata_filter_missing_field_no_match() {
+        let filter = MetadataFilter::new().eq("missing", "val");
+        let meta = Some(serde_json::json!({"other": "val"}));
+        assert!(!filter.matches(&meta));
+    }
+
+    #[test]
+    fn test_metadata_filter_extra_fields_still_match() {
+        // Filter only checks specified fields - extra fields in metadata are ignored
+        let filter = MetadataFilter::new().eq("color", "red");
+        let meta = Some(serde_json::json!({"color": "red", "size": 42, "extra": true}));
+        assert!(filter.matches(&meta));
+    }
+
+    #[test]
+    fn test_metadata_filter_array_metadata_no_match() {
+        let filter = MetadataFilter::new().eq("key", "val");
+        assert!(!filter.matches(&Some(serde_json::json!([1, 2, 3]))));
+    }
+
+    // ================================================================
+    // CollectionInfo
+    // ================================================================
+
+    #[test]
+    fn test_collection_info_serialization_roundtrip() {
+        let info = CollectionInfo {
+            name: "embeddings".to_string(),
+            config: VectorConfig::for_minilm(),
+            count: 1000,
+            created_at: 1700000000_000000,
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        let restored: CollectionInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.name, "embeddings");
+        assert_eq!(restored.config.dimension, 384);
+        assert_eq!(restored.count, 1000);
+        assert_eq!(restored.created_at, 1700000000_000000);
+    }
+
+    #[test]
+    fn test_collection_info_zero_count() {
+        let info = CollectionInfo {
+            name: "empty".to_string(),
+            config: VectorConfig::new(128, DistanceMetric::Euclidean).unwrap(),
+            count: 0,
+            created_at: 0,
+        };
+        assert_eq!(info.count, 0);
+        assert_eq!(info.created_at, 0);
+    }
+
+    // ================================================================
+    // VectorEntry serialization & edge cases
+    // ================================================================
+
+    #[test]
+    fn test_vector_entry_serialization_roundtrip() {
+        let entry = VectorEntry::new(
+            "doc-1".to_string(),
+            vec![1.0, 2.0, 3.0],
+            Some(serde_json::json!({"k": "v"})),
+            VectorId::new(7),
+        );
+        let json = serde_json::to_string(&entry).unwrap();
+        let restored: VectorEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.key, "doc-1");
+        assert_eq!(restored.embedding, vec![1.0, 2.0, 3.0]);
+        assert_eq!(restored.vector_id, VectorId::new(7));
+        assert_eq!(restored.metadata, Some(serde_json::json!({"k": "v"})));
+    }
+
+    #[test]
+    fn test_vector_entry_source_ref_skip_serializing_if_none() {
+        // source_ref should be absent from JSON when None
+        let entry = VectorEntry::new("k".to_string(), vec![1.0], None, VectorId::new(1));
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(!json.contains("source_ref"), "source_ref should be skipped when None");
+
+        // Deserializing JSON without source_ref should produce None
+        let restored: VectorEntry = serde_json::from_str(&json).unwrap();
+        assert!(restored.source_ref.is_none());
+    }
+
+    #[test]
+    fn test_vector_entry_source_ref_serialization_roundtrip() {
+        let run_id = RunId::new();
+        let source = EntityRef::json(run_id, "source-doc");
+        let entry = VectorEntry::new_with_source(
+            "emb".to_string(), vec![1.0], None, VectorId::new(1), source.clone(),
+        );
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("source_ref"), "source_ref should be present when Some");
+        let restored: VectorEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.source_ref, Some(source));
+    }
+
+    #[test]
+    fn test_vector_entry_empty_embedding() {
+        let entry = VectorEntry::new("empty".to_string(), vec![], None, VectorId::new(0));
+        assert_eq!(entry.dimension(), 0);
+    }
+
+    #[test]
+    fn test_vector_entry_nan_in_embedding() {
+        // NaN is a valid f32 and can appear in embeddings
+        let entry = VectorEntry::new(
+            "nan".to_string(),
+            vec![f32::NAN, 1.0, f32::NEG_INFINITY],
+            None,
+            VectorId::new(1),
+        );
+        assert!(entry.embedding[0].is_nan());
+        assert!(entry.embedding[2].is_infinite());
+        assert_eq!(entry.dimension(), 3);
+    }
+
+    #[test]
+    fn test_vector_entry_large_dimension() {
+        let entry = VectorEntry::new(
+            "large".to_string(),
+            vec![0.0; 4096],
+            None,
+            VectorId::new(1),
+        );
+        assert_eq!(entry.dimension(), 4096);
+    }
+
+    // ================================================================
+    // VectorMatch serialization
+    // ================================================================
+
+    #[test]
+    fn test_vector_match_serialization_roundtrip() {
+        let m = VectorMatch::new(
+            "key".to_string(),
+            0.875,
+            Some(serde_json::json!({"source": "test"})),
+        );
+        let json = serde_json::to_string(&m).unwrap();
+        let restored: VectorMatch = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.key, "key");
+        assert!((restored.score - 0.875).abs() < f32::EPSILON);
+        assert!(restored.metadata.is_some());
+    }
+
+    #[test]
+    fn test_vector_match_negative_score() {
+        // Cosine similarity can be negative
+        let m = VectorMatch::new("neg".to_string(), -0.5, None);
+        assert!(m.score < 0.0);
+    }
+
+    // ================================================================
+    // VectorId edge cases
+    // ================================================================
+
+    #[test]
+    fn test_vector_id_max() {
+        let id = VectorId::new(u64::MAX);
+        assert_eq!(id.as_u64(), u64::MAX);
+        assert_eq!(format!("{}", id), format!("VectorId({})", u64::MAX));
+    }
+
+    #[test]
+    fn test_vector_id_serialization_roundtrip() {
+        let id = VectorId::new(12345);
+        let json = serde_json::to_string(&id).unwrap();
+        let restored: VectorId = serde_json::from_str(&json).unwrap();
+        assert_eq!(id, restored);
+    }
+
+    // ================================================================
+    // DistanceMetric serde
+    // ================================================================
+
+    #[test]
+    fn test_distance_metric_serde_roundtrip() {
+        for metric in [DistanceMetric::Cosine, DistanceMetric::Euclidean, DistanceMetric::DotProduct] {
+            let json = serde_json::to_string(&metric).unwrap();
+            let restored: DistanceMetric = serde_json::from_str(&json).unwrap();
+            assert_eq!(metric, restored);
+        }
+    }
+
+    #[test]
+    fn test_distance_metric_parse_empty_string() {
+        assert_eq!(DistanceMetric::parse(""), None);
+    }
+
+    #[test]
+    fn test_distance_metric_from_byte_reserved_values() {
+        // Bytes 3+ are not assigned - should return None
+        for b in 3..=255u8 {
+            assert!(DistanceMetric::from_byte(b).is_none(), "Byte {} should not map to a metric", b);
+        }
+    }
+
+    // ================================================================
+    // StorageDtype serde
+    // ================================================================
+
+    #[test]
+    fn test_storage_dtype_serde_roundtrip() {
+        let dtype = StorageDtype::F32;
+        let json = serde_json::to_string(&dtype).unwrap();
+        let restored: StorageDtype = serde_json::from_str(&json).unwrap();
+        assert_eq!(dtype, restored);
+    }
+
+    #[test]
+    fn test_storage_dtype_from_byte_reserved_values() {
+        // Bytes 1+ are reserved for future F16/Int8
+        for b in 1..=255u8 {
+            assert!(StorageDtype::from_byte(b).is_none(), "Byte {} should not map to a dtype", b);
+        }
+    }
+
+    // ================================================================
+    // JsonScalar edge cases
+    // ================================================================
+
+    #[test]
+    fn test_json_scalar_number_nan_does_not_match() {
+        // NaN != NaN, so a NaN JsonScalar should not match a NaN JSON value
+        let scalar = JsonScalar::Number(f64::NAN);
+        // serde_json doesn't support NaN, so test with a normal number
+        assert!(!scalar.matches_json(&serde_json::json!(42)));
+        assert!(!scalar.matches_json(&serde_json::json!(f64::NAN))); // json!(NaN) → null
+    }
+
+    #[test]
+    fn test_json_scalar_from_i64_large() {
+        let s: JsonScalar = i64::MAX.into();
+        if let JsonScalar::Number(n) = s {
+            // i64::MAX loses precision when cast to f64
+            assert!(n > 0.0);
+        } else {
+            panic!("Expected Number variant");
+        }
+    }
+
+    #[test]
+    fn test_json_scalar_from_f32() {
+        let s: JsonScalar = 1.5f32.into();
+        if let JsonScalar::Number(n) = s {
+            assert!((n - 1.5).abs() < f64::EPSILON);
+        } else {
+            panic!("Expected Number variant");
+        }
+    }
+
+    #[test]
+    fn test_json_scalar_string_empty() {
+        let s: JsonScalar = "".into();
+        assert!(s.matches_json(&serde_json::json!("")));
+        assert!(!s.matches_json(&serde_json::json!(" ")));
+    }
+
+    // ================================================================
+    // CollectionId edge cases
+    // ================================================================
+
+    #[test]
+    fn test_collection_id_same_run_different_name() {
+        let run_id = RunId::new();
+        let c1 = CollectionId::new(run_id, "alpha");
+        let c2 = CollectionId::new(run_id, "beta");
+        assert_ne!(c1, c2);
+        assert!(c1 < c2, "alpha should sort before beta");
+    }
+
+    #[test]
+    fn test_collection_id_hash() {
+        use std::collections::HashSet;
+        let run_id = RunId::new();
+        let mut set = HashSet::new();
+        set.insert(CollectionId::new(run_id, "a"));
+        set.insert(CollectionId::new(run_id, "a")); // duplicate
+        set.insert(CollectionId::new(run_id, "b"));
+        assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn test_collection_id_serialization_roundtrip() {
+        let run_id = RunId::new();
+        let cid = CollectionId::new(run_id, "my_collection");
+        let json = serde_json::to_string(&cid).unwrap();
+        let restored: CollectionId = serde_json::from_str(&json).unwrap();
+        assert_eq!(cid, restored);
+    }
+
+    // ================================================================
+    // VectorConfig edge cases
+    // ================================================================
+
+    #[test]
+    fn test_vector_config_dimension_one() {
+        let config = VectorConfig::new(1, DistanceMetric::DotProduct).unwrap();
+        assert_eq!(config.dimension, 1);
+    }
+
+    #[test]
+    fn test_vector_config_different_metrics_not_equal() {
+        let c1 = VectorConfig::new(128, DistanceMetric::Cosine).unwrap();
+        let c2 = VectorConfig::new(128, DistanceMetric::Euclidean).unwrap();
+        assert_ne!(c1, c2);
+    }
+}

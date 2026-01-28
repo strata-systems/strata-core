@@ -415,4 +415,110 @@ mod tests {
 
         assert_eq!(v1, v2);
     }
+
+    #[test]
+    fn test_versioned_with_option() {
+        let v: Versioned<Option<i32>> = Versioned::new(Some(42), Version::txn(1));
+        assert_eq!(*v.value(), Some(42));
+
+        let v_none: Versioned<Option<i32>> = Versioned::new(None, Version::txn(2));
+        assert_eq!(*v_none.value(), None);
+    }
+
+    #[test]
+    fn test_versioned_with_unit() {
+        let v: Versioned<()> = Versioned::new((), Version::txn(1));
+        assert_eq!(*v.value(), ());
+    }
+
+    #[test]
+    fn test_versioned_map_changes_type() {
+        let v = Versioned::new(42i32, Version::txn(1));
+        let v2: Versioned<String> = v.map(|n| format!("num:{}", n));
+        assert_eq!(v2.value, "num:42");
+        assert_eq!(v2.version, Version::Txn(1));
+    }
+
+    #[test]
+    fn test_versioned_equality_includes_timestamp() {
+        let ts1 = Timestamp::from_micros(1000);
+        let ts2 = Timestamp::from_micros(2000);
+        let v1 = Versioned::with_timestamp(42, Version::txn(1), ts1);
+        let v2 = Versioned::with_timestamp(42, Version::txn(1), ts2);
+        assert_ne!(v1, v2);
+    }
+
+    #[test]
+    fn test_versioned_value_convenience_methods() {
+        let v_null = Versioned::new(Value::Null, Version::txn(1));
+        assert!(v_null.is_null());
+        assert!(!v_null.is_bool());
+
+        let v_bool = Versioned::new(Value::Bool(true), Version::txn(1));
+        assert!(v_bool.is_bool());
+        assert_eq!(v_bool.as_bool(), Some(true));
+
+        let v_int = Versioned::new(Value::Int(42), Version::txn(1));
+        assert!(v_int.is_int());
+        assert_eq!(v_int.as_int(), Some(42));
+
+        let v_float = Versioned::new(Value::Float(3.14), Version::txn(1));
+        assert!(v_float.is_float());
+        assert!((v_float.as_float().unwrap() - 3.14).abs() < f64::EPSILON);
+
+        let v_str = Versioned::new(Value::String("hello".into()), Version::txn(1));
+        assert!(v_str.is_string());
+        assert_eq!(v_str.as_str(), Some("hello"));
+
+        let v_bytes = Versioned::new(Value::Bytes(vec![1, 2, 3]), Version::txn(1));
+        assert!(v_bytes.is_bytes());
+        assert_eq!(v_bytes.as_bytes(), Some(&[1u8, 2, 3][..]));
+
+        let v_arr = Versioned::new(Value::Array(vec![Value::Int(1)]), Version::txn(1));
+        assert!(v_arr.is_array());
+        assert_eq!(v_arr.as_array().unwrap().len(), 1);
+
+        let mut map = HashMap::new();
+        map.insert("k".to_string(), Value::Int(1));
+        let v_obj = Versioned::new(Value::Object(map), Version::txn(1));
+        assert!(v_obj.is_object());
+        assert_eq!(v_obj.as_object().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_versioned_is_older_than_with_future_timestamp() {
+        // Future timestamp should never be "older than" anything
+        let future = Timestamp::from_micros(u64::MAX);
+        let v = Versioned::with_timestamp(1, Version::txn(1), future);
+        assert!(!v.is_older_than(Duration::from_secs(1)));
+    }
+
+    #[test]
+    fn test_versioned_age_with_future_timestamp() {
+        let future = Timestamp::from_micros(u64::MAX);
+        let v = Versioned::with_timestamp(1, Version::txn(1), future);
+        // Future timestamp should return None for age
+        assert!(v.age().is_none());
+    }
+
+    #[test]
+    fn test_versioned_map_preserves_timestamp() {
+        let ts = Timestamp::from_micros(99999);
+        let v = Versioned::with_timestamp(10, Version::txn(5), ts);
+        let mapped = v.map(|n| n + 1);
+        assert_eq!(mapped.value, 11);
+        assert_eq!(mapped.timestamp, ts);
+        assert_eq!(mapped.version, Version::Txn(5));
+    }
+
+    #[test]
+    fn test_versioned_wrong_type_returns_none() {
+        let v = Versioned::new(Value::Int(42), Version::txn(1));
+        assert!(v.as_str().is_none());
+        assert!(v.as_bool().is_none());
+        assert!(v.as_float().is_none());
+        assert!(v.as_bytes().is_none());
+        assert!(v.as_array().is_none());
+        assert!(v.as_object().is_none());
+    }
 }

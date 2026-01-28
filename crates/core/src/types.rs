@@ -485,20 +485,30 @@ mod tests {
     }
 
     #[test]
-    fn test_run_id_clone() {
-        let id1 = RunId::new();
-        let id2 = id1.clone();
-        assert_eq!(id1, id2, "Cloned RunId should equal original");
+    fn test_run_id_nil_uuid() {
+        let nil = RunId::from_bytes([0u8; 16]);
+        let display = format!("{}", nil);
+        assert_eq!(display, "00000000-0000-0000-0000-000000000000");
+        // Nil UUID should still be usable as a key
+        let mut set = std::collections::HashSet::new();
+        set.insert(nil);
+        assert!(set.contains(&nil));
     }
 
     #[test]
-    fn test_run_id_debug() {
-        let id = RunId::new();
-        let debug_str = format!("{:?}", id);
-        assert!(
-            debug_str.contains("RunId"),
-            "Debug should include type name"
-        );
+    fn test_run_id_from_string_nil() {
+        let nil = RunId::from_string("00000000-0000-0000-0000-000000000000");
+        assert!(nil.is_some());
+        assert_eq!(*nil.unwrap().as_bytes(), [0u8; 16]);
+    }
+
+    #[test]
+    fn test_run_id_bytes_roundtrip_preserves_all_bits() {
+        // Ensure no bits are lost in from_bytes/as_bytes
+        let bytes: [u8; 16] = [0xFF, 0x00, 0xAA, 0x55, 0x01, 0x02, 0x03, 0x04,
+                                 0x80, 0x7F, 0xFE, 0xFD, 0x10, 0x20, 0x30, 0x40];
+        let id = RunId::from_bytes(bytes);
+        assert_eq!(*id.as_bytes(), bytes);
     }
 
     // ========================================
@@ -656,35 +666,40 @@ mod tests {
     }
 
     #[test]
-    fn test_namespace_clone() {
+    fn test_namespace_for_run() {
         let run_id = RunId::new();
-        let ns1 = Namespace::new(
-            "acme".to_string(),
-            "chatbot".to_string(),
-            "agent-42".to_string(),
-            run_id,
-        );
-
-        let ns2 = ns1.clone();
-        assert_eq!(ns1, ns2, "Cloned namespace should equal original");
+        let ns = Namespace::for_run(run_id);
+        assert_eq!(ns.tenant, "default");
+        assert_eq!(ns.app, "default");
+        assert_eq!(ns.agent, "default");
+        assert_eq!(ns.run_id, run_id);
     }
 
     #[test]
-    fn test_namespace_debug() {
-        let run_id = RunId::new();
-        let ns = Namespace::new(
-            "acme".to_string(),
-            "chatbot".to_string(),
-            "agent-42".to_string(),
-            run_id,
-        );
+    fn test_namespace_for_run_different_runs_differ() {
+        let ns1 = Namespace::for_run(RunId::new());
+        let ns2 = Namespace::for_run(RunId::new());
+        assert_ne!(ns1, ns2, "Different run_ids should produce different namespaces");
+    }
 
-        let debug_str = format!("{:?}", ns);
-        assert!(
-            debug_str.contains("Namespace"),
-            "Debug should include type name"
-        );
-        assert!(debug_str.contains("acme"), "Debug should include tenant");
+    #[test]
+    fn test_namespace_display_empty_components() {
+        let run_id = RunId::new();
+        let ns = Namespace::new("".to_string(), "".to_string(), "".to_string(), run_id);
+        let display = format!("{}", ns);
+        // Should produce "///run_id" with empty components
+        assert!(display.starts_with("///"), "Empty components should produce leading slashes");
+        assert!(display.ends_with(&format!("{}", run_id)));
+    }
+
+    #[test]
+    fn test_namespace_ordering_is_total() {
+        // Verify Ord is consistent with PartialOrd
+        let run_id = RunId::new();
+        let ns1 = Namespace::for_run(run_id);
+        let ns2 = Namespace::for_run(run_id);
+        assert_eq!(ns1.partial_cmp(&ns2), Some(std::cmp::Ordering::Equal));
+        assert_eq!(ns1.cmp(&ns2), std::cmp::Ordering::Equal);
     }
 
     #[test]
@@ -824,17 +839,6 @@ mod tests {
     // ========================================
 
     #[test]
-    fn test_typetag_variants() {
-        // Test that all TypeTag variants can be constructed
-        let _kv = TypeTag::KV;
-        let _event = TypeTag::Event;
-        let _state = TypeTag::State;
-        let _run = TypeTag::Run;
-        let _vector = TypeTag::Vector;
-        let _json = TypeTag::Json;
-    }
-
-    #[test]
     #[allow(deprecated)]
     fn test_typetag_ordering() {
         // TypeTag ordering must be stable for BTreeMap
@@ -923,27 +927,48 @@ mod tests {
     }
 
     #[test]
-    fn test_typetag_json_value() {
-        // TypeTag::Json must be 0x11 per architecture spec
-        assert_eq!(TypeTag::Json as u8, 0x11);
-        assert_eq!(TypeTag::from_byte(0x11), Some(TypeTag::Json));
+    fn test_typetag_from_byte_gap_values_return_none() {
+        // Bytes between defined variants must return None (on-disk format safety)
+        for byte in [0x00, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x13, 0x14, 0x20, 0x80, 0xFE, 0xFF] {
+            assert_eq!(TypeTag::from_byte(byte), None, "Byte 0x{:02X} should not map to any TypeTag", byte);
+        }
     }
 
     #[test]
-    fn test_typetag_equality() {
-        assert_eq!(TypeTag::KV, TypeTag::KV);
-        assert_ne!(TypeTag::KV, TypeTag::Event);
-        assert_ne!(TypeTag::Event, TypeTag::State);
+    fn test_typetag_vectorconfig_byte_roundtrip() {
+        // VectorConfig (0x12) was added later - verify it's properly wired
+        assert_eq!(TypeTag::VectorConfig.as_byte(), 0x12);
+        assert_eq!(TypeTag::from_byte(0x12), Some(TypeTag::VectorConfig));
     }
 
     #[test]
-    fn test_typetag_clone_copy() {
-        let tag1 = TypeTag::KV;
-        let tag2 = tag1; // Should be Copy
-        assert_eq!(tag1, tag2);
+    fn test_typetag_as_byte_from_byte_roundtrip_exhaustive() {
+        // Every valid TypeTag must roundtrip through as_byte/from_byte
+        #[allow(deprecated)]
+        let all_tags = [
+            TypeTag::KV, TypeTag::Event, TypeTag::State, TypeTag::Trace,
+            TypeTag::Run, TypeTag::Vector, TypeTag::Json, TypeTag::VectorConfig,
+        ];
+        for tag in all_tags {
+            let byte = tag.as_byte();
+            let restored = TypeTag::from_byte(byte);
+            assert_eq!(restored, Some(tag), "TypeTag {:?} (0x{:02X}) failed roundtrip", tag, byte);
+        }
+    }
 
-        let tag3 = tag1.clone();
-        assert_eq!(tag1, tag3);
+    #[test]
+    fn test_typetag_ordering_matches_byte_values() {
+        // BTreeMap ordering must match the numeric byte values
+        #[allow(deprecated)]
+        let tags_in_order = [
+            TypeTag::KV, TypeTag::Event, TypeTag::State, TypeTag::Trace,
+            TypeTag::Run, TypeTag::Vector, TypeTag::Json, TypeTag::VectorConfig,
+        ];
+        for window in tags_in_order.windows(2) {
+            assert!(window[0] < window[1],
+                "{:?} (0x{:02X}) should sort before {:?} (0x{:02X})",
+                window[0], window[0].as_byte(), window[1], window[1].as_byte());
+        }
     }
 
     #[test]
@@ -1302,19 +1327,87 @@ mod tests {
     }
 
     #[test]
-    fn test_key_clone() {
+    fn test_key_user_key_string_empty() {
+        let ns = Namespace::for_run(RunId::new());
+        let key = Key::new_kv(ns, b"");
+        assert_eq!(key.user_key_string(), Some(String::new()));
+    }
+
+    #[test]
+    fn test_key_new_vector() {
+        let ns = Namespace::for_run(RunId::new());
+        let key = Key::new_vector(ns.clone(), "my_collection", "vec_001");
+        assert_eq!(key.type_tag, TypeTag::Vector);
+        assert_eq!(key.user_key_string().unwrap(), "my_collection/vec_001");
+    }
+
+    #[test]
+    fn test_key_new_vector_config() {
+        let ns = Namespace::for_run(RunId::new());
+        let key = Key::new_vector_config(ns.clone(), "my_collection");
+        assert_eq!(key.type_tag, TypeTag::VectorConfig);
+        assert_eq!(key.user_key_string().unwrap(), "my_collection");
+    }
+
+    #[test]
+    fn test_key_vector_collection_prefix_matches_vectors() {
+        let ns = Namespace::for_run(RunId::new());
+        let prefix = Key::vector_collection_prefix(ns.clone(), "coll");
+        let vec_key = Key::new_vector(ns.clone(), "coll", "vec_1");
+        let other_coll = Key::new_vector(ns.clone(), "other", "vec_1");
+
+        assert!(vec_key.starts_with(&prefix), "Vector in same collection should match prefix");
+        assert!(!other_coll.starts_with(&prefix), "Vector in different collection should not match");
+    }
+
+    #[test]
+    fn test_key_vector_config_prefix_matches_configs() {
+        let ns = Namespace::for_run(RunId::new());
+        let prefix = Key::new_vector_config_prefix(ns.clone());
+        let config_key = Key::new_vector_config(ns.clone(), "any_collection");
+        let vector_key = Key::new_vector(ns.clone(), "any_collection", "v1");
+
+        assert!(config_key.starts_with(&prefix), "Config should match config prefix");
+        assert!(!vector_key.starts_with(&prefix), "Vector key should not match config prefix (different TypeTag)");
+    }
+
+    #[test]
+    fn test_key_starts_with_different_namespace_never_matches() {
+        let ns1 = Namespace::for_run(RunId::new());
+        let ns2 = Namespace::for_run(RunId::new());
+        let prefix = Key::new_kv(ns1, b"");
+        let key = Key::new_kv(ns2, b"anything");
+        assert!(!key.starts_with(&prefix), "Different namespace should never match");
+    }
+
+    #[test]
+    fn test_key_event_sequence_zero_and_max() {
+        let ns = Namespace::for_run(RunId::new());
+        let key_zero = Key::new_event(ns.clone(), 0);
+        let key_max = Key::new_event(ns.clone(), u64::MAX);
+
+        // Zero should sort before max
+        assert!(key_zero < key_max);
+
+        // Verify roundtrip of sequence numbers
+        let seq_zero = u64::from_be_bytes(key_zero.user_key.as_slice().try_into().unwrap());
+        let seq_max = u64::from_be_bytes(key_max.user_key.as_slice().try_into().unwrap());
+        assert_eq!(seq_zero, 0);
+        assert_eq!(seq_max, u64::MAX);
+    }
+
+    #[test]
+    fn test_key_new_run_with_id_string_vs_run_id() {
+        let ns = Namespace::for_run(RunId::new());
         let run_id = RunId::new();
-        let ns = Namespace::new(
-            "tenant".to_string(),
-            "app".to_string(),
-            "agent".to_string(),
-            run_id,
-        );
+        let run_str = format!("{}", run_id);
 
-        let key1 = Key::new_kv(ns, "mykey");
-        let key2 = key1.clone();
+        let key_from_id = Key::new_run(ns.clone(), run_id);
+        let key_from_str = Key::new_run_with_id(ns.clone(), &run_str);
 
-        assert_eq!(key1, key2, "Cloned key should equal original");
+        // These use different byte representations (UUID bytes vs UTF-8 string bytes)
+        assert_ne!(key_from_id.user_key, key_from_str.user_key,
+            "new_run uses 16 UUID bytes, new_run_with_id uses 36 UTF-8 bytes");
     }
 
     #[test]

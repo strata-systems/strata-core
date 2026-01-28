@@ -268,4 +268,97 @@ mod tests {
 
         assert_eq!(meta.event_count, 3);
     }
+
+    #[test]
+    fn test_run_metadata_duration_active() {
+        let run_id = RunId::new();
+        let meta = RunMetadata::new(run_id, 1000, 0);
+        // Active run has no duration
+        assert!(meta.duration_micros().is_none());
+    }
+
+    #[test]
+    fn test_run_event_offsets_serialization() {
+        let mut offsets = RunEventOffsets::new();
+        offsets.push(10);
+        offsets.push(20);
+
+        let json = serde_json::to_string(&offsets).unwrap();
+        let restored: RunEventOffsets = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.as_slice(), &[10, 20]);
+    }
+
+    #[test]
+    fn test_run_event_offsets_default() {
+        let offsets = RunEventOffsets::default();
+        assert!(offsets.is_empty());
+        assert_eq!(offsets.len(), 0);
+    }
+
+    #[test]
+    fn test_run_status_serialization_roundtrip() {
+        for status in [RunStatus::Active, RunStatus::Completed, RunStatus::Orphaned, RunStatus::NotFound] {
+            let json = serde_json::to_string(&status).unwrap();
+            let restored: RunStatus = serde_json::from_str(&json).unwrap();
+            assert_eq!(status, restored);
+        }
+    }
+
+    #[test]
+    fn test_run_metadata_double_completion() {
+        let run_id = RunId::new();
+        let mut meta = RunMetadata::new(run_id, 1000, 0);
+        meta.complete(2000, 100);
+        assert_eq!(meta.status, RunStatus::Completed);
+
+        // Complete again with different values - should overwrite
+        meta.complete(3000, 200);
+        assert_eq!(meta.ended_at, Some(3000));
+        assert_eq!(meta.end_wal_offset, Some(200));
+    }
+
+    #[test]
+    fn test_run_metadata_orphaned_after_completed() {
+        let run_id = RunId::new();
+        let mut meta = RunMetadata::new(run_id, 1000, 0);
+        meta.complete(2000, 100);
+        meta.mark_orphaned();
+        // Status transitions are unconditional - design decision
+        assert_eq!(meta.status, RunStatus::Orphaned);
+    }
+
+    #[test]
+    fn test_run_metadata_ended_before_started() {
+        let run_id = RunId::new();
+        let mut meta = RunMetadata::new(run_id, 2000, 0);
+        meta.complete(1000, 50);
+        // duration_micros uses saturating_sub, so negative durations become 0
+        assert_eq!(meta.duration_micros(), Some(0));
+    }
+
+    #[test]
+    fn test_run_status_hash_uniqueness() {
+        use std::collections::HashSet;
+        let statuses = [RunStatus::Active, RunStatus::Completed, RunStatus::Orphaned, RunStatus::NotFound];
+        let set: HashSet<RunStatus> = statuses.iter().copied().collect();
+        assert_eq!(set.len(), 4, "All RunStatus variants must hash uniquely");
+    }
+
+    #[test]
+    fn test_run_status_display_all_variants() {
+        assert_eq!(format!("{}", RunStatus::Active), "Active");
+        assert_eq!(format!("{}", RunStatus::Completed), "Completed");
+        assert_eq!(format!("{}", RunStatus::Orphaned), "Orphaned");
+        assert_eq!(format!("{}", RunStatus::NotFound), "NotFound");
+    }
+
+    #[test]
+    fn test_run_event_offsets_ordering_not_enforced() {
+        // Offsets are just a Vec - no ordering enforcement
+        let mut offsets = RunEventOffsets::new();
+        offsets.push(300);
+        offsets.push(100);
+        offsets.push(200);
+        assert_eq!(offsets.as_slice(), &[300, 100, 200]);
+    }
 }

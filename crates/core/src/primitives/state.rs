@@ -49,3 +49,132 @@ impl State {
             .as_micros() as u64
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_state_new() {
+        let state = State::new(Value::Int(42));
+        assert_eq!(state.value, Value::Int(42));
+        assert_eq!(state.version, Version::counter(1));
+        assert!(state.updated_at > 0);
+    }
+
+    #[test]
+    fn test_state_with_version() {
+        let state = State::with_version(Value::String("hello".to_string()), Version::counter(5));
+        assert_eq!(state.value, Value::String("hello".to_string()));
+        assert_eq!(state.version, Version::counter(5));
+        assert!(state.updated_at > 0);
+    }
+
+    #[test]
+    fn test_state_equality() {
+        // Two states with same fields are equal (timestamps will differ slightly)
+        let s1 = State {
+            value: Value::Int(1),
+            version: Version::counter(1),
+            updated_at: 1000,
+        };
+        let s2 = State {
+            value: Value::Int(1),
+            version: Version::counter(1),
+            updated_at: 1000,
+        };
+        assert_eq!(s1, s2);
+    }
+
+    #[test]
+    fn test_state_inequality_different_value() {
+        let s1 = State {
+            value: Value::Int(1),
+            version: Version::counter(1),
+            updated_at: 1000,
+        };
+        let s2 = State {
+            value: Value::Int(2),
+            version: Version::counter(1),
+            updated_at: 1000,
+        };
+        assert_ne!(s1, s2);
+    }
+
+    #[test]
+    fn test_state_clone() {
+        let s1 = State::new(Value::String("data".to_string()));
+        let s2 = s1.clone();
+        assert_eq!(s1.value, s2.value);
+        assert_eq!(s1.version, s2.version);
+    }
+
+    #[test]
+    fn test_state_serialization_roundtrip() {
+        let state = State {
+            value: Value::Int(99),
+            version: Version::counter(3),
+            updated_at: 1_700_000_000,
+        };
+
+        let json = serde_json::to_string(&state).unwrap();
+        let restored: State = serde_json::from_str(&json).unwrap();
+        assert_eq!(state, restored);
+    }
+
+    #[test]
+    fn test_state_version_starts_at_one() {
+        let state = State::new(Value::Null);
+        assert_eq!(state.version, Version::counter(1));
+        assert!(state.version.is_counter());
+    }
+
+    #[test]
+    fn test_state_with_non_counter_version() {
+        // with_version accepts any Version, not just Counter
+        let state = State::with_version(Value::Int(1), Version::txn(42));
+        assert_eq!(state.version, Version::Txn(42));
+        assert!(!state.version.is_counter());
+    }
+
+    #[test]
+    fn test_state_inequality_different_version() {
+        let s1 = State { value: Value::Int(1), version: Version::counter(1), updated_at: 1000 };
+        let s2 = State { value: Value::Int(1), version: Version::counter(2), updated_at: 1000 };
+        assert_ne!(s1, s2);
+    }
+
+    #[test]
+    fn test_state_inequality_different_timestamp() {
+        let s1 = State { value: Value::Int(1), version: Version::counter(1), updated_at: 1000 };
+        let s2 = State { value: Value::Int(1), version: Version::counter(1), updated_at: 2000 };
+        assert_ne!(s1, s2);
+    }
+
+    #[test]
+    fn test_state_with_complex_value() {
+        let complex = Value::Object({
+            let mut m = std::collections::HashMap::new();
+            m.insert("nested".to_string(), Value::Array(vec![Value::Int(1), Value::Null]));
+            m
+        });
+        let state = State::new(complex.clone());
+        assert_eq!(state.value, complex);
+
+        // Verify roundtrip
+        let json = serde_json::to_string(&state).unwrap();
+        let restored: State = serde_json::from_str(&json).unwrap();
+        assert_eq!(state, restored);
+    }
+
+    #[test]
+    fn test_state_now_returns_reasonable_timestamp() {
+        let before = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_micros() as u64;
+        let now = State::now();
+        let after = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_micros() as u64;
+        assert!(now >= before);
+        assert!(now <= after);
+    }
+}

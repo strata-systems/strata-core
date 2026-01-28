@@ -2260,4 +2260,189 @@ mod error_details_tests {
         assert_eq!(map.get("count"), Some(&"42".to_string()));
         assert_eq!(map.get("flag"), Some(&"true".to_string()));
     }
+
+    #[test]
+    fn test_error_details_overwrite_key() {
+        let details = ErrorDetails::new()
+            .with_string("key", "first")
+            .with_string("key", "second");
+        let map = details.to_string_map();
+        assert_eq!(map.get("key"), Some(&"second".to_string()));
+        assert_eq!(details.fields().len(), 1);
+    }
+
+    #[test]
+    fn test_error_details_default_is_empty() {
+        let details = ErrorDetails::default();
+        assert!(details.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod conversion_tests {
+    use super::*;
+
+    #[test]
+    fn test_from_bincode_error() {
+        // Create a bincode error via a failed deserialization
+        let bad_bytes: Vec<u8> = vec![0xFF, 0xFF];
+        let err: std::result::Result<String, _> = bincode::deserialize(&bad_bytes);
+        let bincode_err = err.unwrap_err();
+        let strata_err: StrataError = bincode_err.into();
+
+        assert!(strata_err.is_storage_error());
+        assert_eq!(strata_err.code(), ErrorCode::SerializationError);
+    }
+
+    #[test]
+    fn test_from_serde_json_error() {
+        let json_err = serde_json::from_str::<String>("not valid json").unwrap_err();
+        let strata_err: StrataError = json_err.into();
+
+        assert!(strata_err.is_storage_error());
+        assert_eq!(strata_err.code(), ErrorCode::SerializationError);
+        assert!(strata_err.to_string().contains("JSON error"));
+    }
+
+    #[test]
+    fn test_from_io_error_preserves_source() {
+        use std::error::Error;
+
+        let io_err = io::Error::new(io::ErrorKind::PermissionDenied, "access denied");
+        let strata_err: StrataError = io_err.into();
+
+        // Should have a source error
+        assert!(strata_err.source().is_some());
+    }
+}
+
+#[cfg(test)]
+mod adversarial_error_tests {
+    use super::*;
+
+    #[test]
+    fn test_conflict_on_constructor() {
+        let run_id = RunId::new();
+        let entity = EntityRef::kv(run_id, "shared-counter");
+        let e = StrataError::conflict_on(entity.clone(), "concurrent modification");
+
+        assert_eq!(e.code(), ErrorCode::Conflict);
+        assert!(e.is_retryable());
+        // conflict_on does NOT expose entity via entity_ref() accessor
+        // (it's stored inside the Conflict variant, not the entity_ref accessor match)
+        assert!(e.to_string().contains("concurrent modification"));
+    }
+
+    #[test]
+    fn test_error_code_parse_empty_string() {
+        assert_eq!(ErrorCode::parse(""), None);
+    }
+
+    #[test]
+    fn test_error_code_parse_case_sensitive() {
+        assert_eq!(ErrorCode::parse("notfound"), None);
+        assert_eq!(ErrorCode::parse("NOTFOUND"), None);
+        assert_eq!(ErrorCode::parse("NotFound"), Some(ErrorCode::NotFound));
+    }
+
+    #[test]
+    fn test_constraint_reason_parse_empty_string() {
+        assert_eq!(ConstraintReason::parse(""), None);
+    }
+
+    #[test]
+    fn test_constraint_reason_parse_case_sensitive() {
+        assert_eq!(ConstraintReason::parse("Value_Too_Large"), None);
+        assert_eq!(ConstraintReason::parse("VALUE_TOO_LARGE"), None);
+        assert_eq!(ConstraintReason::parse("value_too_large"), Some(ConstraintReason::ValueTooLarge));
+    }
+
+    #[test]
+    fn test_every_error_code_has_unique_as_str() {
+        let codes = [
+            ErrorCode::NotFound, ErrorCode::WrongType, ErrorCode::InvalidKey,
+            ErrorCode::InvalidPath, ErrorCode::HistoryTrimmed, ErrorCode::ConstraintViolation,
+            ErrorCode::Conflict, ErrorCode::SerializationError, ErrorCode::StorageError,
+            ErrorCode::InternalError,
+        ];
+        let strs: std::collections::HashSet<&str> = codes.iter().map(|c| c.as_str()).collect();
+        assert_eq!(strs.len(), codes.len(), "All error code strings must be unique");
+    }
+
+    #[test]
+    fn test_every_constraint_reason_has_unique_as_str() {
+        let reasons = [
+            ConstraintReason::ValueTooLarge, ConstraintReason::StringTooLong,
+            ConstraintReason::BytesTooLong, ConstraintReason::ArrayTooLong,
+            ConstraintReason::ObjectTooLarge, ConstraintReason::NestingTooDeep,
+            ConstraintReason::KeyTooLong, ConstraintReason::KeyInvalid,
+            ConstraintReason::KeyEmpty, ConstraintReason::DimensionMismatch,
+            ConstraintReason::DimensionTooLarge, ConstraintReason::CapacityExceeded,
+            ConstraintReason::BudgetExceeded, ConstraintReason::InvalidOperation,
+            ConstraintReason::RunNotActive, ConstraintReason::TransactionNotActive,
+            ConstraintReason::WrongType, ConstraintReason::Overflow,
+        ];
+        let strs: std::collections::HashSet<&str> = reasons.iter().map(|r| r.as_str()).collect();
+        assert_eq!(strs.len(), reasons.len(), "All constraint reason strings must be unique");
+    }
+
+    #[test]
+    fn test_all_error_variants_have_wire_code() {
+        let run_id = RunId::new();
+        let entity = EntityRef::kv(run_id, "k");
+        // Construct every error variant and verify code() doesn't panic
+        let errors: Vec<StrataError> = vec![
+            StrataError::not_found(entity.clone()),
+            StrataError::run_not_found(run_id),
+            StrataError::wrong_type("A", "B"),
+            StrataError::conflict("reason"),
+            StrataError::conflict_on(entity.clone(), "reason"),
+            StrataError::version_conflict(entity.clone(), Version::Txn(1), Version::Txn(2)),
+            StrataError::write_conflict(entity.clone()),
+            StrataError::transaction_aborted("reason"),
+            StrataError::transaction_timeout(100),
+            StrataError::transaction_not_active("committed"),
+            StrataError::invalid_operation(entity.clone(), "reason"),
+            StrataError::invalid_input("bad"),
+            StrataError::dimension_mismatch(3, 4),
+            StrataError::path_not_found(entity.clone(), "/x"),
+            StrataError::history_trimmed(entity.clone(), Version::Txn(1), Version::Txn(5)),
+            StrataError::storage("disk"),
+            StrataError::serialization("bad"),
+            StrataError::corruption("crc"),
+            StrataError::capacity_exceeded("log", 100, 101),
+            StrataError::budget_exceeded("search"),
+            StrataError::internal("bug"),
+        ];
+        for e in &errors {
+            let _ = e.code(); // Should not panic
+            let _ = e.message(); // Should not panic
+            let _ = e.details(); // Should not panic
+        }
+        assert_eq!(errors.len(), 21, "Should test all 21 error constructors");
+    }
+
+    #[test]
+    fn test_history_trimmed_code_and_details() {
+        let run_id = RunId::new();
+        let e = StrataError::history_trimmed(
+            EntityRef::kv(run_id, "k"),
+            Version::Txn(10),
+            Version::Txn(50),
+        );
+        assert_eq!(e.code(), ErrorCode::HistoryTrimmed);
+        let details = e.details();
+        assert!(details.fields().contains_key("requested"));
+        assert!(details.fields().contains_key("earliest_retained"));
+    }
+
+    #[test]
+    fn test_path_not_found_is_not_found_but_has_invalid_path_code() {
+        let run_id = RunId::new();
+        let e = StrataError::path_not_found(EntityRef::json(run_id, "doc"), "/missing");
+        // is_not_found returns true (classification)
+        assert!(e.is_not_found());
+        // but wire code is InvalidPath
+        assert_eq!(e.code(), ErrorCode::InvalidPath);
+    }
 }

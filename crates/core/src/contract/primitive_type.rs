@@ -334,4 +334,59 @@ mod tests {
         assert_eq!(PrimitiveType::Run.primitive_id(), 6);
         assert_eq!(PrimitiveType::Vector.primitive_id(), 7);
     }
+
+    #[test]
+    fn test_entry_type_ranges_do_not_overlap() {
+        let ranges: Vec<(u8, u8)> = PrimitiveType::ALL.iter()
+            .map(|pt| pt.entry_type_range())
+            .collect();
+        for i in 0..ranges.len() {
+            for j in (i + 1)..ranges.len() {
+                let (a_lo, a_hi) = ranges[i];
+                let (b_lo, b_hi) = ranges[j];
+                assert!(a_hi < b_lo || b_hi < a_lo,
+                    "Entry type ranges overlap: {:?} ({:02X}-{:02X}) and {:?} ({:02X}-{:02X})",
+                    PrimitiveType::ALL[i], a_lo, a_hi,
+                    PrimitiveType::ALL[j], b_lo, b_hi);
+            }
+        }
+    }
+
+    #[test]
+    fn test_primitive_id_uniqueness() {
+        let ids: std::collections::HashSet<u8> = PrimitiveType::ALL.iter()
+            .map(|pt| pt.primitive_id())
+            .collect();
+        assert_eq!(ids.len(), 6, "All primitive IDs must be unique");
+    }
+
+    #[test]
+    fn test_from_id_case_sensitive() {
+        assert_eq!(PrimitiveType::from_id("KV"), None);
+        assert_eq!(PrimitiveType::from_id("Kv"), None);
+        assert_eq!(PrimitiveType::from_id("EVENT"), None);
+        assert_eq!(PrimitiveType::from_id("Json"), None);
+    }
+
+    #[test]
+    fn test_from_id_empty_string() {
+        assert_eq!(PrimitiveType::from_id(""), None);
+    }
+
+    #[test]
+    fn test_id_roundtrip_exhaustive() {
+        for pt in PrimitiveType::ALL {
+            let id = pt.id();
+            let parsed = PrimitiveType::from_id(id);
+            assert_eq!(parsed, Some(pt), "{:?}.id()={} should round-trip", pt, id);
+        }
+    }
+
+    #[test]
+    fn test_append_only_is_inverse_of_supports_crud() {
+        for pt in PrimitiveType::ALL {
+            assert_eq!(pt.is_append_only(), !pt.supports_crud(),
+                "{:?}: is_append_only and supports_crud must be inverses", pt);
+        }
+    }
 }

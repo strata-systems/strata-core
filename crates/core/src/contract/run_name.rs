@@ -397,4 +397,80 @@ mod tests {
         let name = RunName::new_unchecked("any-string-even-invalid!");
         assert_eq!(name.as_str(), "any-string-even-invalid!");
     }
+
+    #[test]
+    fn test_run_name_new_unchecked_empty_string() {
+        // new_unchecked bypasses validation, so empty is allowed
+        let name = RunName::new_unchecked("");
+        assert_eq!(name.as_str(), "");
+    }
+
+    #[test]
+    fn test_run_name_multibyte_rejected() {
+        // "é" is 2 bytes in UTF-8 but not ASCII alphanumeric
+        // Short enough to not trigger TooLong, so InvalidChar should fire
+        let name = "aé";
+        let err = RunName::new(name).unwrap_err();
+        assert!(matches!(err, RunNameError::InvalidChar { .. }));
+    }
+
+    #[test]
+    fn test_run_name_multibyte_too_long() {
+        // 255 ASCII chars + 2-byte "é" = 257 bytes → TooLong fires before InvalidChar
+        let name = "a".repeat(MAX_RUN_NAME_LENGTH - 1) + "é";
+        let err = RunName::new(name).unwrap_err();
+        assert!(matches!(err, RunNameError::TooLong { .. }));
+    }
+
+    #[test]
+    fn test_run_name_length_check_is_byte_length() {
+        // Verify that length check uses byte length not char count
+        // A string of 257 ASCII chars should fail
+        let name = "a".repeat(MAX_RUN_NAME_LENGTH + 1);
+        let err = RunName::new(name).unwrap_err();
+        assert!(matches!(err, RunNameError::TooLong { length: 257, max: 256 }));
+    }
+
+    #[test]
+    fn test_run_name_consecutive_special_chars() {
+        assert!(RunName::new("a--b").is_ok());
+        assert!(RunName::new("a..b").is_ok());
+        assert!(RunName::new("a__b").is_ok());
+        assert!(RunName::new("a-._b").is_ok());
+    }
+
+    #[test]
+    fn test_run_name_single_char() {
+        assert!(RunName::new("a").is_ok());
+        assert!(RunName::new("Z").is_ok());
+        assert!(RunName::new("0").is_ok());
+        assert!(RunName::new("_").is_ok());
+        assert!(RunName::new("-").is_err()); // dash can't start
+        assert!(RunName::new(".").is_err()); // dot can't start
+    }
+
+    #[test]
+    fn test_run_name_as_ref() {
+        let name = RunName::new("test").unwrap();
+        let s: &str = name.as_ref();
+        assert_eq!(s, "test");
+    }
+
+    #[test]
+    fn test_run_name_error_is_std_error() {
+        let err = RunName::new("").unwrap_err();
+        let _: &dyn std::error::Error = &err;
+    }
+
+    #[test]
+    fn test_run_name_invalid_char_position_accuracy() {
+        let err = RunName::new("abc@def").unwrap_err();
+        match err {
+            RunNameError::InvalidChar { char: c, position } => {
+                assert_eq!(c, '@');
+                assert_eq!(position, 3);
+            }
+            _ => panic!("Expected InvalidChar"),
+        }
+    }
 }

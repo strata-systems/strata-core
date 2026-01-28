@@ -527,4 +527,337 @@ mod tests {
         assert_eq!(Value::Array(vec![]).type_name(), "Array");
         assert_eq!(Value::Object(HashMap::new()).type_name(), "Object");
     }
+
+    // ====================================================================
+    // From conversions
+    // ====================================================================
+
+    #[test]
+    fn test_from_i64() {
+        let v: Value = 42i64.into();
+        assert_eq!(v, Value::Int(42));
+    }
+
+    #[test]
+    fn test_from_i32() {
+        let v: Value = 42i32.into();
+        assert_eq!(v, Value::Int(42));
+    }
+
+    #[test]
+    fn test_from_f64() {
+        let v: Value = 3.14f64.into();
+        assert!(matches!(v, Value::Float(f) if (f - 3.14).abs() < f64::EPSILON));
+    }
+
+    #[test]
+    fn test_from_f32() {
+        let v: Value = 2.5f32.into();
+        // Verify the actual value is preserved through f32->f64 promotion
+        assert_eq!(v.as_float().unwrap(), 2.5);
+    }
+
+    #[test]
+    fn test_from_bool() {
+        let v: Value = true.into();
+        assert_eq!(v, Value::Bool(true));
+        let v: Value = false.into();
+        assert_eq!(v, Value::Bool(false));
+    }
+
+    #[test]
+    fn test_from_string() {
+        let v: Value = String::from("hello").into();
+        assert_eq!(v, Value::String("hello".to_string()));
+    }
+
+    #[test]
+    fn test_from_str_ref() {
+        let v: Value = "hello".into();
+        assert_eq!(v, Value::String("hello".to_string()));
+    }
+
+    #[test]
+    fn test_from_vec_u8() {
+        let v: Value = vec![1u8, 2, 3].into();
+        assert_eq!(v, Value::Bytes(vec![1, 2, 3]));
+    }
+
+    #[test]
+    fn test_from_byte_slice() {
+        let bytes: &[u8] = &[4, 5, 6];
+        let v: Value = bytes.into();
+        assert_eq!(v, Value::Bytes(vec![4, 5, 6]));
+    }
+
+    #[test]
+    fn test_from_unit() {
+        let v: Value = ().into();
+        assert_eq!(v, Value::Null);
+    }
+
+    // ====================================================================
+    // serde_json::Value interop
+    // ====================================================================
+
+    #[test]
+    fn test_serde_json_value_roundtrip() {
+        // Value -> serde_json::Value -> Value
+        let original = Value::Int(42);
+        let json: serde_json::Value = original.clone().into();
+        let restored: Value = json.into();
+        assert_eq!(original, restored);
+
+        let original = Value::String("test".to_string());
+        let json: serde_json::Value = original.clone().into();
+        let restored: Value = json.into();
+        assert_eq!(original, restored);
+
+        let original = Value::Bool(true);
+        let json: serde_json::Value = original.clone().into();
+        let restored: Value = json.into();
+        assert_eq!(original, restored);
+
+        let original = Value::Null;
+        let json: serde_json::Value = original.clone().into();
+        let restored: Value = json.into();
+        assert_eq!(original, restored);
+    }
+
+    #[test]
+    fn test_serde_json_float_nan_becomes_null() {
+        // NaN cannot be represented in JSON; From<Value> for serde_json::Value maps it to Null
+        let v = Value::Float(f64::NAN);
+        let json: serde_json::Value = v.into();
+        assert!(json.is_null());
+    }
+
+    #[test]
+    fn test_serde_json_nested_conversion() {
+        let json = serde_json::json!({"a": [1, 2, "three"], "b": null});
+        let v: Value = json.into();
+        assert!(v.is_object());
+        let obj = v.as_object().unwrap();
+        assert!(obj.get("a").unwrap().is_array());
+        assert!(obj.get("b").unwrap().is_null());
+    }
+
+    // ====================================================================
+    // as_* returns None for wrong types
+    // ====================================================================
+
+    #[test]
+    fn test_as_wrong_type_returns_none() {
+        let v = Value::Int(42);
+        assert!(v.as_bool().is_none());
+        assert!(v.as_float().is_none());
+        assert!(v.as_str().is_none());
+        assert!(v.as_bytes().is_none());
+        assert!(v.as_array().is_none());
+        assert!(v.as_object().is_none());
+
+        let v = Value::String("hello".to_string());
+        assert!(v.as_int().is_none());
+        assert!(v.as_bool().is_none());
+        assert!(v.as_float().is_none());
+        assert!(v.as_bytes().is_none());
+    }
+
+    // ====================================================================
+    // Empty container edge cases
+    // ====================================================================
+
+    #[test]
+    fn test_empty_string() {
+        let v = Value::String(String::new());
+        assert!(v.is_string());
+        assert_eq!(v.as_str(), Some(""));
+    }
+
+    #[test]
+    fn test_empty_bytes() {
+        let v = Value::Bytes(vec![]);
+        assert!(v.is_bytes());
+        assert_eq!(v.as_bytes(), Some([].as_slice()));
+    }
+
+    #[test]
+    fn test_empty_array() {
+        let v = Value::Array(vec![]);
+        assert!(v.is_array());
+        assert_eq!(v.as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_empty_object() {
+        let v = Value::Object(HashMap::new());
+        assert!(v.is_object());
+        assert_eq!(v.as_object().unwrap().len(), 0);
+    }
+
+    // ====================================================================
+    // Nested structures
+    // ====================================================================
+
+    #[test]
+    fn test_nested_array() {
+        let inner = Value::Array(vec![Value::Int(1), Value::Int(2)]);
+        let outer = Value::Array(vec![inner.clone(), Value::Int(3)]);
+        assert!(outer.is_array());
+        let arr = outer.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0], inner);
+    }
+
+    #[test]
+    fn test_nested_object() {
+        let mut inner = HashMap::new();
+        inner.insert("x".to_string(), Value::Int(1));
+        let mut outer = HashMap::new();
+        outer.insert("nested".to_string(), Value::Object(inner));
+        let v = Value::Object(outer);
+        assert!(v.is_object());
+        let obj = v.as_object().unwrap();
+        assert!(obj.get("nested").unwrap().is_object());
+    }
+
+    #[test]
+    fn test_value_debug() {
+        let v = Value::Int(42);
+        let debug = format!("{:?}", v);
+        assert!(debug.contains("42"));
+    }
+
+    // ====================================================================
+    // VAL-3 extended: cross-type inequality
+    // ====================================================================
+
+    #[test]
+    fn test_bytes_not_equal_string() {
+        let s = Value::String("hello".to_string());
+        let b = Value::Bytes(b"hello".to_vec());
+        assert_ne!(s, b);
+    }
+
+    #[test]
+    fn test_null_not_equal_to_other_types() {
+        assert_ne!(Value::Null, Value::Bool(false));
+        assert_ne!(Value::Null, Value::Int(0));
+        assert_ne!(Value::Null, Value::Float(0.0));
+        assert_ne!(Value::Null, Value::String(String::new()));
+    }
+
+    // ====================================================================
+    // VAL-5 extended: float edge cases
+    // ====================================================================
+
+    #[test]
+    fn test_float_infinity() {
+        let pos_inf = Value::Float(f64::INFINITY);
+        let neg_inf = Value::Float(f64::NEG_INFINITY);
+        assert_eq!(pos_inf, Value::Float(f64::INFINITY));
+        assert_ne!(pos_inf, neg_inf);
+    }
+
+    // ====================================================================
+    // Object equality edge cases
+    // ====================================================================
+
+    #[test]
+    fn test_object_equality_key_order_independent() {
+        let mut m1 = HashMap::new();
+        m1.insert("a".to_string(), Value::Int(1));
+        m1.insert("b".to_string(), Value::Int(2));
+        let mut m2 = HashMap::new();
+        m2.insert("b".to_string(), Value::Int(2));
+        m2.insert("a".to_string(), Value::Int(1));
+        assert_eq!(Value::Object(m1), Value::Object(m2));
+    }
+
+    #[test]
+    fn test_object_inequality_extra_key() {
+        let mut m1 = HashMap::new();
+        m1.insert("a".to_string(), Value::Int(1));
+        let mut m2 = HashMap::new();
+        m2.insert("a".to_string(), Value::Int(1));
+        m2.insert("b".to_string(), Value::Int(2));
+        assert_ne!(Value::Object(m1), Value::Object(m2));
+    }
+
+    #[test]
+    fn test_deeply_nested_equality() {
+        let inner = Value::Array(vec![Value::Object({
+            let mut m = HashMap::new();
+            m.insert("x".to_string(), Value::Int(1));
+            m
+        })]);
+        let v1 = Value::Array(vec![inner.clone()]);
+        let v2 = Value::Array(vec![inner]);
+        assert_eq!(v1, v2);
+    }
+
+    // ====================================================================
+    // base64 encoder correctness
+    // ====================================================================
+
+    #[test]
+    fn test_base64_encode_empty() {
+        assert_eq!(base64_encode(&[]), "");
+    }
+
+    #[test]
+    fn test_base64_encode_known_vectors() {
+        // RFC 4648 test vectors
+        assert_eq!(base64_encode(b"f"), "Zg==");
+        assert_eq!(base64_encode(b"fo"), "Zm8=");
+        assert_eq!(base64_encode(b"foo"), "Zm9v");
+        assert_eq!(base64_encode(b"foob"), "Zm9vYg==");
+        assert_eq!(base64_encode(b"fooba"), "Zm9vYmE=");
+        assert_eq!(base64_encode(b"foobar"), "Zm9vYmFy");
+    }
+
+    // ====================================================================
+    // serde_json conversion edge cases
+    // ====================================================================
+
+    #[test]
+    fn test_serde_json_infinity_becomes_null() {
+        let v = Value::Float(f64::INFINITY);
+        let json: serde_json::Value = v.into();
+        assert!(json.is_null(), "Infinity should become null in JSON");
+    }
+
+    #[test]
+    fn test_serde_json_neg_infinity_becomes_null() {
+        let v = Value::Float(f64::NEG_INFINITY);
+        let json: serde_json::Value = v.into();
+        assert!(json.is_null(), "Negative infinity should become null in JSON");
+    }
+
+    #[test]
+    fn test_serde_json_bytes_is_lossy() {
+        // Bytes -> serde_json::Value produces base64 string
+        // serde_json::Value (String) -> Value produces Value::String, NOT Value::Bytes
+        let original = Value::Bytes(vec![1, 2, 3]);
+        let json: serde_json::Value = original.into();
+        assert!(json.is_string(), "Bytes should become base64 string in JSON");
+        let restored: Value = json.into();
+        assert!(restored.is_string(), "Converting back produces String, not Bytes (lossy)");
+    }
+
+    #[test]
+    fn test_serde_json_u64_max_conversion() {
+        // u64::MAX cannot fit in i64, so it goes through the f64 fallback
+        let json = serde_json::json!(u64::MAX);
+        let v: Value = json.into();
+        // Should become Float since it doesn't fit in i64
+        assert!(v.is_float(), "u64::MAX should become Float since it doesn't fit in i64");
+    }
+
+    #[test]
+    fn test_serde_json_large_negative_int() {
+        let json = serde_json::json!(i64::MIN);
+        let v: Value = json.into();
+        assert_eq!(v, Value::Int(i64::MIN));
+    }
 }

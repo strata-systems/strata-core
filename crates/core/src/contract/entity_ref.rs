@@ -460,4 +460,93 @@ mod tests {
         let types: std::collections::HashSet<_> = refs.iter().map(|r| r.primitive_type()).collect();
         assert_eq!(types.len(), 6);
     }
+
+    #[test]
+    fn test_entity_ref_json_with_string() {
+        let run_id = RunId::new();
+        let ref_ = EntityRef::json(run_id, String::from("owned-doc-id"));
+        assert!(ref_.is_json());
+        assert_eq!(ref_.json_doc_id(), Some("owned-doc-id"));
+    }
+
+    #[test]
+    fn test_entity_ref_type_checks_are_exclusive() {
+        let run_id = RunId::new();
+        let refs = vec![
+            EntityRef::kv(run_id, "k"),
+            EntityRef::event(run_id, 0),
+            EntityRef::state(run_id, "s"),
+            EntityRef::run(run_id),
+            EntityRef::json(run_id, "j"),
+            EntityRef::vector(run_id, "c", "k"),
+        ];
+
+        for r in &refs {
+            let checks = [r.is_kv(), r.is_event(), r.is_state(), r.is_run(), r.is_json(), r.is_vector()];
+            assert_eq!(checks.iter().filter(|&&b| b).count(), 1,
+                "Exactly one type check should be true for {:?}", r);
+        }
+    }
+
+    #[test]
+    fn test_entity_ref_different_runs_differ() {
+        let r1 = RunId::new();
+        let r2 = RunId::new();
+        let ref1 = EntityRef::kv(r1, "key");
+        let ref2 = EntityRef::kv(r2, "key");
+        assert_ne!(ref1, ref2);
+    }
+
+    #[test]
+    fn test_entity_ref_empty_string_keys() {
+        let run_id = RunId::new();
+        let kv = EntityRef::kv(run_id, "");
+        assert_eq!(kv.kv_key(), Some(""));
+
+        let state = EntityRef::state(run_id, "");
+        assert_eq!(state.state_name(), Some(""));
+
+        let json = EntityRef::json(run_id, "");
+        assert_eq!(json.json_doc_id(), Some(""));
+    }
+
+    #[test]
+    fn test_entity_ref_display_contains_run_id() {
+        let run_id = RunId::new();
+        let run_str = format!("{}", run_id);
+
+        let kv = EntityRef::kv(run_id, "mykey");
+        assert!(format!("{}", kv).contains(&run_str), "Display should contain run_id");
+
+        let event = EntityRef::event(run_id, 42);
+        let display = format!("{}", event);
+        assert!(display.contains(&run_str));
+        assert!(display.contains("42"));
+    }
+
+    #[test]
+    fn test_entity_ref_cross_type_never_equal() {
+        let run_id = RunId::new();
+        // Even with same run_id and key-like values, different types are never equal
+        let kv = EntityRef::kv(run_id, "name");
+        let state = EntityRef::state(run_id, "name");
+        let json = EntityRef::json(run_id, "name");
+        assert_ne!(kv, state);
+        assert_ne!(kv, json);
+        assert_ne!(state, json);
+    }
+
+    #[test]
+    fn test_entity_ref_vector_location_with_special_chars() {
+        let run_id = RunId::new();
+        let v = EntityRef::vector(run_id, "col/with/slash", "key with spaces");
+        assert_eq!(v.vector_location(), Some(("col/with/slash", "key with spaces")));
+    }
+
+    #[test]
+    fn test_entity_ref_event_sequence_zero() {
+        let run_id = RunId::new();
+        let e = EntityRef::event(run_id, 0);
+        assert_eq!(e.event_sequence(), Some(0));
+    }
 }

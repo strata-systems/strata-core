@@ -338,4 +338,77 @@ mod tests {
         let ts = Timestamp::default();
         assert_eq!(ts, Timestamp::EPOCH);
     }
+
+    #[test]
+    fn test_timestamp_max_value() {
+        assert_eq!(Timestamp::MAX.as_micros(), u64::MAX);
+    }
+
+    #[test]
+    fn test_timestamp_copy() {
+        let t1 = Timestamp::from_micros(100);
+        let t2 = t1; // Copy
+        assert_eq!(t1, t2); // original still usable
+    }
+
+    #[test]
+    fn test_timestamp_ordering_transitive() {
+        let a = Timestamp::from_micros(100);
+        let b = Timestamp::from_micros(200);
+        let c = Timestamp::from_micros(300);
+        assert!(a < b);
+        assert!(b < c);
+        assert!(a < c); // transitivity
+    }
+
+    #[test]
+    fn test_timestamp_from_secs_u64_max_saturates() {
+        let ts = Timestamp::from_secs(u64::MAX);
+        // u64::MAX * 1_000_000 would overflow, should saturate
+        assert_eq!(ts, Timestamp::MAX);
+    }
+
+    #[test]
+    fn test_timestamp_from_millis_u64_max_saturates() {
+        let ts = Timestamp::from_millis(u64::MAX);
+        assert_eq!(ts, Timestamp::MAX);
+    }
+
+    #[test]
+    fn test_timestamp_duration_since_equal() {
+        let t = Timestamp::from_micros(5000);
+        let dur = t.duration_since(t);
+        assert_eq!(dur, Some(Duration::from_micros(0)));
+    }
+
+    #[test]
+    fn test_timestamp_is_before_equal_is_false() {
+        let t = Timestamp::from_micros(100);
+        assert!(!t.is_before(t));
+    }
+
+    #[test]
+    fn test_timestamp_is_after_equal_is_false() {
+        let t = Timestamp::from_micros(100);
+        assert!(!t.is_after(t));
+    }
+
+    #[test]
+    fn test_timestamp_display_zero_micros() {
+        let ts = Timestamp::from_secs(42);
+        assert_eq!(format!("{}", ts), "42.000000");
+    }
+
+    #[test]
+    fn test_timestamp_display_only_micros() {
+        let ts = Timestamp::from_micros(123);
+        assert_eq!(format!("{}", ts), "0.000123");
+    }
+
+    #[test]
+    fn test_timestamp_saturating_sub_large_duration() {
+        let ts = Timestamp::from_micros(100);
+        let result = ts.saturating_sub(Duration::from_secs(1_000_000));
+        assert_eq!(result, Timestamp::EPOCH);
+    }
 }

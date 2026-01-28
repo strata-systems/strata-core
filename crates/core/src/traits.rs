@@ -200,59 +200,509 @@ pub trait SnapshotView: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract::{Timestamp, Version, Versioned};
+    use crate::error::StrataError;
+    use crate::types::Namespace;
+    use std::collections::BTreeMap;
+    use std::sync::{atomic::{AtomicU64, Ordering}, RwLock};
 
-    /// Test that Storage can be used as a trait object
-    ///
-    /// This ensures the trait is object-safe, which means it can be used
-    /// with dynamic dispatch (dyn Storage).
-    #[test]
-    fn test_storage_trait_object() {
-        // This function accepts any type that implements Storage as a trait object
-        fn accepts_storage(_storage: &dyn Storage) {
-            // If this compiles, Storage is object-safe
-        }
+    // ====================================================================
+    // Minimal mock implementations for behavioral testing
+    // ====================================================================
 
-        // The function exists and compiles, proving trait object works
-        let _ = accepts_storage as fn(&dyn Storage);
+    /// A minimal in-memory Storage implementation for testing the trait contract.
+    struct MockStorage {
+        data: RwLock<BTreeMap<Key, Vec<VersionedValue>>>,
+        version: AtomicU64,
     }
 
-    /// Test that SnapshotView can be used as a trait object
-    ///
-    /// This ensures the trait is object-safe for dynamic dispatch.
-    #[test]
-    fn test_snapshot_trait_object() {
-        // This function accepts any type that implements SnapshotView as a trait object
-        fn accepts_snapshot(_snapshot: &dyn SnapshotView) {
-            // If this compiles, SnapshotView is object-safe
+    impl MockStorage {
+        fn new() -> Self {
+            MockStorage {
+                data: RwLock::new(BTreeMap::new()),
+                version: AtomicU64::new(0),
+            }
         }
-
-        // The function exists and compiles, proving trait object works
-        let _ = accepts_snapshot as fn(&dyn SnapshotView);
     }
 
-    /// Test that Storage requires Send + Sync
-    ///
-    /// This ensures Storage implementations can be safely shared across threads.
+    impl Storage for MockStorage {
+        fn get(&self, key: &Key) -> Result<Option<VersionedValue>> {
+            let data = self.data.read().unwrap();
+            Ok(data.get(key).and_then(|versions| versions.last().cloned()))
+        }
+
+        fn get_versioned(&self, key: &Key, max_version: u64) -> Result<Option<VersionedValue>> {
+            let data = self.data.read().unwrap();
+            Ok(data.get(key).and_then(|versions| {
+                versions.iter().rev()
+                    .find(|v| v.version().as_u64() <= max_version)
+                    .cloned()
+            }))
+        }
+
+        fn get_history(
+            &self,
+            key: &Key,
+            limit: Option<usize>,
+            before_version: Option<u64>,
+        ) -> Result<Vec<VersionedValue>> {
+            let data = self.data.read().unwrap();
+            let Some(versions) = data.get(key) else {
+                return Ok(vec![]);
+            };
+            let mut result: Vec<_> = versions.iter().rev()
+                .filter(|v| before_version.map_or(true, |bv| v.version().as_u64() < bv))
+                .cloned()
+                .collect();
+            if let Some(limit) = limit {
+                result.truncate(limit);
+            }
+            Ok(result)
+        }
+
+        fn put(&self, key: Key, value: Value, _ttl: Option<Duration>) -> Result<u64> {
+            let ver = self.version.fetch_add(1, Ordering::SeqCst) + 1;
+            let versioned = Versioned::with_timestamp(value, Version::txn(ver), Timestamp::now());
+            let mut data = self.data.write().unwrap();
+            data.entry(key).or_default().push(versioned);
+            Ok(ver)
+        }
+
+        fn delete(&self, key: &Key) -> Result<Option<VersionedValue>> {
+            let mut data = self.data.write().unwrap();
+            Ok(data.remove(key).and_then(|v| v.last().cloned()))
+        }
+
+        fn scan_prefix(&self, prefix: &Key, max_version: u64) -> Result<Vec<(Key, VersionedValue)>> {
+            let data = self.data.read().unwrap();
+            let mut result = vec![];
+            for (k, versions) in data.iter() {
+                if k.starts_with(prefix) {
+                    if let Some(v) = versions.iter().rev()
+                        .find(|v| v.version().as_u64() <= max_version) {
+                        result.push((k.clone(), v.clone()));
+                    }
+                }
+            }
+            Ok(result)
+        }
+
+        fn scan_by_run(&self, run_id: RunId, max_version: u64) -> Result<Vec<(Key, VersionedValue)>> {
+            let data = self.data.read().unwrap();
+            let mut result = vec![];
+            for (k, versions) in data.iter() {
+                if k.namespace.run_id == run_id {
+                    if let Some(v) = versions.iter().rev()
+                        .find(|v| v.version().as_u64() <= max_version) {
+                        result.push((k.clone(), v.clone()));
+                    }
+                }
+            }
+            Ok(result)
+        }
+
+        fn current_version(&self) -> u64 {
+            self.version.load(Ordering::SeqCst)
+        }
+
+        fn put_with_version(&self, key: Key, value: Value, version: u64, _ttl: Option<Duration>) -> Result<()> {
+            let versioned = Versioned::with_timestamp(value, Version::txn(version), Timestamp::now());
+            let mut data = self.data.write().unwrap();
+            data.entry(key).or_default().push(versioned);
+            Ok(())
+        }
+
+        fn delete_with_version(&self, key: &Key, _version: u64) -> Result<Option<VersionedValue>> {
+            self.delete(key)
+        }
+    }
+
+    /// A minimal SnapshotView for testing.
+    struct MockSnapshot {
+        data: BTreeMap<Key, VersionedValue>,
+        snap_version: u64,
+    }
+
+    impl MockSnapshot {
+        fn from_storage(storage: &MockStorage, version: u64) -> Self {
+            let data = storage.data.read().unwrap();
+            let mut snap = BTreeMap::new();
+            for (k, versions) in data.iter() {
+                if let Some(v) = versions.iter().rev()
+                    .find(|v| v.version().as_u64() <= version) {
+                    snap.insert(k.clone(), v.clone());
+                }
+            }
+            MockSnapshot { data: snap, snap_version: version }
+        }
+    }
+
+    impl SnapshotView for MockSnapshot {
+        fn get(&self, key: &Key) -> Result<Option<VersionedValue>> {
+            Ok(self.data.get(key).cloned())
+        }
+
+        fn scan_prefix(&self, prefix: &Key) -> Result<Vec<(Key, VersionedValue)>> {
+            Ok(self.data.iter()
+                .filter(|(k, _)| k.starts_with(prefix))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect())
+        }
+
+        fn version(&self) -> u64 {
+            self.snap_version
+        }
+    }
+
+    fn test_ns() -> Namespace {
+        Namespace::new("test".into(), "app".into(), "agent".into(), RunId::new())
+    }
+
+    fn test_key(ns: &Namespace, name: &str) -> Key {
+        Key::new_kv(ns.clone(), name)
+    }
+
+    // ====================================================================
+    // Compile-time contract tests (object safety, Send+Sync)
+    // ====================================================================
+
     #[test]
-    fn test_storage_is_send_sync() {
+    fn storage_is_object_safe_and_send_sync() {
+        fn accepts_storage(_: &dyn Storage) {}
         fn assert_send<T: Send>() {}
         fn assert_sync<T: Sync>() {}
-
-        // These will only compile if dyn Storage is Send + Sync
+        let _ = accepts_storage as fn(&dyn Storage);
         assert_send::<Box<dyn Storage>>();
         assert_sync::<Box<dyn Storage>>();
     }
 
-    /// Test that SnapshotView requires Send + Sync
-    ///
-    /// This ensures SnapshotView implementations can be safely shared across threads.
     #[test]
-    fn test_snapshot_is_send_sync() {
+    fn snapshot_view_is_object_safe_and_send_sync() {
+        fn accepts_snapshot(_: &dyn SnapshotView) {}
         fn assert_send<T: Send>() {}
         fn assert_sync<T: Sync>() {}
-
-        // These will only compile if dyn SnapshotView is Send + Sync
+        let _ = accepts_snapshot as fn(&dyn SnapshotView);
         assert_send::<Box<dyn SnapshotView>>();
         assert_sync::<Box<dyn SnapshotView>>();
+    }
+
+    // ====================================================================
+    // Storage behavioral tests
+    // ====================================================================
+
+    #[test]
+    fn storage_get_nonexistent_returns_none() {
+        let store = MockStorage::new();
+        let ns = test_ns();
+        let key = test_key(&ns, "missing");
+        assert!(store.get(&key).unwrap().is_none());
+    }
+
+    #[test]
+    fn storage_put_then_get_returns_value() {
+        let store = MockStorage::new();
+        let ns = test_ns();
+        let key = test_key(&ns, "hello");
+        let ver = store.put(key.clone(), Value::Int(42), None).unwrap();
+        assert!(ver > 0);
+
+        let result = store.get(&key).unwrap().unwrap();
+        assert_eq!(result.value, Value::Int(42));
+    }
+
+    #[test]
+    fn storage_put_increments_version_monotonically() {
+        let store = MockStorage::new();
+        let ns = test_ns();
+        let v1 = store.put(test_key(&ns, "a"), Value::Int(1), None).unwrap();
+        let v2 = store.put(test_key(&ns, "b"), Value::Int(2), None).unwrap();
+        let v3 = store.put(test_key(&ns, "c"), Value::Int(3), None).unwrap();
+        assert!(v1 < v2);
+        assert!(v2 < v3);
+    }
+
+    #[test]
+    fn storage_delete_removes_key() {
+        let store = MockStorage::new();
+        let ns = test_ns();
+        let key = test_key(&ns, "deleteme");
+        store.put(key.clone(), Value::Int(1), None).unwrap();
+
+        let deleted = store.delete(&key).unwrap();
+        assert!(deleted.is_some());
+        assert_eq!(deleted.unwrap().value, Value::Int(1));
+
+        assert!(store.get(&key).unwrap().is_none());
+    }
+
+    #[test]
+    fn storage_delete_nonexistent_returns_none() {
+        let store = MockStorage::new();
+        let ns = test_ns();
+        let key = test_key(&ns, "never_existed");
+        assert!(store.delete(&key).unwrap().is_none());
+    }
+
+    #[test]
+    fn storage_get_versioned_respects_max_version() {
+        let store = MockStorage::new();
+        let ns = test_ns();
+        let key = test_key(&ns, "versioned");
+
+        let v1 = store.put(key.clone(), Value::Int(1), None).unwrap();
+        let _v2 = store.put(key.clone(), Value::Int(2), None).unwrap();
+
+        // Reading at v1 should see the first write
+        let result = store.get_versioned(&key, v1).unwrap().unwrap();
+        assert_eq!(result.value, Value::Int(1));
+    }
+
+    #[test]
+    fn storage_get_versioned_at_zero_returns_none() {
+        let store = MockStorage::new();
+        let ns = test_ns();
+        let key = test_key(&ns, "v");
+        store.put(key.clone(), Value::Int(1), None).unwrap();
+
+        // Version 0 is before any write
+        assert!(store.get_versioned(&key, 0).unwrap().is_none());
+    }
+
+    #[test]
+    fn storage_get_history_returns_newest_first() {
+        let store = MockStorage::new();
+        let ns = test_ns();
+        let key = test_key(&ns, "history");
+
+        store.put(key.clone(), Value::Int(1), None).unwrap();
+        store.put(key.clone(), Value::Int(2), None).unwrap();
+        store.put(key.clone(), Value::Int(3), None).unwrap();
+
+        let history = store.get_history(&key, None, None).unwrap();
+        assert_eq!(history.len(), 3);
+        // Newest first
+        assert_eq!(history[0].value, Value::Int(3));
+        assert_eq!(history[1].value, Value::Int(2));
+        assert_eq!(history[2].value, Value::Int(1));
+    }
+
+    #[test]
+    fn storage_get_history_with_limit() {
+        let store = MockStorage::new();
+        let ns = test_ns();
+        let key = test_key(&ns, "limited");
+
+        for i in 0..10 {
+            store.put(key.clone(), Value::Int(i), None).unwrap();
+        }
+
+        let history = store.get_history(&key, Some(3), None).unwrap();
+        assert_eq!(history.len(), 3);
+    }
+
+    #[test]
+    fn storage_get_history_nonexistent_returns_empty() {
+        let store = MockStorage::new();
+        let ns = test_ns();
+        let key = test_key(&ns, "nope");
+        assert!(store.get_history(&key, None, None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn storage_get_history_before_version_paginates() {
+        let store = MockStorage::new();
+        let ns = test_ns();
+        let key = test_key(&ns, "paginate");
+
+        let v1 = store.put(key.clone(), Value::Int(1), None).unwrap();
+        let v2 = store.put(key.clone(), Value::Int(2), None).unwrap();
+        let _v3 = store.put(key.clone(), Value::Int(3), None).unwrap();
+
+        // Get history before v3 (should return v2 and v1)
+        let history = store.get_history(&key, None, Some(v2 + 1)).unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].value, Value::Int(2));
+
+        // Get history before v2 (should return only v1)
+        let history = store.get_history(&key, None, Some(v1 + 1)).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].value, Value::Int(1));
+    }
+
+    #[test]
+    fn storage_current_version_starts_at_zero() {
+        let store = MockStorage::new();
+        assert_eq!(store.current_version(), 0);
+    }
+
+    #[test]
+    fn storage_current_version_advances_with_puts() {
+        let store = MockStorage::new();
+        let ns = test_ns();
+        store.put(test_key(&ns, "a"), Value::Int(1), None).unwrap();
+        assert!(store.current_version() > 0);
+    }
+
+    #[test]
+    fn storage_put_with_version_uses_explicit_version() {
+        let store = MockStorage::new();
+        let ns = test_ns();
+        let key = test_key(&ns, "explicit");
+        store.put_with_version(key.clone(), Value::Int(99), 42, None).unwrap();
+
+        let result = store.get(&key).unwrap().unwrap();
+        assert_eq!(result.value, Value::Int(99));
+        assert_eq!(result.version().as_u64(), 42);
+    }
+
+    #[test]
+    fn storage_scan_prefix_returns_matching_keys() {
+        let store = MockStorage::new();
+        let ns = test_ns();
+        let prefix = Key::new_kv(ns.clone(), "user/");
+        store.put(Key::new_kv(ns.clone(), "user/alice"), Value::Int(1), None).unwrap();
+        store.put(Key::new_kv(ns.clone(), "user/bob"), Value::Int(2), None).unwrap();
+        store.put(Key::new_kv(ns.clone(), "config/x"), Value::Int(3), None).unwrap();
+
+        let results = store.scan_prefix(&prefix, u64::MAX).unwrap();
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn storage_scan_by_run_isolates_runs() {
+        let store = MockStorage::new();
+        let run1 = RunId::new();
+        let run2 = RunId::new();
+        let ns1 = Namespace::new("t".into(), "a".into(), "g".into(), run1);
+        let ns2 = Namespace::new("t".into(), "a".into(), "g".into(), run2);
+
+        store.put(Key::new_kv(ns1.clone(), "k1"), Value::Int(1), None).unwrap();
+        store.put(Key::new_kv(ns2.clone(), "k2"), Value::Int(2), None).unwrap();
+
+        let results = store.scan_by_run(run1, u64::MAX).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1.value, Value::Int(1));
+    }
+
+    // ====================================================================
+    // SnapshotView behavioral tests
+    // ====================================================================
+
+    #[test]
+    fn snapshot_captures_point_in_time_state() {
+        let store = MockStorage::new();
+        let ns = test_ns();
+        let key = test_key(&ns, "snap");
+
+        let v1 = store.put(key.clone(), Value::Int(1), None).unwrap();
+        let snap = MockSnapshot::from_storage(&store, v1);
+
+        // Write after snapshot
+        store.put(key.clone(), Value::Int(2), None).unwrap();
+
+        // Snapshot should still see old value
+        let result = snap.get(&key).unwrap().unwrap();
+        assert_eq!(result.value, Value::Int(1));
+
+        // Live storage should see new value
+        let result = store.get(&key).unwrap().unwrap();
+        assert_eq!(result.value, Value::Int(2));
+    }
+
+    #[test]
+    fn snapshot_version_returns_creation_version() {
+        let store = MockStorage::new();
+        let ns = test_ns();
+        let v = store.put(test_key(&ns, "x"), Value::Int(1), None).unwrap();
+        let snap = MockSnapshot::from_storage(&store, v);
+        assert_eq!(snap.version(), v);
+    }
+
+    #[test]
+    fn snapshot_get_nonexistent_returns_none() {
+        let store = MockStorage::new();
+        let snap = MockSnapshot::from_storage(&store, 0);
+        let ns = test_ns();
+        assert!(snap.get(&test_key(&ns, "missing")).unwrap().is_none());
+    }
+
+    #[test]
+    fn snapshot_does_not_see_writes_after_version() {
+        let store = MockStorage::new();
+        let ns = test_ns();
+        let key = test_key(&ns, "invisible");
+
+        let snap = MockSnapshot::from_storage(&store, 0);
+        store.put(key.clone(), Value::Int(1), None).unwrap();
+
+        assert!(snap.get(&key).unwrap().is_none());
+    }
+
+    // ====================================================================
+    // Error propagation through trait
+    // ====================================================================
+
+    /// A storage that always returns errors.
+    struct FailingStorage;
+
+    impl Storage for FailingStorage {
+        fn get(&self, _: &Key) -> Result<Option<VersionedValue>> {
+            Err(StrataError::storage("disk read failed"))
+        }
+        fn get_versioned(&self, _: &Key, _: u64) -> Result<Option<VersionedValue>> {
+            Err(StrataError::storage("disk read failed"))
+        }
+        fn get_history(&self, _: &Key, _: Option<usize>, _: Option<u64>) -> Result<Vec<VersionedValue>> {
+            Err(StrataError::storage("disk read failed"))
+        }
+        fn put(&self, _: Key, _: Value, _: Option<Duration>) -> Result<u64> {
+            Err(StrataError::storage("disk write failed"))
+        }
+        fn delete(&self, _: &Key) -> Result<Option<VersionedValue>> {
+            Err(StrataError::storage("disk write failed"))
+        }
+        fn scan_prefix(&self, _: &Key, _: u64) -> Result<Vec<(Key, VersionedValue)>> {
+            Err(StrataError::storage("disk read failed"))
+        }
+        fn scan_by_run(&self, _: RunId, _: u64) -> Result<Vec<(Key, VersionedValue)>> {
+            Err(StrataError::storage("disk read failed"))
+        }
+        fn current_version(&self) -> u64 { 0 }
+        fn put_with_version(&self, _: Key, _: Value, _: u64, _: Option<Duration>) -> Result<()> {
+            Err(StrataError::storage("disk write failed"))
+        }
+        fn delete_with_version(&self, _: &Key, _: u64) -> Result<Option<VersionedValue>> {
+            Err(StrataError::storage("disk write failed"))
+        }
+    }
+
+    #[test]
+    fn storage_errors_propagate_through_trait_object() {
+        let store: Box<dyn Storage> = Box::new(FailingStorage);
+        let ns = test_ns();
+        let key = test_key(&ns, "k");
+
+        assert!(store.get(&key).is_err());
+        assert!(store.put(key.clone(), Value::Null, None).is_err());
+        assert!(store.delete(&key).is_err());
+        assert!(store.get_versioned(&key, 0).is_err());
+        assert!(store.get_history(&key, None, None).is_err());
+        assert!(store.scan_prefix(&key, 0).is_err());
+        assert!(store.scan_by_run(RunId::new(), 0).is_err());
+        assert!(store.put_with_version(key.clone(), Value::Null, 1, None).is_err());
+        assert!(store.delete_with_version(&key, 1).is_err());
+    }
+
+    #[test]
+    fn storage_error_types_are_correct() {
+        let store = FailingStorage;
+        let ns = test_ns();
+        let key = test_key(&ns, "k");
+
+        let err = store.get(&key).unwrap_err();
+        assert!(err.is_storage_error());
+
+        let err = store.put(key, Value::Null, None).unwrap_err();
+        assert!(err.is_storage_error());
     }
 }
