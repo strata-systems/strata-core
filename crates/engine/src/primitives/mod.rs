@@ -52,7 +52,7 @@ pub mod tokenizer;
 pub mod vector;
 
 // Re-exports - primitives are exported as they're implemented
-pub use event_log::{ChainVerification, Event, EventLog};
+pub use event_log::{Event, EventLog};
 pub use json_store::{JsonDoc, JsonStore};
 pub use kv::KVStore;
 pub use run_handle::{

@@ -87,9 +87,7 @@ fn test_event_log_isolation() {
     assert_eq!(event_log.len(&run1).unwrap(), 1);
     assert_eq!(event_log.len(&run2).unwrap(), 1);
 
-    // Chain verification is per-run
-    assert!(event_log.verify_chain(&run1).unwrap().is_valid);
-    assert!(event_log.verify_chain(&run2).unwrap().is_valid);
+    // Note: verify_chain() removed in MVP simplification
 
     // Appending more to run1 doesn't affect run2
     event_log
@@ -188,11 +186,11 @@ fn test_cross_run_query_isolation() {
     // (run2 only has key0-key4, run1 has key0-key9)
     // Actually both have overlapping key names, but different values
     assert_eq!(
-        state_cell.read(&run1, "state").unwrap().unwrap().value,
+        state_cell.read(&run1, "state").unwrap().unwrap().value.value,
         Value::String("run1".into())
     );
     assert_eq!(
-        state_cell.read(&run2, "state").unwrap().unwrap().value,
+        state_cell.read(&run2, "state").unwrap().unwrap().value.value,
         Value::String("run2".into())
     );
 }
@@ -234,12 +232,12 @@ fn test_run_delete_isolation() {
     // run1 data is GONE
     assert!(kv.get(&run1, "key").unwrap().is_none());
     assert_eq!(event_log.len(&run1).unwrap(), 0);
-    assert!(!state_cell.exists(&run1, "cell").unwrap());
+    assert!(state_cell.read(&run1, "cell").unwrap().is_none());
 
     // run2 data is UNTOUCHED
     assert_eq!(kv.get(&run2, "key").unwrap(), Some(Value::Int(2)));
     assert_eq!(event_log.len(&run2).unwrap(), 1);
-    assert!(state_cell.exists(&run2, "cell").unwrap());
+    assert!(state_cell.read(&run2, "cell").unwrap().is_some());
 }
 
 /// Test that many concurrent runs remain isolated
@@ -326,13 +324,9 @@ fn test_event_log_chain_isolation() {
     let event1_1 = event_log.read(&run1, 1).unwrap().unwrap();
     assert_eq!(event1_1.value.prev_hash, event1_0.value.hash);
 
-    // Verify chains independently
-    assert!(event_log.verify_chain(&run1).unwrap().is_valid);
-    assert!(event_log.verify_chain(&run2).unwrap().is_valid);
-
-    // Corrupting run1 chain doesn't affect run2 verification
-    // (We can't easily corrupt without direct DB access, so just verify both remain valid)
-    assert_eq!(event_log.verify_chain(&run1).unwrap().length, 3);
-    assert_eq!(event_log.verify_chain(&run2).unwrap().length, 2);
+    // Note: verify_chain() removed in MVP simplification
+    // Verify chain lengths independently
+    assert_eq!(event_log.len(&run1).unwrap(), 3);
+    assert_eq!(event_log.len(&run2).unwrap(), 2);
 }
 

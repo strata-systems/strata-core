@@ -64,7 +64,7 @@ pub use primitives::extensions;
 // Re-export primitive types at crate root for convenience
 pub use primitives::{
     // Primitives
-    KVStore, EventLog, Event, ChainVerification,
+    KVStore, EventLog, Event,
     StateCell, State, JsonStore, JsonDoc, VectorStore,
     RunIndex, RunMetadata, RunStatus,
     // Handles

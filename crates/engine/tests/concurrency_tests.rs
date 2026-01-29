@@ -171,10 +171,12 @@ fn test_multi_threaded_contention() {
         "All operations should complete successfully"
     );
 
-    // Verify some values are readable
-    let key = Key::new_kv(ns.clone(), "t0_op0");
-    let val = db.storage().get(&key).unwrap().unwrap();
-    assert_eq!(val.value, Value::Int(0));
+    // Verify some values are readable via transaction
+    let val = db.transaction(run_id, |txn| {
+        let key = Key::new_kv(ns.clone(), "t0_op0");
+        txn.get(&key)
+    }).unwrap().unwrap();
+    assert_eq!(val, Value::Int(0));
 }
 
 /// Test: Read-only transactions never conflict

@@ -147,10 +147,12 @@ fn test_large_value_memory() {
     assert!(result.is_ok());
     println!("Successfully wrote 100KB value");
 
-    // Read it back
-    let key = Key::new_kv(ns.clone(), "large_value");
-    let read_result = db.storage().get(&key).unwrap().unwrap();
-    if let Value::String(s) = read_result.value {
+    // Read it back via transaction
+    let read_result = db.transaction(run_id, |txn| {
+        let key = Key::new_kv(ns.clone(), "large_value");
+        txn.get(&key)
+    }).unwrap().unwrap();
+    if let Value::String(s) = read_result {
         assert_eq!(s.len(), 100_000);
         println!("Successfully read 100KB value");
     }

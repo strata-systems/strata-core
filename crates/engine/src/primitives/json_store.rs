@@ -69,8 +69,8 @@ fn limit_error_to_error(e: JsonLimitError) -> StrataError {
 ///
 /// # Example
 ///
-/// ```rust
-/// use strata_primitives::json_store::JsonDoc;
+/// ```rust,ignore
+/// use strata_engine::JsonDoc;
 /// use strata_core::primitives::json::JsonValue;
 ///
 /// let doc = JsonDoc::new("my-document", JsonValue::from(42i64));

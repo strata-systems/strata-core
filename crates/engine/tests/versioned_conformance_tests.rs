@@ -550,17 +550,15 @@ mod invariant_4_lifecycle {
         // Create (init)
         state.init(&run_id, "cell", Value::Int(1)).unwrap();
 
-        // Exist
-        assert!(state.exists(&run_id, "cell").unwrap());
+        // Exist - use read() to check existence
+        assert!(state.read(&run_id, "cell").unwrap().is_some());
 
         // Evolve (set)
         state.set(&run_id, "cell", Value::Int(2)).unwrap();
         let s = state.read(&run_id, "cell").unwrap().unwrap();
         assert!(matches!(s.value.value, Value::Int(2)));
 
-        // Destroy
-        state.delete(&run_id, "cell").unwrap();
-        assert!(!state.exists(&run_id, "cell").unwrap());
+        // Note: delete() removed in MVP simplification - StateCell values persist
     }
 
     #[test]
@@ -634,12 +632,11 @@ mod invariant_4_lifecycle {
         // Exist
         assert!(index.exists(run_name).unwrap());
 
-        // Evolve (update status)
-        index
-            .update_status(run_name, RunStatus::Completed)
-            .unwrap();
+        // Read back
         let run = index.get_run(run_name).unwrap().unwrap();
-        assert_eq!(run.value.status, RunStatus::Completed);
+        assert_eq!(run.value.name, *run_name);
+
+        // Note: update_status() removed in MVP simplification
 
         // Destroy
         index.delete_run(run_name).unwrap();
@@ -818,11 +815,12 @@ mod invariant_6_introspectable {
         let (db, run_id) = setup();
         let state = StateCell::new(db);
 
-        assert!(!state.exists(&run_id, "cell").unwrap());
+        // Use read().is_some() to check existence (exists() removed in MVP)
+        assert!(state.read(&run_id, "cell").unwrap().is_none());
 
         state.init(&run_id, "cell", Value::Int(1)).unwrap();
 
-        assert!(state.exists(&run_id, "cell").unwrap());
+        assert!(state.read(&run_id, "cell").unwrap().is_some());
     }
 
     #[test]

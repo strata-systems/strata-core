@@ -150,9 +150,7 @@ fn test_event_log_chain_survives_recovery() {
     let hash1 = pre_event1.value.hash;
     let hash2 = pre_event2.value.hash;
 
-    // Verify chain before crash
-    let verification = event_log.verify_chain(&run_id).unwrap();
-    assert!(verification.is_valid);
+    // Verify event count before crash (verify_chain removed in MVP)
     assert_eq!(event_log.len(&run_id).unwrap(), 3);
 
     // Simulate crash
@@ -163,9 +161,7 @@ fn test_event_log_chain_survives_recovery() {
     let db = Database::open(&path).unwrap();
     let event_log = EventLog::new(db.clone());
 
-    // Chain is intact
-    let verification = event_log.verify_chain(&run_id).unwrap();
-    assert!(verification.is_valid);
+    // Data is intact (verify_chain removed in MVP)
     assert_eq!(event_log.len(&run_id).unwrap(), 3);
 
     // Events readable with correct hashes
@@ -188,15 +184,13 @@ fn test_event_log_chain_survives_recovery() {
         .unwrap();
     assert!(matches!(v3, Version::Sequence(3))); // Not 0 (would be restart)
 
-    // Chain still valid after new append
-    let verification = event_log.verify_chain(&run_id).unwrap();
-    assert!(verification.is_valid);
+    // Data still valid after new append (verify_chain removed in MVP)
     assert_eq!(event_log.len(&run_id).unwrap(), 4);
 }
 
-/// Test EventLog range queries survive recovery
+/// Test EventLog multiple events survive recovery
 #[test]
-fn test_event_log_range_survives_recovery() {
+fn test_event_log_multiple_events_survives_recovery() {
     let (db, temp_dir, run_id) = setup();
     let path = get_path(&temp_dir);
 
@@ -217,12 +211,11 @@ fn test_event_log_range_survives_recovery() {
     let db = Database::open(&path).unwrap();
     let event_log = EventLog::new(db.clone());
 
-    // Range query works
-    let events = event_log.read_range(&run_id, 1, 4).unwrap();
-    assert_eq!(events.len(), 3);
-    assert_eq!(events[0].value.sequence, 1);
-    assert_eq!(events[1].value.sequence, 2);
-    assert_eq!(events[2].value.sequence, 3);
+    // Individual reads work (read_range removed in MVP)
+    assert_eq!(event_log.len(&run_id).unwrap(), 5);
+    assert_eq!(event_log.read(&run_id, 1).unwrap().unwrap().value.sequence, 1);
+    assert_eq!(event_log.read(&run_id, 2).unwrap().unwrap().value.sequence, 2);
+    assert_eq!(event_log.read(&run_id, 3).unwrap().unwrap().value.sequence, 3);
 }
 
 /// Test StateCell version survives recovery
@@ -306,9 +299,9 @@ fn test_state_cell_set_survives_recovery() {
     assert_eq!(state.value.version, Version::counter(2)); // init = 1, set = 2
 }
 
-/// Test RunIndex status survives recovery
+/// Test RunIndex survives recovery
 #[test]
-fn test_run_index_status_survives_recovery() {
+fn test_run_index_survives_recovery() {
     let temp_dir = TempDir::new().unwrap();
     let path = get_path(&temp_dir);
     let db = Database::open(&path).unwrap();
@@ -319,24 +312,11 @@ fn test_run_index_status_survives_recovery() {
     let run_meta = run_index.create_run("test-run").unwrap();
     let run_name = run_meta.value.name.clone();
 
-    // Update status (use Paused instead of default Active)
-    run_index
-        .update_status(&run_name, RunStatus::Paused)
-        .unwrap();
-
-    // Add tags
-    run_index
-        .add_tags(
-            &run_name,
-            vec!["important".to_string(), "batch-1".to_string()],
-        )
-        .unwrap();
+    // Note: update_status and add_tags removed in MVP simplification
 
     // Verify before crash
     let run = run_index.get_run(&run_name).unwrap().unwrap();
-    assert_eq!(run.value.status, RunStatus::Paused);
-    assert!(run.value.tags.contains(&"important".to_string()));
-    assert!(run.value.tags.contains(&"batch-1".to_string()));
+    assert_eq!(run.value.name, "test-run");
 
     // Simulate crash
     drop(run_index);
@@ -346,35 +326,26 @@ fn test_run_index_status_survives_recovery() {
     let db = Database::open(&path).unwrap();
     let run_index = RunIndex::new(db.clone());
 
-    // Status preserved
+    // Run preserved
     let recovered = run_index.get_run(&run_name).unwrap().unwrap();
-    assert_eq!(recovered.value.status, RunStatus::Paused);
-    assert!(recovered.value.tags.contains(&"important".to_string()));
-    assert!(recovered.value.tags.contains(&"batch-1".to_string()));
     assert_eq!(recovered.value.name, "test-run");
 }
 
-/// Test RunIndex query survives recovery
+/// Test RunIndex list survives recovery
 #[test]
-fn test_run_index_query_survives_recovery() {
+fn test_run_index_list_survives_recovery() {
     let temp_dir = TempDir::new().unwrap();
     let path = get_path(&temp_dir);
     let db = Database::open(&path).unwrap();
 
     let run_index = RunIndex::new(db.clone());
 
-    // Create multiple runs with different statuses
-    let run1 = run_index.create_run("run1").unwrap();
-    let run2 = run_index.create_run("run2").unwrap();
-    let _run3 = run_index.create_run("run3").unwrap();
+    // Create multiple runs
+    run_index.create_run("run1").unwrap();
+    run_index.create_run("run2").unwrap();
+    run_index.create_run("run3").unwrap();
 
-    run_index
-        .update_status(&run1.value.name, RunStatus::Completed)
-        .unwrap();
-    run_index
-        .update_status(&run2.value.name, RunStatus::Failed)
-        .unwrap();
-    // run3 stays Active (default)
+    // Note: update_status and query_by_status removed in MVP simplification
 
     // Simulate crash
     drop(run_index);
@@ -384,15 +355,12 @@ fn test_run_index_query_survives_recovery() {
     let db = Database::open(&path).unwrap();
     let run_index = RunIndex::new(db.clone());
 
-    // Query by status works
-    let completed = run_index.query_by_status(RunStatus::Completed).unwrap();
-    assert!(completed.iter().any(|r| r.name == "run1"));
-
-    let failed = run_index.query_by_status(RunStatus::Failed).unwrap();
-    assert!(failed.iter().any(|r| r.name == "run2"));
-
-    let active = run_index.query_by_status(RunStatus::Active).unwrap();
-    assert!(active.iter().any(|r| r.name == "run3"));
+    // List all runs works
+    let runs = run_index.list_runs().unwrap();
+    assert_eq!(runs.len(), 3);
+    assert!(runs.contains(&"run1".to_string()));
+    assert!(runs.contains(&"run2".to_string()));
+    assert!(runs.contains(&"run3".to_string()));
 }
 
 /// Test RunIndex cascading delete survives recovery
