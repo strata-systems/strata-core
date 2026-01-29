@@ -78,15 +78,13 @@ pub fn vector_upsert(
     let run_id = to_core_run_id(&run)?;
     convert_result(validate_not_internal_collection(&collection))?;
 
-    // Auto-create collection on first upsert
-    let exists = convert_vector_result(p.vector.collection_exists(run_id, &collection))?;
-    if !exists {
-        let dim = vector.len();
-        let config = convert_result(
-            strata_core::primitives::VectorConfig::new(dim, strata_engine::DistanceMetric::Cosine),
-        )?;
-        convert_vector_result(p.vector.create_collection(run_id, &collection, config))?;
-    }
+    // Auto-create collection on first upsert (ignore AlreadyExists error)
+    let dim = vector.len();
+    let config = convert_result(
+        strata_core::primitives::VectorConfig::new(dim, strata_engine::DistanceMetric::Cosine),
+    )?;
+    // Try to create - if already exists, that's fine
+    let _ = p.vector.create_collection(run_id, &collection, config);
 
     let json_metadata = metadata
         .map(value_to_serde_json_public)
@@ -183,12 +181,12 @@ pub fn vector_delete_collection(
     let run_id = to_core_run_id(&run)?;
     convert_result(validate_not_internal_collection(&collection))?;
 
-    // Check existence then delete (primitive returns () not bool)
-    let existed = convert_vector_result(p.vector.collection_exists(run_id, &collection))?;
-    if existed {
-        convert_vector_result(p.vector.delete_collection(run_id, &collection))?;
+    // Try to delete - returns error if not found, which we convert to false
+    match p.vector.delete_collection(run_id, &collection) {
+        Ok(()) => Ok(Output::Bool(true)),
+        Err(strata_engine::VectorError::CollectionNotFound { .. }) => Ok(Output::Bool(false)),
+        Err(e) => Err(StrataError::from(e).into()),
     }
-    Ok(Output::Bool(existed))
 }
 
 /// Handle VectorListCollections command.

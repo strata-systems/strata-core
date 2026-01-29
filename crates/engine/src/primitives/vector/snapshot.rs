@@ -457,8 +457,10 @@ mod tests {
             .insert(run_id, "test", "v3", &[0.0, 0.0, 1.0], None)
             .unwrap();
 
-        // Verify we have 2 vectors (v2 and v3)
-        assert_eq!(store2.count(run_id, "test").unwrap(), 2);
+        // Verify we have v2 and v3 (v1 was deleted)
+        assert!(store2.get(run_id, "test", "v1").unwrap().is_none());
+        assert!(store2.get(run_id, "test", "v2").unwrap().is_some());
+        assert!(store2.get(run_id, "test", "v3").unwrap().is_some());
     }
 
     #[test]

@@ -299,11 +299,12 @@ fn test_vector_create_collection_parity() {
 
     assert!(result.is_ok());
 
-    // Verify via direct primitive
-    let info = p.vector.get_collection(run_id, "embeddings").unwrap();
+    // Verify via direct primitive using list_collections (get_collection is internal)
+    let collections = p.vector.list_collections(run_id).unwrap();
+    let info = collections.iter().find(|c| c.name == "embeddings");
     assert!(info.is_some());
     let info = info.unwrap();
-    assert_eq!(info.value.config.dimension, 4);
+    assert_eq!(info.config.dimension, 4);
 }
 
 #[test]
