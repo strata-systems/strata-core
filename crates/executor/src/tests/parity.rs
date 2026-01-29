@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 /// Create a test executor with shared primitives for parity comparisons.
 fn create_test_environment() -> (Executor, Arc<Primitives>) {
-    let db = Database::builder().no_durability().open_temp().unwrap();
+    let db = Database::ephemeral().unwrap();
     let executor = Executor::new(db.clone());
     let primitives = Arc::new(Primitives::new(db));
     (executor, primitives)

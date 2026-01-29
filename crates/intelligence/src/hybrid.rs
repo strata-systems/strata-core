@@ -267,9 +267,7 @@ mod tests {
     use strata_core::value::Value;
 
     fn test_db() -> Arc<Database> {
-        Database::builder()
-            .no_durability()
-            .open_temp()
+        Database::ephemeral()
             .expect("Failed to create test database")
     }
 

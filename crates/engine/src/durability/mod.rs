@@ -18,20 +18,16 @@
 //!
 //! ```ignore
 //! use strata_engine::Database;
-//! use strata_durability::wal::DurabilityMode;
 //!
-//! // InMemory mode for fastest performance
-//! let db = Database::builder()
-//!     .in_memory()
-//!     .open_temp()?;
+//! // Ephemeral mode for testing (no disk files)
+//! let db = Database::ephemeral()?;
 //!
-//! // Buffered mode for production (default)
-//! let db = Database::builder()
-//!     .buffered()
-//!     .open()?;
+//! // Simple open with buffered durability (default)
+//! let db = Database::open("/data/mydb")?;
 //!
 //! // Strict mode for maximum durability
 //! let db = Database::builder()
+//!     .path("/data/mydb")
 //!     .strict()
 //!     .open()?;
 //! ```

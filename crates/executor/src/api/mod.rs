@@ -102,9 +102,9 @@ impl Strata {
         })
     }
 
-    /// Open a temporary in-memory database.
+    /// Open an ephemeral in-memory database.
     ///
-    /// Useful for testing. Data is not persisted.
+    /// Useful for testing. Data is not persisted and no disk files are created.
     ///
     /// # Example
     ///
@@ -113,11 +113,9 @@ impl Strata {
     /// db.kv_put("key", Value::Int(42))?;
     /// ```
     pub fn open_temp() -> Result<Self> {
-        let db = Database::builder()
-            .no_durability()
-            .open_temp()
+        let db = Database::ephemeral()
             .map_err(|e| Error::Internal {
-                reason: format!("Failed to open temp database: {}", e),
+                reason: format!("Failed to open ephemeral database: {}", e),
             })?;
         let executor = Executor::new(db);
 

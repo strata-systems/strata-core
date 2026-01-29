@@ -190,59 +190,45 @@ impl Default for PersistenceMode {
 /// Builder for Database configuration
 ///
 /// Provides a fluent API for configuring and opening databases with
-/// different durability modes.
+/// different durability modes. The builder requires an explicit path.
 ///
-/// # Example
+/// # Three Ways to Open a Database
 ///
 /// ```ignore
-/// use strata_engine::{Database, DatabaseBuilder};
-/// use strata_durability::wal::DurabilityMode;
+/// use strata_engine::Database;
 ///
-/// // Ephemeral mode for unit tests (no disk I/O)
+/// // 1. Simple open with sensible defaults (buffered durability)
+/// let db = Database::open("/data/mydb")?;
+///
+/// // 2. Builder for custom durability
+/// let db = Database::builder()
+///     .path("/data/mydb")
+///     .strict()  // or .buffered() or .no_durability()
+///     .open()?;
+///
+/// // 3. Ephemeral (no files, testing)
 /// let db = Database::ephemeral()?;
-///
-/// // No-durability mode for integration tests (disk, no fsync)
-/// let db = Database::builder()
-///     .no_durability()
-///     .open_temp()?;
-///
-/// // Buffered mode for production (balanced)
-/// let db = Database::builder()
-///     .path("/var/data/mydb")
-///     .buffered()
-///     .open()?;
-///
-/// // Strict mode with explicit path
-/// let db = Database::builder()
-///     .path("/var/data/mydb")
-///     .strict()
-///     .open()?;
-///
-/// // Custom durability mode
-/// let db = Database::builder()
-///     .path("/var/data/mydb")
-///     .durability(DurabilityMode::Batched {
-///         interval_ms: 50,
-///         max_pending_writes: 500,
-///     })
-///     .open()?;
 /// ```
+///
+/// # Key Principle
+///
+/// Durability modes only make sense with persistent storage. If you need
+/// a database without disk files, use [`Database::ephemeral()`] instead
+/// of configuring durability options.
 ///
 /// # Performance Targets
 ///
 /// | Mode | Target Latency | Throughput |
 /// |------|----------------|------------|
-/// | InMemory | <3µs put | 250K+ ops/sec |
+/// | NoDurability | <3µs put | 250K+ ops/sec |
 /// | Buffered | <30µs put | 50K+ ops/sec |
 /// | Strict | ~2ms put | ~500 ops/sec |
 #[derive(Debug, Clone)]
 pub struct DatabaseBuilder {
-    /// Database path (None for temporary)
+    /// Database path (required for open())
     path: Option<PathBuf>,
-    /// Durability mode (controls WAL sync behavior for disk-backed databases)
+    /// Durability mode (controls WAL sync behavior)
     durability: DurabilityMode,
-    /// Persistence mode (controls whether files are created at all)
-    persistence: PersistenceMode,
 }
 
 impl DatabaseBuilder {
@@ -253,13 +239,12 @@ impl DatabaseBuilder {
         Self {
             path: None,
             durability: DurabilityMode::Strict, // default for backwards compatibility
-            persistence: PersistenceMode::Disk,
         }
     }
 
     /// Set database path
     ///
-    /// If not set, `open_temp()` will generate a temporary path.
+    /// Required for `open()`. Use `Database::ephemeral()` for no-file testing.
     pub fn path<P: Into<PathBuf>>(mut self, path: P) -> Self {
         self.path = Some(path.into());
         self
@@ -282,21 +267,6 @@ impl DatabaseBuilder {
     ///
     /// All data lost on crash. Use for tests, caches, ephemeral data.
     pub fn no_durability(mut self) -> Self {
-        self.durability = DurabilityMode::None;
-        self
-    }
-
-    /// Deprecated: Use `no_durability()` instead.
-    ///
-    /// This method name was confusing because it only affects WAL sync behavior,
-    /// not storage location. Files are still created on disk.
-    ///
-    /// For truly in-memory operation with no disk files, use [`Database::ephemeral()`].
-    #[deprecated(
-        since = "0.14.0",
-        note = "Use .no_durability() instead - this sets WAL mode, not storage location. For no disk files, use Database::ephemeral()"
-    )]
-    pub fn in_memory(mut self) -> Self {
         self.durability = DurabilityMode::None;
         self
     }
@@ -361,15 +331,10 @@ impl DatabaseBuilder {
         self.path.as_ref()
     }
 
-    /// Get configured durability mode
-    pub fn get_durability(&self) -> DurabilityMode {
-        self.durability
-    }
-
     /// Open the database
     ///
-    /// Uses the configured path, or generates a temporary path if none set.
-    /// Returns `Arc<Database>` for thread-safe sharing.
+    /// Requires a path to be set via `.path()`. For testing without disk files,
+    /// use `Database::ephemeral()` instead.
     ///
     /// # Thread Safety
     ///
@@ -377,26 +342,16 @@ impl DatabaseBuilder {
     ///
     /// # Errors
     ///
-    /// Returns error if directory creation, WAL opening, or recovery fails.
+    /// Returns error if:
+    /// - No path was configured (use `.path()` or `Database::ephemeral()`)
+    /// - Directory creation, WAL opening, or recovery fails
     pub fn open(self) -> Result<Arc<Database>> {
-        let path = self.path.unwrap_or_else(|| {
-            std::env::temp_dir().join(format!("inmem-{}", uuid::Uuid::new_v4()))
-        });
+        let path = self.path.ok_or_else(|| {
+            StrataError::invalid_input(
+                "DatabaseBuilder::open() requires a path. Use Database::ephemeral() for testing."
+            )
+        })?;
 
-        Database::open_with_mode(path, self.durability)
-    }
-
-    /// Open a temporary database
-    ///
-    /// Always generates a unique temporary path, ignoring any configured path.
-    /// Each call creates a new database (unique path = unique instance).
-    /// Useful for tests.
-    ///
-    /// # Errors
-    ///
-    /// Returns error if directory creation, WAL opening, or recovery fails.
-    pub fn open_temp(self) -> Result<Arc<Database>> {
-        let path = std::env::temp_dir().join(format!("inmem-test-{}", uuid::Uuid::new_v4()));
         Database::open_with_mode(path, self.durability)
     }
 }
@@ -484,13 +439,15 @@ impl Database {
     /// Create a new database builder
     ///
     /// Returns a `DatabaseBuilder` for configuring the database before opening.
+    /// Use this when you need custom durability settings.
     ///
     /// # Example
     ///
     /// ```ignore
     /// let db = Database::builder()
-    ///     .no_durability()
-    ///     .open_temp()?;
+    ///     .path("/data/mydb")
+    ///     .strict()
+    ///     .open()?;
     /// ```
     pub fn builder() -> DatabaseBuilder {
         DatabaseBuilder::new()
@@ -498,8 +455,8 @@ impl Database {
 
     /// Open database at given path with automatic recovery
     ///
-    /// This is the main entry point for database initialization.
-    /// Uses the default durability mode (Batched).
+    /// This is the simplest way to open a database. Uses buffered durability
+    /// by default, which provides a good balance between performance and safety.
     ///
     /// # Thread Safety
     ///
@@ -536,7 +493,7 @@ impl Database {
     /// let db = Database::open("/path/to/data")?;
     /// ```
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Arc<Self>> {
-        Self::open_with_mode(path, DurabilityMode::default())
+        Self::open_with_mode(path, DurabilityMode::buffered_default())
     }
 
     /// Open database with specific durability mode
@@ -672,13 +629,13 @@ impl Database {
     /// drop(db);
     /// ```
     ///
-    /// # Comparison with `open_temp()` and `in_memory()`
+    /// # Comparison with disk-backed databases
     ///
     /// | Method | Disk Files | WAL | Recovery |
     /// |--------|------------|-----|----------|
     /// | `ephemeral()` | None | None | No |
-    /// | `builder().no_durability().open_temp()` | Yes (temp) | Yes (no sync) | Yes |
-    /// | `builder().buffered().open_temp()` | Yes (temp) | Yes (sync) | Yes |
+    /// | `open(path)` | Yes | Yes (buffered) | Yes |
+    /// | `builder().path(p).strict().open()` | Yes | Yes (strict) | Yes |
     pub fn ephemeral() -> Result<Arc<Self>> {
         // Create fresh storage
         let storage = ShardedStore::new();
@@ -2464,7 +2421,6 @@ mod tests {
     fn test_database_builder_default() {
         let builder = DatabaseBuilder::new();
         assert!(builder.get_path().is_none());
-        assert_eq!(builder.get_durability(), DurabilityMode::Strict);
     }
 
     #[test]
@@ -2474,73 +2430,6 @@ mod tests {
             builder.get_path(),
             Some(&std::path::PathBuf::from("/tmp/test"))
         );
-    }
-
-    #[test]
-    fn test_database_builder_no_durability() {
-        let builder = DatabaseBuilder::new().no_durability();
-        assert_eq!(builder.get_durability(), DurabilityMode::None);
-    }
-
-    #[test]
-    fn test_database_builder_buffered() {
-        let builder = DatabaseBuilder::new().buffered();
-        match builder.get_durability() {
-            DurabilityMode::Batched {
-                interval_ms,
-                batch_size,
-            } => {
-                assert_eq!(interval_ms, 100);
-                assert_eq!(batch_size, 1000);
-            }
-            _ => panic!("Expected Batched mode from buffered()"),
-        }
-    }
-
-    #[test]
-    fn test_database_builder_buffered_custom() {
-        let builder = DatabaseBuilder::new().buffered_with(50, 500);
-        match builder.get_durability() {
-            DurabilityMode::Batched {
-                interval_ms,
-                batch_size,
-            } => {
-                assert_eq!(interval_ms, 50);
-                assert_eq!(batch_size, 500);
-            }
-            _ => panic!("Expected Batched mode from buffered_with()"),
-        }
-    }
-
-    #[test]
-    fn test_database_builder_strict() {
-        let builder = DatabaseBuilder::new().strict();
-        assert_eq!(builder.get_durability(), DurabilityMode::Strict);
-    }
-
-    #[test]
-    fn test_database_builder_chaining() {
-        // Last mode wins
-        let builder = DatabaseBuilder::new()
-            .path("/tmp/test")
-            .no_durability()
-            .buffered()
-            .strict();
-
-        assert_eq!(builder.get_durability(), DurabilityMode::Strict);
-        assert_eq!(
-            builder.get_path(),
-            Some(&std::path::PathBuf::from("/tmp/test"))
-        );
-    }
-
-    #[test]
-    fn test_database_builder_open_temp() {
-        let db = Database::builder().no_durability().open_temp().unwrap();
-
-        // Should have a temp path
-        assert!(db.data_dir().exists());
-        assert!(db.data_dir().to_string_lossy().contains("inmem-test-"));
     }
 
     #[test]
@@ -2554,17 +2443,23 @@ mod tests {
     }
 
     #[test]
+    fn test_database_builder_open_requires_path() {
+        // Builder without path should fail
+        let result = Database::builder().open();
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_database_builder_convenience_method() {
         // Test Database::builder() static method
         let builder = Database::builder();
         assert!(builder.get_path().is_none());
-        assert_eq!(builder.get_durability(), DurabilityMode::Strict);
     }
 
     #[test]
     fn test_database_builder_default_trait() {
         let builder = DatabaseBuilder::default();
-        assert_eq!(builder.get_durability(), DurabilityMode::Strict);
+        assert!(builder.get_path().is_none());
     }
 
     // ========================================================================
@@ -2878,12 +2773,12 @@ mod tests {
     }
 
     #[test]
-    fn test_open_temp_creates_unique_instances() {
-        // open_temp always creates unique paths
-        let db1 = Database::builder().no_durability().open_temp().unwrap();
-        let db2 = Database::builder().no_durability().open_temp().unwrap();
+    fn test_ephemeral_creates_unique_instances() {
+        // ephemeral() always creates unique instances (not registered)
+        let db1 = Database::ephemeral().unwrap();
+        let db2 = Database::ephemeral().unwrap();
 
-        // Should be different instances (different temp paths)
+        // Should be different instances
         assert!(!Arc::ptr_eq(&db1, &db2));
     }
 
