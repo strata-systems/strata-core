@@ -129,70 +129,26 @@ impl Executor {
                 crate::handlers::json::json_list(&self.primitives, run, prefix, cursor, limit)
             }
 
-            // Event commands
+            // Event commands (4 MVP)
             Command::EventAppend {
                 run,
-                stream,
+                event_type,
                 payload,
             } => {
                 let run = run.expect("resolved by resolve_default_run");
-                crate::handlers::event::event_append(&self.primitives, run, stream, payload)
+                crate::handlers::event::event_append(&self.primitives, run, event_type, payload)
             }
-            Command::EventAppendBatch { run, events } => {
+            Command::EventRead { run, sequence } => {
                 let run = run.expect("resolved by resolve_default_run");
-                crate::handlers::event::event_append_batch(&self.primitives, run, events)
+                crate::handlers::event::event_read(&self.primitives, run, sequence)
             }
-            Command::EventRange {
-                run,
-                stream,
-                start,
-                end,
-                limit,
-            } => {
+            Command::EventReadByType { run, event_type } => {
                 let run = run.expect("resolved by resolve_default_run");
-                crate::handlers::event::event_range(&self.primitives, run, stream, start, end, limit)
+                crate::handlers::event::event_read_by_type(&self.primitives, run, event_type)
             }
-            Command::EventRead {
-                run,
-                stream,
-                sequence,
-            } => {
+            Command::EventLen { run } => {
                 let run = run.expect("resolved by resolve_default_run");
-                crate::handlers::event::event_read(&self.primitives, run, stream, sequence)
-            }
-            Command::EventLen { run, stream } => {
-                let run = run.expect("resolved by resolve_default_run");
-                crate::handlers::event::event_len(&self.primitives, run, stream)
-            }
-            Command::EventLatestSequence { run, stream } => {
-                let run = run.expect("resolved by resolve_default_run");
-                crate::handlers::event::event_latest_sequence(&self.primitives, run, stream)
-            }
-            Command::EventStreamInfo { run, stream } => {
-                let run = run.expect("resolved by resolve_default_run");
-                crate::handlers::event::event_stream_info(&self.primitives, run, stream)
-            }
-            Command::EventRevRange {
-                run,
-                stream,
-                start,
-                end,
-                limit,
-            } => {
-                let run = run.expect("resolved by resolve_default_run");
-                crate::handlers::event::event_rev_range(&self.primitives, run, stream, start, end, limit)
-            }
-            Command::EventStreams { run } => {
-                let run = run.expect("resolved by resolve_default_run");
-                crate::handlers::event::event_streams(&self.primitives, run)
-            }
-            Command::EventHead { run, stream } => {
-                let run = run.expect("resolved by resolve_default_run");
-                crate::handlers::event::event_head(&self.primitives, run, stream)
-            }
-            Command::EventVerifyChain { run } => {
-                let run = run.expect("resolved by resolve_default_run");
-                crate::handlers::event::event_verify_chain(&self.primitives, run)
+                crate::handlers::event::event_len(&self.primitives, run)
             }
 
             // State commands (4 MVP)

@@ -186,14 +186,14 @@ fn test_json_set_get_parity() {
 // =============================================================================
 
 #[test]
-fn test_event_append_range_parity() {
+fn test_event_append_read_by_type_parity() {
     let (executor, p) = create_test_environment();
     let run_id = strata_core::types::RunId::from_bytes([0u8; 16]);
 
     // Append via executor - EventAppend returns Version
     let result1 = executor.execute(Command::EventAppend {
         run: None,
-        stream: "events".to_string(),
+        event_type: "events".to_string(),
         payload: Value::Object(
             [("type".to_string(), Value::String("click".into()))]
                 .into_iter()
@@ -219,16 +219,13 @@ fn test_event_append_range_parity() {
     )
     .unwrap();
 
-    // Range query via executor
-    let range_result = executor.execute(Command::EventRange {
+    // ReadByType query via executor
+    let read_result = executor.execute(Command::EventReadByType {
         run: None,
-        stream: "events".to_string(),
-        start: None,
-        end: None,
-        limit: None,
+        event_type: "events".to_string(),
     });
 
-    match range_result {
+    match read_result {
         Ok(Output::VersionedValues(events)) => {
             assert_eq!(events.len(), 2);
         }

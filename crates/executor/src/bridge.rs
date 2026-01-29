@@ -23,7 +23,6 @@ use strata_engine::{
 };
 
 use crate::types::RunId;
-use crate::Error;
 
 // =============================================================================
 // Primitives
@@ -132,25 +131,6 @@ pub fn validate_key(key: &str) -> StrataResult<()> {
     }
     Ok(())
 }
-
-/// Validate an event stream name (must be non-empty).
-pub fn validate_stream_name(stream: &str) -> StrataResult<()> {
-    if stream.is_empty() {
-        return Err(StrataError::invalid_input("Stream name must not be empty"));
-    }
-    Ok(())
-}
-
-/// Validate an event payload (must be an Object).
-pub fn validate_event_payload(payload: &Value) -> StrataResult<()> {
-    if !matches!(payload, Value::Object(_)) {
-        return Err(StrataError::invalid_input(
-            "Event payload must be an Object"
-        ));
-    }
-    Ok(())
-}
-
 /// Check if a collection name is internal (starts with `_`).
 pub fn is_internal_collection(name: &str) -> bool {
     name.starts_with('_')

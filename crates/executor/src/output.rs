@@ -130,13 +130,6 @@ pub enum Output {
     /// List of vector collections
     VectorCollectionList(Vec<CollectionInfo>),
 
-    // ==================== Event-specific ====================
-    /// Event stream info
-    StreamInfo(StreamInfo),
-
-    /// Chain verification result
-    ChainVerification(ChainVerificationResult),
-
     // ==================== Run-specific ====================
     /// Single run info (unversioned)
     RunInfo(RunInfo),

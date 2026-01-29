@@ -337,7 +337,7 @@ fn test_vector_search_determinism() {
 // =============================================================================
 
 #[test]
-fn test_event_range_determinism() {
+fn test_event_read_by_type_determinism() {
     let executor = create_test_executor();
 
     // Append some events
@@ -345,7 +345,7 @@ fn test_event_range_determinism() {
         executor
             .execute(Command::EventAppend {
                 run: Some(RunId::from("default")),
-                stream: "events".to_string(),
+                event_type: "events".to_string(),
                 payload: Value::Object(
                     [("seq".to_string(), Value::Int(i))]
                         .into_iter()
@@ -355,15 +355,12 @@ fn test_event_range_determinism() {
             .unwrap();
     }
 
-    // Range query multiple times - should get same results
+    // ReadByType query multiple times - should get same results
     let results: Vec<_> = (0..5)
         .map(|_| {
-            executor.execute(Command::EventRange {
+            executor.execute(Command::EventReadByType {
                 run: Some(RunId::from("default")),
-                stream: "events".to_string(),
-                start: None,
-                end: None,
-                limit: None,
+                event_type: "events".to_string(),
             })
         })
         .collect();

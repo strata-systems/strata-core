@@ -193,25 +193,6 @@ pub struct CollectionInfo {
 // =============================================================================
 // Event Types
 // =============================================================================
-
-/// Event stream information
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct StreamInfo {
-    pub name: String,
-    pub length: u64,
-    pub first_sequence: Option<u64>,
-    pub last_sequence: Option<u64>,
-}
-
-/// Chain verification result
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ChainVerificationResult {
-    pub valid: bool,
-    pub checked_count: u64,
-    pub error: Option<String>,
-}
-
-// =============================================================================
 // JSON Types
 // =============================================================================
 

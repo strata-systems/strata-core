@@ -225,11 +225,11 @@ impl Session {
                 Ok(Output::Keys(keys))
             }
 
-            // === Event ===
+            // === Event (4 MVP) ===
             Command::EventAppend {
-                stream, payload, ..
+                event_type, payload, ..
             } => {
-                let version = txn.event_append(&stream, payload).map_err(Error::from)?;
+                let version = txn.event_append(&event_type, payload).map_err(Error::from)?;
                 Ok(Output::Version(extract_version(&version)))
             }
             Command::EventRead { sequence, .. } => {
@@ -241,26 +241,11 @@ impl Session {
                     ))
                 })))
             }
-            Command::EventRange { start, end, .. } => {
-                let s = start.unwrap_or(0);
-                let e = end.unwrap_or(u64::MAX);
-                let events = txn.event_range(s, e).map_err(Error::from)?;
-                Ok(Output::VersionedValues(
-                    events
-                        .into_iter()
-                        .map(|v| {
-                            to_versioned_value(strata_core::Versioned::new(
-                                v.value.payload.clone(),
-                                v.version,
-                            ))
-                        })
-                        .collect(),
-                ))
-            }
             Command::EventLen { .. } => {
                 let len = txn.event_len().map_err(Error::from)?;
                 Ok(Output::Uint(len))
             }
+            // EventReadByType delegates to executor (read-only operation)
 
             // === State ===
             Command::StateRead { cell, .. } => {

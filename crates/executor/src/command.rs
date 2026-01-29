@@ -25,7 +25,7 @@ use crate::types::*;
 /// |----------|-------|-------------|
 /// | KV | 4 | Key-value operations |
 /// | JSON | 17 | JSON document operations |
-/// | Event | 11 | Event log operations |
+/// | Event | 4 | Event log operations (MVP) |
 /// | State | 4 | State cell operations (MVP) |
 /// | Vector | 19 | Vector store operations |
 /// | Run | 5 | Run lifecycle operations (MVP) |
@@ -139,97 +139,37 @@ pub enum Command {
         limit: u64,
     },
 
-    // ==================== Event (11) ====================
-    /// Append an event to a stream.
+    // ==================== Event (4 MVP) ====================
+    // MVP: append, read, read_by_type, len
+
+    /// Append an event to the log.
     /// Returns: `Output::Version`
     EventAppend {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         run: Option<RunId>,
-        stream: String,
+        event_type: String,
         payload: Value,
     },
 
-    /// Append multiple events atomically.
-    /// Returns: `Output::Versions`
-    EventAppendBatch {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<RunId>,
-        events: Vec<(String, Value)>,
-    },
-
-    /// Read events from a stream in ascending order.
-    /// Returns: `Output::VersionedValues`
-    EventRange {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<RunId>,
-        stream: String,
-        start: Option<u64>,
-        end: Option<u64>,
-        limit: Option<u64>,
-    },
-
-    /// Get a specific event by sequence number.
+    /// Read a specific event by sequence number.
     /// Returns: `Output::MaybeVersioned`
     EventRead {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         run: Option<RunId>,
-        stream: String,
         sequence: u64,
     },
 
-    /// Get the count of events in a stream.
+    /// Read all events of a specific type.
+    /// Returns: `Output::VersionedValues`
+    EventReadByType {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run: Option<RunId>,
+        event_type: String,
+    },
+
+    /// Get the total count of events in the log.
     /// Returns: `Output::Uint`
     EventLen {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<RunId>,
-        stream: String,
-    },
-
-    /// Get the latest sequence number in a stream.
-    /// Returns: `Output::MaybeUint`
-    EventLatestSequence {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<RunId>,
-        stream: String,
-    },
-
-    /// Get stream metadata.
-    /// Returns: `Output::StreamInfo`
-    EventStreamInfo {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<RunId>,
-        stream: String,
-    },
-
-    /// Read events from a stream in descending order (newest first).
-    /// Returns: `Output::VersionedValues`
-    EventRevRange {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<RunId>,
-        stream: String,
-        start: Option<u64>,
-        end: Option<u64>,
-        limit: Option<u64>,
-    },
-
-    /// List all streams (event types) in a run.
-    /// Returns: `Output::Strings`
-    EventStreams {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<RunId>,
-    },
-
-    /// Get the latest event (head) of a stream.
-    /// Returns: `Output::MaybeVersioned`
-    EventHead {
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<RunId>,
-        stream: String,
-    },
-
-    /// Verify the hash chain integrity of the event log.
-    /// Returns: `Output::ChainVerification`
-    EventVerifyChain {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         run: Option<RunId>,
     },
@@ -569,18 +509,11 @@ impl Command {
             | Command::JsonGet { run, .. }
             | Command::JsonDelete { run, .. }
             | Command::JsonList { run, .. }
-            // Event
+            // Event (4 MVP)
             | Command::EventAppend { run, .. }
-            | Command::EventAppendBatch { run, .. }
-            | Command::EventRange { run, .. }
             | Command::EventRead { run, .. }
+            | Command::EventReadByType { run, .. }
             | Command::EventLen { run, .. }
-            | Command::EventLatestSequence { run, .. }
-            | Command::EventStreamInfo { run, .. }
-            | Command::EventRevRange { run, .. }
-            | Command::EventStreams { run, .. }
-            | Command::EventHead { run, .. }
-            | Command::EventVerifyChain { run, .. }
             // State (4 MVP)
             | Command::StateSet { run, .. }
             | Command::StateRead { run, .. }

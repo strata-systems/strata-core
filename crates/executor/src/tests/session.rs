@@ -393,8 +393,10 @@ fn test_event_append_in_txn() {
 
     let result = session.execute(Command::EventAppend {
         run: None,
-        stream: "test_stream".to_string(),
-        payload: Value::String("event_data".into()),
+        event_type: "test_stream".to_string(),
+        payload: Value::Object(std::collections::HashMap::from([
+            ("data".to_string(), Value::String("event_data".into())),
+        ])),
     });
     assert!(result.is_ok(), "EventAppend should succeed in txn");
 

@@ -122,14 +122,14 @@ fn test_command_json_get() {
 }
 
 // =============================================================================
-// Event Command Tests
+// Event Command Tests (4 MVP)
 // =============================================================================
 
 #[test]
 fn test_command_event_append() {
     test_command_round_trip(Command::EventAppend {
         run: Some(RunId::from("default")),
-        stream: "events".to_string(),
+        event_type: "events".to_string(),
         payload: Value::Object(
             [("type".to_string(), Value::String("click".to_string()))]
                 .into_iter()
@@ -139,19 +139,24 @@ fn test_command_event_append() {
 }
 
 #[test]
-fn test_command_event_range() {
-    test_command_round_trip(Command::EventRange {
+fn test_command_event_read() {
+    test_command_round_trip(Command::EventRead {
         run: Some(RunId::from("default")),
-        stream: "events".to_string(),
-        start: Some(0),
-        end: Some(100),
-        limit: Some(50),
+        sequence: 42,
     });
 }
 
 #[test]
-fn test_command_event_streams() {
-    test_command_round_trip(Command::EventStreams {
+fn test_command_event_read_by_type() {
+    test_command_round_trip(Command::EventReadByType {
+        run: Some(RunId::from("default")),
+        event_type: "events".to_string(),
+    });
+}
+
+#[test]
+fn test_command_event_len() {
+    test_command_round_trip(Command::EventLen {
         run: Some(RunId::from("default")),
     });
 }
@@ -397,16 +402,6 @@ fn test_output_vector_get_collection() {
         metric: DistanceMetric::Cosine,
         count: 1000,
     })));
-}
-
-#[test]
-fn test_output_stream_info() {
-    test_output_round_trip(Output::StreamInfo(StreamInfo {
-        name: "events".to_string(),
-        length: 100,
-        first_sequence: Some(1),
-        last_sequence: Some(100),
-    }));
 }
 
 #[test]

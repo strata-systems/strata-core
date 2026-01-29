@@ -417,7 +417,7 @@ mod tests {
             [("value".to_string(), Value::Int(2))].into_iter().collect()
         )).unwrap();
 
-        let events = db.event_range("stream", None, None, None).unwrap();
+        let events = db.event_read_by_type("stream").unwrap();
         assert_eq!(events.len(), 2);
     }
 
@@ -586,7 +586,7 @@ mod tests {
         // None of the data should exist in this run
         assert!(db.kv_get("kv-key").unwrap().is_none());
         assert!(db.state_read("state-cell").unwrap().is_none());
-        assert_eq!(db.event_len("stream").unwrap(), 0);
+        assert_eq!(db.event_len().unwrap(), 0);
     }
 
     // =========================================================================
