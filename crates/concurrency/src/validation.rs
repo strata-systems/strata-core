@@ -12,7 +12,6 @@
 use crate::transaction::{CASOperation, TransactionContext};
 use strata_core::traits::Storage;
 use strata_core::types::Key;
-use strata_core::value::Value;
 use std::collections::HashMap;
 
 /// Types of conflicts that can occur during transaction validation
@@ -173,47 +172,6 @@ pub fn validate_read_set<S: Storage>(read_set: &HashMap<Key, u64>, store: &S) ->
     result
 }
 
-/// Validate the write-set against current storage state
-///
-/// Per spec Section 3.2 Scenario 1 (Blind Write):
-/// - Blind writes (write without read) do NOT conflict
-/// - First-committer-wins is based on READ-SET, not write-set
-///
-/// This function always returns OK because:
-/// - If key was read → conflict detected by validate_read_set()
-/// - If key was NOT read (blind write) → no conflict
-///
-/// # Arguments
-/// * `write_set` - Keys to be written with their new values
-/// * `_read_set` - Keys that were read (for context, not used)
-/// * `_start_version` - Transaction's start version (not used)
-/// * `_store` - Storage to check (not used)
-///
-/// # Returns
-/// ValidationResult (always valid for pure blind writes)
-#[allow(clippy::ptr_arg)]
-pub fn validate_write_set<S: Storage>(
-    write_set: &HashMap<Key, Value>,
-    _read_set: &HashMap<Key, u64>,
-    _start_version: u64,
-    _store: &S,
-) -> ValidationResult {
-    // Per spec: Blind writes do NOT conflict
-    // Write-write conflict is only detected when the key was ALSO READ
-    // That case is handled by validate_read_set()
-    //
-    // From spec Section 3.2:
-    // "First-committer-wins is based on the READ-SET, not the write-set."
-
-    // Note: We could add optional write-write conflict detection here
-    // for keys in BOTH write_set AND read_set, but that's redundant
-    // with read-set validation. Keeping this simple per spec.
-
-    let _ = write_set; // Acknowledge parameter (used for type checking)
-
-    ValidationResult::ok()
-}
-
 /// Validate CAS operations against current storage state
 ///
 /// Per spec Section 3.1 Condition 3:
@@ -346,10 +304,12 @@ pub fn validate_json_paths(
 ///
 /// Per spec Section 3 (Conflict Detection):
 /// 1. Validates read-set: detects read-write conflicts (first-committer-wins)
-/// 2. Validates write-set: currently no-op (blind writes don't conflict)
-/// 3. Validates CAS-set: ensures expected versions still match
-/// 4. Validates JSON-set: ensures JSON document versions haven't changed
-/// 5. Validates JSON paths: ensures no overlapping writes within transaction (M5 Epic 31)
+/// 2. Validates CAS-set: ensures expected versions still match
+/// 3. Validates JSON-set: ensures JSON document versions haven't changed
+/// 4. Validates JSON paths: ensures no overlapping writes within transaction (M5 Epic 31)
+///
+/// Note: Write-set validation is intentionally omitted. Per spec Section 3.2,
+/// blind writes do not conflict — first-committer-wins is based on the read-set.
 ///
 /// **Per spec Section 3.2 Scenario 3**: Read-only transactions ALWAYS succeed.
 /// If a transaction has no writes (empty write_set, delete_set, cas_set, and json_writes),
@@ -382,21 +342,13 @@ pub fn validate_transaction<S: Storage>(txn: &TransactionContext, store: &S) -> 
     // 1. Validate read-set (detects read-write conflicts)
     result.merge(validate_read_set(&txn.read_set, store));
 
-    // 2. Validate write-set (currently no-op, but may detect conflicts in future)
-    result.merge(validate_write_set(
-        &txn.write_set,
-        &txn.read_set,
-        txn.start_version,
-        store,
-    ));
-
-    // 3. Validate CAS-set (detects version mismatches)
+    // 2. Validate CAS-set (detects version mismatches)
     result.merge(validate_cas_set(&txn.cas_set, store));
 
-    // 4. Validate JSON-set (detects JSON document version changes)
+    // 3. Validate JSON-set (detects JSON document version changes)
     result.merge(validate_json_set(txn.json_snapshot_versions(), store));
 
-    // 5. Validate JSON paths (detects overlapping writes within transaction)
+    // 4. Validate JSON paths (detects overlapping writes within transaction)
     result.merge(validate_json_paths(txn.json_reads(), txn.json_writes()));
 
     result

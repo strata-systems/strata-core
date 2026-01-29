@@ -93,7 +93,7 @@ impl ClonedSnapshotView {
     /// Create a snapshot from an existing Arc (for sharing between snapshots)
     ///
     /// This is useful when multiple transactions need the same snapshot data.
-    pub fn from_arc(version: u64, data: Arc<BTreeMap<Key, VersionedValue>>) -> Self {
+    pub(crate) fn from_arc(version: u64, data: Arc<BTreeMap<Key, VersionedValue>>) -> Self {
         ClonedSnapshotView { version, data }
     }
 

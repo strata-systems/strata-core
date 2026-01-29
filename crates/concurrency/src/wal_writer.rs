@@ -120,20 +120,6 @@ impl<'a> TransactionWALWriter<'a> {
         Ok(())
     }
 
-    /// Write AbortTxn entry (optional for M2, but supported)
-    ///
-    /// Per spec Appendix A.3: Aborted transactions don't need WAL entries
-    /// because they never applied anything. However, we support this for
-    /// explicit abort tracking if needed.
-    pub fn write_abort(&mut self) -> StrataResult<()> {
-        let entry = WALEntry::AbortTxn {
-            txn_id: self.txn_id,
-            run_id: self.run_id,
-        };
-        self.wal.append(&entry)?;
-        Ok(())
-    }
-
     /// Get the transaction ID
     pub fn txn_id(&self) -> u64 {
         self.txn_id
@@ -144,112 +130,6 @@ impl<'a> TransactionWALWriter<'a> {
         self.run_id
     }
 
-    // ========================================================================
-    // Vector Operations
-    // ========================================================================
-
-    /// Write a VectorCollectionCreate entry
-    ///
-    /// # Arguments
-    /// * `collection` - Collection name
-    /// * `dimension` - Vector dimension
-    /// * `metric` - Distance metric (0=Cosine, 1=Euclidean, 2=DotProduct)
-    /// * `version` - Commit version
-    pub fn write_vector_collection_create(
-        &mut self,
-        collection: String,
-        dimension: usize,
-        metric: u8,
-        version: u64,
-    ) -> StrataResult<()> {
-        let entry = WALEntry::VectorCollectionCreate {
-            run_id: self.run_id,
-            collection,
-            dimension,
-            metric,
-            version,
-        };
-        self.wal.append(&entry)?;
-        Ok(())
-    }
-
-    /// Write a VectorCollectionDelete entry
-    ///
-    /// # Arguments
-    /// * `collection` - Collection name
-    /// * `version` - Commit version
-    pub fn write_vector_collection_delete(
-        &mut self,
-        collection: String,
-        version: u64,
-    ) -> StrataResult<()> {
-        let entry = WALEntry::VectorCollectionDelete {
-            run_id: self.run_id,
-            collection,
-            version,
-        };
-        self.wal.append(&entry)?;
-        Ok(())
-    }
-
-    /// Write a VectorUpsert entry
-    ///
-    /// # Arguments
-    /// * `collection` - Collection name
-    /// * `key` - User-provided key
-    /// * `vector_id` - Internal vector ID (for deterministic replay)
-    /// * `embedding` - Full embedding data
-    /// * `metadata` - Optional metadata (MessagePack serialized)
-    /// * `version` - Commit version
-    /// * `source_ref` - Optional reference to source document
-    pub fn write_vector_upsert(
-        &mut self,
-        collection: String,
-        key: String,
-        vector_id: u64,
-        embedding: Vec<f32>,
-        metadata: Option<Vec<u8>>,
-        version: u64,
-        source_ref: Option<strata_core::EntityRef>,
-    ) -> StrataResult<()> {
-        let entry = WALEntry::VectorUpsert {
-            run_id: self.run_id,
-            collection,
-            key,
-            vector_id,
-            embedding,
-            metadata,
-            version,
-            source_ref,
-        };
-        self.wal.append(&entry)?;
-        Ok(())
-    }
-
-    /// Write a VectorDelete entry
-    ///
-    /// # Arguments
-    /// * `collection` - Collection name
-    /// * `key` - User-provided key
-    /// * `vector_id` - Internal vector ID
-    /// * `version` - Commit version
-    pub fn write_vector_delete(
-        &mut self,
-        collection: String,
-        key: String,
-        vector_id: u64,
-        version: u64,
-    ) -> StrataResult<()> {
-        let entry = WALEntry::VectorDelete {
-            run_id: self.run_id,
-            collection,
-            key,
-            vector_id,
-            version,
-        };
-        self.wal.append(&entry)?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -379,29 +259,6 @@ mod tests {
             assert_eq!(*entry_run_id, run_id);
         } else {
             panic!("Expected CommitTxn entry");
-        }
-    }
-
-    #[test]
-    fn test_write_abort_creates_abort_txn_entry() {
-        let (wal, _temp) = create_test_wal();
-        let run_id = RunId::new();
-
-        let mut writer = TransactionWALWriter::new(&wal, 1, run_id);
-        writer.write_abort().unwrap();
-
-        let entries = wal.read_all().unwrap();
-        assert_eq!(entries.len(), 1);
-
-        if let WALEntry::AbortTxn {
-            txn_id,
-            run_id: entry_run_id,
-        } = &entries[0]
-        {
-            assert_eq!(*txn_id, 1);
-            assert_eq!(*entry_run_id, run_id);
-        } else {
-            panic!("Expected AbortTxn entry");
         }
     }
 

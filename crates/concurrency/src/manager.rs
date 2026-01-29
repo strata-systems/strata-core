@@ -32,7 +32,6 @@ use crate::wal_writer::TransactionWALWriter;
 use crate::{CommitError, TransactionContext, TransactionStatus};
 use dashmap::DashMap;
 use parking_lot::Mutex;
-use strata_core::StrataResult;
 use strata_core::traits::Storage;
 use strata_core::types::RunId;
 use strata_durability::wal::WAL;
@@ -259,42 +258,6 @@ impl TransactionManager {
         Ok(commit_version)
     }
 
-    /// Explicitly abort a transaction
-    ///
-    /// Per spec Appendix A.3:
-    /// - No AbortTxn entry written to WAL in M2
-    /// - All buffered operations discarded
-    /// - Transaction marked as Aborted
-    ///
-    /// # Arguments
-    /// * `txn` - Transaction to abort
-    /// * `reason` - Human-readable reason for abort
-    pub fn abort(&self, txn: &mut TransactionContext, reason: String) -> StrataResult<()> {
-        txn.mark_aborted(reason)
-    }
-
-    /// Commit with automatic rollback on failure
-    ///
-    /// Ensures transaction is properly cleaned up if commit fails.
-    /// This is a convenience method that handles the common pattern
-    /// of wanting to abort on any error.
-    pub fn commit_or_rollback<S: Storage>(
-        &self,
-        txn: &mut TransactionContext,
-        store: &S,
-        wal: Option<&WAL>,
-    ) -> std::result::Result<u64, CommitError> {
-        match self.commit(txn, store, wal) {
-            Ok(version) => Ok(version),
-            Err(e) => {
-                // Ensure transaction is in Aborted state
-                if txn.can_rollback() {
-                    let _ = txn.mark_aborted(format!("Commit failed: {}", e));
-                }
-                Err(e)
-            }
-        }
-    }
 }
 
 impl Default for TransactionManager {
@@ -456,20 +419,6 @@ mod tests {
         let v2 = store.get(&key2).unwrap().unwrap();
         assert_eq!(v2.value, Value::Int(200));
         assert_eq!(v2.version.as_u64(), 2);
-    }
-
-    #[test]
-    fn test_abort_marks_transaction_aborted() {
-        let run_id = RunId::new();
-        let manager = TransactionManager::new(0);
-        let mut txn = TransactionContext::new(1, run_id, 0);
-
-        manager.abort(&mut txn, "test abort".to_string()).unwrap();
-
-        assert!(matches!(
-            txn.status,
-            crate::TransactionStatus::Aborted { .. }
-        ));
     }
 
     #[test]

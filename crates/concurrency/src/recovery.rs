@@ -55,7 +55,7 @@ impl RecoveryCoordinator {
     ///
     /// Note: Snapshot-based recovery is not implemented in M2.
     /// This method is provided for future extensibility.
-    pub fn with_snapshot_path(mut self, path: PathBuf) -> Self {
+    pub(crate) fn with_snapshot_path(mut self, path: PathBuf) -> Self {
         self.snapshot_path = Some(path);
         self
     }
