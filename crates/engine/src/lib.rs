@@ -25,7 +25,6 @@
 
 pub mod coordinator;
 pub mod database;
-pub mod durability;
 pub mod instrumentation;
 pub mod recovery;
 pub mod transaction;
@@ -38,10 +37,7 @@ pub use recovery::{
     diff_views, DiffEntry, ReadOnlyView, ReplayError, RunDiff, RunError,
     ReplayRunIndex,
 };
-pub use durability::{
-    BufferedDurability, CommitData, Durability, DurabilityMode, InMemoryDurability,
-    StrictDurability,
-};
+pub use strata_durability::wal::DurabilityMode;
 pub use instrumentation::PerfTrace;
 // Note: Use strata_core::PrimitiveType for DiffEntry.primitive field
 pub use transaction::{Transaction, TransactionPool, MAX_POOL_SIZE};

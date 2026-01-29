@@ -764,7 +764,6 @@ impl Database {
     /// Delegates the commit protocol to the concurrency layer (TransactionManager)
     /// via the TransactionCoordinator. The engine is responsible only for:
     /// - Determining whether to pass the WAL (based on durability mode + persistence)
-    /// - Handling fsync for Strict durability mode
     ///
     /// The concurrency layer handles:
     /// - Per-run commit locking (TOCTOU prevention)
@@ -772,14 +771,12 @@ impl Database {
     /// - Version allocation
     /// - WAL writing (when WAL reference is provided)
     /// - Storage application
+    /// - Fsync (WAL::append handles fsync based on its DurabilityMode)
     fn commit_internal(
         &self,
         txn: &mut TransactionContext,
         durability: DurabilityMode,
     ) -> StrataResult<u64> {
-        // Determine WAL reference based on durability mode and persistence mode.
-        // Lock the WAL mutex if we need durability. The guard must live long enough
-        // for the coordinator to finish writing.
         let wal_guard = if durability.requires_wal() {
             self.wal.as_ref().map(|w| w.lock())
         } else {
@@ -787,17 +784,7 @@ impl Database {
         };
         let wal_ref = wal_guard.as_deref();
 
-        // Delegate to concurrency layer via coordinator
-        let version = self.coordinator.commit(txn, self.storage.as_ref(), wal_ref)?;
-
-        // Strict mode: fsync immediately after commit to ensure data is on disk
-        if durability.requires_immediate_fsync() {
-            if let Some(ref guard) = wal_guard {
-                guard.fsync()?;
-            }
-        }
-
-        Ok(version)
+        self.coordinator.commit(txn, self.storage.as_ref(), wal_ref)
     }
 
     // ========================================================================
