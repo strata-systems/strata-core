@@ -550,30 +550,27 @@ impl EventLog {
 
     // ========== Read Operations ==========
 
-    /// Read a single event by sequence number (FAST PATH)
+    /// Read a single event by sequence number.
     ///
-    /// Bypasses full transaction overhead for read-only access.
-    /// Uses direct snapshot read which maintains snapshot isolation.
     /// Returns Versioned<Event> if found.
     pub fn read(&self, run_id: &RunId, sequence: u64) -> Result<Option<Versioned<Event>>> {
-        use strata_core::traits::SnapshotView;
+        self.db.transaction(*run_id, |txn| {
+            let ns = self.namespace_for_run(run_id);
+            let event_key = Key::new_event(ns, sequence);
 
-        let snapshot = self.db.storage().create_snapshot();
-        let ns = self.namespace_for_run(run_id);
-        let event_key = Key::new_event(ns, sequence);
-
-        match snapshot.get(&event_key)? {
-            Some(vv) => {
-                let event: Event = from_stored_value(&vv.value)
-                    .map_err(|e| strata_core::StrataError::serialization(e.to_string()))?;
-                Ok(Some(Versioned::with_timestamp(
-                    event.clone(),
-                    Version::Sequence(sequence),
-                    Timestamp::from_micros(event.timestamp),
-                )))
+            match txn.get(&event_key)? {
+                Some(v) => {
+                    let event: Event = from_stored_value(&v)
+                        .map_err(|e| strata_core::StrataError::serialization(e.to_string()))?;
+                    Ok(Some(Versioned::with_timestamp(
+                        event.clone(),
+                        Version::Sequence(sequence),
+                        Timestamp::from_micros(event.timestamp),
+                    )))
+                }
+                None => Ok(None),
             }
-            None => Ok(None),
-        }
+        })
     }
 
     /// Read a single event by sequence number (with full transaction)
@@ -707,22 +704,19 @@ impl EventLog {
         })
     }
 
-    /// Get the current length of the log (FAST PATH)
-    ///
-    /// Bypasses full transaction overhead for read-only access.
+    /// Get the current length of the log.
     pub fn len(&self, run_id: &RunId) -> Result<u64> {
-        use strata_core::traits::SnapshotView;
+        self.db.transaction(*run_id, |txn| {
+            let ns = self.namespace_for_run(run_id);
+            let meta_key = Key::new_event_meta(ns);
 
-        let snapshot = self.db.storage().create_snapshot();
-        let ns = self.namespace_for_run(run_id);
-        let meta_key = Key::new_event_meta(ns);
+            let meta: EventLogMeta = match txn.get(&meta_key)? {
+                Some(v) => from_stored_value(&v).unwrap_or_else(|_| EventLogMeta::default()),
+                None => EventLogMeta::default(),
+            };
 
-        let meta: EventLogMeta = match snapshot.get(&meta_key)? {
-            Some(vv) => from_stored_value(&vv.value).unwrap_or_else(|_| EventLogMeta::default()),
-            None => EventLogMeta::default(),
-        };
-
-        Ok(meta.next_sequence)
+            Ok(meta.next_sequence)
+        })
     }
 
     /// Check if log is empty (FAST PATH)
