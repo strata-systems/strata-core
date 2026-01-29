@@ -46,24 +46,6 @@ impl BruteForceBackend {
         &self.heap
     }
 
-    /// Search with explicit determinism guarantees
-    ///
-    /// This method documents and enforces the determinism contract:
-    /// 1. Iterate vectors in VectorId order (BTreeMap iteration)
-    /// 2. Compute scores (single-threaded, deterministic)
-    /// 3. Sort by (score desc, VectorId asc)
-    /// 4. Truncate to k
-    ///
-    /// INVARIANTS SATISFIED:
-    /// - R3: Deterministic order (same query = same results)
-    /// - R4: Backend tie-break (VectorId asc)
-    /// - R8: Single-threaded (no parallel computation)
-    /// - R10: Search is read-only (no mutation)
-    #[allow(dead_code)]
-    pub fn search_deterministic(&self, query: &[f32], k: usize) -> Vec<(VectorId, f32)> {
-        // This is the same as search(), but with explicit documentation
-        <Self as VectorIndexBackend>::search(self, query, k)
-    }
 }
 
 impl VectorIndexBackend for BruteForceBackend {
@@ -238,15 +220,6 @@ fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
         .map(|(x, y)| (x - y).powi(2))
         .sum::<f32>()
         .sqrt()
-}
-
-/// Squared Euclidean distance (optimization for comparison)
-///
-/// Since sqrt is monotonic, we can compare squared distances
-/// when we only need relative ordering, not actual distances.
-#[allow(dead_code)]
-fn euclidean_distance_squared(a: &[f32], b: &[f32]) -> f32 {
-    a.iter().zip(b.iter()).map(|(x, y)| (x - y).powi(2)).sum()
 }
 
 #[cfg(test)]
