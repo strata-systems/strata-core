@@ -782,24 +782,9 @@ impl Database {
         txn: &mut TransactionContext,
         result: Result<T>,
         durability: DurabilityMode,
-        timeout: Option<Duration>,
     ) -> Result<(T, u64)> {
         match result {
             Ok(value) => {
-                // Check timeout before commit if specified
-                if let Some(timeout) = timeout {
-                    if txn.is_expired(timeout) {
-                        let elapsed = txn.elapsed();
-                        let _ = txn.mark_aborted(format!(
-                            "Transaction timeout: elapsed {:?}, limit {:?}",
-                            elapsed, timeout
-                        ));
-                        self.coordinator.record_abort();
-                        return Err(StrataError::transaction_timeout(
-                            elapsed.as_millis() as u64
-                        ));
-                    }
-                }
                 // Commit on success
                 let commit_version = self.commit_internal(txn, durability)?;
                 Ok((value, commit_version))
@@ -843,7 +828,7 @@ impl Database {
         self.check_accepting()?;
         let mut txn = self.begin_transaction(run_id);
         let result = f(&mut txn);
-        let outcome = self.run_single_attempt(&mut txn, result, self.durability_mode, None);
+        let outcome = self.run_single_attempt(&mut txn, result, self.durability_mode);
         self.end_transaction(txn);
         outcome.map(|(value, _)| value)
     }
@@ -872,7 +857,7 @@ impl Database {
         self.check_accepting()?;
         let mut txn = self.begin_transaction(run_id);
         let result = f(&mut txn);
-        let outcome = self.run_single_attempt(&mut txn, result, self.durability_mode, None);
+        let outcome = self.run_single_attempt(&mut txn, result, self.durability_mode);
         self.end_transaction(txn);
         outcome
     }
@@ -921,7 +906,7 @@ impl Database {
         for attempt in 0..=config.max_retries {
             let mut txn = self.begin_transaction(run_id);
             let result = f(&mut txn);
-            let outcome = self.run_single_attempt(&mut txn, result, self.durability_mode, None);
+            let outcome = self.run_single_attempt(&mut txn, result, self.durability_mode);
             self.end_transaction(txn);
 
             match outcome {
@@ -937,51 +922,6 @@ impl Database {
 
         Err(last_error
             .unwrap_or_else(|| StrataError::conflict("Max retries exceeded".to_string())))
-    }
-
-    /// Execute a transaction with timeout
-    ///
-    /// If the transaction exceeds the timeout, it will be aborted
-    /// before commit is attempted.
-    ///
-    /// # Arguments
-    /// * `run_id` - RunId for namespace isolation
-    /// * `timeout` - Maximum duration for the transaction
-    /// * `f` - Closure that performs transaction operations
-    ///
-    /// # Returns
-    /// * `Ok(T)` - Closure return value on successful commit
-    /// * `Err(TransactionTimeout)` - Transaction exceeded timeout
-    /// * `Err` - On validation conflict or closure error
-    ///
-    /// # Example
-    /// ```ignore
-    /// use std::time::Duration;
-    ///
-    /// let result = db.transaction_with_timeout(
-    ///     run_id,
-    ///     Duration::from_secs(5),
-    ///     |txn| {
-    ///         txn.put(key, value)?;
-    ///         Ok(())
-    ///     },
-    /// )?;
-    /// ```
-    pub(crate) fn transaction_with_timeout<F, T>(
-        &self,
-        run_id: RunId,
-        timeout: Duration,
-        f: F,
-    ) -> Result<T>
-    where
-        F: FnOnce(&mut TransactionContext) -> Result<T>,
-    {
-        self.check_accepting()?;
-        let mut txn = self.begin_transaction(run_id);
-        let result = f(&mut txn);
-        let outcome = self.run_single_attempt(&mut txn, result, self.durability_mode, Some(timeout));
-        self.end_transaction(txn);
-        outcome.map(|(value, _)| value)
     }
 
     /// Begin a new transaction (for manual control)
@@ -1180,51 +1120,6 @@ impl Database {
     /// Get the current durability mode
     pub(crate) fn durability_mode(&self) -> DurabilityMode {
         self.durability_mode
-    }
-
-    // ========================================================================
-    // Per-Operation Durability Override
-    // ========================================================================
-
-    /// Execute transaction with durability override
-    ///
-    /// Use this for critical writes in non-strict mode. For example,
-    /// force fsync for metadata even when running in Buffered mode.
-    ///
-    /// # Arguments
-    ///
-    /// * `run_id` - RunId for namespace isolation
-    /// * `durability` - Override durability mode for this transaction only
-    /// * `f` - Transaction closure
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// // Force strict durability for this critical write
-    /// db.transaction_with_durability(
-    ///     run_id,
-    ///     DurabilityMode::Strict,
-    ///     |txn| {
-    ///         txn.put(metadata_key, value)?;
-    ///         Ok(())
-    ///     },
-    /// )?;
-    /// ```
-    pub(crate) fn transaction_with_durability<F, T>(
-        &self,
-        run_id: RunId,
-        durability: DurabilityMode,
-        f: F,
-    ) -> Result<T>
-    where
-        F: FnOnce(&mut TransactionContext) -> Result<T>,
-    {
-        self.check_accepting()?;
-        let mut txn = self.begin_transaction(run_id);
-        let result = f(&mut txn);
-        let outcome = self.run_single_attempt(&mut txn, result, durability, None);
-        self.end_transaction(txn);
-        outcome.map(|(value, _)| value)
     }
 
     // ========================================================================
@@ -2313,86 +2208,6 @@ mod tests {
     }
 
     #[test]
-    fn test_transaction_with_timeout_success() {
-        let temp_dir = TempDir::new().unwrap();
-        let db = Database::open(temp_dir.path().join("db")).unwrap();
-
-        let run_id = RunId::new();
-        let ns = create_test_namespace(run_id);
-        let key = Key::new_kv(ns, "timeout_success");
-
-        // Transaction completes within timeout
-        let result = db.transaction_with_timeout(run_id, Duration::from_secs(5), |txn| {
-            txn.put(key.clone(), Value::Int(42))?;
-            Ok(42)
-        });
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42);
-
-        // Verify stored
-        let stored = db.storage().get(&key).unwrap().unwrap();
-        assert_eq!(stored.value, Value::Int(42));
-    }
-
-    #[test]
-    fn test_transaction_with_timeout_expired() {
-        use std::thread;
-
-        let temp_dir = TempDir::new().unwrap();
-        let db = Database::open(temp_dir.path().join("db")).unwrap();
-
-        let run_id = RunId::new();
-        let ns = create_test_namespace(run_id);
-        let key = Key::new_kv(ns, "timeout_expired");
-
-        // Transaction exceeds timeout
-        let result: Result<()> = db.transaction_with_timeout(
-            run_id,
-            Duration::from_millis(10), // Very short timeout
-            |txn| {
-                txn.put(key.clone(), Value::Int(999))?;
-                // Sleep to exceed timeout
-                thread::sleep(Duration::from_millis(50));
-                Ok(())
-            },
-        );
-
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(matches!(err, StrataError::TransactionTimeout { .. }));
-
-        // Data should NOT be committed
-        assert!(db.storage().get(&key).unwrap().is_none());
-    }
-
-    #[test]
-    fn test_transaction_with_timeout_normal_not_affected() {
-        let temp_dir = TempDir::new().unwrap();
-        let db = Database::open(temp_dir.path().join("db")).unwrap();
-
-        let run_id = RunId::new();
-        let ns = create_test_namespace(run_id);
-
-        // Run many quick transactions with timeout
-        for i in 0..100 {
-            let key = Key::new_kv(ns.clone(), &format!("key_{}", i));
-            let result = db.transaction_with_timeout(run_id, Duration::from_secs(5), |txn| {
-                txn.put(key.clone(), Value::Int(i as i64))?;
-                Ok(())
-            });
-            assert!(result.is_ok());
-        }
-
-        // All should be stored
-        for i in 0..100 {
-            let key = Key::new_kv(ns.clone(), &format!("key_{}", i));
-            let val = db.storage().get(&key).unwrap().unwrap();
-            assert_eq!(val.value, Value::Int(i as i64));
-        }
-    }
-
-    #[test]
     fn test_transaction_elapsed() {
         use std::thread;
 
@@ -2463,91 +2278,6 @@ mod tests {
     }
 
     // ========================================================================
-    // Per-Operation Durability Override Tests
-    // ========================================================================
-
-    #[test]
-    fn test_transaction_with_durability_inmemory() {
-        let temp_dir = TempDir::new().unwrap();
-        // Open database with Strict mode (default)
-        let db = Database::open(temp_dir.path().join("db")).unwrap();
-
-        let run_id = RunId::new();
-        let ns = create_test_namespace(run_id);
-        let key = Key::new_kv(ns, "durability_override");
-
-        // Override to InMemory mode for this transaction
-        let result = db.transaction_with_durability(run_id, DurabilityMode::None, |txn| {
-            txn.put(key.clone(), Value::Int(42))?;
-            Ok(42)
-        });
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42);
-
-        // Data should be in storage (even with InMemory mode)
-        let stored = db.storage().get(&key).unwrap().unwrap();
-        assert_eq!(stored.value, Value::Int(42));
-    }
-
-    #[test]
-    fn test_transaction_with_durability_strict() {
-        let temp_dir = TempDir::new().unwrap();
-        // Open database with no-durability mode (no fsync)
-        let db = Database::builder()
-            .path(temp_dir.path().join("db"))
-            .no_durability()
-            .open()
-            .unwrap();
-
-        let run_id = RunId::new();
-        let ns = create_test_namespace(run_id);
-        let key = Key::new_kv(ns, "strict_override");
-
-        // Override to Strict mode for this transaction
-        let result = db.transaction_with_durability(run_id, DurabilityMode::Strict, |txn| {
-            txn.put(key.clone(), Value::String("important".to_string()))?;
-            Ok(())
-        });
-
-        assert!(result.is_ok());
-
-        // Data should be in storage
-        let stored = db.storage().get(&key).unwrap().unwrap();
-        assert_eq!(stored.value, Value::String("important".to_string()));
-    }
-
-    #[test]
-    fn test_transaction_with_durability_returns_value() {
-        let temp_dir = TempDir::new().unwrap();
-        let db = Database::open(temp_dir.path().join("db")).unwrap();
-
-        let run_id = RunId::new();
-        let ns = create_test_namespace(run_id);
-        let key = Key::new_kv(ns, "return_test");
-
-        // Pre-populate
-        db.transaction(run_id, |txn| {
-            txn.put(key.clone(), Value::Int(100))?;
-            Ok(())
-        })
-        .unwrap();
-
-        // Read value with durability override
-        let result: Result<i64> =
-            db.transaction_with_durability(run_id, DurabilityMode::None, |txn| {
-                let val = txn.get(&key)?.unwrap();
-                if let Value::Int(n) = val {
-                    Ok(n)
-                } else {
-                    Err(StrataError::invalid_input("wrong type".to_string()))
-                }
-            });
-
-        assert_eq!(result.unwrap(), 100);
-    }
-
-    // ========================================================================
     // Graceful Shutdown Tests
     // ========================================================================
 
@@ -2588,29 +2318,6 @@ mod tests {
 
         // New transactions should be rejected
         let result = db.transaction(run_id, |txn| {
-            txn.put(key.clone(), Value::Int(42))?;
-            Ok(())
-        });
-
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(matches!(err, StrataError::InvalidInput { .. }));
-    }
-
-    #[test]
-    fn test_shutdown_rejects_durability_override_transactions() {
-        let temp_dir = TempDir::new().unwrap();
-        let db = Database::open(temp_dir.path().join("db")).unwrap();
-
-        let run_id = RunId::new();
-        let ns = create_test_namespace(run_id);
-        let key = Key::new_kv(ns, "override_after_shutdown");
-
-        // Shutdown the database
-        db.shutdown().unwrap();
-
-        // Durability override transactions should also be rejected
-        let result = db.transaction_with_durability(run_id, DurabilityMode::None, |txn| {
             txn.put(key.clone(), Value::Int(42))?;
             Ok(())
         });
