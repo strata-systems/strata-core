@@ -13,9 +13,11 @@ impl Strata {
     ///
     /// Creates the key if it doesn't exist, overwrites if it does.
     /// Returns the version created by this write operation.
+    ///
+    /// The value is stored in the current run context.
     pub fn kv_put(&self, key: &str, value: Value) -> Result<u64> {
         match self.executor.execute(Command::KvPut {
-            run: None,
+            run: self.run_id(),
             key: key.to_string(),
             value,
         })? {
@@ -29,9 +31,11 @@ impl Strata {
     /// Get a value from the KV store.
     ///
     /// Returns the latest value for the key, or None if it doesn't exist.
+    ///
+    /// Reads from the current run context.
     pub fn kv_get(&self, key: &str) -> Result<Option<Value>> {
         match self.executor.execute(Command::KvGet {
-            run: None,
+            run: self.run_id(),
             key: key.to_string(),
         })? {
             Output::Maybe(v) => Ok(v),
@@ -44,9 +48,11 @@ impl Strata {
     /// Delete a key from the KV store.
     ///
     /// Returns `true` if the key existed and was deleted, `false` if it didn't exist.
+    ///
+    /// Deletes from the current run context.
     pub fn kv_delete(&self, key: &str) -> Result<bool> {
         match self.executor.execute(Command::KvDelete {
-            run: None,
+            run: self.run_id(),
             key: key.to_string(),
         })? {
             Output::Bool(deleted) => Ok(deleted),
@@ -59,9 +65,11 @@ impl Strata {
     /// List keys with optional prefix filter.
     ///
     /// Returns all keys matching the prefix (or all keys if prefix is None).
+    ///
+    /// Lists from the current run context.
     pub fn kv_list(&self, prefix: Option<&str>) -> Result<Vec<String>> {
         match self.executor.execute(Command::KvList {
-            run: None,
+            run: self.run_id(),
             prefix: prefix.map(|s| s.to_string()),
         })? {
             Output::Keys(keys) => Ok(keys),

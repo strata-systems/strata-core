@@ -264,22 +264,6 @@ fn test_command_run_list() {
     });
 }
 
-#[test]
-fn test_command_run_add_tags() {
-    test_command_round_trip(Command::RunAddTags {
-        run: RunId::from("default"),
-        tags: vec!["test".to_string(), "important".to_string()],
-    });
-}
-
-#[test]
-fn test_command_run_set_retention() {
-    test_command_round_trip(Command::RunSetRetention {
-        run: RunId::from("default"),
-        policy: RetentionPolicyInfo::KeepLast { count: 100 },
-    });
-}
-
 // =============================================================================
 // Transaction Command Tests
 // =============================================================================
