@@ -123,7 +123,12 @@ fn double_mark_validating_fails() {
 
     txn.mark_validating().unwrap();
     let result = txn.mark_validating();
-    assert!(result.is_err(), "Second mark_validating should fail");
+    let err = result.unwrap_err();
+    let msg = err.to_string().to_lowercase();
+    assert!(
+        msg.contains("active") || msg.contains("invalid") || msg.contains("state"),
+        "Expected invalid state transition error, got: {}", err
+    );
 }
 
 #[test]
@@ -133,7 +138,12 @@ fn commit_while_active_fails() {
 
     // Skip validating state
     let result = txn.mark_committed();
-    assert!(result.is_err(), "Commit from Active should fail");
+    let err = result.unwrap_err();
+    let msg = err.to_string().to_lowercase();
+    assert!(
+        msg.contains("commit") || msg.contains("state") || msg.contains("invalid"),
+        "Expected invalid state transition error, got: {}", err
+    );
 }
 
 #[test]
@@ -143,7 +153,12 @@ fn commit_while_aborted_fails() {
 
     txn.mark_aborted("aborted".to_string()).unwrap();
     let result = txn.mark_committed();
-    assert!(result.is_err(), "Commit after abort should fail");
+    let err = result.unwrap_err();
+    let msg = err.to_string().to_lowercase();
+    assert!(
+        msg.contains("commit") || msg.contains("state") || msg.contains("abort"),
+        "Expected invalid state transition error, got: {}", err
+    );
 }
 
 #[test]
@@ -154,7 +169,12 @@ fn commit_while_already_committed_fails() {
     txn.mark_validating().unwrap();
     txn.mark_committed().unwrap();
     let result = txn.mark_committed();
-    assert!(result.is_err(), "Double commit should fail");
+    let err = result.unwrap_err();
+    let msg = err.to_string().to_lowercase();
+    assert!(
+        msg.contains("commit") || msg.contains("state") || msg.contains("invalid"),
+        "Expected invalid state transition error, got: {}", err
+    );
 }
 
 // ============================================================================

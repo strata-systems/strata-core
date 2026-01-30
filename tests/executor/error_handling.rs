@@ -41,7 +41,12 @@ fn vector_search_in_nonexistent_collection_fails() {
         metric: None,
     });
 
-    assert!(result.is_err());
+    match result {
+        Err(Error::CollectionNotFound { collection }) => {
+            assert!(collection.contains("nonexistent"), "Collection error should reference 'nonexistent', got: {}", collection);
+        }
+        other => panic!("Expected CollectionNotFound, got {:?}", other),
+    }
 }
 
 #[test]
@@ -64,7 +69,13 @@ fn vector_wrong_dimension_fails() {
         metadata: None,
     });
 
-    assert!(result.is_err());
+    match result {
+        Err(Error::DimensionMismatch { expected, actual }) => {
+            assert_eq!(expected, 4);
+            assert_eq!(actual, 2);
+        }
+        other => panic!("Expected DimensionMismatch, got {:?}", other),
+    }
 }
 
 #[test]
@@ -121,7 +132,15 @@ fn run_duplicate_id_fails() {
         metadata: None,
     });
 
-    assert!(result.is_err());
+    match result {
+        Err(Error::RunExists { run }) => {
+            assert!(run.contains("unique-run"), "RunExists error should reference 'unique-run', got: {}", run);
+        }
+        Err(Error::InvalidInput { reason }) => {
+            assert!(reason.contains("unique-run"), "InvalidInput error should reference 'unique-run', got: {}", reason);
+        }
+        other => panic!("Expected RunExists or InvalidInput, got {:?}", other),
+    }
 }
 
 // ============================================================================
@@ -190,7 +209,10 @@ fn event_append_non_object_fails() {
         payload: Value::Int(42), // Not an object
     });
 
-    assert!(result.is_err());
+    match result {
+        Err(Error::InvalidInput { .. }) => {}
+        other => panic!("Expected InvalidInput, got {:?}", other),
+    }
 }
 
 // ============================================================================
