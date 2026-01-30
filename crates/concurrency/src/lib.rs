@@ -19,7 +19,7 @@ pub mod payload;
 pub mod recovery;
 pub mod snapshot;
 pub mod transaction;
-pub(crate) mod validation;
+pub mod validation;
 
 pub use manager::TransactionManager;
 pub use payload::TransactionPayload;
