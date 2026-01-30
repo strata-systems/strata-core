@@ -51,7 +51,7 @@ use std::sync::Arc;
 pub use strata_core::primitives::Event;
 
 /// Hash version constants
-const HASH_VERSION_SHA256: u8 = 1; // SHA-256
+pub(crate) const HASH_VERSION_SHA256: u8 = 1; // SHA-256
 
 /// Per-stream metadata for O(1) access to stream statistics
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,6 +1,6 @@
 # Ignored Tests Registry
 
-**Total: 64 ignored tests across 6 suites**
+**Total: 61 ignored tests across 6 suites**
 
 This document tracks every `#[ignore]` test so none are forgotten. Tests fall into
 three categories: **API gaps** (need new methods), **known bugs** (need fixes), and
@@ -100,35 +100,6 @@ ensures related events are written atomically.
 
 **Why this matters:** Run forking enables branching agent execution — try
 different strategies from the same starting state without re-running setup.
-
----
-
-## Known Bug Tests (1 test)
-
-### Run Deletion Data Cleanup
-
-**File:** `tests/executor/run_invariants.rs`
-
-| Test | Bug | What It Validates |
-|------|-----|-------------------|
-| `run_delete_removes_all_data` | Issue #781 | Deleting a run should cascade-delete all KV, State, and Event data |
-
-**Current behavior:** `RunDelete` removes the run metadata but data persists.
-Recreating a run with the same name sees stale data. See
-`run_delete_currently_does_not_remove_data` (not ignored) which documents this.
-
----
-
-## Implementation-Pending Tests (2 tests)
-
-### Session Transaction Gaps
-
-**File:** `tests/executor/session_transactions.rs`
-
-| Test | Issue | What It Validates |
-|------|-------|-------------------|
-| `read_your_writes_event` | EventAppend in transactions pending review | Events written in a transaction are readable before commit |
-| `cross_primitive_transaction` | State/Event serialization issues | Single transaction spans KV + State + Event atomically |
 
 ---
 

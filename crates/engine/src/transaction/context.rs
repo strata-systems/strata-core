@@ -18,6 +18,7 @@
 //! - JSON document operations via TransactionContext
 
 use crate::transaction_ops::TransactionOps;
+use crate::primitives::event::{EventLogMeta, HASH_VERSION_SHA256};
 use strata_concurrency::{JsonStoreExt, TransactionContext};
 use strata_core::{
     EntityRef, Event, JsonPatch, JsonPath, JsonValue, MetadataFilter, RunMetadata, RunStatus,
@@ -64,15 +65,19 @@ pub struct Transaction<'a> {
 
 impl<'a> Transaction<'a> {
     /// Create a new Transaction wrapper
+    ///
+    /// Reads event state (sequence count, last hash) from TransactionContext
+    /// to maintain continuity across multiple Transaction instances within
+    /// the same session transaction.
     pub fn new(ctx: &'a mut TransactionContext, namespace: Namespace) -> Self {
-        // TODO: In full implementation, read base_sequence from snapshot metadata
-        // For now, start at 0
+        let base_sequence = ctx.event_sequence_count();
+        let last_hash = ctx.event_last_hash();
         Self {
             ctx,
             namespace,
             pending_events: Vec::new(),
-            base_sequence: 0,
-            last_hash: [0u8; 32],
+            base_sequence,
+            last_hash,
         }
     }
 
@@ -271,14 +276,35 @@ impl<'a> TransactionOps for Transaction<'a> {
         // Update last_hash for next event in chain
         self.last_hash = event.hash;
 
-        // Also write to the underlying context so it gets committed
+        // Write event to context as Value::String (matching EventLog primitive format)
         let event_key = self.event_key(sequence);
-        let event_bytes = serde_json::to_vec(&event).map_err(|e| {
+        let event_json = serde_json::to_string(&event).map_err(|e| {
             StrataError::Serialization {
                 message: e.to_string(),
             }
         })?;
-        self.ctx.put(event_key, Value::Bytes(event_bytes)).map_err(StrataError::from)?;
+        self.ctx.put(event_key, Value::String(event_json)).map_err(StrataError::from)?;
+
+        // Write EventLogMeta so EventLog::len() and other readers see the update after commit
+        let meta_key = Key::new_event_meta(self.namespace.clone());
+        let meta = EventLogMeta {
+            next_sequence: sequence + 1,
+            head_hash: event.hash,
+            hash_version: HASH_VERSION_SHA256,
+            streams: Default::default(),
+        };
+        let meta_json = serde_json::to_string(&meta).map_err(|e| {
+            StrataError::Serialization {
+                message: e.to_string(),
+            }
+        })?;
+        self.ctx.put(meta_key, Value::String(meta_json)).map_err(StrataError::from)?;
+
+        // Update TransactionContext event state for cross-Transaction continuity
+        self.ctx.set_event_state(
+            self.base_sequence + self.pending_events.len() as u64 + 1,
+            event.hash,
+        );
 
         // Buffer the event
         self.pending_events.push(event);
@@ -301,8 +327,8 @@ impl<'a> TransactionOps for Transaction<'a> {
 
         // Check if the event was written to ctx.write_set
         let event_key = self.event_key(sequence);
-        if let Some(Value::Bytes(bytes)) = self.ctx.write_set.get(&event_key) {
-            let event: Event = serde_json::from_slice(bytes).map_err(|e| {
+        if let Some(Value::String(s)) = self.ctx.write_set.get(&event_key) {
+            let event: Event = serde_json::from_str(s).map_err(|e| {
                 StrataError::Serialization {
                     message: e.to_string(),
                 }
@@ -340,8 +366,9 @@ impl<'a> TransactionOps for Transaction<'a> {
         let full_key = self.state_key(name);
 
         // Check write set first (read-your-writes)
-        if let Some(Value::Bytes(bytes)) = self.ctx.write_set.get(&full_key) {
-            let state: State = serde_json::from_slice(bytes).map_err(|e| {
+        // Uses Value::String matching StateCell primitive format
+        if let Some(Value::String(s)) = self.ctx.write_set.get(&full_key) {
+            let state: State = serde_json::from_str(s).map_err(|e| {
                 StrataError::Serialization {
                     message: e.to_string(),
                 }
@@ -377,14 +404,14 @@ impl<'a> TransactionOps for Transaction<'a> {
         let state = State::new(value);
         let version = state.version;
 
-        // Serialize and store
-        let state_bytes = serde_json::to_vec(&state).map_err(|e| {
+        // Serialize as Value::String (matching StateCell primitive format)
+        let state_json = serde_json::to_string(&state).map_err(|e| {
             StrataError::Serialization {
                 message: e.to_string(),
             }
         })?;
 
-        self.ctx.put(full_key, Value::Bytes(state_bytes)).map_err(StrataError::from)?;
+        self.ctx.put(full_key, Value::String(state_json)).map_err(StrataError::from)?;
 
         Ok(version)
     }
@@ -397,9 +424,9 @@ impl<'a> TransactionOps for Transaction<'a> {
     ) -> Result<Version, StrataError> {
         let full_key = self.state_key(name);
 
-        // Read current state to get version
-        let current_state = if let Some(Value::Bytes(bytes)) = self.ctx.write_set.get(&full_key) {
-            let state: State = serde_json::from_slice(bytes).map_err(|e| {
+        // Read current state to get version (Value::String matching StateCell format)
+        let current_state = if let Some(Value::String(s)) = self.ctx.write_set.get(&full_key) {
+            let state: State = serde_json::from_str(s).map_err(|e| {
                 StrataError::Serialization {
                     message: e.to_string(),
                 }
@@ -427,14 +454,14 @@ impl<'a> TransactionOps for Transaction<'a> {
         let new_version = expected_version.increment();
         let new_state = State::with_version(value, new_version);
 
-        // Serialize and store
-        let state_bytes = serde_json::to_vec(&new_state).map_err(|e| {
+        // Serialize as Value::String (matching StateCell primitive format)
+        let state_json = serde_json::to_string(&new_state).map_err(|e| {
             StrataError::Serialization {
                 message: e.to_string(),
             }
         })?;
 
-        self.ctx.put(full_key, Value::Bytes(state_bytes)).map_err(StrataError::from)?;
+        self.ctx.put(full_key, Value::String(state_json)).map_err(StrataError::from)?;
 
         Ok(new_version)
     }

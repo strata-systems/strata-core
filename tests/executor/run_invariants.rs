@@ -78,9 +78,7 @@ fn run_data_is_isolated() {
 // ============================================================================
 
 /// Deleting a run should remove all its data (KV, State, Events)
-/// BUG: Currently data persists after run deletion - see issue #781
 #[test]
-#[ignore] // Enable when run deletion properly cleans up data
 fn run_delete_removes_all_data() {
     let executor = create_executor();
 
@@ -145,9 +143,9 @@ fn run_delete_removes_all_data() {
         "Data should not persist after run deletion and recreation");
 }
 
-/// Document current behavior: run delete does NOT remove data (bug)
+/// Verify run delete properly cleans up data (issue #781 fixed)
 #[test]
-fn run_delete_currently_does_not_remove_data() {
+fn run_delete_cleans_up_data() {
     let executor = create_executor();
 
     let run_id = match executor.execute(Command::RunCreate {
@@ -176,15 +174,14 @@ fn run_delete_currently_does_not_remove_data() {
         metadata: None,
     }).unwrap();
 
-    // BUG: Data still exists! This should be None.
+    // Data should be gone after deletion
     let output = executor.execute(Command::KvGet {
         run: Some(run_id),
         key: "persistent_key".into(),
     }).unwrap();
 
-    // Documenting current (broken) behavior
-    assert!(matches!(output, Output::Maybe(Some(_))),
-        "Current behavior: data persists after run deletion (see issue #781)");
+    assert!(matches!(output, Output::Maybe(None)),
+        "Data should not persist after run deletion (issue #781)");
 }
 
 // ============================================================================

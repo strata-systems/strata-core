@@ -171,7 +171,6 @@ fn read_your_writes_state() {
 }
 
 #[test]
-#[ignore] // EventAppend in Session transactions pending implementation review
 fn read_your_writes_event() {
     let mut session = create_session();
 
@@ -477,7 +476,6 @@ fn multiple_kv_operations_in_transaction() {
 }
 
 #[test]
-#[ignore] // State/Event in Session transactions have serialization issues pending fix
 fn cross_primitive_transaction() {
     let db = create_db();
     let mut session = Session::new(db.clone());

@@ -28,6 +28,30 @@ use strata_core::types::{Key, Namespace, RunId, TypeTag};
 use strata_core::value::Value;
 use strata_core::StrataError;
 use std::sync::Arc;
+use uuid::Uuid;
+
+/// Namespace UUID for generating deterministic run IDs from names.
+/// Must match the executor's RUN_NAMESPACE for consistency.
+const RUN_NAMESPACE: Uuid = Uuid::from_bytes([
+    0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1,
+    0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8,
+]);
+
+/// Resolve a run name to a core RunId using the same logic as the executor.
+///
+/// - "default" → nil UUID (all zeros)
+/// - Valid UUID string → parsed directly
+/// - Any other string → deterministic UUID v5 from name
+fn resolve_run_name(name: &str) -> RunId {
+    if name == "default" {
+        RunId::from_bytes([0u8; 16])
+    } else if let Ok(u) = Uuid::parse_str(name) {
+        RunId::from_bytes(*u.as_bytes())
+    } else {
+        let uuid = Uuid::new_v5(&RUN_NAMESPACE, name.as_bytes());
+        RunId::from_bytes(*uuid.as_bytes())
+    }
+}
 
 // ========== Global Run ID for RunIndex Operations ==========
 
@@ -320,18 +344,24 @@ impl RunIndex {
             .ok_or_else(|| StrataError::invalid_input(format!("Run '{}' not found", run_id)))?
             .value;
 
-        // Determine the RunId for namespace deletion
-        let actual_run_id = RunId::from_string(&run_meta.name)
-            .or_else(|| RunId::from_string(&run_meta.run_id))
-            .ok_or_else(|| {
-                StrataError::invalid_input(format!(
-                    "Invalid run identifiers: name='{}', run_id='{}'",
-                    run_meta.name, run_meta.run_id
-                ))
-            })?;
+        // Resolve the executor's deterministic RunId for this name.
+        // Data written through the executor uses this UUID for namespace scoping.
+        let executor_run_id = resolve_run_name(run_id);
 
-        // Delete all run-scoped data (cascading delete)
-        self.delete_run_data_internal(actual_run_id)?;
+        // Also get the metadata RunId (random UUID from RunMetadata::new).
+        // Data written directly through engine primitives (KVStore, EventLog, etc.)
+        // may use this UUID.
+        let metadata_run_id = RunId::from_string(&run_meta.run_id);
+
+        // Delete data from the executor's namespace
+        self.delete_run_data_internal(executor_run_id)?;
+
+        // If the metadata RunId differs, also delete from that namespace
+        if let Some(meta_id) = metadata_run_id {
+            if meta_id != executor_run_id {
+                self.delete_run_data_internal(meta_id)?;
+            }
+        }
 
         // Delete the run metadata
         self.db.transaction(global_run_id(), |txn| {
