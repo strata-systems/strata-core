@@ -2,22 +2,15 @@
 //!
 //! This crate handles everything that touches disk:
 //!
-//! - WAL: Append-only write-ahead log with MVCC support
-//! - WALEntry types: BeginTxn, Write, Delete, CommitTxn, etc.
-//! - Entry encoding/decoding with CRC32 checksums
+//! - WAL: Segmented write-ahead log with one record per committed transaction
 //! - Durability modes: Strict, Batched (default), None
 //! - Snapshot creation and loading
-//! - Recovery: Replay WAL from last snapshot
+//! - Recovery: Coordinator-based recovery (MANIFEST + snapshot + WAL)
 //! - Binary on-disk formats (segmented WAL, snapshots, manifest)
 //! - Storage codec abstraction (encryption/compression extension point)
 //! - WAL segment compaction
 //! - Version retention policies
 //! - Crash testing infrastructure
-//!
-//! ## WAL Entry Types
-//!
-//! The `WalEntryType` enum provides a standardized registry of entry types
-//! organized by primitive (KV, JSON, Event, State, Run, Vector).
 
 // Allow deprecated SnapshotSerializable usage (will be removed in future refactor)
 #![allow(deprecated)]
@@ -25,12 +18,11 @@
 #![warn(clippy::all)]
 
 // === Existing modules ===
-pub mod encoding; // Entry encoding/decoding with CRC
 pub mod recovery; // WAL replay logic
 pub mod run_bundle; // Portable execution artifacts (RunBundle)
 pub mod snapshot; // Snapshot writer and serialization
 pub mod snapshot_types; // Snapshot envelope and header types
-pub mod wal; // WALEntry types, File operations, Durability modes
+pub mod wal; // WAL segment types, durability modes
 
 // === Modules moved from storage crate (Phase 1 consolidation) ===
 pub mod codec; // Storage codec abstraction (identity, future encryption/compression)
@@ -43,12 +35,7 @@ pub mod testing; // Crash test harness and reference model
 // === Phase 2: Database lifecycle coordination ===
 pub mod database; // Database handle, config, paths (DatabaseHandle, DatabaseConfig, etc.)
 
-// === Existing re-exports ===
-pub use encoding::{decode_entry, encode_entry};
-pub use recovery::{
-    replay_wal, replay_wal_with_options, validate_transactions, ReplayOptions, ReplayProgress,
-    ReplayStats, ValidationResult, ValidationWarning,
-};
+// === Re-exports ===
 pub use snapshot::{
     deserialize_primitives, serialize_all_primitives, SnapshotReader, SnapshotSerializable,
     SnapshotWriter,
@@ -57,14 +44,15 @@ pub use snapshot_types::{
     now_micros, primitive_ids, PrimitiveSection, SnapshotEnvelope, SnapshotError, SnapshotHeader,
     SnapshotInfo, SNAPSHOT_HEADER_SIZE, SNAPSHOT_MAGIC, SNAPSHOT_VERSION_1,
 };
-pub use wal::{DurabilityMode, WalCorruptionInfo, WalReadResult, WALEntry, WAL};
+pub use wal::DurabilityMode;
 
 // RunBundle types
 pub use run_bundle::{
-    filter_wal_for_run, BundleContents, BundleManifest, BundleRunInfo, BundleVerifyInfo,
+    BundleContents, BundleManifest, BundleRunInfo, BundleVerifyInfo,
     ExportOptions, ImportedRunInfo, ReadBundleContents, RunBundleError, RunBundleReader,
-    RunBundleResult, RunBundleWriter, RunExportInfo, WalLogInfo, WalLogIterator, WalLogReader,
-    WalLogWriter, RUNBUNDLE_EXTENSION, RUNBUNDLE_FORMAT_VERSION,
+    RunBundleResult, RunBundleWriter, RunExportInfo, RunlogPayload,
+    WalLogInfo, WalLogIterator, WalLogReader, WalLogWriter,
+    RUNBUNDLE_EXTENSION, RUNBUNDLE_FORMAT_VERSION,
 };
 
 // === Re-exports from moved modules ===
