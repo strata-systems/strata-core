@@ -26,12 +26,12 @@ impl Strata {
     }
 
     /// Read a state cell value.
-    pub fn state_read(&self, cell: &str) -> Result<Option<VersionedValue>> {
+    pub fn state_read(&self, cell: &str) -> Result<Option<Value>> {
         match self.executor.execute(Command::StateRead {
             run: self.run_id(),
             cell: cell.to_string(),
         })? {
-            Output::MaybeVersioned(v) => Ok(v),
+            Output::Maybe(v) => Ok(v),
             _ => Err(Error::Internal {
                 reason: "Unexpected output for StateRead".into(),
             }),

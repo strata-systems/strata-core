@@ -104,9 +104,9 @@ fn consistency_invariants_maintained() {
 
     // Increment counter using read + cas (ensures atomic read-modify-write)
     for _ in 0..10 {
-        let current = state.read(&run_id, "counter").unwrap().unwrap();
-        let version = current.version;
-        if let Value::Int(n) = current.value.value {
+        let current = state.readv(&run_id, "counter").unwrap().unwrap();
+        let version = current.version();
+        if let Value::Int(n) = current.value() {
             state.cas(&run_id, "counter", version, Value::Int(n + 1)).unwrap();
         } else {
             panic!("not an int");
@@ -115,7 +115,7 @@ fn consistency_invariants_maintained() {
 
     // Counter should be exactly 10
     let result = state.read(&run_id, "counter").unwrap().unwrap();
-    assert_eq!(result.value.value, Value::Int(10));
+    assert_eq!(result, Value::Int(10));
 }
 
 #[test]
@@ -125,7 +125,7 @@ fn consistency_cas_prevents_invalid_state() {
     let run_id = test_db.run_id;
 
     state.init(&run_id, "balance", Value::Int(100)).unwrap();
-    let version = state.read(&run_id, "balance").unwrap().unwrap().version;
+    let version = state.readv(&run_id, "balance").unwrap().unwrap().version();
 
     // First CAS succeeds
     state.cas(&run_id, "balance", version, Value::Int(90)).unwrap();
@@ -136,7 +136,7 @@ fn consistency_cas_prevents_invalid_state() {
 
     // Balance should be 90, not 80
     let balance = state.read(&run_id, "balance").unwrap().unwrap();
-    assert_eq!(balance.value.value, Value::Int(90));
+    assert_eq!(balance, Value::Int(90));
 }
 
 // ============================================================================
@@ -309,25 +309,25 @@ fn acid_transfer_between_accounts() {
     state.init(&run_id, "account_a", Value::Int(100)).unwrap();
     state.init(&run_id, "account_b", Value::Int(100)).unwrap();
 
-    // Transfer 30 from A to B using read + set
-    let a_val = state.read(&run_id, "account_a").unwrap().unwrap();
-    let b_val = state.read(&run_id, "account_b").unwrap().unwrap();
+    // Transfer 30 from A to B using readv + cas
+    let a_val = state.readv(&run_id, "account_a").unwrap().unwrap();
+    let b_val = state.readv(&run_id, "account_b").unwrap().unwrap();
 
-    if let (Value::Int(a), Value::Int(b)) = (&a_val.value.value, &b_val.value.value) {
-        state.cas(&run_id, "account_a", a_val.version, Value::Int(a - 30)).unwrap();
-        let b_val2 = state.read(&run_id, "account_b").unwrap().unwrap();
-        state.cas(&run_id, "account_b", b_val2.version, Value::Int(b + 30)).unwrap();
+    if let (Value::Int(a), Value::Int(b)) = (a_val.value(), b_val.value()) {
+        state.cas(&run_id, "account_a", a_val.version(), Value::Int(a - 30)).unwrap();
+        let b_val2 = state.readv(&run_id, "account_b").unwrap().unwrap();
+        state.cas(&run_id, "account_b", b_val2.version(), Value::Int(b + 30)).unwrap();
     }
 
     // Verify balances
     let a = state.read(&run_id, "account_a").unwrap().unwrap();
     let b = state.read(&run_id, "account_b").unwrap().unwrap();
 
-    assert_eq!(a.value.value, Value::Int(70));
-    assert_eq!(b.value.value, Value::Int(130));
+    assert_eq!(a, Value::Int(70));
+    assert_eq!(b, Value::Int(130));
 
     // Total should still be 200 (conservation)
-    let total = match (&a.value.value, &b.value.value) {
+    let total = match (&a, &b) {
         (Value::Int(a), Value::Int(b)) => a + b,
         _ => panic!("Expected ints"),
     };

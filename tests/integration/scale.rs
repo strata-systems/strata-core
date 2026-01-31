@@ -318,7 +318,7 @@ fn deep_json_nesting() {
     let doc = json.get(&run_id, "deep", &root()).unwrap().unwrap();
 
     // Navigate down
-    let mut current: serde_json::Value = doc.value.as_inner().clone();
+    let mut current: serde_json::Value = doc.as_inner().clone();
     let mut depth = 0;
     while let Some(child) = current.get("child") {
         current = child.clone();

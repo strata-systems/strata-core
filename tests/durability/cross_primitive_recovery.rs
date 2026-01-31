@@ -44,14 +44,14 @@ fn all_six_primitives_recover_together() {
 
     let json_val = p.json.get(&run_id, &doc_id, &root()).unwrap();
     let json_val = json_val.expect("JSON should recover");
-    assert_eq!(json_val.value, test_json_value(1));
+    assert_eq!(json_val, test_json_value(1));
 
     let events = p.event.read_by_type(&run_id, "stream").unwrap();
     assert_eq!(events.len(), 1, "EventLog should recover");
 
     let state_val = p.state.read(&run_id, "cell").unwrap();
     let state_val = state_val.expect("StateCell should recover");
-    assert_eq!(state_val.value.value, Value::String("initial".into()));
+    assert_eq!(state_val, Value::String("initial".into()));
 
     let vec_val = p.vector.get(run_id, "col", "v1").unwrap();
     let vec_val = vec_val.expect("VectorStore should recover");
@@ -180,6 +180,6 @@ fn json_mutations_survive_recovery() {
 
     let json = test_db.json();
     let doc = json.get(&run_id, &doc_id, &root()).unwrap().unwrap();
-    let inner = doc.value.as_inner();
+    let inner = doc.as_inner();
     assert_eq!(inner["count"], 42, "JSON mutation should survive recovery");
 }

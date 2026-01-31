@@ -100,6 +100,14 @@ pub enum Command {
         prefix: Option<String>,
     },
 
+    /// Get full version history for a key.
+    /// Returns: `Output::VersionHistory`
+    KvGetv {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run: Option<RunId>,
+        key: String,
+    },
+
     // ==================== JSON (4 MVP) ====================
     /// Set a value at a path in a JSON document.
     /// Returns: `Output::Version`
@@ -127,6 +135,14 @@ pub enum Command {
         run: Option<RunId>,
         key: String,
         path: String,
+    },
+
+    /// Get full version history for a JSON document.
+    /// Returns: `Output::VersionHistory`
+    JsonGetv {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run: Option<RunId>,
+        key: String,
     },
 
     /// List JSON documents with cursor-based pagination.
@@ -202,6 +218,14 @@ pub enum Command {
         cell: String,
         expected_counter: Option<u64>,
         value: Value,
+    },
+
+    /// Get full version history for a state cell.
+    /// Returns: `Output::VersionHistory`
+    StateReadv {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run: Option<RunId>,
+        cell: String,
     },
 
     /// Initialize a state cell (only if it doesn't exist).
@@ -429,14 +453,16 @@ impl Command {
         }
 
         match self {
-            // KV (4 MVP)
+            // KV
             Command::KvPut { run, .. }
             | Command::KvGet { run, .. }
             | Command::KvDelete { run, .. }
             | Command::KvList { run, .. }
+            | Command::KvGetv { run, .. }
             // JSON
             | Command::JsonSet { run, .. }
             | Command::JsonGet { run, .. }
+            | Command::JsonGetv { run, .. }
             | Command::JsonDelete { run, .. }
             | Command::JsonList { run, .. }
             // Event (4 MVP)
@@ -444,9 +470,10 @@ impl Command {
             | Command::EventRead { run, .. }
             | Command::EventReadByType { run, .. }
             | Command::EventLen { run, .. }
-            // State (4 MVP)
+            // State
             | Command::StateSet { run, .. }
             | Command::StateRead { run, .. }
+            | Command::StateReadv { run, .. }
             | Command::StateCas { run, .. }
             | Command::StateInit { run, .. }
             // Vector (7 MVP)

@@ -8,12 +8,31 @@
 
 use std::sync::Arc;
 
-use strata_core::{Value, Version, Versioned};
+use strata_core::{Value, Version};
 
 use crate::bridge::{self, Primitives};
 use crate::convert::convert_result;
 use crate::types::RunId;
 use crate::{Output, Result};
+
+/// Handle StateReadv command — get full version history for a state cell.
+pub fn state_readv(
+    p: &Arc<Primitives>,
+    run: RunId,
+    cell: String,
+) -> Result<Output> {
+    let run_id = bridge::to_core_run_id(&run)?;
+    convert_result(bridge::validate_key(&cell))?;
+    let result = convert_result(p.state.readv(&run_id, &cell))?;
+    let mapped = result.map(|history| {
+        history
+            .into_versions()
+            .into_iter()
+            .map(bridge::to_versioned_value)
+            .collect()
+    });
+    Ok(Output::VersionHistory(mapped))
+}
 
 // =============================================================================
 // Individual Handlers
@@ -41,15 +60,7 @@ pub fn state_read(
     let run_id = bridge::to_core_run_id(&run)?;
     convert_result(bridge::validate_key(&cell))?;
     let result = convert_result(p.state.read(&run_id, &cell))?;
-    let mapped = result.map(|state| {
-        let combined = Versioned {
-            value: state.value.value,
-            version: state.version,
-            timestamp: state.timestamp,
-        };
-        bridge::to_versioned_value(combined)
-    });
-    Ok(Output::MaybeVersioned(mapped))
+    Ok(Output::Maybe(result))
 }
 
 /// Handle StateCas command.

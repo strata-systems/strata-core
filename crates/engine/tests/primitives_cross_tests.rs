@@ -73,8 +73,7 @@ fn test_kv_event_state_atomic() {
     assert_eq!(event_log.len(&run_id).unwrap(), 1);
 
     let state = state_cell.read(&run_id, "workflow").unwrap().unwrap();
-    assert_eq!(state.value.value, Value::String("step1".into()));
-    assert_eq!(state.value.version, Version::counter(2));
+    assert_eq!(state, Value::String("step1".into()));
 }
 
 /// Test that a failed operation causes full rollback of all primitives
@@ -114,8 +113,7 @@ fn test_cross_primitive_rollback() {
 
     // Verify StateCell unchanged
     let state = state_cell.read(&run_id, "cell").unwrap().unwrap();
-    assert_eq!(state.value.value, Value::Int(100));
-    assert_eq!(state.value.version, Version::counter(1));
+    assert_eq!(state, Value::Int(100));
 }
 
 /// Test that all 3 extension traits compose correctly in single transaction
@@ -188,7 +186,7 @@ fn test_partial_failure_full_rollback() {
     assert_eq!(event_log.len(&run_id).unwrap(), 0);
 
     let state = state_cell.read(&run_id, "state").unwrap().unwrap();
-    assert_eq!(state.value.version, Version::counter(1)); // Unchanged
+    assert_eq!(state, Value::Int(0)); // Unchanged
 }
 
 /// Test nested/chained primitive operations within single transaction
@@ -238,7 +236,7 @@ fn test_nested_primitive_operations() {
         .read(&run_id, "sequence_tracker")
         .unwrap()
         .unwrap();
-    assert_eq!(state.value.value, Value::Int(0)); // Sequence number (starts at 0)
+    assert_eq!(state, Value::Int(0)); // Sequence number (starts at 0)
 }
 
 /// Test multiple sequential transactions with all primitives
@@ -278,7 +276,7 @@ fn test_multiple_transactions_consistency() {
 
     // Counter at 10
     let state = state_cell.read(&run_id, "counter").unwrap().unwrap();
-    assert_eq!(state.value.value, Value::Int(10));
+    assert_eq!(state, Value::Int(10));
 }
 
 /// Test read operations within transaction see uncommitted writes
@@ -336,5 +334,5 @@ fn test_read_only_transaction() {
     // Data unchanged
     assert_eq!(kv.get(&run_id, "existing").unwrap(), Some(Value::Int(100)));
     let state = state_cell.read(&run_id, "cell").unwrap().unwrap();
-    assert_eq!(state.value.version, Version::counter(1));
+    assert_eq!(state, Value::Int(50));
 }

@@ -161,8 +161,8 @@ fn read_your_writes_state() {
     }).unwrap();
 
     match output {
-        Output::MaybeVersioned(Some(vv)) => {
-            assert_eq!(vv.value, Value::String("value".into()));
+        Output::Maybe(Some(v)) => {
+            assert_eq!(v, Value::String("value".into()));
         }
         _ => panic!("Expected to read our own write"),
     }
@@ -258,7 +258,7 @@ fn rollback_discards_state_writes() {
         cell: "rollback_cell".into(),
     }).unwrap();
 
-    assert!(matches!(output, Output::MaybeVersioned(None)));
+    assert!(matches!(output, Output::Maybe(None)));
 }
 
 // ============================================================================
@@ -521,7 +521,7 @@ fn cross_primitive_transaction() {
         run: None,
         cell: "state_cell".into(),
     }).unwrap();
-    assert!(matches!(state_out, Output::MaybeVersioned(Some(_))));
+    assert!(matches!(state_out, Output::Maybe(Some(_))));
 
     let event_out = executor.execute(Command::EventLen {
         run: None,

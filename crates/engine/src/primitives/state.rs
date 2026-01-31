@@ -18,7 +18,7 @@
 use crate::primitives::extensions::StateCellExt;
 use strata_concurrency::TransactionContext;
 use strata_core::contract::{Version, Versioned};
-use strata_core::StrataResult;
+use strata_core::{StrataResult, VersionedHistory};
 use strata_core::types::{Key, Namespace, RunId};
 use strata_core::value::Value;
 use strata_core::Timestamp;
@@ -124,10 +124,11 @@ impl StateCell {
         })
     }
 
-    /// Read current state.
+    /// Read current state value.
     ///
-    /// Returns `Versioned<State>` with `Version::Counter` type.
-    pub fn read(&self, run_id: &RunId, name: &str) -> StrataResult<Option<Versioned<State>>> {
+    /// Returns the user value, or `None` if the cell doesn't exist.
+    /// Use `readv()` to access version metadata and history.
+    pub fn read(&self, run_id: &RunId, name: &str) -> StrataResult<Option<Value>> {
         let key = self.key_for(run_id, name);
 
         self.db.transaction(*run_id, |txn| {
@@ -135,13 +136,35 @@ impl StateCell {
                 Some(v) => {
                     let state: State = from_stored_value(&v)
                         .map_err(|e| strata_core::StrataError::serialization(e.to_string()))?;
-                    let version = state.version;
-                    let timestamp = Timestamp::from_micros(state.updated_at);
-                    Ok(Some(Versioned::with_timestamp(state, version, timestamp)))
+                    Ok(Some(state.value))
                 }
                 None => Ok(None),
             }
         })
+    }
+
+    /// Get full version history for a state cell.
+    ///
+    /// Returns `None` if the cell doesn't exist. Index with `[0]` = latest,
+    /// `[1]` = previous, etc. Reads directly from storage (non-transactional).
+    ///
+    /// Returns `VersionedHistory<Value>` — the internal `State` wrapper is
+    /// unwrapped so callers see the user value with storage-layer version/timestamp.
+    pub fn readv(&self, run_id: &RunId, name: &str) -> StrataResult<Option<VersionedHistory<Value>>> {
+        let key = self.key_for(run_id, name);
+        let history = self.db.get_history(&key, None, None)?;
+        let versions: Vec<Versioned<Value>> = history
+            .iter()
+            .filter_map(|vv| {
+                let state: State = from_stored_value(&vv.value).ok()?;
+                Some(Versioned::with_timestamp(
+                    state.value,
+                    state.version,
+                    Timestamp::from_micros(state.updated_at),
+                ))
+            })
+            .collect();
+        Ok(VersionedHistory::new(versions))
     }
 
     // ========== CAS & Set Operations ==========
@@ -383,10 +406,8 @@ mod tests {
         assert_eq!(versioned.value, Version::counter(1));
         assert!(versioned.version.is_counter());
 
-        let state = sc.read(&run_id, "counter").unwrap().unwrap();
-        assert_eq!(state.value.value, Value::Int(0));
-        assert_eq!(state.value.version, Version::counter(1));
-        assert!(state.version.is_counter());
+        let value = sc.read(&run_id, "counter").unwrap().unwrap();
+        assert_eq!(value, Value::Int(0));
     }
 
     #[test]
@@ -417,11 +438,11 @@ mod tests {
         sc.init(&run1, "shared", Value::Int(1)).unwrap();
         sc.init(&run2, "shared", Value::Int(2)).unwrap();
 
-        let state1 = sc.read(&run1, "shared").unwrap().unwrap();
-        let state2 = sc.read(&run2, "shared").unwrap().unwrap();
+        let value1 = sc.read(&run1, "shared").unwrap().unwrap();
+        let value2 = sc.read(&run2, "shared").unwrap().unwrap();
 
-        assert_eq!(state1.value.value, Value::Int(1));
-        assert_eq!(state2.value.value, Value::Int(2));
+        assert_eq!(value1, Value::Int(1));
+        assert_eq!(value2, Value::Int(2));
     }
 
     // ========== CAS & Set Tests ==========
@@ -438,9 +459,8 @@ mod tests {
         assert_eq!(new_versioned.value, Version::counter(2));
         assert!(new_versioned.version.is_counter());
 
-        let state = sc.read(&run_id, "counter").unwrap().unwrap();
-        assert_eq!(state.value.value, Value::Int(1));
-        assert_eq!(state.value.version, Version::counter(2));
+        let value = sc.read(&run_id, "counter").unwrap().unwrap();
+        assert_eq!(value, Value::Int(1));
     }
 
     #[test]
@@ -475,8 +495,8 @@ mod tests {
         let versioned = sc.set(&run_id, "new-cell", Value::Int(42)).unwrap();
         assert_eq!(versioned.value, Version::counter(1));
 
-        let state = sc.read(&run_id, "new-cell").unwrap().unwrap();
-        assert_eq!(state.value.value, Value::Int(42));
+        let value = sc.read(&run_id, "new-cell").unwrap().unwrap();
+        assert_eq!(value, Value::Int(42));
     }
 
     #[test]
@@ -488,8 +508,8 @@ mod tests {
         let versioned = sc.set(&run_id, "cell", Value::Int(100)).unwrap();
         assert_eq!(versioned.value, Version::counter(2));
 
-        let state = sc.read(&run_id, "cell").unwrap().unwrap();
-        assert_eq!(state.value.value, Value::Int(100));
+        let value = sc.read(&run_id, "cell").unwrap().unwrap();
+        assert_eq!(value, Value::Int(100));
     }
 
     #[test]
@@ -504,8 +524,8 @@ mod tests {
             assert_eq!(v.value, Version::counter((i + 1) as u64));
         }
 
-        let state = sc.read(&run_id, "cell").unwrap().unwrap();
-        assert_eq!(state.value.version, Version::counter(11));
+        let value = sc.read(&run_id, "cell").unwrap().unwrap();
+        assert_eq!(value, Value::Int(10));
     }
 
     // ========== StateCellExt Tests ==========
@@ -556,8 +576,8 @@ mod tests {
 
         assert_eq!(new_version, Version::counter(2));
 
-        let state = sc.read(&run_id, "cell").unwrap().unwrap();
-        assert_eq!(state.value.value, Value::Int(2));
+        let value = sc.read(&run_id, "cell").unwrap().unwrap();
+        assert_eq!(value, Value::Int(2));
     }
 
     #[test]
@@ -571,8 +591,8 @@ mod tests {
 
         assert_eq!(version, Version::counter(1));
 
-        let state = sc.read(&run_id, "new-cell").unwrap().unwrap();
-        assert_eq!(state.value.value, Value::Int(42));
+        let value = sc.read(&run_id, "new-cell").unwrap().unwrap();
+        assert_eq!(value, Value::Int(42));
     }
 
     #[test]
@@ -593,8 +613,8 @@ mod tests {
         .unwrap();
 
         // Verify both were written
-        let state = sc.read(&run_id, "counter").unwrap().unwrap();
-        assert_eq!(state.value.value, Value::Int(1));
+        let value = sc.read(&run_id, "counter").unwrap().unwrap();
+        assert_eq!(value, Value::Int(1));
     }
 
     // ========== Read Tests ==========
@@ -606,10 +626,8 @@ mod tests {
 
         sc.init(&run_id, "cell", Value::Int(42)).unwrap();
 
-        let state = sc.read(&run_id, "cell").unwrap().unwrap();
-        assert_eq!(state.value.value, Value::Int(42));
-        assert_eq!(state.value.version, Version::counter(1));
-        assert!(state.version.is_counter());
+        let value = sc.read(&run_id, "cell").unwrap().unwrap();
+        assert_eq!(value, Value::Int(42));
     }
 
     #[test]
@@ -617,8 +635,8 @@ mod tests {
         let (_temp, _db, sc) = setup();
         let run_id = RunId::new();
 
-        let state = sc.read(&run_id, "nonexistent").unwrap();
-        assert!(state.is_none());
+        let value = sc.read(&run_id, "nonexistent").unwrap();
+        assert!(value.is_none());
     }
 
     #[test]
@@ -630,11 +648,11 @@ mod tests {
         sc.init(&run1, "shared", Value::Int(1)).unwrap();
         sc.init(&run2, "shared", Value::Int(2)).unwrap();
 
-        let state1 = sc.read(&run1, "shared").unwrap().unwrap();
-        let state2 = sc.read(&run2, "shared").unwrap().unwrap();
+        let value1 = sc.read(&run1, "shared").unwrap().unwrap();
+        let value2 = sc.read(&run2, "shared").unwrap().unwrap();
 
-        assert_eq!(state1.value.value, Value::Int(1));
-        assert_eq!(state2.value.value, Value::Int(2));
+        assert_eq!(value1, Value::Int(1));
+        assert_eq!(value2, Value::Int(2));
     }
 
     // ========== Versioned Returns Tests ==========
@@ -651,16 +669,17 @@ mod tests {
     }
 
     #[test]
-    fn test_versioned_read_has_counter_version() {
+    fn test_readv_has_counter_version() {
         let (_temp, _db, sc) = setup();
         let run_id = RunId::new();
 
         sc.init(&run_id, "cell", Value::Int(42)).unwrap();
-        let versioned = sc.read(&run_id, "cell").unwrap().unwrap();
+        let history = sc.readv(&run_id, "cell").unwrap().unwrap();
 
-        assert!(versioned.version.is_counter());
-        assert_eq!(versioned.version, Version::counter(1));
-        assert!(versioned.timestamp.as_micros() > 0);
+        assert!(history.version().is_counter());
+        assert_eq!(history.version(), Version::counter(1));
+        assert!(history.timestamp().as_micros() > 0);
+        assert_eq!(*history.value(), Value::Int(42));
     }
 
     #[test]

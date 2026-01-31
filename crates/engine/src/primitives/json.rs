@@ -33,7 +33,7 @@
 use crate::primitives::extensions::JsonStoreExt;
 use strata_concurrency::TransactionContext;
 use strata_core::contract::{Timestamp, Version, Versioned};
-use strata_core::StrataResult;
+use strata_core::{StrataResult, VersionedHistory};
 use strata_core::primitives::json::{delete_at_path, get_at_path, set_at_path, JsonLimitError, JsonPath, JsonValue};
 use strata_core::StrataError;
 use strata_core::types::{Key, Namespace, RunId};
@@ -274,15 +274,17 @@ impl JsonStore {
     ///
     /// # Returns
     ///
-    /// * `Ok(Some(Versioned<value>))` - Value at path with version info
+    /// * `Ok(Some(value))` - Value at path
     /// * `Ok(None)` - Document doesn't exist or path not found
     /// * `Err` - On deserialization error
+    ///
+    /// Use `getv()` to access version metadata and history.
     pub fn get(
         &self,
         run_id: &RunId,
         doc_id: &str,
         path: &JsonPath,
-    ) -> StrataResult<Option<Versioned<JsonValue>>> {
+    ) -> StrataResult<Option<JsonValue>> {
         // Validate path limits (Issue #440)
         path.validate().map_err(limit_error_to_error)?;
 
@@ -292,18 +294,35 @@ impl JsonStore {
             match txn.get(&key)? {
                 Some(value) => {
                     let doc = Self::deserialize_doc(&value)?;
-                    match get_at_path(&doc.value, path).cloned() {
-                        Some(json_value) => Ok(Some(Versioned::with_timestamp(
-                            json_value,
-                            Version::counter(doc.version),
-                            Timestamp::from_micros(doc.updated_at),
-                        ))),
-                        None => Ok(None),
-                    }
+                    Ok(get_at_path(&doc.value, path).cloned())
                 }
                 None => Ok(None),
             }
         })
+    }
+
+    /// Get full version history for a JSON document.
+    ///
+    /// Returns `None` if the document doesn't exist. Index with `[0]` = latest,
+    /// `[1]` = previous, etc. Reads directly from storage (non-transactional).
+    ///
+    /// History is per-document (not per-path). To inspect a path within a
+    /// specific version, index into the result and navigate the `JsonValue`.
+    pub fn getv(&self, run_id: &RunId, doc_id: &str) -> StrataResult<Option<VersionedHistory<JsonValue>>> {
+        let key = self.key_for(run_id, doc_id);
+        let history = self.db.get_history(&key, None, None)?;
+        let versions: Vec<Versioned<JsonValue>> = history
+            .iter()
+            .filter_map(|vv| {
+                let doc = Self::deserialize_doc(&vv.value).ok()?;
+                Some(Versioned::with_timestamp(
+                    doc.value,
+                    Version::counter(doc.version),
+                    Timestamp::from_micros(doc.updated_at),
+                ))
+            })
+            .collect();
+        Ok(VersionedHistory::new(versions))
     }
 
     /// Check if document exists.
@@ -971,7 +990,7 @@ mod tests {
             .unwrap();
 
         let value = store.get(&run_id, &doc_id, &JsonPath::root()).unwrap();
-        assert_eq!(value.map(|v| v.value).and_then(|v| v.as_i64()), Some(42));
+        assert_eq!(value.and_then(|v| v.as_i64()), Some(42));
     }
 
     #[test]
@@ -993,14 +1012,14 @@ mod tests {
             .get(&run_id, &doc_id, &"name".parse().unwrap())
             .unwrap();
         assert_eq!(
-            name.map(|v| v.value).and_then(|v| v.as_str().map(String::from)),
+            name.and_then(|v| v.as_str().map(String::from)),
             Some("Alice".to_string())
         );
 
         let age = store
             .get(&run_id, &doc_id, &"age".parse().unwrap())
             .unwrap();
-        assert_eq!(age.map(|v| v.value).and_then(|v| v.as_i64()), Some(30));
+        assert_eq!(age.and_then(|v| v.as_i64()), Some(30));
     }
 
     #[test]
@@ -1025,7 +1044,7 @@ mod tests {
             .get(&run_id, &doc_id, &"user.profile.name".parse().unwrap())
             .unwrap();
         assert_eq!(
-            name.map(|v| v.value).and_then(|v| v.as_str().map(String::from)),
+            name.and_then(|v| v.as_str().map(String::from)),
             Some("Bob".to_string())
         );
     }
@@ -1048,7 +1067,7 @@ mod tests {
             .get(&run_id, &doc_id, &"items[1]".parse().unwrap())
             .unwrap();
         assert_eq!(
-            item.map(|v| v.value).and_then(|v| v.as_str().map(String::from)),
+            item.and_then(|v| v.as_str().map(String::from)),
             Some("b".to_string())
         );
     }
@@ -1134,7 +1153,7 @@ mod tests {
         assert_eq!(v2, Version::counter(2));
 
         let value = store.get(&run_id, &doc_id, &JsonPath::root()).unwrap();
-        assert_eq!(value.map(|v| v.value).and_then(|v| v.as_i64()), Some(100));
+        assert_eq!(value.and_then(|v| v.as_i64()), Some(100));
     }
 
     #[test]
@@ -1160,7 +1179,7 @@ mod tests {
             .get(&run_id, &doc_id, &"name".parse().unwrap())
             .unwrap();
         assert_eq!(
-            name.map(|v| v.value).and_then(|v| v.as_str().map(String::from)),
+            name.and_then(|v| v.as_str().map(String::from)),
             Some("Alice".to_string())
         );
     }
@@ -1189,7 +1208,7 @@ mod tests {
             .get(&run_id, &doc_id, &"user.profile.name".parse().unwrap())
             .unwrap();
         assert_eq!(
-            name.map(|v| v.value).and_then(|v| v.as_str().map(String::from)),
+            name.and_then(|v| v.as_str().map(String::from)),
             Some("Bob".to_string())
         );
     }
@@ -1264,7 +1283,7 @@ mod tests {
             .get(&run_id, &doc_id, &"name".parse().unwrap())
             .unwrap();
         assert_eq!(
-            name.map(|v| v.value).and_then(|v| v.as_str().map(String::from)),
+            name.and_then(|v| v.as_str().map(String::from)),
             Some("Bob".to_string())
         );
     }
@@ -1291,7 +1310,7 @@ mod tests {
         let item = store
             .get(&run_id, &doc_id, &"items[1]".parse().unwrap())
             .unwrap();
-        assert_eq!(item.map(|v| v.value).and_then(|v| v.as_i64()), Some(999));
+        assert_eq!(item.and_then(|v| v.as_i64()), Some(999));
     }
 
     // ========================================
@@ -1327,7 +1346,6 @@ mod tests {
             store
                 .get(&run_id, &doc_id, &"name".parse().unwrap())
                 .unwrap()
-                .map(|v| v.value)
                 .and_then(|v| v.as_str().map(String::from)),
             Some("Alice".to_string())
         );
@@ -1368,7 +1386,6 @@ mod tests {
             store
                 .get(&run_id, &doc_id, &"user.profile.name".parse().unwrap())
                 .unwrap()
-                .map(|v| v.value)
                 .and_then(|v| v.as_str().map(String::from)),
             Some("Bob".to_string())
         );
@@ -1397,8 +1414,7 @@ mod tests {
         let items = store
             .get(&run_id, &doc_id, &"items".parse().unwrap())
             .unwrap()
-            .unwrap()
-            .value;
+            .unwrap();
         let arr = items.as_array().unwrap();
         assert_eq!(arr.len(), 2);
         assert_eq!(arr[0].as_str(), Some("a"));
@@ -1532,7 +1548,7 @@ mod tests {
         assert_eq!(version, Version::counter(1)); // Fresh document starts at version 1
 
         let value = store.get(&run_id, &doc_id, &JsonPath::root()).unwrap();
-        assert_eq!(value.map(|v| v.value).and_then(|v| v.as_i64()), Some(2));
+        assert_eq!(value.and_then(|v| v.as_i64()), Some(2));
     }
 
     #[test]

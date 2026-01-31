@@ -400,7 +400,7 @@ mod tests {
         db.state_set("cell", "state").unwrap();
         let value = db.state_read("cell").unwrap();
         assert!(value.is_some());
-        assert_eq!(value.unwrap().value, Value::String("state".into()));
+        assert_eq!(value.unwrap(), Value::String("state".into()));
     }
 
     #[test]

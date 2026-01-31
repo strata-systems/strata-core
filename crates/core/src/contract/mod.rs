@@ -34,6 +34,7 @@ pub mod run_name;
 pub mod timestamp;
 pub mod version;
 pub mod versioned;
+pub mod versioned_history;
 
 // Re-exports
 pub use entity_ref::EntityRef;
@@ -42,3 +43,4 @@ pub use run_name::{RunName, RunNameError, MAX_RUN_NAME_LENGTH};
 pub use timestamp::Timestamp;
 pub use version::Version;
 pub use versioned::{Versioned, VersionedValue};
+pub use versioned_history::VersionedHistory;

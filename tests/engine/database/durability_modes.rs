@@ -66,12 +66,12 @@ fn statecell_cas_same_across_modes() {
         let state = StateCell::new(db);
 
         state.init(&run_id, "cell", Value::Int(1)).unwrap();
-        let read = state.read(&run_id, "cell").unwrap();
-        let version = read.as_ref().map(|v| v.version).unwrap_or(Version::from(0u64));
+        let read = state.readv(&run_id, "cell").unwrap();
+        let version = read.as_ref().map(|v| v.version()).unwrap_or(Version::from(0u64));
 
         let cas_result = state.cas(&run_id, "cell", version, Value::Int(2));
 
-        (cas_result.is_ok(), state.read(&run_id, "cell").unwrap().map(|v| v.value.value.clone()))
+        (cas_result.is_ok(), state.read(&run_id, "cell").unwrap())
     });
 }
 
@@ -87,7 +87,7 @@ fn json_create_get_same_across_modes() {
         let result = json.get(&run_id, "doc1", &JsonPath::root()).unwrap();
 
         // Return serialized JSON for comparison
-        result.map(|v| serde_json::to_string(&v.value).unwrap_or_default())
+        result.map(|v| serde_json::to_string(&v).unwrap_or_default())
     });
 }
 

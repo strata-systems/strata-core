@@ -199,10 +199,10 @@ fn state_set_read_cycle() {
     }).unwrap();
 
     match output {
-        Output::MaybeVersioned(Some(vv)) => {
-            assert_eq!(vv.value, Value::String("active".into()));
+        Output::Maybe(Some(v)) => {
+            assert_eq!(v, Value::String("active".into()));
         }
-        _ => panic!("Expected MaybeVersioned(Some) output"),
+        _ => panic!("Expected Maybe(Some) output"),
     }
 }
 

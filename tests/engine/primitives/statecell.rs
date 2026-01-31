@@ -49,7 +49,7 @@ fn read_returns_initialized_value() {
 
     let result = state.read(&test_db.run_id, "cell").unwrap();
     assert!(result.is_some());
-    assert_eq!(result.unwrap().value.value, Value::Int(42));
+    assert_eq!(result.unwrap(), Value::Int(42));
 }
 
 #[test]
@@ -89,14 +89,14 @@ fn cas_succeeds_with_correct_version() {
 
     state.init(&test_db.run_id, "cell", Value::Int(1)).unwrap();
 
-    let current = state.read(&test_db.run_id, "cell").unwrap().unwrap();
-    let version = current.version;
+    let current = state.readv(&test_db.run_id, "cell").unwrap().unwrap();
+    let version = current.version();
 
     let result = state.cas(&test_db.run_id, "cell", version, Value::Int(2));
     assert!(result.is_ok());
 
     let updated = state.read(&test_db.run_id, "cell").unwrap().unwrap();
-    assert_eq!(updated.value.value, Value::Int(2));
+    assert_eq!(updated, Value::Int(2));
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn cas_fails_with_wrong_version() {
 
     // Value unchanged
     let current = state.read(&test_db.run_id, "cell").unwrap().unwrap();
-    assert_eq!(current.value.value, Value::Int(1));
+    assert_eq!(current, Value::Int(1));
 }
 
 #[test]
@@ -131,10 +131,10 @@ fn cas_version_increments() {
 
     state.init(&test_db.run_id, "cell", Value::Int(1)).unwrap();
 
-    let v1 = state.read(&test_db.run_id, "cell").unwrap().unwrap().version;
+    let v1 = state.readv(&test_db.run_id, "cell").unwrap().unwrap().version();
 
     state.cas(&test_db.run_id, "cell", v1, Value::Int(2)).unwrap();
-    let v2 = state.read(&test_db.run_id, "cell").unwrap().unwrap().version;
+    let v2 = state.readv(&test_db.run_id, "cell").unwrap().unwrap().version();
 
     assert!(v2.as_u64() > v1.as_u64());
 }
@@ -152,7 +152,7 @@ fn set_creates_if_not_exists() {
     assert!(result.is_ok());
 
     let current = state.read(&test_db.run_id, "cell").unwrap().unwrap();
-    assert_eq!(current.value.value, Value::Int(42));
+    assert_eq!(current, Value::Int(42));
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn set_overwrites_without_version_check() {
     state.set(&test_db.run_id, "cell", Value::Int(100)).unwrap();
 
     let current = state.read(&test_db.run_id, "cell").unwrap().unwrap();
-    assert_eq!(current.value.value, Value::Int(100));
+    assert_eq!(current, Value::Int(100));
 }
 
 // ============================================================================
@@ -229,8 +229,8 @@ fn concurrent_cas_exactly_one_wins() {
             let state = StateCell::new(db);
 
             // Try to CAS from 0 to 1
-            let current = state.read(&run_id, "counter").unwrap().unwrap();
-            let version = current.version;
+            let current = state.readv(&run_id, "counter").unwrap().unwrap();
+            let version = current.version();
 
             if state.cas(&run_id, "counter", version, Value::Int(1)).is_ok() {
                 success.fetch_add(1, Ordering::SeqCst);
@@ -259,7 +259,7 @@ fn empty_cell_name() {
 
     state.init(&test_db.run_id, "", Value::Int(1)).unwrap();
     // exists rewritten using read().is_some()
-    assert_eq!(state.read(&test_db.run_id, "").unwrap().unwrap().value.value, Value::Int(1));
+    assert_eq!(state.read(&test_db.run_id, "").unwrap().unwrap(), Value::Int(1));
 }
 
 #[test]
@@ -270,5 +270,5 @@ fn special_characters_in_name() {
     let name = "cell/with:special@chars";
     state.init(&test_db.run_id, name, Value::Int(1)).unwrap();
     // exists rewritten using read().is_some()
-    assert_eq!(state.read(&test_db.run_id, name).unwrap().unwrap().value.value, Value::Int(1));
+    assert_eq!(state.read(&test_db.run_id, name).unwrap().unwrap(), Value::Int(1));
 }

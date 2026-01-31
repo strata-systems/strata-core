@@ -73,7 +73,7 @@ fn cross_primitive_rollback_leaves_no_trace() {
 
     // - existing_cell should be unchanged
     assert_eq!(
-        state.read(&run_id, "existing_cell").unwrap().unwrap().value.value,
+        state.read(&run_id, "existing_cell").unwrap().unwrap(),
         Value::Int(200),
         "existing_cell should retain original value after rollback"
     );
@@ -359,9 +359,9 @@ fn versions_monotonically_increase() {
 
     let mut last_version = 0u64;
     for i in 1..=10 {
-        let current = state.read(&run_id, "key").unwrap().unwrap();
-        let current_version = current.version.as_u64();
-        state.cas(&run_id, "key", current.version, Value::Int(i)).unwrap();
+        let current = state.readv(&run_id, "key").unwrap().unwrap();
+        let current_version = current.version().as_u64();
+        state.cas(&run_id, "key", current.version(), Value::Int(i)).unwrap();
 
         assert!(current_version >= last_version,
             "Version {} should be >= previous version {}", current_version, last_version);
@@ -399,7 +399,7 @@ fn statecell_cas_version_ordering() {
     state.init(&run_id, "cell", Value::Int(0)).unwrap();
 
     // Get initial version
-    let v1 = state.read(&run_id, "cell").unwrap().unwrap().version;
+    let v1 = state.readv(&run_id, "cell").unwrap().unwrap().version();
 
     // CAS should work with current version
     state.cas(&run_id, "cell", v1, Value::Int(1)).unwrap();
@@ -410,7 +410,7 @@ fn statecell_cas_version_ordering() {
 
     // Value should be 1 (from successful CAS), not 2
     assert_eq!(
-        state.read(&run_id, "cell").unwrap().unwrap().value.value,
+        state.read(&run_id, "cell").unwrap().unwrap(),
         Value::Int(1)
     );
 }

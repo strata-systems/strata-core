@@ -85,7 +85,7 @@ mod state_single {
 
         state.init(&run_id, "counter", Value::Int(0)).unwrap();
         let val = state.read(&run_id, "counter").unwrap().unwrap();
-        assert_eq!(val.value.value, Value::Int(0));
+        assert_eq!(val, Value::Int(0));
     }
 
     #[test]
@@ -99,7 +99,7 @@ mod state_single {
         state.set(&run_id, "counter", Value::Int(2)).unwrap();
 
         let val = state.read(&run_id, "counter").unwrap().unwrap();
-        assert_eq!(val.value.value, Value::Int(2));
+        assert_eq!(val, Value::Int(2));
     }
 
     #[test]
@@ -109,12 +109,12 @@ mod state_single {
         let state = StateCell::new(db);
 
         state.init(&run_id, "counter", Value::Int(0)).unwrap();
-        let current = state.read(&run_id, "counter").unwrap().unwrap();
+        let current = state.readv(&run_id, "counter").unwrap().unwrap();
 
-        state.cas(&run_id, "counter", current.version, Value::Int(1)).unwrap();
+        state.cas(&run_id, "counter", current.version(), Value::Int(1)).unwrap();
 
         let updated = state.read(&run_id, "counter").unwrap().unwrap();
-        assert_eq!(updated.value.value, Value::Int(1));
+        assert_eq!(updated, Value::Int(1));
     }
 
     #[test]
@@ -124,8 +124,8 @@ mod state_single {
         let state = StateCell::new(db);
 
         state.init(&run_id, "counter", Value::Int(0)).unwrap();
-        let current = state.read(&run_id, "counter").unwrap().unwrap();
-        let stale_version = current.version;
+        let current = state.readv(&run_id, "counter").unwrap().unwrap();
+        let stale_version = current.version();
 
         // Update through another path
         state.set(&run_id, "counter", Value::Int(1)).unwrap();
@@ -136,7 +136,7 @@ mod state_single {
 
         // Value should remain at 1
         let final_val = state.read(&run_id, "counter").unwrap().unwrap();
-        assert_eq!(final_val.value.value, Value::Int(1));
+        assert_eq!(final_val, Value::Int(1));
     }
 }
 
@@ -201,7 +201,7 @@ mod json_single {
         json.create(&run_id, "doc", json_value(serde_json::json!({"name": "test"}))).unwrap();
 
         let doc = json.get(&run_id, "doc", &root()).unwrap().unwrap();
-        assert_eq!(doc.value.as_inner()["name"], "test");
+        assert_eq!(doc.as_inner()["name"], "test");
     }
 
     #[test]
@@ -217,7 +217,7 @@ mod json_single {
         json.set(&run_id, "doc", &path(".user.age"), json_value(serde_json::json!(31))).unwrap();
 
         let doc = json.get(&run_id, "doc", &path(".user.age")).unwrap().unwrap();
-        assert_eq!(doc.value.as_inner(), &serde_json::json!(31));
+        assert_eq!(doc.as_inner(), &serde_json::json!(31));
     }
 
     #[test]
@@ -321,9 +321,9 @@ fn all_six_primitives_together() {
 
     // Verify all readable
     assert_eq!(p.kv.get(&run_id, "config").unwrap(), Some(Value::String("enabled".into())));
-    assert_eq!(p.state.read(&run_id, "status").unwrap().unwrap().value.value, Value::String("running".into()));
+    assert_eq!(p.state.read(&run_id, "status").unwrap().unwrap(), Value::String("running".into()));
     assert!(p.event.len(&run_id).unwrap() > 0);
-    assert_eq!(p.json.get(&run_id, "context", &root()).unwrap().unwrap().value.as_inner(), &serde_json::json!({"task": "test"}));
+    assert_eq!(p.json.get(&run_id, "context", &root()).unwrap().unwrap().as_inner(), &serde_json::json!({"task": "test"}));
     assert_eq!(p.vector.get(run_id, "memory", "m1").unwrap().unwrap().value.embedding, vec![1.0f32, 0.0, 0.0]);
 }
 
@@ -371,7 +371,7 @@ fn cross_primitive_workflow_agent_memory() {
 
     // Verify final state
     let status = p.state.read(&run_id, "agent:status").unwrap().unwrap();
-    assert_eq!(status.value.value, Value::String("completed".into()));
+    assert_eq!(status, Value::String("completed".into()));
 
     assert_eq!(p.event.read_by_type(&run_id, "agent:turns").unwrap().len(), 3);
     assert_eq!(p.event.read_by_type(&run_id, "agent:lifecycle").unwrap().len(), 2);
@@ -398,6 +398,6 @@ fn delete_in_one_primitive_doesnt_affect_others() {
 
     // Verify KV deleted but others remain
     assert!(p.kv.get(&run_id, "shared").unwrap().is_none());
-    assert_eq!(p.state.read(&run_id, "shared").unwrap().unwrap().value.value, Value::String("state".into()));
-    assert_eq!(p.json.get(&run_id, "shared", &root()).unwrap().unwrap().value.as_inner(), &serde_json::json!({"type": "json"}));
+    assert_eq!(p.state.read(&run_id, "shared").unwrap().unwrap(), Value::String("state".into()));
+    assert_eq!(p.json.get(&run_id, "shared", &root()).unwrap().unwrap().as_inner(), &serde_json::json!({"type": "json"}));
 }

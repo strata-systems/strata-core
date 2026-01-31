@@ -79,8 +79,8 @@ fn all_primitives_isolated_between_runs() {
     assert_eq!(p.kv.get(&run_a, "k").unwrap().unwrap(), Value::Int(1));
     assert_eq!(p.kv.get(&run_b, "k").unwrap().unwrap(), Value::Int(2));
 
-    assert_eq!(p.state.read(&run_a, "s").unwrap().unwrap().value.value, Value::Int(1));
-    assert_eq!(p.state.read(&run_b, "s").unwrap().unwrap().value.value, Value::Int(2));
+    assert_eq!(p.state.read(&run_a, "s").unwrap().unwrap(), Value::Int(1));
+    assert_eq!(p.state.read(&run_b, "s").unwrap().unwrap(), Value::Int(2));
 
     let events_a = p.event.read_by_type(&run_a, "e").unwrap();
     let events_b = p.event.read_by_type(&run_b, "e").unwrap();
@@ -89,8 +89,8 @@ fn all_primitives_isolated_between_runs() {
 
     let json_a = p.json.get(&run_a, "j", &root()).unwrap().unwrap();
     let json_b = p.json.get(&run_b, "j", &root()).unwrap().unwrap();
-    assert_eq!(json_a.value.as_inner().get("a"), Some(&serde_json::json!(1)));
-    assert_eq!(json_b.value.as_inner().get("b"), Some(&serde_json::json!(2)));
+    assert_eq!(json_a.as_inner().get("a"), Some(&serde_json::json!(1)));
+    assert_eq!(json_b.as_inner().get("b"), Some(&serde_json::json!(2)));
 
     let vec_a = p.vector.get(run_a, "v", "vec").unwrap().unwrap();
     let vec_b = p.vector.get(run_b, "v", "vec").unwrap().unwrap();
@@ -227,8 +227,8 @@ fn json_documents_isolated_per_run() {
     let doc_a = json.get(&run_a, "config", &path(".version")).unwrap().unwrap();
     let doc_b = json.get(&run_b, "config", &path(".version")).unwrap().unwrap();
 
-    assert_eq!(doc_a.value.as_inner(), &serde_json::json!(1));
-    assert_eq!(doc_b.value.as_inner(), &serde_json::json!(2));
+    assert_eq!(doc_a.as_inner(), &serde_json::json!(1));
+    assert_eq!(doc_b.as_inner(), &serde_json::json!(2));
 }
 
 // ============================================================================
@@ -306,9 +306,9 @@ fn child_run_should_inherit_parent_data() {
 
     // Child SHOULD have all parent's data (when #780 is fixed)
     assert_eq!(p.kv.get(&child_id, "config").unwrap(), Some(Value::String("inherited".into())));
-    assert_eq!(p.state.read(&child_id, "status").unwrap().unwrap().value.value, Value::String("active".into()));
+    assert_eq!(p.state.read(&child_id, "status").unwrap().unwrap(), Value::String("active".into()));
     assert!(!p.event.read_by_type(&child_id, "history").unwrap().is_empty());
-    assert_eq!(p.json.get(&child_id, "context", &root()).unwrap().unwrap().value.as_inner(), &serde_json::json!({"fork": true}));
+    assert_eq!(p.json.get(&child_id, "context", &root()).unwrap().unwrap().as_inner(), &serde_json::json!({"fork": true}));
     assert_eq!(p.vector.get(child_id, "memory", "m1").unwrap().unwrap().value.embedding, vec![1.0f32, 0.0, 0.0]);
 
     // Modifications to child should not affect parent

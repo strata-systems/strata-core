@@ -97,7 +97,7 @@ fn state_set_and_read() {
     db.state_set("cell", Value::String("state".into())).unwrap();
     let value = db.state_read("cell").unwrap();
     assert!(value.is_some());
-    assert_eq!(value.unwrap().value, Value::String("state".into()));
+    assert_eq!(value.unwrap(), Value::String("state".into()));
 }
 
 // ============================================================================
@@ -235,7 +235,7 @@ fn json_set_and_get() {
     assert!(result.is_some());
 
     let value = result.unwrap();
-    match &value.value {
+    match &value {
         Value::Object(map) => {
             assert_eq!(map.get("name"), Some(&Value::String("Alice".into())));
         }
@@ -296,7 +296,7 @@ fn use_all_primitives() {
 
     // Verify all data
     assert_eq!(db.kv_get("config").unwrap(), Some(Value::String("enabled".into())));
-    assert_eq!(db.state_read("status").unwrap().unwrap().value, Value::String("running".into()));
+    assert_eq!(db.state_read("status").unwrap().unwrap(), Value::String("running".into()));
     assert_eq!(db.event_len().unwrap(), 1);
     let collections = db.vector_list_collections().unwrap();
     assert!(collections.iter().any(|c| c.name == "embeddings"));

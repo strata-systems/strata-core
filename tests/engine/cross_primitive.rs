@@ -54,7 +54,7 @@ fn kv_and_statecell_atomic() {
     assert_eq!(kv.get(&run_id, "processed_at").unwrap(), Some(Value::Int(1234567890)));
 
     let current = state.read(&run_id, "status").unwrap().unwrap();
-    assert_eq!(current.value.value, Value::String("completed".into()));
+    assert_eq!(current, Value::String("completed".into()));
 }
 
 #[test]
@@ -85,7 +85,7 @@ fn three_primitives_atomic() {
     assert_eq!(event.len(&run_id).unwrap(), 1);
 
     let counter = state.read(&run_id, "counter").unwrap().unwrap();
-    assert_eq!(counter.value.value, Value::Int(1));
+    assert_eq!(counter, Value::Int(1));
 }
 
 // ============================================================================
@@ -186,7 +186,7 @@ fn read_from_one_write_to_another() {
     }).unwrap();
 
     let copied = state.read(&run_id, "copied").unwrap().unwrap();
-    assert_eq!(copied.value.value, Value::Int(42));
+    assert_eq!(copied, Value::Int(42));
 }
 
 // ============================================================================
@@ -222,7 +222,7 @@ fn saga_pattern_all_steps_complete() {
     assert_eq!(kv.get(&run_id, "order:1").unwrap(), Some(Value::String("created".into())));
     assert_eq!(kv.get(&run_id, "inventory:item1").unwrap(), Some(Value::Int(99)));
     assert_eq!(event.len(&run_id).unwrap(), 1);
-    assert_eq!(state.read(&run_id, "order:1:status").unwrap().unwrap().value.value, Value::String("processing".into()));
+    assert_eq!(state.read(&run_id, "order:1:status").unwrap().unwrap(), Value::String("processing".into()));
 }
 
 // ============================================================================

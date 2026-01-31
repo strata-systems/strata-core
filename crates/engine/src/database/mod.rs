@@ -32,8 +32,8 @@ use crate::transaction::TransactionPool;
 use dashmap::DashMap;
 use parking_lot::Mutex as ParkingMutex;
 use strata_concurrency::{RecoveryCoordinator, TransactionContext};
-use strata_core::StrataResult;
-use strata_core::types::RunId;
+use strata_core::{StrataResult, VersionedValue};
+use strata_core::types::{Key, RunId};
 use strata_core::StrataError;
 use strata_durability::codec::IdentityCodec;
 use strata_durability::wal::{DurabilityMode, WalConfig, WalWriter};
@@ -401,6 +401,23 @@ impl Database {
     /// primitives (KVStore, EventLog, etc.) which go through transactions.
     pub(crate) fn storage(&self) -> &Arc<ShardedStore> {
         &self.storage
+    }
+
+    /// Get version history for a key directly from storage.
+    ///
+    /// History reads bypass the transaction layer because they are
+    /// inherently non-transactional: you want all versions, not a
+    /// snapshot-consistent subset.
+    ///
+    /// Returns versions newest-first. Empty if the key does not exist.
+    pub(crate) fn get_history(
+        &self,
+        key: &Key,
+        limit: Option<usize>,
+        before_version: Option<u64>,
+    ) -> StrataResult<Vec<VersionedValue>> {
+        use strata_core::Storage;
+        self.storage.get_history(key, limit, before_version)
     }
 
     /// Get the data directory path
