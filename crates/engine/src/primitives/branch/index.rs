@@ -39,7 +39,7 @@ const BRANCH_NAMESPACE: Uuid = Uuid::from_bytes([
 /// - "default" → nil UUID (all zeros)
 /// - Valid UUID string → parsed directly
 /// - Any other string → deterministic UUID v5 from name
-fn resolve_branch_name(name: &str) -> BranchId {
+pub fn resolve_branch_name(name: &str) -> BranchId {
     if name == "default" {
         BranchId::from_bytes([0u8; 16])
     } else if let Ok(u) = Uuid::parse_str(name) {

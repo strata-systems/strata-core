@@ -21,14 +21,18 @@ fn init_creates_new_cell() {
 }
 
 #[test]
-fn init_fails_if_exists() {
+fn init_is_idempotent() {
     let test_db = TestDb::new();
     let state = test_db.state();
 
-    state.init(&test_db.branch_id, "cell", Value::Int(1)).unwrap();
+    let v1 = state.init(&test_db.branch_id, "cell", Value::Int(1)).unwrap();
+    // Second init should succeed idempotently, returning existing version
+    let v2 = state.init(&test_db.branch_id, "cell", Value::Int(2)).unwrap();
+    assert_eq!(v1.version, v2.version);
 
-    let result = state.init(&test_db.branch_id, "cell", Value::Int(2));
-    assert!(result.is_err());
+    // Original value should be preserved (not overwritten)
+    let val = state.read(&test_db.branch_id, "cell").unwrap();
+    assert_eq!(val, Some(Value::Int(1)));
 }
 
 #[test]

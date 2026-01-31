@@ -112,14 +112,7 @@ pub fn export_branch_with_options(
     };
 
     // 3. Scan storage for all branch data -> Vec<BranchlogPayload>
-    let core_branch_id = BranchId::from_string(&branch_meta.name)
-        .or_else(|| BranchId::from_string(&branch_meta.branch_id))
-        .ok_or_else(|| {
-            StrataError::invalid_input(format!(
-                "Cannot resolve BranchId for branch '{}' (branch_id='{}')",
-                branch_meta.name, branch_meta.branch_id
-            ))
-        })?;
+    let core_branch_id = crate::primitives::branch::resolve_branch_name(&branch_meta.name);
 
     let payloads = scan_branch_data(db, core_branch_id, branch_id)?;
 
@@ -222,14 +215,7 @@ pub fn import_branch(db: &Arc<Database>, path: &Path) -> StrataResult<ImportInfo
         })?
         .value;
 
-    let core_branch_id = BranchId::from_string(&branch_meta.name)
-        .or_else(|| BranchId::from_string(&branch_meta.branch_id))
-        .ok_or_else(|| {
-            StrataError::internal(format!(
-                "Cannot resolve BranchId for imported branch '{}'",
-                branch_id_str
-            ))
-        })?;
+    let core_branch_id = crate::primitives::branch::resolve_branch_name(&branch_meta.name);
 
     // 5. Replay each payload as a transaction
     let mut transactions_applied = 0u64;
@@ -353,9 +339,7 @@ mod tests {
         // Write some data to the branch
         let branch_index = BranchIndex::new(db.clone());
         let meta = branch_index.get_branch("data-branch").unwrap().unwrap().value;
-        let core_branch_id = BranchId::from_string(&meta.name)
-            .or_else(|| BranchId::from_string(&meta.branch_id))
-            .unwrap();
+        let core_branch_id = crate::primitives::branch::resolve_branch_name(&meta.name);
         let ns = Namespace::for_branch(core_branch_id);
 
         db.transaction(core_branch_id, |txn| {
@@ -407,9 +391,7 @@ mod tests {
         // Write data
         let branch_index = BranchIndex::new(db.clone());
         let meta = branch_index.get_branch("export-branch").unwrap().unwrap().value;
-        let core_branch_id = BranchId::from_string(&meta.name)
-            .or_else(|| BranchId::from_string(&meta.branch_id))
-            .unwrap();
+        let core_branch_id = crate::primitives::branch::resolve_branch_name(&meta.name);
         let ns = Namespace::for_branch(core_branch_id);
 
         db.transaction(core_branch_id, |txn| {

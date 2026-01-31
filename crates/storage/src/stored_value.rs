@@ -20,6 +20,8 @@ pub struct StoredValue {
     inner: VersionedValue,
     /// Optional time-to-live
     ttl: Option<Duration>,
+    /// Whether this entry is a tombstone (explicit deletion marker)
+    is_tombstone: bool,
 }
 
 impl StoredValue {
@@ -28,6 +30,7 @@ impl StoredValue {
         StoredValue {
             inner: VersionedValue::new(value, version),
             ttl,
+            is_tombstone: false,
         }
     }
 
@@ -41,6 +44,7 @@ impl StoredValue {
         StoredValue {
             inner: VersionedValue::with_timestamp(value, version, timestamp),
             ttl,
+            is_tombstone: false,
         }
     }
 
@@ -49,12 +53,35 @@ impl StoredValue {
         StoredValue {
             inner: vv,
             ttl: None,
+            is_tombstone: false,
         }
     }
 
     /// Create from a VersionedValue with TTL
     pub fn from_versioned_with_ttl(vv: VersionedValue, ttl: Option<Duration>) -> Self {
-        StoredValue { inner: vv, ttl }
+        StoredValue {
+            inner: vv,
+            ttl,
+            is_tombstone: false,
+        }
+    }
+
+    /// Create a tombstone entry (explicit deletion marker)
+    ///
+    /// Tombstones mark a key as deleted at a specific version without
+    /// conflating `Value::Null` with deletion.
+    pub fn tombstone(version: Version) -> Self {
+        StoredValue {
+            inner: VersionedValue::new(Value::Null, version),
+            ttl: None,
+            is_tombstone: true,
+        }
+    }
+
+    /// Check whether this entry is a tombstone (explicit deletion marker)
+    #[inline]
+    pub fn is_tombstone(&self) -> bool {
+        self.is_tombstone
     }
 
     /// Get the inner VersionedValue

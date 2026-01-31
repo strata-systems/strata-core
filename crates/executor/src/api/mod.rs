@@ -52,8 +52,19 @@ use std::sync::Arc;
 
 use strata_engine::Database;
 
+use std::sync::Once;
+
 use crate::types::BranchId;
 use crate::{Command, Error, Executor, Output, Result, Session};
+
+/// Ensure vector recovery is registered before opening any database.
+static VECTOR_RECOVERY_INIT: Once = Once::new();
+
+fn ensure_vector_recovery() {
+    VECTOR_RECOVERY_INIT.call_once(|| {
+        strata_engine::register_vector_recovery();
+    });
+}
 
 /// High-level typed wrapper for database operations.
 ///
@@ -88,6 +99,7 @@ impl Strata {
     /// db.kv_put("key", Value::String("hello".into()))?;
     /// ```
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+        ensure_vector_recovery();
         let db = Database::open(path).map_err(|e| Error::Internal {
             reason: format!("Failed to open database: {}", e),
         })?;
@@ -113,6 +125,7 @@ impl Strata {
     /// db.kv_put("key", Value::Int(42))?;
     /// ```
     pub fn open_temp() -> Result<Self> {
+        ensure_vector_recovery();
         let db = Database::ephemeral()
             .map_err(|e| Error::Internal {
                 reason: format!("Failed to open ephemeral database: {}", e),
@@ -133,6 +146,7 @@ impl Strata {
     /// Use this when you need more control over database configuration.
     /// For most cases, prefer [`Strata::open()`].
     pub fn from_database(db: Arc<Database>) -> Result<Self> {
+        ensure_vector_recovery();
         let executor = Executor::new(db);
 
         // Ensure the default branch exists

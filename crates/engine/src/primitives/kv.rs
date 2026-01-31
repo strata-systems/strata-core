@@ -416,9 +416,11 @@ mod tests {
         kv.put(&branch_id, "bool", Value::Bool(true)).unwrap();
         assert_eq!(kv.get(&branch_id, "bool").unwrap(), Some(Value::Bool(true)));
 
-        // Null - Note: Value::Null is a tombstone, so storing it is equivalent to delete
+        // Null - Value::Null should be storable and round-trip correctly
         kv.put(&branch_id, "null", Value::Null).unwrap();
-        assert_eq!(kv.get(&branch_id, "null").unwrap(), None);
+        let result = kv.get(&branch_id, "null").unwrap();
+        assert!(result.is_some(), "Value::Null should be storable");
+        assert_eq!(result.unwrap(), Value::Null);
 
         // Bytes
         kv.put(&branch_id, "bytes", Value::Bytes(vec![1, 2, 3]))

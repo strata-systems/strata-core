@@ -358,7 +358,6 @@ impl ShardedStore {
     /// for MVCC snapshot isolation.
     #[inline]
     pub fn delete_with_version(&self, key: &Key, version: u64) -> StrataResult<Option<VersionedValue>> {
-        use strata_core::value::Value;
         use strata_core::Version;
 
         let branch_id = key.namespace.branch_id;
@@ -371,7 +370,7 @@ impl ShardedStore {
                 shard.data.get(key).and_then(|chain| {
                     chain.latest().and_then(|sv| {
                         // Don't return tombstones as "previous value"
-                        if sv.versioned().value.is_null() {
+                        if sv.is_tombstone() {
                             None
                         } else {
                             Some(sv.versioned().clone())
@@ -381,7 +380,7 @@ impl ShardedStore {
             });
 
         // Add tombstone to version chain
-        let tombstone = StoredValue::new(Value::Null, Version::txn(version), None);
+        let tombstone = StoredValue::tombstone(Version::txn(version));
         self.put(key.clone(), tombstone);
 
         Ok(previous)
@@ -748,7 +747,7 @@ impl ShardedSnapshot {
                     .iter()
                     .filter_map(|(k, chain)| {
                         chain.get_at_version(self.version).and_then(|sv| {
-                            if !sv.is_expired() && !sv.versioned().value.is_null() {
+                            if !sv.is_expired() && !sv.is_tombstone() {
                                 Some((k.clone(), sv.versioned().clone()))
                             } else {
                                 None
@@ -778,7 +777,7 @@ impl ShardedSnapshot {
                     .filter(|(k, _)| k.starts_with(prefix))
                     .filter_map(|(k, chain)| {
                         chain.get_at_version(self.version).and_then(|sv| {
-                            if !sv.is_expired() && !sv.versioned().value.is_null() {
+                            if !sv.is_expired() && !sv.is_tombstone() {
                                 Some((k.clone(), sv.versioned().clone()))
                             } else {
                                 None
@@ -811,7 +810,7 @@ impl ShardedSnapshot {
                     .filter(|(k, _)| k.type_tag == type_tag)
                     .filter_map(|(k, chain)| {
                         chain.get_at_version(self.version).and_then(|sv| {
-                            if !sv.is_expired() && !sv.versioned().value.is_null() {
+                            if !sv.is_expired() && !sv.is_tombstone() {
                                 Some((k.clone(), sv.versioned().clone()))
                             } else {
                                 None
@@ -840,7 +839,7 @@ impl ShardedSnapshot {
                     .filter(|(_, chain)| {
                         chain
                             .get_at_version(self.version)
-                            .is_some_and(|sv| !sv.is_expired() && !sv.versioned().value.is_null())
+                            .is_some_and(|sv| !sv.is_expired() && !sv.is_tombstone())
                     })
                     .count()
             })
@@ -863,7 +862,7 @@ impl ShardedSnapshot {
                     .filter(|(_, chain)| {
                         chain
                             .get_at_version(self.version)
-                            .is_some_and(|sv| !sv.is_expired() && !sv.versioned().value.is_null())
+                            .is_some_and(|sv| !sv.is_expired() && !sv.is_tombstone())
                     })
                     .count()
             })
@@ -905,7 +904,7 @@ impl Storage for ShardedStore {
             shard.data.get(key).and_then(|chain| {
                 chain.latest().and_then(|sv| {
                     // Filter out expired values and tombstones
-                    if !sv.is_expired() && !sv.versioned().value.is_null() {
+                    if !sv.is_expired() && !sv.is_tombstone() {
                         Some(sv.versioned().clone())
                     } else {
                         None
@@ -924,7 +923,7 @@ impl Storage for ShardedStore {
             shard.data.get(key).and_then(|chain| {
                 chain.get_at_version(max_version).and_then(|sv| {
                     // Filter out expired values and tombstones
-                    if !sv.is_expired() && !sv.versioned().value.is_null() {
+                    if !sv.is_expired() && !sv.is_tombstone() {
                         Some(sv.versioned().clone())
                     } else {
                         None
@@ -1000,7 +999,7 @@ impl Storage for ShardedStore {
                         }
                         chain.get_at_version(max_version).and_then(|sv| {
                             // Filter out expired values and tombstones
-                            if !sv.is_expired() && !sv.versioned().value.is_null() {
+                            if !sv.is_expired() && !sv.is_tombstone() {
                                 Some((k.clone(), sv.versioned().clone()))
                             } else {
                                 None
@@ -1029,7 +1028,7 @@ impl Storage for ShardedStore {
                     .filter_map(|(k, chain)| {
                         chain.get_at_version(max_version).and_then(|sv| {
                             // Filter out expired values and tombstones
-                            if !sv.is_expired() && !sv.versioned().value.is_null() {
+                            if !sv.is_expired() && !sv.is_tombstone() {
                                 Some((k.clone(), sv.versioned().clone()))
                             } else {
                                 None
@@ -1118,7 +1117,7 @@ impl SnapshotView for ShardedSnapshot {
                         }
                         chain.get_at_version(self.version).and_then(|sv| {
                             // Filter out expired values and tombstones
-                            if !sv.is_expired() && !sv.versioned().value.is_null() {
+                            if !sv.is_expired() && !sv.is_tombstone() {
                                 Some((k.clone(), sv.versioned().clone()))
                             } else {
                                 None

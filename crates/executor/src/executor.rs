@@ -66,11 +66,13 @@ impl Executor {
                 version: env!("CARGO_PKG_VERSION").to_string(),
             }),
             Command::Info => {
-                // TODO: Implement properly
+                let branch_count = self.primitives.branch.list_branches()
+                    .map(|ids| ids.len() as u64)
+                    .unwrap_or(0);
                 Ok(Output::DatabaseInfo(crate::types::DatabaseInfo {
                     version: env!("CARGO_PKG_VERSION").to_string(),
                     uptime_secs: 0,
-                    branch_count: 0,
+                    branch_count,
                     total_keys: 0,
                 }))
             }

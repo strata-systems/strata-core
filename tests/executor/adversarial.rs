@@ -366,10 +366,9 @@ fn empty_string_preserved() {
     }
 }
 
-/// Null values stored via KvPut are treated as deletions (result in None on get)
-/// This documents the system's design choice: Null == absence
+/// Null values stored via KvPut are preserved (not treated as deletion)
 #[test]
-fn null_value_treated_as_deletion() {
+fn null_value_is_storable() {
     let executor = create_executor();
 
     // First store a real value
@@ -386,24 +385,23 @@ fn null_value_treated_as_deletion() {
     }).unwrap();
     assert!(matches!(output, Output::Maybe(Some(_))));
 
-    // Now "delete" it by storing null
+    // Overwrite with null
     executor.execute(Command::KvPut {
         branch: None,
         key: "null_key".into(),
         value: Value::Null,
     }).unwrap();
 
-    // Key with null value becomes absent (same as missing key)
+    // Null is a real value, not a deletion
     let output = executor.execute(Command::KvGet {
         branch: None,
         key: "null_key".into(),
     }).unwrap();
 
-    // The system treats Value::Null as deletion - key is now missing
-    assert!(matches!(output, Output::Maybe(None)),
-        "Storing Null should delete the key");
+    assert!(matches!(output, Output::Maybe(Some(Value::Null))),
+        "Storing Null should preserve the value, not delete the key");
 
-    // Missing key also returns None (same behavior)
+    // Missing key still returns None
     let output = executor.execute(Command::KvGet {
         branch: None,
         key: "missing_key".into(),

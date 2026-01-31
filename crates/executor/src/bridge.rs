@@ -253,11 +253,19 @@ fn serde_json_to_value(json: serde_json::Value) -> StrataResult<Value> {
 }
 
 /// Parse a string path to JsonPath.
+///
+/// Supports standard JSONPath `$` prefix:
+/// - `"$"` or `""` → root
+/// - `"$.name"` → field access (strips `$` prefix)
+/// - `"$[0]"` → array index (strips `$` prefix)
+/// - `"name"` or `".name"` → field access (no prefix)
 pub fn parse_path(path: &str) -> StrataResult<JsonPath> {
     if path.is_empty() || path == "$" {
         return Ok(JsonPath::root());
     }
-    path.parse()
+    // Strip leading "$" so "$.name" → ".name", "$[0]" → "[0]"
+    let normalized = path.strip_prefix('$').unwrap_or(path);
+    normalized.parse()
         .map_err(|e| StrataError::invalid_input(
             format!("Invalid JSON path '{}': {:?}", path, e)
         ))

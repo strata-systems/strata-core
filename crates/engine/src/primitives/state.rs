@@ -109,12 +109,10 @@ impl StateCell {
         self.db.transaction(*branch_id, |txn| {
             let key = self.key_for(branch_id, name);
 
-            // Check if exists
-            if txn.get(&key)?.is_some() {
-                return Err(strata_core::StrataError::invalid_input(format!(
-                    "StateCell '{}' already exists",
-                    name
-                )));
+            // Idempotent: if cell already exists, return existing version
+            if let Some(existing) = txn.get(&key)? {
+                let state: State = from_stored_value(&existing)?;
+                return Ok(Versioned::new(state.version, state.version));
             }
 
             // Create new state
@@ -411,13 +409,14 @@ mod tests {
     }
 
     #[test]
-    fn test_init_already_exists() {
+    fn test_init_is_idempotent() {
         let (_temp, _db, sc) = setup();
         let branch_id = BranchId::new();
 
-        sc.init(&branch_id, "cell", Value::Null).unwrap();
-        let result = sc.init(&branch_id, "cell", Value::Null);
-        assert!(result.is_err());
+        let v1 = sc.init(&branch_id, "cell", Value::Int(42)).unwrap();
+        // Second init with different value should succeed but return existing version
+        let v2 = sc.init(&branch_id, "cell", Value::Int(99)).unwrap();
+        assert_eq!(v1.version, v2.version, "Idempotent init should return same version");
     }
 
     #[test]
