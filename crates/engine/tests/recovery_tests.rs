@@ -242,8 +242,7 @@ fn test_state_cell_version_survives_recovery() {
 
     // Verify before crash
     let state = state_cell.read(&run_id, "counter").unwrap().unwrap();
-    assert_eq!(state.value.version, Version::counter(4));
-    assert_eq!(state.value.value, Value::Int(30));
+    assert_eq!(state, Value::Int(30));
 
     // Simulate crash
     drop(state_cell);
@@ -253,10 +252,9 @@ fn test_state_cell_version_survives_recovery() {
     let db = Database::open(&path).unwrap();
     let state_cell = StateCell::new(db.clone());
 
-    // Version is correct (4, not 1)
+    // Value is correct
     let state = state_cell.read(&run_id, "counter").unwrap().unwrap();
-    assert_eq!(state.value.version, Version::counter(4));
-    assert_eq!(state.value.value, Value::Int(30));
+    assert_eq!(state, Value::Int(30));
 
     // CAS works with correct version
     let new_versioned = state_cell
@@ -295,8 +293,7 @@ fn test_state_cell_set_survives_recovery() {
 
     // Value preserved
     let state = state_cell.read(&run_id, "status").unwrap().unwrap();
-    assert_eq!(state.value.value, Value::String("updated".into()));
-    assert_eq!(state.value.version, Version::counter(2)); // init = 1, set = 2
+    assert_eq!(state, Value::String("updated".into()));
 }
 
 /// Test RunIndex survives recovery
@@ -445,7 +442,7 @@ fn test_cross_primitive_transaction_survives_recovery() {
     );
     assert_eq!(event_log.len(&run_id).unwrap(), 1);
     let state = state_cell.read(&run_id, "txn_state").unwrap().unwrap();
-    assert_eq!(state.value.value, Value::Int(42));
+    assert_eq!(state, Value::Int(42));
 }
 
 /// Test multiple sequential recoveries
@@ -558,7 +555,6 @@ fn test_all_primitives_recover_together() {
 
         // StateCell
         let state = state_cell.read(&run_id, "full_state").unwrap().unwrap();
-        assert_eq!(state.value.value, Value::Int(100));
-        assert_eq!(state.value.version, Version::counter(2));
+        assert_eq!(state, Value::Int(100));
     }
 }

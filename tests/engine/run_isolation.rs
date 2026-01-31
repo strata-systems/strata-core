@@ -153,8 +153,8 @@ fn statecell_runs_are_isolated() {
     state.init(&run_a, "cell", Value::Int(1)).unwrap();
     state.init(&run_b, "cell", Value::Int(2)).unwrap();
 
-    assert_eq!(state.read(&run_a, "cell").unwrap().unwrap().value.value, Value::Int(1));
-    assert_eq!(state.read(&run_b, "cell").unwrap().unwrap().value.value, Value::Int(2));
+    assert_eq!(state.read(&run_a, "cell").unwrap().unwrap(), Value::Int(1));
+    assert_eq!(state.read(&run_b, "cell").unwrap().unwrap(), Value::Int(2));
 }
 
 #[test]
@@ -168,21 +168,21 @@ fn statecell_cas_isolated() {
     state.init(&run_a, "cell", Value::Int(0)).unwrap();
     state.init(&run_b, "cell", Value::Int(0)).unwrap();
 
-    let version_a = state.read(&run_a, "cell").unwrap().unwrap().version;
-    let version_b = state.read(&run_b, "cell").unwrap().unwrap().version;
+    let version_a = state.readv(&run_a, "cell").unwrap().unwrap().version();
+    let version_b = state.readv(&run_b, "cell").unwrap().unwrap().version();
 
     // CAS on run A
     state.cas(&run_a, "cell", version_a, Value::Int(100)).unwrap();
 
     // Run B unchanged
-    assert_eq!(state.read(&run_b, "cell").unwrap().unwrap().value.value, Value::Int(0));
+    assert_eq!(state.read(&run_b, "cell").unwrap().unwrap(), Value::Int(0));
 
     // CAS on run B still works with its original version
     state.cas(&run_b, "cell", version_b, Value::Int(200)).unwrap();
 
     // Both have their own values
-    assert_eq!(state.read(&run_a, "cell").unwrap().unwrap().value.value, Value::Int(100));
-    assert_eq!(state.read(&run_b, "cell").unwrap().unwrap().value.value, Value::Int(200));
+    assert_eq!(state.read(&run_a, "cell").unwrap().unwrap(), Value::Int(100));
+    assert_eq!(state.read(&run_b, "cell").unwrap().unwrap(), Value::Int(200));
 }
 
 // ============================================================================
@@ -203,8 +203,8 @@ fn jsonstore_runs_are_isolated() {
     let a_doc = json.get(&run_a, "doc", &JsonPath::root()).unwrap().unwrap();
     let b_doc = json.get(&run_b, "doc", &JsonPath::root()).unwrap().unwrap();
 
-    assert_eq!(a_doc.value["run"], "a");
-    assert_eq!(b_doc.value["run"], "b");
+    assert_eq!(a_doc["run"], "a");
+    assert_eq!(b_doc["run"], "b");
 }
 
 #[test]

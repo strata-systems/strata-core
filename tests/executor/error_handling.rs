@@ -230,7 +230,7 @@ fn json_get_nonexistent_returns_none() {
     }).unwrap();
 
     match result {
-        strata_executor::Output::MaybeVersioned(None) => {}
+        strata_executor::Output::Maybe(None) => {}
         _ => panic!("Expected None for nonexistent document"),
     }
 }
@@ -301,7 +301,7 @@ fn state_read_nonexistent_returns_none() {
     }).unwrap();
 
     match result {
-        strata_executor::Output::MaybeVersioned(None) => {}
+        strata_executor::Output::Maybe(None) => {}
         _ => panic!("Expected None for nonexistent cell"),
     }
 }

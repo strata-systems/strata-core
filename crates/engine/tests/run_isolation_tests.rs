@@ -118,12 +118,8 @@ fn test_state_cell_isolation() {
     let state1 = state_cell.read(&run1, "counter").unwrap().unwrap();
     let state2 = state_cell.read(&run2, "counter").unwrap().unwrap();
 
-    assert_eq!(state1.value.value, Value::Int(0));
-    assert_eq!(state2.value.value, Value::Int(100));
-
-    // Both start at version 1
-    assert_eq!(state1.value.version, Version::counter(1));
-    assert_eq!(state2.value.version, Version::counter(1));
+    assert_eq!(state1, Value::Int(0));
+    assert_eq!(state2, Value::Int(100));
 
     // CAS on run1 doesn't affect run2
     state_cell.cas(&run1, "counter", Version::counter(1), Value::Int(10)).unwrap();
@@ -131,10 +127,8 @@ fn test_state_cell_isolation() {
     let state1 = state_cell.read(&run1, "counter").unwrap().unwrap();
     let state2 = state_cell.read(&run2, "counter").unwrap().unwrap();
 
-    assert_eq!(state1.value.value, Value::Int(10));
-    assert_eq!(state1.value.version, Version::counter(2));
-    assert_eq!(state2.value.value, Value::Int(100)); // Unchanged
-    assert_eq!(state2.value.version, Version::counter(1)); // Unchanged
+    assert_eq!(state1, Value::Int(10));
+    assert_eq!(state2, Value::Int(100)); // Unchanged
 }
 
 /// Test that queries in one run context NEVER return data from another run
@@ -186,11 +180,11 @@ fn test_cross_run_query_isolation() {
     // (run2 only has key0-key4, run1 has key0-key9)
     // Actually both have overlapping key names, but different values
     assert_eq!(
-        state_cell.read(&run1, "state").unwrap().unwrap().value.value,
+        state_cell.read(&run1, "state").unwrap().unwrap(),
         Value::String("run1".into())
     );
     assert_eq!(
-        state_cell.read(&run2, "state").unwrap().unwrap().value.value,
+        state_cell.read(&run2, "state").unwrap().unwrap(),
         Value::String("run2".into())
     );
 }
@@ -289,10 +283,8 @@ fn test_state_cell_cas_isolation() {
     let s1 = state_cell.read(&run1, "cell").unwrap().unwrap();
     let s2 = state_cell.read(&run2, "cell").unwrap().unwrap();
 
-    assert_eq!(s1.value.value, Value::Int(10));
-    assert_eq!(s1.value.version, Version::counter(2));
-    assert_eq!(s2.value.value, Value::Int(20));
-    assert_eq!(s2.value.version, Version::counter(2));
+    assert_eq!(s1, Value::Int(10));
+    assert_eq!(s2, Value::Int(20));
 }
 
 /// Test EventLog chain isolation - chains are independent per run

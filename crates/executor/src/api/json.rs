@@ -88,13 +88,13 @@ impl Strata {
     /// // Get a nested value
     /// let debug = db.json_get("config", "$.debug")?;
     /// ```
-    pub fn json_get(&self, key: &str, path: &str) -> Result<Option<crate::types::VersionedValue>> {
+    pub fn json_get(&self, key: &str, path: &str) -> Result<Option<Value>> {
         match self.executor.execute(Command::JsonGet {
             run: self.run_id(),
             key: key.to_string(),
             path: path.to_string(),
         })? {
-            Output::MaybeVersioned(v) => Ok(v),
+            Output::Maybe(v) => Ok(v),
             _ => Err(Error::Internal {
                 reason: "Unexpected output for JsonGet".into(),
             }),

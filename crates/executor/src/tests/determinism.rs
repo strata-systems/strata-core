@@ -143,10 +143,10 @@ fn test_state_write_read_determinism() {
 
     for result in &results {
         match result {
-            Ok(Output::MaybeVersioned(Some(v))) => {
-                assert_eq!(v.value, Value::Int(42));
+            Ok(Output::Maybe(Some(v))) => {
+                assert_eq!(*v, Value::Int(42));
             }
-            _ => panic!("Expected MaybeVersioned(Some) after write"),
+            _ => panic!("Expected Maybe(Some) after write"),
         }
     }
 }
@@ -414,10 +414,10 @@ fn test_json_get_determinism() {
 
     for result in &results {
         match result {
-            Ok(Output::MaybeVersioned(Some(v))) => {
-                assert_eq!(v.value, Value::String("Alice".into()));
+            Ok(Output::Maybe(Some(v))) => {
+                assert_eq!(*v, Value::String("Alice".into()));
             }
-            _ => panic!("Expected MaybeVersioned(Some)"),
+            _ => panic!("Expected Maybe(Some)"),
         }
     }
 }

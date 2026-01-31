@@ -230,8 +230,8 @@ mod invariant_2_versioned {
 
         state.init(&run_id, "cell", Value::Int(42)).unwrap();
 
-        let versioned = state.read(&run_id, "cell").unwrap().unwrap();
-        assert!(matches!(versioned.value.value, Value::Int(42)));
+        let value = state.read(&run_id, "cell").unwrap().unwrap();
+        assert!(matches!(value, Value::Int(42)));
     }
 
     #[test]
@@ -268,11 +268,11 @@ mod invariant_2_versioned {
         json.create(&run_id, &doc_id, serde_json::json!(42).into())
             .unwrap();
 
-        let versioned = json
+        let value = json
             .get(&run_id, &doc_id, &JsonPath::root())
             .unwrap()
             .unwrap();
-        assert_eq!(versioned.value.as_i64(), Some(42));
+        assert_eq!(value.as_i64(), Some(42));
     }
 
     #[test]
@@ -556,7 +556,7 @@ mod invariant_4_lifecycle {
         // Evolve (set)
         state.set(&run_id, "cell", Value::Int(2)).unwrap();
         let s = state.read(&run_id, "cell").unwrap().unwrap();
-        assert!(matches!(s.value.value, Value::Int(2)));
+        assert!(matches!(s, Value::Int(2)));
 
         // Note: delete() removed in MVP simplification - StateCell values persist
     }
@@ -586,7 +586,7 @@ mod invariant_4_lifecycle {
             .get(&run_id, &doc_id, &JsonPath::root())
             .unwrap()
             .unwrap();
-        assert_eq!(v.value.get("v").and_then(|v| v.as_i64()), Some(2));
+        assert_eq!(v.get("v").and_then(|v| v.as_i64()), Some(2));
 
         // Delete (via delete_at_path with root would delete entire doc)
         // Note: json.delete() may not exist, but lifecycle is still demonstrable
@@ -703,8 +703,8 @@ mod invariant_5_run_scoped {
         let s1 = state.read(&run1, "cell").unwrap().unwrap();
         let s2 = state.read(&run2, "cell").unwrap().unwrap();
 
-        assert!(matches!(s1.value.value, Value::Int(1)));
-        assert!(matches!(s2.value.value, Value::Int(2)));
+        assert!(matches!(s1, Value::Int(1)));
+        assert!(matches!(s2, Value::Int(2)));
     }
 
     #[test]
@@ -728,8 +728,8 @@ mod invariant_5_run_scoped {
             .unwrap()
             .unwrap();
 
-        assert_eq!(j1.value.get("run").and_then(|v| v.as_i64()), Some(1));
-        assert_eq!(j2.value.get("run").and_then(|v| v.as_i64()), Some(2));
+        assert_eq!(j1.get("run").and_then(|v| v.as_i64()), Some(1));
+        assert_eq!(j2.get("run").and_then(|v| v.as_i64()), Some(2));
     }
 
     #[test]
@@ -943,9 +943,9 @@ mod invariant_7_read_write {
         let s1 = state.read(&run_id, "cell").unwrap().unwrap();
         let s2 = state.read(&run_id, "cell").unwrap().unwrap();
 
-        // Same value, same version
-        assert!(matches!(s1.value.value, Value::Int(2)));
-        assert!(matches!(s2.value.value, Value::Int(2)));
+        // Same value
+        assert!(matches!(s1, Value::Int(2)));
+        assert!(matches!(s2, Value::Int(2)));
     }
 
     #[test]

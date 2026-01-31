@@ -240,9 +240,7 @@ impl Session {
             // === State ===
             Command::StateRead { cell, .. } => {
                 let result = txn.state_read(&cell).map_err(Error::from)?;
-                Ok(Output::MaybeVersioned(result.map(|v| {
-                    to_versioned_value(strata_core::Versioned::new(v.value.value, v.version))
-                })))
+                Ok(Output::Maybe(result.map(|v| v.value.value)))
             }
             Command::StateInit { cell, value, .. } => {
                 let version = txn.state_init(&cell, value).map_err(Error::from)?;
@@ -278,11 +276,9 @@ impl Session {
                     match result {
                         Some(v) => {
                             let val = convert_result(json_to_value(v.value))?;
-                            Ok(Output::MaybeVersioned(Some(to_versioned_value(
-                                strata_core::Versioned::new(val, v.version),
-                            ))))
+                            Ok(Output::Maybe(Some(val)))
                         }
-                        None => Ok(Output::MaybeVersioned(None)),
+                        None => Ok(Output::Maybe(None)),
                     }
                 } else {
                     let json_path = convert_result(parse_path(&path))?;
@@ -291,13 +287,9 @@ impl Session {
                     match result {
                         Some(jv) => {
                             let val = convert_result(json_to_value(jv))?;
-                            Ok(Output::MaybeVersioned(Some(crate::types::VersionedValue {
-                                value: val,
-                                version: 0,
-                                timestamp: 0,
-                            })))
+                            Ok(Output::Maybe(Some(val)))
                         }
-                        None => Ok(Output::MaybeVersioned(None)),
+                        None => Ok(Output::Maybe(None)),
                     }
                 }
             }

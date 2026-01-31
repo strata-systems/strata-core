@@ -28,7 +28,7 @@ use strata_concurrency::TransactionContext;
 use strata_core::StrataResult;
 use strata_core::types::{Key, Namespace, RunId};
 use strata_core::value::Value;
-use strata_core::Version;
+use strata_core::{Version, VersionedHistory};
 use std::sync::Arc;
 
 /// General-purpose key-value store primitive
@@ -87,6 +87,16 @@ impl KVStore {
             let storage_key = self.key_for(run_id, key);
             txn.get(&storage_key)
         })
+    }
+
+    /// Get full version history for a key.
+    ///
+    /// Returns `None` if the key doesn't exist. Index with `[0]` = latest,
+    /// `[1]` = previous, etc. Reads directly from storage (non-transactional).
+    pub fn getv(&self, run_id: &RunId, key: &str) -> StrataResult<Option<VersionedHistory<Value>>> {
+        let storage_key = self.key_for(run_id, key);
+        let history = self.db.get_history(&storage_key, None, None)?;
+        Ok(VersionedHistory::new(history))
     }
 
     /// Put a value

@@ -70,6 +70,10 @@ pub enum Output {
     /// List of versioned values (history operations)
     VersionedValues(Vec<VersionedValue>),
 
+    /// Version history result (getv/readv operations).
+    /// None if the key/cell/document doesn't exist.
+    VersionHistory(Option<Vec<VersionedValue>>),
+
     /// List of versions
     Versions(Vec<u64>),
 

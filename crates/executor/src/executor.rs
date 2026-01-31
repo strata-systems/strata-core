@@ -100,8 +100,12 @@ impl Executor {
                 let run = run.expect("resolved by resolve_default_run");
                 crate::handlers::kv::kv_list(&self.primitives, run, prefix)
             }
+            Command::KvGetv { run, key } => {
+                let run = run.expect("resolved by resolve_default_run");
+                crate::handlers::kv::kv_getv(&self.primitives, run, key)
+            }
 
-            // JSON commands (4 MVP)
+            // JSON commands
             Command::JsonSet {
                 run,
                 key,
@@ -114,6 +118,10 @@ impl Executor {
             Command::JsonGet { run, key, path } => {
                 let run = run.expect("resolved by resolve_default_run");
                 crate::handlers::json::json_get(&self.primitives, run, key, path)
+            }
+            Command::JsonGetv { run, key } => {
+                let run = run.expect("resolved by resolve_default_run");
+                crate::handlers::json::json_getv(&self.primitives, run, key)
             }
             Command::JsonDelete { run, key, path } => {
                 let run = run.expect("resolved by resolve_default_run");
@@ -159,6 +167,10 @@ impl Executor {
             Command::StateRead { run, cell } => {
                 let run = run.expect("resolved by resolve_default_run");
                 crate::handlers::state::state_read(&self.primitives, run, cell)
+            }
+            Command::StateReadv { run, cell } => {
+                let run = run.expect("resolved by resolve_default_run");
+                crate::handlers::state::state_readv(&self.primitives, run, cell)
             }
             Command::StateCas {
                 run,

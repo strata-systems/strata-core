@@ -46,7 +46,7 @@ fn committed_json_data_survives_restart() {
     let json = test_db.json();
     let doc = json.get(&run_id, &doc_id, &root()).unwrap();
     let doc = doc.expect("JSON document should survive restart");
-    assert_eq!(doc.value, test_json_value(42));
+    assert_eq!(doc, test_json_value(42));
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn committed_statecell_survives_restart() {
     let state = test_db.state();
     let val = state.read(&run_id, "counter").unwrap();
     assert!(val.is_some());
-    assert_eq!(val.unwrap().value.value, Value::Int(42));
+    assert_eq!(val.unwrap(), Value::Int(42));
 }
 
 #[test]

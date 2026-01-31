@@ -37,7 +37,7 @@ fn json_operations_equivalent_across_modes() {
         .unwrap();
 
         let doc = json.get(&run_id, doc_id, &root()).unwrap();
-        doc.map(|v| v.value.as_inner().clone())
+        doc.map(|v| v.as_inner().clone())
     });
 }
 
@@ -66,7 +66,7 @@ fn statecell_cas_equivalent_across_modes() {
         state.cas(&run_id, "counter", v.value, Value::Int(1)).unwrap();
 
         let val = state.read(&run_id, "counter").unwrap();
-        val.map(|v| format!("{:?}", v.value.value))
+        val.map(|v| format!("{:?}", v))
     });
 }
 

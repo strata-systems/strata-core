@@ -7,10 +7,25 @@ use std::sync::Arc;
 
 use strata_core::Value;
 
-use crate::bridge::{extract_version, to_core_run_id, validate_key, Primitives};
+use crate::bridge::{extract_version, to_core_run_id, to_versioned_value, validate_key, Primitives};
 use crate::convert::convert_result;
 use crate::types::RunId;
 use crate::{Output, Result};
+
+/// Handle KvGetv command — get full version history for a key.
+pub fn kv_getv(p: &Arc<Primitives>, run: RunId, key: String) -> Result<Output> {
+    let run_id = to_core_run_id(&run)?;
+    convert_result(validate_key(&key))?;
+    let result = convert_result(p.kv.getv(&run_id, &key))?;
+    let mapped = result.map(|history| {
+        history
+            .into_versions()
+            .into_iter()
+            .map(to_versioned_value)
+            .collect()
+    });
+    Ok(Output::VersionHistory(mapped))
+}
 
 // =============================================================================
 // MVP Handlers (4 commands)

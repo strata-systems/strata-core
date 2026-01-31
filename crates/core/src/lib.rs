@@ -37,7 +37,7 @@ pub use value::Value;
 // Re-export contract types at crate root for convenience
 pub use contract::{
     EntityRef, PrimitiveType, RunName, RunNameError, Timestamp, Version, Versioned,
-    VersionedValue, MAX_RUN_NAME_LENGTH,
+    VersionedHistory, VersionedValue, MAX_RUN_NAME_LENGTH,
 };
 
 // Re-export primitive extension trait and helpers

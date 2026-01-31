@@ -248,7 +248,7 @@ fn atomicity_on_operation_failure() {
     // Setup: existing key and cell
     kv.put(&run_id, "existing", Value::Int(100)).unwrap();
     state.init(&run_id, "cell", Value::Int(200)).unwrap();
-    let version = state.read(&run_id, "cell").unwrap().unwrap().version;
+    let version = state.readv(&run_id, "cell").unwrap().unwrap().version();
 
     // First, modify cell outside transaction to make CAS fail
     state.cas(&run_id, "cell", version, Value::Int(201)).unwrap();

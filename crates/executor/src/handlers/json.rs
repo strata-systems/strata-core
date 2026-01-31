@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use strata_core::{Value, Versioned};
+use strata_core::Value;
 
 use crate::bridge::{
     extract_version, json_to_value, parse_path, to_core_run_id, validate_key, value_to_json,
@@ -14,21 +14,30 @@ use crate::convert::convert_result;
 use crate::types::{RunId, VersionedValue};
 use crate::{Output, Result};
 
-// =============================================================================
-// Helpers
-// =============================================================================
-
-/// Convert a `Versioned<JsonValue>` from the JSON primitive into a `VersionedValue`
-/// (which wraps `strata_core::Value`).
-fn json_versioned_to_versioned_value(
-    v: Versioned<strata_core::primitives::json::JsonValue>,
-) -> Result<VersionedValue> {
-    let value = convert_result(json_to_value(v.value))?;
-    Ok(VersionedValue {
-        value,
-        version: extract_version(&v.version),
-        timestamp: v.timestamp.into(),
-    })
+/// Handle JsonGetv command — get full version history for a JSON document.
+pub fn json_getv(
+    p: &Arc<Primitives>,
+    run: RunId,
+    key: String,
+) -> Result<Output> {
+    let run_id = to_core_run_id(&run)?;
+    convert_result(validate_key(&key))?;
+    let result = convert_result(p.json.getv(&run_id, &key))?;
+    let mapped = result.map(|history| {
+        history
+            .into_versions()
+            .into_iter()
+            .filter_map(|v| {
+                let value = convert_result(json_to_value(v.value)).ok()?;
+                Some(VersionedValue {
+                    value,
+                    version: extract_version(&v.version),
+                    timestamp: v.timestamp.into(),
+                })
+            })
+            .collect()
+    });
+    Ok(Output::VersionHistory(mapped))
 }
 
 // =============================================================================
@@ -83,10 +92,10 @@ pub fn json_get(
     let json_path = convert_result(parse_path(&path))?;
 
     let result = convert_result(p.json.get(&run_id, &key, &json_path))?;
-    let versioned = result
-        .map(|v| json_versioned_to_versioned_value(v))
+    let mapped = result
+        .map(|v| convert_result(json_to_value(v)))
         .transpose()?;
-    Ok(Output::MaybeVersioned(versioned))
+    Ok(Output::Maybe(mapped))
 }
 
 /// Handle JsonDelete command.

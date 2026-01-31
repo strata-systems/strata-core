@@ -57,7 +57,7 @@ fn run_data_is_isolated() {
         run: Some(run_b.clone()),
         cell: "state".into(),
     }).unwrap();
-    assert!(matches!(output, Output::MaybeVersioned(None)),
+    assert!(matches!(output, Output::Maybe(None)),
         "Run B should not see Run A's state data");
 
     // Run A should still see its own data

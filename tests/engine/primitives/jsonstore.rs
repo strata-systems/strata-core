@@ -29,7 +29,7 @@ fn create_and_get() {
     let result = json.get(&test_db.run_id, "doc1", &JsonPath::root()).unwrap();
     assert!(result.is_some());
     // Compare the inner value
-    let result_json: serde_json::Value = result.unwrap().value.into();
+    let result_json: serde_json::Value = result.unwrap().into();
     assert_eq!(result_json, doc);
 }
 
@@ -107,12 +107,12 @@ fn get_at_path() {
 
     let name = json.get(&test_db.run_id, "doc1", &jpath("user.name")).unwrap();
     assert!(name.is_some());
-    let name_val: serde_json::Value = name.unwrap().value.into();
+    let name_val: serde_json::Value = name.unwrap().into();
     assert_eq!(name_val, serde_json::json!("Alice"));
 
     let age = json.get(&test_db.run_id, "doc1", &jpath("user.age")).unwrap();
     assert!(age.is_some());
-    let age_val: serde_json::Value = age.unwrap().value.into();
+    let age_val: serde_json::Value = age.unwrap().into();
     assert_eq!(age_val, serde_json::json!(30));
 }
 
@@ -127,7 +127,7 @@ fn set_at_path() {
     json.set(&test_db.run_id, "doc1", &jpath("y"), serde_json::json!(2).into()).unwrap();
 
     let result = json.get(&test_db.run_id, "doc1", &JsonPath::root()).unwrap().unwrap();
-    let result_json: serde_json::Value = result.value.into();
+    let result_json: serde_json::Value = result.into();
     assert_eq!(result_json["x"], serde_json::json!(1));
     assert_eq!(result_json["y"], serde_json::json!(2));
 }
@@ -143,7 +143,7 @@ fn set_nested_path() {
     json.set(&test_db.run_id, "doc1", &jpath("a.c"), serde_json::json!(2).into()).unwrap();
 
     let result = json.get(&test_db.run_id, "doc1", &JsonPath::root()).unwrap().unwrap();
-    let result_json: serde_json::Value = result.value.into();
+    let result_json: serde_json::Value = result.into();
     assert_eq!(result_json["a"]["b"], serde_json::json!(1));
     assert_eq!(result_json["a"]["c"], serde_json::json!(2));
 }
@@ -159,7 +159,7 @@ fn delete_at_path() {
     json.delete_at_path(&test_db.run_id, "doc1", &jpath("y")).unwrap();
 
     let result = json.get(&test_db.run_id, "doc1", &JsonPath::root()).unwrap().unwrap();
-    let result_json: serde_json::Value = result.value.into();
+    let result_json: serde_json::Value = result.into();
     assert_eq!(result_json, serde_json::json!({"x": 1}));
 }
 
@@ -254,7 +254,7 @@ fn empty_document() {
     json.create(&test_db.run_id, "doc1", serde_json::json!({}).into()).unwrap();
 
     let result = json.get(&test_db.run_id, "doc1", &JsonPath::root()).unwrap().unwrap();
-    let result_json: serde_json::Value = result.value.into();
+    let result_json: serde_json::Value = result.into();
     assert_eq!(result_json, serde_json::json!({}));
 }
 
@@ -270,7 +270,7 @@ fn deeply_nested_document() {
 
     let result = json.get(&test_db.run_id, "doc1", &jpath("a.b.c.d.e")).unwrap();
     assert!(result.is_some());
-    let result_json: serde_json::Value = result.unwrap().value.into();
+    let result_json: serde_json::Value = result.unwrap().into();
     assert_eq!(result_json, serde_json::json!(42));
 }
 
@@ -291,6 +291,6 @@ fn various_json_types() {
     json.create(&test_db.run_id, "doc1", doc.clone().into()).unwrap();
 
     let result = json.get(&test_db.run_id, "doc1", &JsonPath::root()).unwrap().unwrap();
-    let result_json: serde_json::Value = result.value.into();
+    let result_json: serde_json::Value = result.into();
     assert_eq!(result_json, doc);
 }

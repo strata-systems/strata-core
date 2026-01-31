@@ -174,10 +174,10 @@ fn test_json_set_get_parity() {
     });
 
     match exec_get {
-        Ok(Output::MaybeVersioned(Some(v))) => {
-            assert_eq!(v.value, Value::String("Alice".into()));
+        Ok(Output::Maybe(Some(v))) => {
+            assert_eq!(v, Value::String("Alice".into()));
         }
-        other => panic!("Expected MaybeVersioned output, got {:?}", other),
+        other => panic!("Expected Maybe output, got {:?}", other),
     }
 }
 
@@ -257,7 +257,7 @@ fn test_state_set_get_parity() {
     // Get via direct primitive
     let direct_get = p.state.read(&run_id, "cell1").unwrap();
     assert!(direct_get.is_some());
-    assert_eq!(direct_get.unwrap().value.value, Value::Int(100));
+    assert_eq!(direct_get.unwrap(), Value::Int(100));
 
     // Set via direct primitive
     let versioned2 = p.state.set(&run_id, "cell2", Value::Int(200)).unwrap();
@@ -273,10 +273,10 @@ fn test_state_set_get_parity() {
     });
 
     match exec_get {
-        Ok(Output::MaybeVersioned(Some(state))) => {
-            assert_eq!(state.value, Value::Int(200));
+        Ok(Output::Maybe(Some(v))) => {
+            assert_eq!(v, Value::Int(200));
         }
-        _ => panic!("Expected MaybeVersioned output"),
+        _ => panic!("Expected Maybe output"),
     }
 }
 
