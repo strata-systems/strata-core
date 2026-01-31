@@ -7,7 +7,7 @@
 //! 2. **Versioned**: Every read returns `Versioned<T>`, every write returns `Version`
 //! 3. **Transactional**: Every primitive participates in transactions
 //! 4. **Lifecycle**: Every primitive follows create/exist/evolve/destroy
-//! 5. **Run-scoped**: Every entity belongs to exactly one run
+//! 5. **Branch-scoped**: Every entity belongs to exactly one branch
 //! 6. **Introspectable**: Every primitive has `exists()` or equivalent
 //! 7. **Read/Write**: Reads never modify state, writes always produce versions
 //!
@@ -148,9 +148,9 @@ mod invariant_1_addressable {
         let (db, branch_id) = setup();
         let index = BranchIndex::new(db);
 
-        index.create_branch("test-run").unwrap();
+        index.create_branch("test-branch").unwrap();
 
-        // For runs, the EntityRef uses the BranchId (UUID), not the name
+        // For branches, the EntityRef uses the BranchId (UUID), not the name
         let entity_ref = EntityRef::branch(branch_id);
 
         assert_eq!(entity_ref.branch_id(), branch_id);
@@ -356,10 +356,10 @@ mod invariant_2_versioned {
         let (db, _) = setup();
         let index = BranchIndex::new(db);
 
-        index.create_branch("test-run").unwrap();
+        index.create_branch("test-branch").unwrap();
 
-        let versioned = index.get_branch("test-run").unwrap().unwrap();
-        assert_eq!(versioned.value.name, "test-run");
+        let versioned = index.get_branch("test-branch").unwrap().unwrap();
+        assert_eq!(versioned.value.name, "test-branch");
     }
 
     #[test]
@@ -367,8 +367,8 @@ mod invariant_2_versioned {
         let (db, _) = setup();
         let index = BranchIndex::new(db);
 
-        let versioned = index.create_branch("test-run").unwrap();
-        assert_eq!(versioned.value.name, "test-run");
+        let versioned = index.create_branch("test-branch").unwrap();
+        assert_eq!(versioned.value.name, "test-branch");
     }
 }
 
@@ -626,130 +626,130 @@ mod invariant_4_lifecycle {
         let index = BranchIndex::new(db);
 
         // Create
-        let created = index.create_branch("lifecycle-run").unwrap();
-        let run_name = &created.value.name;
+        let created = index.create_branch("lifecycle-branch").unwrap();
+        let branch_name = &created.value.name;
 
         // Exist
-        assert!(index.exists(run_name).unwrap());
+        assert!(index.exists(branch_name).unwrap());
 
         // Read back
-        let run = index.get_branch(run_name).unwrap().unwrap();
-        assert_eq!(run.value.name, *run_name);
+        let branch = index.get_branch(branch_name).unwrap().unwrap();
+        assert_eq!(branch.value.name, *branch_name);
 
         // Note: update_status() removed in MVP simplification
 
         // Destroy
-        index.delete_branch(run_name).unwrap();
-        assert!(!index.exists(run_name).unwrap());
+        index.delete_branch(branch_name).unwrap();
+        assert!(!index.exists(branch_name).unwrap());
     }
 }
 
 // =============================================================================
-// INVARIANT 5: Everything Exists Within a Run
+// INVARIANT 5: Everything Exists Within a Branch
 // =============================================================================
-// All data is scoped to a run. Different runs cannot see each other's data.
+// All data is scoped to a branch. Different branches cannot see each other's data.
 
-mod invariant_5_run_scoped {
+mod invariant_5_branch_scoped {
     use super::*;
 
     #[test]
-    fn kv_isolated_between_runs() {
-        let (db, run1) = setup();
-        let run2 = BranchId::new();
+    fn kv_isolated_between_branches() {
+        let (db, branch1) = setup();
+        let branch2 = BranchId::new();
         let kv = KVStore::new(db);
 
-        kv.put(&run1, "key", Value::String("value-1".into()))
+        kv.put(&branch1, "key", Value::String("value-1".into()))
             .unwrap();
-        kv.put(&run2, "key", Value::String("value-2".into()))
+        kv.put(&branch2, "key", Value::String("value-2".into()))
             .unwrap();
 
         // Same key, different values
-        let v1 = kv.get(&run1, "key").unwrap().unwrap();
-        let v2 = kv.get(&run2, "key").unwrap().unwrap();
+        let v1 = kv.get(&branch1, "key").unwrap().unwrap();
+        let v2 = kv.get(&branch2, "key").unwrap().unwrap();
 
         assert!(matches!(v1, Value::String(s) if s == "value-1"));
         assert!(matches!(v2, Value::String(s) if s == "value-2"));
     }
 
     #[test]
-    fn events_isolated_between_runs() {
-        let (db, run1) = setup();
-        let run2 = BranchId::new();
+    fn events_isolated_between_branches() {
+        let (db, branch1) = setup();
+        let branch2 = BranchId::new();
         let events = EventLog::new(db);
 
         events
-            .append(&run1, "event-run1", int_payload(1))
+            .append(&branch1, "event-branch1", int_payload(1))
             .unwrap();
         events
-            .append(&run2, "event-run2", int_payload(2))
+            .append(&branch2, "event-branch2", int_payload(2))
             .unwrap();
 
-        let e1 = events.read(&run1, 0).unwrap().unwrap();
-        let e2 = events.read(&run2, 0).unwrap().unwrap();
+        let e1 = events.read(&branch1, 0).unwrap().unwrap();
+        let e2 = events.read(&branch2, 0).unwrap().unwrap();
 
-        assert_eq!(e1.value.event_type, "event-run1");
-        assert_eq!(e2.value.event_type, "event-run2");
+        assert_eq!(e1.value.event_type, "event-branch1");
+        assert_eq!(e2.value.event_type, "event-branch2");
     }
 
     #[test]
-    fn state_isolated_between_runs() {
-        let (db, run1) = setup();
-        let run2 = BranchId::new();
+    fn state_isolated_between_branches() {
+        let (db, branch1) = setup();
+        let branch2 = BranchId::new();
         let state = StateCell::new(db);
 
-        state.init(&run1, "cell", Value::Int(1)).unwrap();
-        state.init(&run2, "cell", Value::Int(2)).unwrap();
+        state.init(&branch1, "cell", Value::Int(1)).unwrap();
+        state.init(&branch2, "cell", Value::Int(2)).unwrap();
 
-        let s1 = state.read(&run1, "cell").unwrap().unwrap();
-        let s2 = state.read(&run2, "cell").unwrap().unwrap();
+        let s1 = state.read(&branch1, "cell").unwrap().unwrap();
+        let s2 = state.read(&branch2, "cell").unwrap().unwrap();
 
         assert!(matches!(s1, Value::Int(1)));
         assert!(matches!(s2, Value::Int(2)));
     }
 
     #[test]
-    fn json_isolated_between_runs() {
-        let (db, run1) = setup();
-        let run2 = BranchId::new();
+    fn json_isolated_between_branches() {
+        let (db, branch1) = setup();
+        let branch2 = BranchId::new();
         let json = JsonStore::new(db);
         let doc_id = "test-doc";
 
-        json.create(&run1, &doc_id, serde_json::json!({"run": 1}).into())
+        json.create(&branch1, &doc_id, serde_json::json!({"branch": 1}).into())
             .unwrap();
-        json.create(&run2, &doc_id, serde_json::json!({"run": 2}).into())
+        json.create(&branch2, &doc_id, serde_json::json!({"branch": 2}).into())
             .unwrap();
 
         let j1 = json
-            .get(&run1, &doc_id, &JsonPath::root())
+            .get(&branch1, &doc_id, &JsonPath::root())
             .unwrap()
             .unwrap();
         let j2 = json
-            .get(&run2, &doc_id, &JsonPath::root())
+            .get(&branch2, &doc_id, &JsonPath::root())
             .unwrap()
             .unwrap();
 
-        assert_eq!(j1.get("run").and_then(|v| v.as_i64()), Some(1));
-        assert_eq!(j2.get("run").and_then(|v| v.as_i64()), Some(2));
+        assert_eq!(j1.get("branch").and_then(|v| v.as_i64()), Some(1));
+        assert_eq!(j2.get("branch").and_then(|v| v.as_i64()), Some(2));
     }
 
     #[test]
-    fn vectors_isolated_between_runs() {
-        let (db, run1) = setup();
-        let run2 = BranchId::new();
+    fn vectors_isolated_between_branches() {
+        let (db, branch1) = setup();
+        let branch2 = BranchId::new();
         let vectors = VectorStore::new(db);
         let config = VectorConfig::new(3, DistanceMetric::Cosine).unwrap();
 
         vectors
-            .create_collection(run1, "col", config.clone())
+            .create_collection(branch1, "col", config.clone())
             .unwrap();
-        vectors.create_collection(run2, "col", config).unwrap();
+        vectors.create_collection(branch2, "col", config).unwrap();
 
         vectors
-            .insert(run1, "col", "v", &[1.0, 2.0, 3.0], None)
+            .insert(branch1, "col", "v", &[1.0, 2.0, 3.0], None)
             .unwrap();
 
-        // run2's collection is separate - should not find run1's vector
-        assert!(vectors.get(run2, "col", "v").unwrap().is_none());
+        // branch2's collection is separate - should not find branch1's vector
+        assert!(vectors.get(branch2, "col", "v").unwrap().is_none());
     }
 
     #[test]
@@ -757,7 +757,7 @@ mod invariant_5_run_scoped {
         let (db, branch_id) = setup();
 
         // All primitive operations require explicit branch_id parameter
-        // This test verifies the API shape - no ambient run context
+        // This test verifies the API shape - no ambient branch context
 
         let kv = KVStore::new(db.clone());
         kv.put(&branch_id, "k", Value::Int(1)).unwrap();
@@ -771,7 +771,7 @@ mod invariant_5_run_scoped {
         state.init(&branch_id, "s", Value::Int(1)).unwrap();
         state.read(&branch_id, "s").unwrap();
 
-        // There is NO global/ambient run context - branch_id is always explicit
+        // There is NO global/ambient branch context - branch_id is always explicit
     }
 }
 
@@ -861,11 +861,11 @@ mod invariant_6_introspectable {
         let (db, _) = setup();
         let index = BranchIndex::new(db);
 
-        assert!(!index.exists("test-run").unwrap());
+        assert!(!index.exists("test-branch").unwrap());
 
-        index.create_branch("test-run").unwrap();
+        index.create_branch("test-branch").unwrap();
 
-        assert!(index.exists("test-run").unwrap());
+        assert!(index.exists("test-branch").unwrap());
     }
 }
 
@@ -1097,14 +1097,14 @@ fn conformance_matrix_coverage() {
     // This test documents the conformance matrix
     // 6 primitives × 7 invariants = 42 conformance checks
 
-    let primitives = ["KV", "Event", "State", "Run", "Json", "Vector"];
+    let primitives = ["KV", "Event", "State", "Branch", "Json", "Vector"];
 
     let invariants = [
         "1. Addressable",
         "2. Versioned",
         "3. Transactional",
         "4. Lifecycle",
-        "5. Run-scoped",
+        "5. Branch-scoped",
         "6. Introspectable",
         "7. Read/Write",
     ];
@@ -1122,7 +1122,7 @@ fn conformance_matrix_coverage() {
     // Invariant 2: 12 tests (read + write per primitive)
     // Invariant 3: 6 tests (transaction participation)
     // Invariant 4: 6 tests (lifecycle)
-    // Invariant 5: 6 tests (run isolation)
+    // Invariant 5: 6 tests (branch isolation)
     // Invariant 6: 6 tests (introspectable)
     // Invariant 7: 5 tests (read/write semantics)
     // + 3 version monotonicity tests

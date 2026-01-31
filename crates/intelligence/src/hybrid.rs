@@ -78,7 +78,7 @@ pub struct HybridSearch {
     json: JsonStore,
     event: EventLog,
     state: StateCell,
-    run_index: BranchIndex,
+    branch_index: BranchIndex,
     vector: VectorStore,
 }
 
@@ -93,7 +93,7 @@ impl HybridSearch {
             json: JsonStore::new(db.clone()),
             event: EventLog::new(db.clone()),
             state: StateCell::new(db.clone()),
-            run_index: BranchIndex::new(db.clone()),
+            branch_index: BranchIndex::new(db.clone()),
             vector: VectorStore::new(db.clone()),
             db,
             fuser: Arc::new(SimpleFuser),
@@ -236,7 +236,7 @@ impl HybridSearch {
             PrimitiveType::Json => self.json.search(req),
             PrimitiveType::Event => self.event.search(req),
             PrimitiveType::State => self.state.search(req),
-            PrimitiveType::Branch => self.run_index.search(req),
+            PrimitiveType::Branch => self.branch_index.search(req),
             // Vector primitive now implements Searchable.
             // Per M8_ARCHITECTURE.md Section 12.3:
             // - Keyword search returns empty (by design)
@@ -332,7 +332,7 @@ mod tests {
         // Test without filter (all primitives)
         let req_all = SearchRequest::new(branch_id, "test");
         let all_primitives = hybrid.select_primitives(&req_all);
-        assert_eq!(all_primitives.len(), 6); // Kv, Event, State, Run, Json, Vector
+        assert_eq!(all_primitives.len(), 6); // Kv, Event, State, Branch, Json, Vector
     }
 
     #[test]
@@ -378,11 +378,11 @@ mod tests {
     fn test_hybrid_search_multiple_primitives() {
         let db = test_db();
         let kv = KVStore::new(db.clone());
-        let run_index = BranchIndex::new(db.clone());
+        let branch_index = BranchIndex::new(db.clone());
         let branch_id = BranchId::new();
 
-        // Create the run in run_index
-        run_index.create_branch(&branch_id.to_string()).unwrap();
+        // Create the branch in branch_index
+        branch_index.create_branch(&branch_id.to_string()).unwrap();
 
         // Add data to KV primitive
         kv.put(&branch_id, "hello", Value::String("hello world data".into()))

@@ -345,7 +345,7 @@ mod tests {
             SnapshotSection::new(primitive_tags::KV, b"kv_data".to_vec()),
             SnapshotSection::new(primitive_tags::EVENT, b"event_data".to_vec()),
             SnapshotSection::new(primitive_tags::STATE, b"state_data".to_vec()),
-            SnapshotSection::new(primitive_tags::RUN, b"run_data".to_vec()),
+            SnapshotSection::new(primitive_tags::BRANCH, b"branch_data".to_vec()),
             SnapshotSection::new(primitive_tags::JSON, b"json_data".to_vec()),
             SnapshotSection::new(primitive_tags::VECTOR, b"vector_data".to_vec()),
         ];

@@ -1,17 +1,17 @@
-//! Engine-level run export/import API
+//! Engine-level branch export/import API
 //!
 //! This module provides high-level functions for exporting and importing
-//! runs as `.runbundle.tar.zst` archives. It bridges the engine's
-//! `Database`/`BranchIndex` types with the durability crate's RunBundle format.
+//! branches as `.branchbundle.tar.zst` archives. It bridges the engine's
+//! `Database`/`BranchIndex` types with the durability crate's BranchBundle format.
 //!
 //! ## Export
 //!
-//! Exports scan the KV store for all keys in a run's namespace and
-//! reconstruct `RunlogPayload` records grouped by version.
+//! Exports scan the KV store for all keys in a branch's namespace and
+//! reconstruct `BranchlogPayload` records grouped by version.
 //!
 //! ## Import
 //!
-//! Imports replay each `RunlogPayload` as a transaction, writing puts
+//! Imports replay each `BranchlogPayload` as a transaction, writing puts
 //! and deletes into the target database.
 
 use crate::database::Database;
@@ -23,18 +23,18 @@ use strata_core::types::{Key, Namespace, BranchId, TypeTag};
 use strata_core::StrataError;
 use strata_core::StrataResult;
 use strata_durability::branch_bundle::{
-    BundleRunInfo, ExportOptions, RunBundleReader, RunBundleWriter,
-    RunlogPayload,
+    BundleBranchInfo, ExportOptions, BranchBundleReader, BranchBundleWriter,
+    BranchlogPayload,
 };
 
 // =============================================================================
 // Public result types
 // =============================================================================
 
-/// Information returned after exporting a run
+/// Information returned after exporting a branch
 #[derive(Debug, Clone)]
 pub struct ExportInfo {
-    /// Run ID of the exported run
+    /// Branch ID of the exported branch
     pub branch_id: String,
     /// Path where the bundle was written
     pub path: PathBuf,
@@ -44,10 +44,10 @@ pub struct ExportInfo {
     pub bundle_size: u64,
 }
 
-/// Information returned after importing a run
+/// Information returned after importing a branch
 #[derive(Debug, Clone)]
 pub struct ImportInfo {
-    /// Run ID of the imported run
+    /// Branch ID of the imported branch
     pub branch_id: String,
     /// Number of transactions applied
     pub transactions_applied: u64,
@@ -58,7 +58,7 @@ pub struct ImportInfo {
 /// Information about a bundle (from validation)
 #[derive(Debug, Clone)]
 pub struct BundleInfo {
-    /// Run ID from the bundle
+    /// Branch ID from the bundle
     pub branch_id: String,
     /// Format version of the bundle
     pub format_version: u32,
@@ -72,61 +72,61 @@ pub struct BundleInfo {
 // Export
 // =============================================================================
 
-/// Export a run to a `.runbundle.tar.zst` archive
+/// Export a branch to a `.branchbundle.tar.zst` archive
 ///
-/// The run must exist in the database. All data in the run's namespace
-/// is scanned and grouped into per-version `RunlogPayload` records.
+/// The branch must exist in the database. All data in the branch's namespace
+/// is scanned and grouped into per-version `BranchlogPayload` records.
 ///
 /// # Errors
 ///
-/// - Run does not exist
+/// - Branch does not exist
 /// - I/O errors writing the archive
-pub fn export_run(db: &Arc<Database>, branch_id: &str, path: &Path) -> StrataResult<ExportInfo> {
-    export_run_with_options(db, branch_id, path, &ExportOptions::default())
+pub fn export_branch(db: &Arc<Database>, branch_id: &str, path: &Path) -> StrataResult<ExportInfo> {
+    export_branch_with_options(db, branch_id, path, &ExportOptions::default())
 }
 
-/// Export a run with custom options (e.g., compression level)
-pub fn export_run_with_options(
+/// Export a branch with custom options (e.g., compression level)
+pub fn export_branch_with_options(
     db: &Arc<Database>,
     branch_id: &str,
     path: &Path,
     options: &ExportOptions,
 ) -> StrataResult<ExportInfo> {
-    let run_index = BranchIndex::new(db.clone());
+    let branch_index = BranchIndex::new(db.clone());
 
-    // 1. Verify run exists and get metadata
-    let run_meta = run_index
+    // 1. Verify branch exists and get metadata
+    let branch_meta = branch_index
         .get_branch(branch_id)?
-        .ok_or_else(|| StrataError::invalid_input(format!("Run '{}' not found", branch_id)))?
+        .ok_or_else(|| StrataError::invalid_input(format!("Branch '{}' not found", branch_id)))?
         .value;
 
-    // 2. Build BundleRunInfo from metadata
-    let bundle_run_info = BundleRunInfo {
-        branch_id: run_meta.branch_id.clone(),
-        name: run_meta.name.clone(),
-        state: run_meta.status.as_str().to_lowercase(),
-        created_at: format_micros(run_meta.created_at),
-        closed_at: format_micros(run_meta.completed_at.unwrap_or(run_meta.updated_at)),
-        parent_run_id: run_meta.parent_run.clone(),
-        error: run_meta.error.clone(),
+    // 2. Build BundleBranchInfo from metadata
+    let bundle_branch_info = BundleBranchInfo {
+        branch_id: branch_meta.branch_id.clone(),
+        name: branch_meta.name.clone(),
+        state: branch_meta.status.as_str().to_lowercase(),
+        created_at: format_micros(branch_meta.created_at),
+        closed_at: format_micros(branch_meta.completed_at.unwrap_or(branch_meta.updated_at)),
+        parent_branch_id: branch_meta.parent_branch.clone(),
+        error: branch_meta.error.clone(),
     };
 
-    // 3. Scan storage for all run data -> Vec<RunlogPayload>
-    let core_run_id = BranchId::from_string(&run_meta.name)
-        .or_else(|| BranchId::from_string(&run_meta.branch_id))
+    // 3. Scan storage for all branch data -> Vec<BranchlogPayload>
+    let core_branch_id = BranchId::from_string(&branch_meta.name)
+        .or_else(|| BranchId::from_string(&branch_meta.branch_id))
         .ok_or_else(|| {
             StrataError::invalid_input(format!(
-                "Cannot resolve BranchId for run '{}' (branch_id='{}')",
-                run_meta.name, run_meta.branch_id
+                "Cannot resolve BranchId for branch '{}' (branch_id='{}')",
+                branch_meta.name, branch_meta.branch_id
             ))
         })?;
 
-    let payloads = scan_run_data(db, core_run_id, branch_id)?;
+    let payloads = scan_branch_data(db, core_branch_id, branch_id)?;
 
     // 4. Write bundle
-    let writer = RunBundleWriter::new(options);
+    let writer = BranchBundleWriter::new(options);
     let export_info = writer
-        .write(&bundle_run_info, &payloads, path)
+        .write(&bundle_branch_info, &payloads, path)
         .map_err(|e| StrataError::storage(format!("Failed to write bundle: {}", e)))?;
 
     Ok(ExportInfo {
@@ -137,13 +137,13 @@ pub fn export_run_with_options(
     })
 }
 
-/// Scan all data in a run's namespace and group into RunlogPayload records
-fn scan_run_data(
+/// Scan all data in a branch's namespace and group into BranchlogPayload records
+fn scan_branch_data(
     db: &Arc<Database>,
-    core_run_id: BranchId,
-    run_id_str: &str,
-) -> StrataResult<Vec<RunlogPayload>> {
-    let ns = Namespace::for_branch(core_run_id);
+    core_branch_id: BranchId,
+    branch_id_str: &str,
+) -> StrataResult<Vec<BranchlogPayload>> {
+    let ns = Namespace::for_branch(core_branch_id);
     let mut all_entries: Vec<(Key, strata_core::value::Value)> = Vec::new();
 
     // Scan all type tags
@@ -156,14 +156,14 @@ fn scan_run_data(
     ];
 
     for type_tag in type_tags {
-        let entries = db.transaction(core_run_id, |txn| {
+        let entries = db.transaction(core_branch_id, |txn| {
             let prefix = Key::new(ns.clone(), type_tag, vec![]);
             txn.scan_prefix(&prefix)
         })?;
         all_entries.extend(entries);
     }
 
-    // Group all entries into a single RunlogPayload
+    // Group all entries into a single BranchlogPayload
     // Since we're scanning the current state (not WAL), all entries are at the
     // same logical version. We create one payload per batch.
     if all_entries.is_empty() {
@@ -171,8 +171,8 @@ fn scan_run_data(
     }
 
     // Create a single payload with all current state
-    Ok(vec![RunlogPayload {
-        branch_id: run_id_str.to_string(),
+    Ok(vec![BranchlogPayload {
+        branch_id: branch_id_str.to_string(),
         version: 1,
         puts: all_entries,
         deletes: vec![],
@@ -183,51 +183,51 @@ fn scan_run_data(
 // Import
 // =============================================================================
 
-/// Import a run from a `.runbundle.tar.zst` archive
+/// Import a branch from a `.branchbundle.tar.zst` archive
 ///
-/// Creates the run in the database and replays all transaction payloads.
+/// Creates the branch in the database and replays all transaction payloads.
 ///
 /// # Errors
 ///
 /// - Bundle is invalid or corrupt
-/// - Run with same ID already exists
+/// - Branch with same ID already exists
 /// - I/O errors reading the archive
-pub fn import_run(db: &Arc<Database>, path: &Path) -> StrataResult<ImportInfo> {
+pub fn import_branch(db: &Arc<Database>, path: &Path) -> StrataResult<ImportInfo> {
     // 1. Read and validate bundle
-    let contents = RunBundleReader::read_all(path)
+    let contents = BranchBundleReader::read_all(path)
         .map_err(|e| StrataError::storage(format!("Failed to read bundle: {}", e)))?;
 
-    let run_id_str = &contents.run_info.name;
-    let run_index = BranchIndex::new(db.clone());
+    let branch_id_str = &contents.branch_info.name;
+    let branch_index = BranchIndex::new(db.clone());
 
-    // 2. Check run doesn't already exist
-    if run_index.exists(run_id_str)? {
+    // 2. Check branch doesn't already exist
+    if branch_index.exists(branch_id_str)? {
         return Err(StrataError::invalid_input(format!(
-            "Run '{}' already exists. Delete it first or use a different name.",
-            run_id_str
+            "Branch '{}' already exists. Delete it first or use a different name.",
+            branch_id_str
         )));
     }
 
-    // 3. Create run via BranchIndex
-    run_index.create_branch(run_id_str)?;
+    // 3. Create branch via BranchIndex
+    branch_index.create_branch(branch_id_str)?;
 
     // 4. Resolve BranchId for namespace
-    let run_meta = run_index
-        .get_branch(run_id_str)?
+    let branch_meta = branch_index
+        .get_branch(branch_id_str)?
         .ok_or_else(|| {
             StrataError::internal(format!(
-                "Run '{}' was just created but cannot be found",
-                run_id_str
+                "Branch '{}' was just created but cannot be found",
+                branch_id_str
             ))
         })?
         .value;
 
-    let core_run_id = BranchId::from_string(&run_meta.name)
-        .or_else(|| BranchId::from_string(&run_meta.branch_id))
+    let core_branch_id = BranchId::from_string(&branch_meta.name)
+        .or_else(|| BranchId::from_string(&branch_meta.branch_id))
         .ok_or_else(|| {
             StrataError::internal(format!(
-                "Cannot resolve BranchId for imported run '{}'",
-                run_id_str
+                "Cannot resolve BranchId for imported branch '{}'",
+                branch_id_str
             ))
         })?;
 
@@ -238,7 +238,7 @@ pub fn import_run(db: &Arc<Database>, path: &Path) -> StrataResult<ImportInfo> {
     for payload in &contents.payloads {
         let put_count = payload.puts.len() as u64;
 
-        db.transaction(core_run_id, |txn| {
+        db.transaction(core_branch_id, |txn| {
             // Apply puts
             for (key, value) in &payload.puts {
                 txn.put(key.clone(), value.clone())?;
@@ -257,7 +257,7 @@ pub fn import_run(db: &Arc<Database>, path: &Path) -> StrataResult<ImportInfo> {
     }
 
     Ok(ImportInfo {
-        branch_id: run_id_str.to_string(),
+        branch_id: branch_id_str.to_string(),
         transactions_applied,
         keys_written,
     })
@@ -271,7 +271,7 @@ pub fn import_run(db: &Arc<Database>, path: &Path) -> StrataResult<ImportInfo> {
 ///
 /// Checks the archive structure, checksums, and format version.
 pub fn validate_bundle(path: &Path) -> StrataResult<BundleInfo> {
-    let verify = RunBundleReader::validate(path)
+    let verify = BranchBundleReader::validate(path)
         .map_err(|e| StrataError::storage(format!("Bundle validation failed: {}", e)))?;
 
     Ok(BundleInfo {
@@ -317,48 +317,48 @@ mod tests {
         (temp_dir, db)
     }
 
-    fn setup_with_branch(run_name: &str) -> (TempDir, Arc<Database>) {
+    fn setup_with_branch(branch_name: &str) -> (TempDir, Arc<Database>) {
         let (temp_dir, db) = setup();
-        let run_index = BranchIndex::new(db.clone());
-        run_index.create_branch(run_name).unwrap();
+        let branch_index = BranchIndex::new(db.clone());
+        branch_index.create_branch(branch_name).unwrap();
         (temp_dir, db)
     }
 
     #[test]
-    fn test_export_run_exists() {
-        let (temp_dir, db) = setup_with_branch("test-run");
-        let path = temp_dir.path().join("test.runbundle.tar.zst");
+    fn test_export_branch_exists() {
+        let (temp_dir, db) = setup_with_branch("test-branch");
+        let path = temp_dir.path().join("test.branchbundle.tar.zst");
 
-        let result = export_run(&db, "test-run", &path);
+        let result = export_branch(&db, "test-branch", &path);
         assert!(result.is_ok());
 
         let info = result.unwrap();
-        assert_eq!(info.branch_id, "test-run");
+        assert_eq!(info.branch_id, "test-branch");
         assert!(info.path.exists());
     }
 
     #[test]
-    fn test_export_run_not_found() {
+    fn test_export_branch_not_found() {
         let (temp_dir, db) = setup();
-        let path = temp_dir.path().join("test.runbundle.tar.zst");
+        let path = temp_dir.path().join("test.branchbundle.tar.zst");
 
-        let result = export_run(&db, "nonexistent", &path);
+        let result = export_branch(&db, "nonexistent", &path);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_export_with_data() {
-        let (temp_dir, db) = setup_with_branch("data-run");
+        let (temp_dir, db) = setup_with_branch("data-branch");
 
-        // Write some data to the run
-        let run_index = BranchIndex::new(db.clone());
-        let meta = run_index.get_branch("data-run").unwrap().unwrap().value;
-        let core_run_id = BranchId::from_string(&meta.name)
+        // Write some data to the branch
+        let branch_index = BranchIndex::new(db.clone());
+        let meta = branch_index.get_branch("data-branch").unwrap().unwrap().value;
+        let core_branch_id = BranchId::from_string(&meta.name)
             .or_else(|| BranchId::from_string(&meta.branch_id))
             .unwrap();
-        let ns = Namespace::for_branch(core_run_id);
+        let ns = Namespace::for_branch(core_branch_id);
 
-        db.transaction(core_run_id, |txn| {
+        db.transaction(core_branch_id, |txn| {
             txn.put(
                 Key::new(ns.clone(), TypeTag::KV, b"key1".to_vec()),
                 strata_core::value::Value::String("value1".to_string()),
@@ -371,20 +371,20 @@ mod tests {
         })
         .unwrap();
 
-        let path = temp_dir.path().join("data.runbundle.tar.zst");
-        let info = export_run(&db, "data-run", &path).unwrap();
+        let path = temp_dir.path().join("data.branchbundle.tar.zst");
+        let info = export_branch(&db, "data-branch", &path).unwrap();
 
-        assert_eq!(info.branch_id, "data-run");
+        assert_eq!(info.branch_id, "data-branch");
         assert!(info.entry_count > 0);
         assert!(info.bundle_size > 0);
     }
 
     #[test]
     fn test_validate_bundle() {
-        let (temp_dir, db) = setup_with_branch("validate-run");
-        let path = temp_dir.path().join("validate.runbundle.tar.zst");
+        let (temp_dir, db) = setup_with_branch("validate-branch");
+        let path = temp_dir.path().join("validate.branchbundle.tar.zst");
 
-        export_run(&db, "validate-run", &path).unwrap();
+        export_branch(&db, "validate-branch", &path).unwrap();
 
         let info = validate_bundle(&path).unwrap();
         assert!(!info.branch_id.is_empty());
@@ -394,7 +394,7 @@ mod tests {
     #[test]
     fn test_validate_nonexistent_bundle() {
         let temp_dir = TempDir::new().unwrap();
-        let path = temp_dir.path().join("nonexistent.runbundle.tar.zst");
+        let path = temp_dir.path().join("nonexistent.branchbundle.tar.zst");
 
         let result = validate_bundle(&path);
         assert!(result.is_err());
@@ -402,17 +402,17 @@ mod tests {
 
     #[test]
     fn test_import_branch() {
-        let (temp_dir, db) = setup_with_branch("export-run");
+        let (temp_dir, db) = setup_with_branch("export-branch");
 
         // Write data
-        let run_index = BranchIndex::new(db.clone());
-        let meta = run_index.get_branch("export-run").unwrap().unwrap().value;
-        let core_run_id = BranchId::from_string(&meta.name)
+        let branch_index = BranchIndex::new(db.clone());
+        let meta = branch_index.get_branch("export-branch").unwrap().unwrap().value;
+        let core_branch_id = BranchId::from_string(&meta.name)
             .or_else(|| BranchId::from_string(&meta.branch_id))
             .unwrap();
-        let ns = Namespace::for_branch(core_run_id);
+        let ns = Namespace::for_branch(core_branch_id);
 
-        db.transaction(core_run_id, |txn| {
+        db.transaction(core_branch_id, |txn| {
             txn.put(
                 Key::new(ns.clone(), TypeTag::KV, b"key1".to_vec()),
                 strata_core::value::Value::String("hello".to_string()),
@@ -422,36 +422,36 @@ mod tests {
         .unwrap();
 
         // Export
-        let bundle_path = temp_dir.path().join("export.runbundle.tar.zst");
-        export_run(&db, "export-run", &bundle_path).unwrap();
+        let bundle_path = temp_dir.path().join("export.branchbundle.tar.zst");
+        export_branch(&db, "export-branch", &bundle_path).unwrap();
 
         // Import into a fresh database
         let import_dir = TempDir::new().unwrap();
         let import_db = Database::open(import_dir.path()).unwrap();
 
-        let import_info = import_run(&import_db, &bundle_path).unwrap();
-        assert_eq!(import_info.branch_id, "export-run");
+        let import_info = import_branch(&import_db, &bundle_path).unwrap();
+        assert_eq!(import_info.branch_id, "export-branch");
         assert!(import_info.transactions_applied > 0);
     }
 
     #[test]
-    fn test_import_duplicate_run_fails() {
-        let (temp_dir, db) = setup_with_branch("dup-run");
+    fn test_import_duplicate_branch_fails() {
+        let (temp_dir, db) = setup_with_branch("dup-branch");
 
-        let path = temp_dir.path().join("dup.runbundle.tar.zst");
-        export_run(&db, "dup-run", &path).unwrap();
+        let path = temp_dir.path().join("dup.branchbundle.tar.zst");
+        export_branch(&db, "dup-branch", &path).unwrap();
 
-        // Importing into same db should fail (run already exists)
-        let result = import_run(&db, &path);
+        // Importing into same db should fail (branch already exists)
+        let result = import_branch(&db, &path);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_export_empty_branch() {
-        let (temp_dir, db) = setup_with_branch("empty-run");
-        let path = temp_dir.path().join("empty.runbundle.tar.zst");
+        let (temp_dir, db) = setup_with_branch("empty-branch");
+        let path = temp_dir.path().join("empty.branchbundle.tar.zst");
 
-        let info = export_run(&db, "empty-run", &path).unwrap();
+        let info = export_branch(&db, "empty-branch", &path).unwrap();
         assert_eq!(info.entry_count, 0);
     }
 

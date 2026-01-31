@@ -27,14 +27,14 @@ fn test_tier6_docrefs_different_primitives_never_equal() {
         branch_id: branch_id.clone(),
         doc_id: JsonDocId::new(),
     };
-    let run_ref = DocRef::Run {
+    let branch_ref = DocRef::Run {
         branch_id: branch_id.clone(),
     };
 
     // POLICY: DocRefs from different primitives are NEVER equal
     assert_ne!(kv_ref, json_ref);
-    assert_ne!(kv_ref, run_ref);
-    assert_ne!(json_ref, run_ref);
+    assert_ne!(kv_ref, branch_ref);
+    assert_ne!(json_ref, branch_ref);
 }
 
 /// DocRefs from same primitive with same key ARE equal
@@ -71,22 +71,22 @@ fn test_tier6_docrefs_same_primitive_different_key_not_equal() {
     assert_ne!(ref1, ref2);
 }
 
-/// DocRefs from same primitive but different runs are NOT equal
+/// DocRefs from same primitive but different branches are NOT equal
 #[test]
-fn test_tier6_docrefs_different_runs_not_equal() {
-    let run1 = BranchId::new();
-    let run2 = BranchId::new();
+fn test_tier6_docrefs_different_branches_not_equal() {
+    let branch1 = BranchId::new();
+    let branch2 = BranchId::new();
 
     let ref1 = DocRef::Kv {
-        branch_id: run1,
+        branch_id: branch1,
         key: "same_key".to_string(),
     };
     let ref2 = DocRef::Kv {
-        branch_id: run2,
+        branch_id: branch2,
         key: "same_key".to_string(),
     };
 
-    // Same key name but different runs = NOT equal
+    // Same key name but different branches = NOT equal
     assert_ne!(ref1, ref2);
 }
 
@@ -131,12 +131,12 @@ fn test_tier6_docrefs_hashable() {
 #[test]
 fn test_tier6_within_primitive_no_duplicates() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
 
     let kv = KVStore::new(db.clone());
-    let run_index = BranchIndex::new(db.clone());
+    let branch_index = BranchIndex::new(db.clone());
 
-    run_index.create_branch(&branch_id.to_string()).unwrap();
+    branch_index.create_branch(&branch_id.to_string()).unwrap();
 
     // Add multiple entries with overlapping content
     for i in 0..10 {
@@ -168,7 +168,7 @@ fn test_tier6_cross_primitive_no_deduplication() {
     // The application layer must handle it if needed.
 
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let hybrid = db.hybrid();
@@ -216,15 +216,15 @@ fn test_tier6_primitive_type_correct() {
     };
     assert_eq!(state_ref.primitive_type(), PrimitiveType::State);
 
-    let run_ref = DocRef::Run {
+    let branch_ref = DocRef::Run {
         branch_id: branch_id.clone(),
     };
-    assert_eq!(run_ref.primitive_type(), PrimitiveType::Branch);
+    assert_eq!(branch_ref.primitive_type(), PrimitiveType::Branch);
 }
 
-/// DocRef.branch_id() returns correct run
+/// DocRef.branch_id() returns correct branch
 #[test]
-fn test_tier6_run_id_correct() {
+fn test_tier6_branch_id_correct() {
     let branch_id = BranchId::new();
 
     let kv_ref = DocRef::Kv {
@@ -233,8 +233,8 @@ fn test_tier6_run_id_correct() {
     };
     assert_eq!(kv_ref.branch_id(), branch_id);
 
-    let run_ref = DocRef::Run {
+    let branch_ref = DocRef::Run {
         branch_id: branch_id.clone(),
     };
-    assert_eq!(run_ref.branch_id(), branch_id);
+    assert_eq!(branch_ref.branch_id(), branch_id);
 }

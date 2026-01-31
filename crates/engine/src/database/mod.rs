@@ -143,7 +143,7 @@ pub struct Database {
     /// Transaction coordinator for lifecycle management, version allocation, and metrics
     ///
     /// Per spec Section 6.1: Single monotonic counter for the entire database.
-    /// Also owns the commit protocol via TransactionManager, including per-run
+    /// Also owns the commit protocol via TransactionManager, including per-branch
     /// commit locks for TOCTOU prevention.
     coordinator: TransactionCoordinator,
 

@@ -233,15 +233,15 @@ impl Strata {
     /// // Switch back to default
     /// db.set_branch("default")?;
     /// ```
-    pub fn set_branch(&mut self, run_name: &str) -> Result<()> {
+    pub fn set_branch(&mut self, branch_name: &str) -> Result<()> {
         // Check if branch exists
-        if !self.branches().exists(run_name)? {
+        if !self.branches().exists(branch_name)? {
             return Err(Error::BranchNotFound {
-                branch: run_name.to_string(),
+                branch: branch_name.to_string(),
             });
         }
 
-        self.current_branch = BranchId::from(run_name);
+        self.current_branch = BranchId::from(branch_name);
         Ok(())
     }
 
@@ -263,8 +263,8 @@ impl Strata {
     /// // Optionally switch to it
     /// db.set_branch("experiment")?;
     /// ```
-    pub fn create_branch(&self, run_name: &str) -> Result<()> {
-        self.branches().create(run_name)
+    pub fn create_branch(&self, branch_name: &str) -> Result<()> {
+        self.branches().create(branch_name)
     }
 
     /// Fork the current branch with all its data into a new branch.
@@ -304,15 +304,15 @@ impl Strata {
     ///
     /// - Returns an error if trying to delete the current branch
     /// - Returns an error if trying to delete the "default" branch
-    pub fn delete_branch(&self, run_name: &str) -> Result<()> {
+    pub fn delete_branch(&self, branch_name: &str) -> Result<()> {
         // Cannot delete the current branch
-        if run_name == self.current_branch.as_str() {
+        if branch_name == self.current_branch.as_str() {
             return Err(Error::ConstraintViolation {
                 reason: "Cannot delete the current branch. Switch to a different branch first.".into(),
             });
         }
 
-        self.branches().delete(run_name)
+        self.branches().delete(branch_name)
     }
 
     /// Get the BranchId for use in commands.
@@ -442,8 +442,8 @@ mod tests {
         ).unwrap();
         assert_eq!(info.id.as_str(), "550e8400-e29b-41d4-a716-446655440099");
 
-        let runs = db.branch_list(None, None, None).unwrap();
-        assert!(!runs.is_empty());
+        let branches = db.branch_list(None, None, None).unwrap();
+        assert!(!branches.is_empty());
     }
 
     // =========================================================================
@@ -671,7 +671,7 @@ mod tests {
     fn test_branches_diff_not_implemented() {
         let db = create_strata();
 
-        let result = db.branches().diff("run1", "run2");
+        let result = db.branches().diff("branch1", "branch2");
         assert!(result.is_err());
 
         match result {

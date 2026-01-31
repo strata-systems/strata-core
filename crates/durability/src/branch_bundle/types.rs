@@ -1,42 +1,42 @@
-//! RunBundle core types
+//! BranchBundle core types
 //!
-//! Types for the RunBundle archive format (.runbundle.tar.zst)
+//! Types for the BranchBundle archive format (.branchbundle.tar.zst)
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-/// Current RunBundle format version
-pub const RUNBUNDLE_FORMAT_VERSION: u32 = 2;
+/// Current BranchBundle format version
+pub const BRANCHBUNDLE_FORMAT_VERSION: u32 = 2;
 
-/// File extension for RunBundle archives
-pub const RUNBUNDLE_EXTENSION: &str = ".runbundle.tar.zst";
+/// File extension for BranchBundle archives
+pub const BRANCHBUNDLE_EXTENSION: &str = ".branchbundle.tar.zst";
 
 /// Archive paths within the bundle
 pub mod paths {
     /// Root directory in the archive
-    pub const ROOT: &str = "runbundle";
+    pub const ROOT: &str = "branchbundle";
     /// Bundle manifest file
-    pub const MANIFEST: &str = "runbundle/MANIFEST.json";
-    /// Run metadata file
-    pub const RUN: &str = "runbundle/RUN.json";
+    pub const MANIFEST: &str = "branchbundle/MANIFEST.json";
+    /// Branch metadata file
+    pub const BRANCH: &str = "branchbundle/BRANCH.json";
     /// WAL entries file
-    pub const WAL: &str = "runbundle/WAL.runlog";
+    pub const WAL: &str = "branchbundle/WAL.branchlog";
 
     // Post-MVP paths (reserved)
     /// Index directory
-    pub const INDEX_DIR: &str = "runbundle/INDEX";
+    pub const INDEX_DIR: &str = "branchbundle/INDEX";
     /// Writeset index file
-    pub const WRITESET_INDEX: &str = "runbundle/INDEX/writeset.bin";
+    pub const WRITESET_INDEX: &str = "branchbundle/INDEX/writeset.bin";
     /// Snapshot directory
-    pub const SNAPSHOT_DIR: &str = "runbundle/SNAPSHOT";
+    pub const SNAPSHOT_DIR: &str = "branchbundle/SNAPSHOT";
 }
 
-/// Magic bytes for WAL.runlog header
-pub const WAL_RUNLOG_MAGIC: &[u8; 10] = b"STRATA_WAL";
+/// Magic bytes for WAL.branchlog header
+pub const WAL_BRANCHLOG_MAGIC: &[u8; 10] = b"STRATA_WAL";
 
-/// WAL.runlog format version
-pub const WAL_RUNLOG_VERSION: u16 = 2;
+/// WAL.branchlog format version
+pub const WAL_BRANCHLOG_VERSION: u16 = 2;
 
 // =============================================================================
 // MANIFEST.json
@@ -74,7 +74,7 @@ impl BundleManifest {
     /// Create a new manifest with current timestamp
     pub fn new(strata_version: impl Into<String>, contents: BundleContents) -> Self {
         Self {
-            format_version: RUNBUNDLE_FORMAT_VERSION,
+            format_version: BRANCHBUNDLE_FORMAT_VERSION,
             strata_version: strata_version.into(),
             created_at: chrono_now_iso8601(),
             checksum_algorithm: "xxh3".to_string(),
@@ -106,38 +106,38 @@ pub struct BundleContents {
 // RUN.json
 // =============================================================================
 
-/// Run metadata - human-readable run information
+/// Branch metadata - human-readable branch information
 ///
-/// This file contains all metadata about the run, designed to be
+/// This file contains all metadata about the branch, designed to be
 /// readable with standard tools like `jq`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct BundleRunInfo {
-    /// Run ID (UUID string)
+pub struct BundleBranchInfo {
+    /// Branch ID (UUID string)
     pub branch_id: String,
 
-    /// Human-readable run name
+    /// Human-readable branch name
     pub name: String,
 
-    /// Run state: "active"
+    /// Branch state: "active"
     pub state: String,
 
-    /// ISO 8601 timestamp when run was created
+    /// ISO 8601 timestamp when branch was created
     pub created_at: String,
 
-    /// ISO 8601 timestamp when run was closed
+    /// ISO 8601 timestamp when branch was closed
     pub closed_at: String,
 
-    /// Parent run ID if this is a child run
+    /// Parent branch ID if this is a child branch
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent_run_id: Option<String>,
+    pub parent_branch_id: Option<String>,
 
-    /// Error message if run failed
+    /// Error message if branch failed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
 
-impl BundleRunInfo {
-    /// Check if the run state is a valid terminal state
+impl BundleBranchInfo {
+    /// Check if the branch state is a valid terminal state
     pub fn is_terminal_state(&self) -> bool {
         matches!(
             self.state.as_str(),
@@ -150,9 +150,9 @@ impl BundleRunInfo {
 // Export Types
 // =============================================================================
 
-/// Information returned after exporting a run
+/// Information returned after exporting a branch
 #[derive(Debug, Clone)]
-pub struct RunExportInfo {
+pub struct BranchExportInfo {
     /// ID of the exported run
     pub branch_id: String,
 
@@ -208,10 +208,10 @@ pub struct BundleVerifyInfo {
 // Import Types
 // =============================================================================
 
-/// Information returned after importing a run
+/// Information returned after importing a branch
 #[derive(Debug, Clone)]
-pub struct ImportedRunInfo {
-    /// Run ID of the imported run
+pub struct ImportedBranchInfo {
+    /// Branch ID of the imported branch
     pub branch_id: String,
 
     /// Number of WAL entries that were replayed
@@ -274,7 +274,7 @@ mod tests {
         };
         let manifest = BundleManifest::new("0.12.0", contents.clone());
 
-        assert_eq!(manifest.format_version, RUNBUNDLE_FORMAT_VERSION);
+        assert_eq!(manifest.format_version, BRANCHBUNDLE_FORMAT_VERSION);
         assert_eq!(manifest.strata_version, "0.12.0");
         assert_eq!(manifest.checksum_algorithm, "xxh3");
         assert!(manifest.checksums.is_empty());
@@ -319,57 +319,57 @@ mod tests {
     }
 
     #[test]
-    fn test_run_info_terminal_states() {
-        let make_run = |state: &str| BundleRunInfo {
+    fn test_branch_info_terminal_states() {
+        let make_branch = |state: &str| BundleBranchInfo {
             branch_id: "test".to_string(),
             name: "test".to_string(),
             state: state.to_string(),
             created_at: "2025-01-24T00:00:00Z".to_string(),
             closed_at: "2025-01-24T01:00:00Z".to_string(),
-            parent_run_id: None,
+            parent_branch_id: None,
             error: None,
         };
 
-        assert!(make_run("completed").is_terminal_state());
-        assert!(make_run("failed").is_terminal_state());
-        assert!(make_run("cancelled").is_terminal_state());
-        assert!(make_run("archived").is_terminal_state());
+        assert!(make_branch("completed").is_terminal_state());
+        assert!(make_branch("failed").is_terminal_state());
+        assert!(make_branch("cancelled").is_terminal_state());
+        assert!(make_branch("archived").is_terminal_state());
 
-        assert!(!make_run("active").is_terminal_state());
-        assert!(!make_run("unknown").is_terminal_state());
+        assert!(!make_branch("active").is_terminal_state());
+        assert!(!make_branch("unknown").is_terminal_state());
     }
 
     #[test]
-    fn test_run_info_json_roundtrip() {
-        let run_info = BundleRunInfo {
+    fn test_branch_info_json_roundtrip() {
+        let branch_info = BundleBranchInfo {
             branch_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
-            name: "my-test-run".to_string(),
+            name: "my-test-branch".to_string(),
             state: "active".to_string(),
             created_at: "2025-01-24T10:00:00Z".to_string(),
             closed_at: "2025-01-24T11:30:00Z".to_string(),
-            parent_run_id: None,
+            parent_branch_id: None,
             error: None,
         };
 
-        let json = serde_json::to_string_pretty(&run_info).unwrap();
-        let parsed: BundleRunInfo = serde_json::from_str(&json).unwrap();
+        let json = serde_json::to_string_pretty(&branch_info).unwrap();
+        let parsed: BundleBranchInfo = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(run_info, parsed);
+        assert_eq!(branch_info, parsed);
     }
 
     #[test]
-    fn test_run_info_with_error() {
-        let run_info = BundleRunInfo {
+    fn test_branch_info_with_error() {
+        let branch_info = BundleBranchInfo {
             branch_id: "test".to_string(),
-            name: "failed-run".to_string(),
+            name: "failed-branch".to_string(),
             state: "failed".to_string(),
             created_at: "2025-01-24T10:00:00Z".to_string(),
             closed_at: "2025-01-24T10:05:00Z".to_string(),
-            parent_run_id: Some("parent-id".to_string()),
+            parent_branch_id: Some("parent-id".to_string()),
             error: Some("Connection timeout".to_string()),
         };
 
-        let json = serde_json::to_string(&run_info).unwrap();
+        let json = serde_json::to_string(&branch_info).unwrap();
         assert!(json.contains("Connection timeout"));
         assert!(json.contains("parent-id"));
     }
@@ -395,8 +395,8 @@ mod tests {
 
     #[test]
     fn test_paths() {
-        assert_eq!(paths::MANIFEST, "runbundle/MANIFEST.json");
-        assert_eq!(paths::RUN, "runbundle/RUN.json");
-        assert_eq!(paths::WAL, "runbundle/WAL.runlog");
+        assert_eq!(paths::MANIFEST, "branchbundle/MANIFEST.json");
+        assert_eq!(paths::BRANCH, "branchbundle/BRANCH.json");
+        assert_eq!(paths::WAL, "branchbundle/WAL.branchlog");
     }
 }

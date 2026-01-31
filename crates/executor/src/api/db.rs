@@ -53,7 +53,7 @@ impl Strata {
     // Bundle Operations (3)
     // =========================================================================
 
-    /// Export a branch to a .runbundle.tar.zst archive.
+    /// Export a branch to a .branchbundle.tar.zst archive.
     pub fn branch_export(&self, branch_id: &str, path: &str) -> Result<BranchExportResult> {
         match self.executor.execute(Command::BranchExport {
             branch_id: branch_id.to_string(),
@@ -66,7 +66,7 @@ impl Strata {
         }
     }
 
-    /// Import a branch from a .runbundle.tar.zst archive.
+    /// Import a branch from a .branchbundle.tar.zst archive.
     pub fn branch_import(&self, path: &str) -> Result<BranchImportResult> {
         match self.executor.execute(Command::BranchImport {
             path: path.to_string(),
@@ -78,7 +78,7 @@ impl Strata {
         }
     }
 
-    /// Validate a .runbundle.tar.zst archive without importing.
+    /// Validate a .branchbundle.tar.zst archive without importing.
     pub fn branch_validate_bundle(&self, path: &str) -> Result<BundleValidateResult> {
         match self.executor.execute(Command::BranchBundleValidate {
             path: path.to_string(),

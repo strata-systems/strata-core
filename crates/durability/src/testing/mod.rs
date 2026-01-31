@@ -12,7 +12,7 @@
 //!
 //! // Track expected state with reference model
 //! let mut model = ReferenceModel::new();
-//! model.kv_put("run1", "key1", b"value1".to_vec());
+//! model.kv_put("branch1", "key1", b"value1".to_vec());
 //! ```
 
 mod crash_harness;

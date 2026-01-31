@@ -365,7 +365,7 @@ fn test_vector_upsert_search_parity() {
 // =============================================================================
 
 #[test]
-fn test_run_create_get_parity() {
+fn test_branch_create_get_parity() {
     let (executor, _p) = create_test_environment();
 
     // Create branch via executor with a UUID
@@ -449,7 +449,7 @@ fn test_flush_compact_parity() {
 // =============================================================================
 
 #[test]
-fn test_run_isolation_parity() {
+fn test_branch_isolation_parity() {
     let (executor, _p) = create_test_environment();
 
     // Create two branches with valid UUIDs

@@ -228,12 +228,12 @@ fn test_replay_derived_view_p3_read_only() {
 /// P3: View derives from specific inputs, not global state
 #[test]
 fn test_replay_derived_view_p3_input_specific() {
-    // Two different "runs" with different inputs produce different views
+    // Two different "branches" with different inputs produce different views
 
     let branch_a = BranchId::new();
     let branch_b = BranchId::new();
 
-    // Different namespaces for different runs
+    // Different namespaces for different branches
     let ns_a = test_namespace(branch_a);
     let ns_b = test_namespace(branch_b);
 
@@ -306,7 +306,7 @@ fn test_replay_no_persist_p4_no_auto_persist() {
 
 /// P5: Multiple replays produce identical views
 #[test]
-fn test_replay_deterministic_p5_multiple_runs() {
+fn test_replay_deterministic_p5_multiple_branches() {
     let branch_id = BranchId::new();
     let ns = test_namespace(branch_id);
 
@@ -438,7 +438,7 @@ fn test_replay_idempotent_p6_basic() {
         view
     };
 
-    // "Double replay" - simulating replaying the same run twice
+    // "Double replay" - simulating replaying the same branch twice
     let view_twice = {
         let mut view = ReadOnlyView::new(branch_id);
         view.apply_kv_put(Key::new_kv(ns.clone(), "key"), Value::Int(42));
@@ -601,9 +601,9 @@ fn test_all_replay_invariants_combined() {
     assert_eq!(view.get_kv(&deleted), None); // Was deleted
 }
 
-/// Test diff_runs self-comparison
+/// Test diff_branches self-comparison
 #[test]
-fn test_diff_runs_self_comparison() {
+fn test_diff_branches_self_comparison() {
     let branch_id = BranchId::new();
     let ns = test_namespace(branch_id);
 
@@ -641,7 +641,7 @@ fn test_diff_views_different() {
 
     let diff = diff_views(&view_a, &view_b);
 
-    // Note: Due to different namespaces (different run IDs), keys won't match
+    // Note: Due to different namespaces (different branch IDs), keys won't match
     // This tests the diff mechanism correctly identifies all changes
     assert!(!diff.is_empty());
     // Added: only_b, shared (different namespace)

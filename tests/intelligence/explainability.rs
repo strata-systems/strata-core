@@ -15,7 +15,7 @@ use strata_intelligence::DatabaseSearchExt;
 #[test]
 fn test_tier9_hit_has_primitive_kind() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let hybrid = db.hybrid();
@@ -30,9 +30,9 @@ fn test_tier9_hit_has_primitive_kind() {
 
 /// Each hit has branch_id
 #[test]
-fn test_tier9_hit_has_run_id() {
+fn test_tier9_hit_has_branch_id() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let kv = KVStore::new(db.clone());
@@ -48,7 +48,7 @@ fn test_tier9_hit_has_run_id() {
 #[test]
 fn test_tier9_hit_has_score() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let kv = KVStore::new(db.clone());
@@ -67,7 +67,7 @@ fn test_tier9_hit_has_score() {
 #[test]
 fn test_tier9_hit_has_rank() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let kv = KVStore::new(db.clone());
@@ -87,7 +87,7 @@ fn test_tier9_hit_has_rank() {
 #[test]
 fn test_tier9_response_has_stats() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let kv = KVStore::new(db.clone());
@@ -101,7 +101,7 @@ fn test_tier9_response_has_stats() {
 #[test]
 fn test_tier9_stats_has_elapsed() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let kv = KVStore::new(db.clone());
@@ -116,7 +116,7 @@ fn test_tier9_stats_has_elapsed() {
 #[test]
 fn test_tier9_stats_has_candidates() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let kv = KVStore::new(db.clone());
@@ -165,7 +165,7 @@ fn test_tier9_stats_index_used() {
 #[test]
 fn test_tier9_response_has_truncated() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let kv = KVStore::new(db.clone());
@@ -179,7 +179,7 @@ fn test_tier9_response_has_truncated() {
 #[test]
 fn test_tier9_truncated_false_when_not_truncated() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let kv = KVStore::new(db.clone());
@@ -201,7 +201,7 @@ fn test_tier9_truncated_false_when_not_truncated() {
 #[test]
 fn test_tier9_docref_debug() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let kv = KVStore::new(db.clone());
@@ -218,7 +218,7 @@ fn test_tier9_docref_debug() {
 #[test]
 fn test_tier9_searchhit_debug() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let kv = KVStore::new(db.clone());
@@ -234,7 +234,7 @@ fn test_tier9_searchhit_debug() {
 #[test]
 fn test_tier9_searchresponse_debug() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let kv = KVStore::new(db.clone());

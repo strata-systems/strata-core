@@ -11,14 +11,14 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! let run = db.run("my-run");
+//! let branch = db.branch("my-branch");
 //!
 //! // Access primitives directly
-//! let value = run.kv().get("key")?;
-//! run.events().append("event", json!({}))?;
+//! let value = branch.kv().get("key")?;
+//! branch.events().append("event", json!({}))?;
 //!
 //! // Or use transactions for atomicity
-//! run.transaction(|txn| {
+//! branch.transaction(|txn| {
 //!     txn.kv_put("key", value)?;
 //!     txn.event_append("event", json!({}))?;
 //!     Ok(())
@@ -43,7 +43,7 @@ use std::sync::Arc;
 // BranchHandle
 // ============================================================================
 
-/// Handle to a specific run
+/// Handle to a specific branch
 ///
 /// Provides scoped access to all primitives within a branch.
 /// The branch_id is bound to this handle, so operations don't need
@@ -58,14 +58,14 @@ use std::sync::Arc;
 /// ## Example
 ///
 /// ```rust,ignore
-/// let run = db.run(branch_id);
+/// let branch = db.branch(branch_id);
 ///
 /// // Access primitives
-/// let value = run.kv().get("key")?;
-/// run.events().append("my-event", json!({}))?;
+/// let value = branch.kv().get("key")?;
+/// branch.events().append("my-event", json!({}))?;
 ///
 /// // Use transactions
-/// run.transaction(|txn| {
+/// branch.transaction(|txn| {
 ///     txn.kv_put("key", value)?;
 ///     txn.event_append("my-event", json!({}))?;
 ///     Ok(())
@@ -95,34 +95,34 @@ impl BranchHandle {
 
     // === Primitive Handles ===
 
-    /// Access the KV primitive for this run
+    /// Access the KV primitive for this branch
     pub fn kv(&self) -> KvHandle {
         KvHandle::new(self.db.clone(), self.branch_id)
     }
 
-    /// Access the Event primitive for this run
+    /// Access the Event primitive for this branch
     pub fn events(&self) -> EventHandle {
         EventHandle::new(self.db.clone(), self.branch_id)
     }
 
-    /// Access the State primitive for this run
+    /// Access the State primitive for this branch
     pub fn state(&self) -> StateHandle {
         StateHandle::new(self.db.clone(), self.branch_id)
     }
 
-    /// Access the Json primitive for this run
+    /// Access the Json primitive for this branch
     pub fn json(&self) -> JsonHandle {
         JsonHandle::new(self.db.clone(), self.branch_id)
     }
 
-    /// Access the Vector primitive for this run
+    /// Access the Vector primitive for this branch
     pub fn vectors(&self) -> VectorHandle {
         VectorHandle::new(self.db.clone(), self.branch_id)
     }
 
     // === Transactions ===
 
-    /// Execute a transaction within this run
+    /// Execute a transaction within this branch
     ///
     /// All operations in the closure are atomic. Either all succeed,
     /// or none do (rollback on error).
@@ -130,7 +130,7 @@ impl BranchHandle {
     /// ## Example
     ///
     /// ```rust,ignore
-    /// run.transaction(|txn| {
+    /// branch.transaction(|txn| {
     ///     let value = txn.kv_get("counter")?;
     ///     txn.kv_put("counter", Value::from(value.unwrap_or(0) + 1))?;
     ///     txn.event_append("counter_incremented", json!({}))?;
@@ -149,7 +149,7 @@ impl BranchHandle {
 // KvHandle
 // ============================================================================
 
-/// Handle for KV operations scoped to a run
+/// Handle for KV operations scoped to a branch
 ///
 /// Each operation runs in its own implicit transaction.
 #[derive(Clone)]
@@ -201,7 +201,7 @@ impl KvHandle {
 // EventHandle
 // ============================================================================
 
-/// Handle for Event operations scoped to a run
+/// Handle for Event operations scoped to a branch
 #[derive(Clone)]
 pub struct EventHandle {
     db: Arc<Database>,
@@ -233,7 +233,7 @@ impl EventHandle {
 // StateHandle
 // ============================================================================
 
-/// Handle for State operations scoped to a run
+/// Handle for State operations scoped to a branch
 #[derive(Clone)]
 pub struct StateHandle {
     db: Arc<Database>,
@@ -272,7 +272,7 @@ impl StateHandle {
 // JsonHandle
 // ============================================================================
 
-/// Handle for JSON operations scoped to a run
+/// Handle for JSON operations scoped to a branch
 #[derive(Clone)]
 pub struct JsonHandle {
     db: Arc<Database>,
@@ -311,7 +311,7 @@ impl JsonHandle {
 // VectorHandle
 // ============================================================================
 
-/// Handle for Vector operations scoped to a run
+/// Handle for Vector operations scoped to a branch
 ///
 /// Note: VectorStore operations in transactions are limited.
 /// Complex operations like search should use VectorStore directly.
@@ -353,7 +353,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_run_handle_is_clone_send_sync() {
+    fn test_branch_handle_is_clone_send_sync() {
         fn assert_clone_send_sync<T: Clone + Send + Sync>() {}
         assert_clone_send_sync::<BranchHandle>();
         assert_clone_send_sync::<KvHandle>();

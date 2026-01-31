@@ -100,7 +100,7 @@ pub trait Storage: Send + Sync {
 
     /// Scan all keys for a given branch_id at or before max_version
     ///
-    /// Critical for replay: fetch all writes for a specific run.
+    /// Critical for replay: fetch all writes for a specific branch.
     /// Results are sorted by key order.
     ///
     /// # Errors
@@ -571,15 +571,15 @@ mod tests {
     #[test]
     fn storage_scan_by_branch_isolates_branches() {
         let store = MockStorage::new();
-        let run1 = BranchId::new();
-        let run2 = BranchId::new();
-        let ns1 = Namespace::new("t".into(), "a".into(), "g".into(), run1);
-        let ns2 = Namespace::new("t".into(), "a".into(), "g".into(), run2);
+        let branch1 = BranchId::new();
+        let branch2 = BranchId::new();
+        let ns1 = Namespace::new("t".into(), "a".into(), "g".into(), branch1);
+        let ns2 = Namespace::new("t".into(), "a".into(), "g".into(), branch2);
 
         store.put(Key::new_kv(ns1.clone(), "k1"), Value::Int(1), None).unwrap();
         store.put(Key::new_kv(ns2.clone(), "k2"), Value::Int(2), None).unwrap();
 
-        let results = store.scan_by_branch(run1, u64::MAX).unwrap();
+        let results = store.scan_by_branch(branch1, u64::MAX).unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].1.value, Value::Int(1));
     }

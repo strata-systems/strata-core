@@ -1,11 +1,11 @@
-//! Integration tests for Run Lifecycle (Epic 43)
+//! Integration tests for Branch Lifecycle (Epic 43)
 //!
 //! Tests for:
 //! - BranchStatus and BranchMetadata types
 //! - BranchIndex event offset tracking
 //! - ReadOnlyView
-//! - diff_runs() key-level comparison
-//! - Orphaned run detection
+//! - diff_branches() key-level comparison
+//! - Orphaned branch detection
 
 use strata_core::branch_types::{BranchMetadata, BranchStatus};
 use strata_core::types::{Key, Namespace, BranchId};
@@ -18,7 +18,7 @@ use strata_engine::{diff_views, DiffEntry, ReadOnlyView, BranchDiff, ReplayBranc
 // ============================================================================
 
 #[test]
-fn test_run_status_values() {
+fn test_branch_status_values() {
     // Test all status values
     let active = BranchStatus::Active;
     let completed = BranchStatus::Completed;
@@ -47,7 +47,7 @@ fn test_run_status_values() {
 }
 
 #[test]
-fn test_run_metadata_lifecycle() {
+fn test_branch_metadata_lifecycle() {
     let branch_id = BranchId::new();
     let started_at = 1000000u64;
     let begin_offset = 0u64;
@@ -68,7 +68,7 @@ fn test_run_metadata_lifecycle() {
     meta.increment_event_count();
     assert_eq!(meta.event_count, 2);
 
-    // Complete the run
+    // Complete the branch
     let ended_at = 2000000u64;
     let end_offset = 500u64;
     meta.complete(ended_at, end_offset);
@@ -80,7 +80,7 @@ fn test_run_metadata_lifecycle() {
 }
 
 #[test]
-fn test_run_metadata_orphaned() {
+fn test_branch_metadata_orphaned() {
     let branch_id = BranchId::new();
     let mut meta = BranchMetadata::new(branch_id, 1000, 0);
 
@@ -95,25 +95,25 @@ fn test_run_metadata_orphaned() {
 // ============================================================================
 
 #[test]
-fn test_run_index_basic_operations() {
+fn test_branch_index_basic_operations() {
     let mut index = BranchIndex::new();
 
     let branch_id = BranchId::new();
     let meta = BranchMetadata::new(branch_id, 1000, 0);
 
-    // Insert run
+    // Insert branch
     index.insert(branch_id, meta);
     assert!(index.exists(branch_id));
     assert_eq!(index.status(branch_id), BranchStatus::Active);
 
-    // Non-existent run
-    let other_run = BranchId::new();
-    assert!(!index.exists(other_run));
-    assert_eq!(index.status(other_run), BranchStatus::NotFound);
+    // Non-existent branch
+    let other_branch = BranchId::new();
+    assert!(!index.exists(other_branch));
+    assert_eq!(index.status(other_branch), BranchStatus::NotFound);
 }
 
 #[test]
-fn test_run_index_event_tracking() {
+fn test_branch_index_event_tracking() {
     let mut index = BranchIndex::new();
 
     let branch_id = BranchId::new();
@@ -135,39 +135,39 @@ fn test_run_index_event_tracking() {
 }
 
 #[test]
-fn test_run_index_multiple_runs() {
+fn test_branch_index_multiple_branches() {
     let mut index = BranchIndex::new();
 
-    // Create multiple runs
-    let run1 = BranchId::new();
-    let run2 = BranchId::new();
-    let run3 = BranchId::new();
+    // Create multiple branches
+    let branch1 = BranchId::new();
+    let branch2 = BranchId::new();
+    let branch3 = BranchId::new();
 
-    index.insert(run1, BranchMetadata::new(run1, 1000, 0));
-    index.insert(run2, BranchMetadata::new(run2, 2000, 100));
-    index.insert(run3, BranchMetadata::new(run3, 3000, 200));
+    index.insert(branch1, BranchMetadata::new(branch1, 1000, 0));
+    index.insert(branch2, BranchMetadata::new(branch2, 2000, 100));
+    index.insert(branch3, BranchMetadata::new(branch3, 3000, 200));
 
-    // Record events for different runs
-    index.record_event(run1, 10);
-    index.record_event(run1, 20);
-    index.record_event(run2, 30);
-    index.record_event(run3, 40);
-    index.record_event(run3, 50);
-    index.record_event(run3, 60);
+    // Record events for different branches
+    index.record_event(branch1, 10);
+    index.record_event(branch1, 20);
+    index.record_event(branch2, 30);
+    index.record_event(branch3, 40);
+    index.record_event(branch3, 50);
+    index.record_event(branch3, 60);
 
     // Verify isolation
-    assert_eq!(index.get_event_offsets(run1).unwrap(), &[10, 20]);
-    assert_eq!(index.get_event_offsets(run2).unwrap(), &[30]);
-    assert_eq!(index.get_event_offsets(run3).unwrap(), &[40, 50, 60]);
+    assert_eq!(index.get_event_offsets(branch1).unwrap(), &[10, 20]);
+    assert_eq!(index.get_event_offsets(branch2).unwrap(), &[30]);
+    assert_eq!(index.get_event_offsets(branch3).unwrap(), &[40, 50, 60]);
 
-    // List all runs
-    let runs = index.list();
-    assert_eq!(runs.len(), 3);
+    // List all branches
+    let branches = index.list();
+    assert_eq!(branches.len(), 3);
 
     let branch_ids = index.list_branch_ids();
-    assert!(branch_ids.contains(&run1));
-    assert!(branch_ids.contains(&run2));
-    assert!(branch_ids.contains(&run3));
+    assert!(branch_ids.contains(&branch1));
+    assert!(branch_ids.contains(&branch2));
+    assert!(branch_ids.contains(&branch3));
 }
 
 // ============================================================================
@@ -258,7 +258,7 @@ fn test_read_only_view_operation_count() {
 }
 
 // ============================================================================
-// diff_runs() Key-Level Comparison
+// diff_branches() Key-Level Comparison
 // ============================================================================
 
 #[test]
@@ -398,68 +398,68 @@ fn test_diff_summary() {
 }
 
 // ============================================================================
-// Orphaned Run Detection
+// Orphaned Branch Detection
 // ============================================================================
 
 #[test]
-fn test_orphaned_run_detection_basic() {
+fn test_orphaned_branch_detection_basic() {
     let mut index = BranchIndex::new();
 
-    let run1 = BranchId::new();
-    let run2 = BranchId::new();
+    let branch1 = BranchId::new();
+    let branch2 = BranchId::new();
 
-    // Create two active runs
-    index.insert(run1, BranchMetadata::new(run1, 1000, 0));
-    index.insert(run2, BranchMetadata::new(run2, 2000, 100));
+    // Create two active branches
+    index.insert(branch1, BranchMetadata::new(branch1, 1000, 0));
+    index.insert(branch2, BranchMetadata::new(branch2, 2000, 100));
 
-    // Find active runs (potential orphans after crash)
+    // Find active branches (potential orphans after crash)
     let active = index.find_active();
     assert_eq!(active.len(), 2);
 
     // Mark them as orphaned
     index.mark_orphaned(&active);
 
-    assert_eq!(index.status(run1), BranchStatus::Orphaned);
-    assert_eq!(index.status(run2), BranchStatus::Orphaned);
+    assert_eq!(index.status(branch1), BranchStatus::Orphaned);
+    assert_eq!(index.status(branch2), BranchStatus::Orphaned);
 }
 
 #[test]
-fn test_orphaned_run_detection_mixed_states() {
+fn test_orphaned_branch_detection_mixed_states() {
     let mut index = BranchIndex::new();
 
-    let completed_run = BranchId::new();
-    let active_run1 = BranchId::new();
-    let active_run2 = BranchId::new();
+    let completed_branch = BranchId::new();
+    let active_branch1 = BranchId::new();
+    let active_branch2 = BranchId::new();
 
-    // Create runs with different states
-    let mut completed_meta = BranchMetadata::new(completed_run, 1000, 0);
+    // Create branches with different states
+    let mut completed_meta = BranchMetadata::new(completed_branch, 1000, 0);
     completed_meta.complete(2000, 100);
-    index.insert(completed_run, completed_meta);
+    index.insert(completed_branch, completed_meta);
 
-    index.insert(active_run1, BranchMetadata::new(active_run1, 3000, 200));
-    index.insert(active_run2, BranchMetadata::new(active_run2, 4000, 300));
+    index.insert(active_branch1, BranchMetadata::new(active_branch1, 3000, 200));
+    index.insert(active_branch2, BranchMetadata::new(active_branch2, 4000, 300));
 
-    // Only active runs should be detected
+    // Only active branches should be detected
     let active = index.find_active();
     assert_eq!(active.len(), 2);
-    assert!(active.contains(&active_run1));
-    assert!(active.contains(&active_run2));
-    assert!(!active.contains(&completed_run));
+    assert!(active.contains(&active_branch1));
+    assert!(active.contains(&active_branch2));
+    assert!(!active.contains(&completed_branch));
 
     // Mark orphans
     index.mark_orphaned(&active);
 
     // Verify final states
-    assert_eq!(index.status(completed_run), BranchStatus::Completed);
-    assert_eq!(index.status(active_run1), BranchStatus::Orphaned);
-    assert_eq!(index.status(active_run2), BranchStatus::Orphaned);
+    assert_eq!(index.status(completed_branch), BranchStatus::Completed);
+    assert_eq!(index.status(active_branch1), BranchStatus::Orphaned);
+    assert_eq!(index.status(active_branch2), BranchStatus::Orphaned);
 }
 
 #[test]
 fn test_count_by_status() {
     let mut index = BranchIndex::new();
 
-    // Create runs with different states
+    // Create branches with different states
     for _ in 0..3 {
         let branch_id = BranchId::new();
         index.insert(branch_id, BranchMetadata::new(branch_id, 1000, 0));
@@ -524,7 +524,7 @@ fn test_replay_invariant_p5_deterministic() {
 
 #[test]
 fn test_replay_invariant_p6_idempotent() {
-    // P6: Running twice produces identical view
+    // P6: Replaying twice produces identical view
     let branch_id = BranchId::new();
     let ns = test_namespace();
 

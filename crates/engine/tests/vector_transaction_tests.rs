@@ -394,19 +394,19 @@ fn test_operation_sequence_survives_restart() {
 }
 
 // ============================================================================
-// Run Isolation Tests
+// Branch Isolation Tests
 // ============================================================================
 
-/// Test: Different runs' collections don't interfere
+/// Test: Different branches' collections don't interfere
 #[test]
-fn test_run_isolation_survives_restart() {
+fn test_branch_isolation_survives_restart() {
     ensure_recovery_registered();
     let temp_dir = TempDir::new().unwrap();
     let db_path = temp_dir.path().to_path_buf();
-    let run1 = BranchId::new();
-    let run2 = BranchId::new();
+    let branch1 = BranchId::new();
+    let branch2 = BranchId::new();
 
-    // Create collections in different runs
+    // Create collections in different branches
     {
         let db = Database::open(&db_path).unwrap();
         let store = VectorStore::new(db.clone());
@@ -414,17 +414,17 @@ fn test_run_isolation_survives_restart() {
         let config = VectorConfig::new(3, DistanceMetric::Cosine).unwrap();
 
         store
-            .create_collection(run1, "shared_name", config.clone())
+            .create_collection(branch1, "shared_name", config.clone())
             .unwrap();
         store
-            .create_collection(run2, "shared_name", config)
+            .create_collection(branch2, "shared_name", config)
             .unwrap();
 
         store
-            .insert(run1, "shared_name", "vec1", &[1.0, 0.0, 0.0], None)
+            .insert(branch1, "shared_name", "vec1", &[1.0, 0.0, 0.0], None)
             .unwrap();
         store
-            .insert(run2, "shared_name", "vec1", &[0.0, 1.0, 0.0], None)
+            .insert(branch2, "shared_name", "vec1", &[0.0, 1.0, 0.0], None)
             .unwrap();
 
         db.flush().unwrap();
@@ -435,9 +435,9 @@ fn test_run_isolation_survives_restart() {
         let db = Database::open(&db_path).unwrap();
         let store = VectorStore::new(db.clone());
 
-        // Both runs should have their own collection
-        let list1 = store.list_collections(run1).unwrap();
-        let list2 = store.list_collections(run2).unwrap();
+        // Both branches should have their own collection
+        let list1 = store.list_collections(branch1).unwrap();
+        let list2 = store.list_collections(branch2).unwrap();
 
         assert_eq!(list1.len(), 1);
         assert_eq!(list2.len(), 1);

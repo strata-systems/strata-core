@@ -226,23 +226,23 @@ fn saga_pattern_all_steps_complete() {
 }
 
 // ============================================================================
-// Isolation Between Runs
+// Isolation Between Branches
 // ============================================================================
 
 #[test]
-fn cross_primitive_run_isolation() {
+fn cross_primitive_branch_isolation() {
     let test_db = TestDb::new();
     let branch_a = BranchId::new();
     let branch_b = BranchId::new();
 
-    // Write to run A
+    // Write to branch A
     test_db.db.transaction(branch_a, |txn| {
         txn.kv_put("shared_key", Value::String("branch_a".into()))?;
         txn.event_append("log", event_payload(Value::String("branch_a".into())))?;
         Ok(())
     }).unwrap();
 
-    // Write to run B
+    // Write to branch B
     test_db.db.transaction(branch_b, |txn| {
         txn.kv_put("shared_key", Value::String("branch_b".into()))?;
         txn.event_append("log", event_payload(Value::String("branch_b".into())))?;
@@ -252,14 +252,14 @@ fn cross_primitive_run_isolation() {
     let kv = test_db.kv();
     let event = test_db.event();
 
-    // Each run sees only its own data
+    // Each branch sees only its own data
     let a_key = kv.get(&branch_a, "shared_key").unwrap().unwrap();
     let b_key = kv.get(&branch_b, "shared_key").unwrap().unwrap();
 
     assert_eq!(a_key, Value::String("branch_a".into()));
     assert_eq!(b_key, Value::String("branch_b".into()));
 
-    // Each run has its own event log
+    // Each branch has its own event log
     assert_eq!(event.len(&branch_a).unwrap(), 1);
     assert_eq!(event.len(&branch_b).unwrap(), 1);
 }

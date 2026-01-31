@@ -5,10 +5,10 @@
 //! KVStore is a stateless facade over the Database engine. It holds no
 //! in-memory state beyond an `Arc<Database>` reference.
 //!
-//! ## Run Isolation
+//! ## Branch Isolation
 //!
 //! All operations are scoped to a `BranchId`. Keys are prefixed with the
-//! run's namespace, ensuring complete isolation between runs.
+//! branch's namespace, ensuring complete isolation between branches.
 //!
 //! ## Thread Safety
 //!
@@ -58,7 +58,7 @@ impl KVStore {
         Self { db }
     }
 
-    /// Build namespace for run-scoped operations
+    /// Build namespace for branch-scoped operations
     fn namespace_for_branch(&self, branch_id: &BranchId) -> Namespace {
         Namespace::for_branch(*branch_id)
     }
@@ -304,24 +304,24 @@ mod tests {
     }
 
     #[test]
-    fn test_run_isolation() {
+    fn test_branch_isolation() {
         let (_temp, _db, kv) = setup();
-        let run1 = BranchId::new();
-        let run2 = BranchId::new();
+        let branch1 = BranchId::new();
+        let branch2 = BranchId::new();
 
-        kv.put(&run1, "shared-key", Value::String("run1-value".into()))
+        kv.put(&branch1, "shared-key", Value::String("branch1-value".into()))
             .unwrap();
-        kv.put(&run2, "shared-key", Value::String("run2-value".into()))
+        kv.put(&branch2, "shared-key", Value::String("branch2-value".into()))
             .unwrap();
 
-        // Each run sees its own value
+        // Each branch sees its own value
         assert_eq!(
-            kv.get(&run1, "shared-key").unwrap(),
-            Some(Value::String("run1-value".into()))
+            kv.get(&branch1, "shared-key").unwrap(),
+            Some(Value::String("branch1-value".into()))
         );
         assert_eq!(
-            kv.get(&run2, "shared-key").unwrap(),
-            Some(Value::String("run2-value".into()))
+            kv.get(&branch2, "shared-key").unwrap(),
+            Some(Value::String("branch2-value".into()))
         );
     }
 
@@ -373,22 +373,22 @@ mod tests {
     }
 
     #[test]
-    fn test_list_run_isolation() {
+    fn test_list_branch_isolation() {
         let (_temp, _db, kv) = setup();
-        let run1 = BranchId::new();
-        let run2 = BranchId::new();
+        let branch1 = BranchId::new();
+        let branch2 = BranchId::new();
 
-        kv.put(&run1, "run1-key", Value::Int(1)).unwrap();
-        kv.put(&run2, "run2-key", Value::Int(2)).unwrap();
+        kv.put(&branch1, "branch1-key", Value::Int(1)).unwrap();
+        kv.put(&branch2, "branch2-key", Value::Int(2)).unwrap();
 
-        // Each run only sees its own keys
-        let run1_keys = kv.list(&run1, None).unwrap();
-        assert_eq!(run1_keys.len(), 1);
-        assert!(run1_keys.contains(&"run1-key".to_string()));
+        // Each branch only sees its own keys
+        let branch1_keys = kv.list(&branch1, None).unwrap();
+        assert_eq!(branch1_keys.len(), 1);
+        assert!(branch1_keys.contains(&"branch1-key".to_string()));
 
-        let run2_keys = kv.list(&run2, None).unwrap();
-        assert_eq!(run2_keys.len(), 1);
-        assert!(run2_keys.contains(&"run2-key".to_string()));
+        let branch2_keys = kv.list(&branch2, None).unwrap();
+        assert_eq!(branch2_keys.len(), 1);
+        assert!(branch2_keys.contains(&"branch2-key".to_string()));
     }
 
     #[test]

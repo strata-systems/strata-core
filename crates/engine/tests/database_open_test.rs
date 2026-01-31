@@ -244,47 +244,47 @@ fn test_crash_recovery() {
 }
 
 #[test]
-fn test_multiple_run_ids() {
+fn test_multiple_branch_ids() {
     let temp_dir = TempDir::new().unwrap();
-    let db_path = temp_dir.path().join("multi_run_test");
+    let db_path = temp_dir.path().join("multi_branch_test");
 
-    let run_id1 = BranchId::new();
-    let run_id2 = BranchId::new();
+    let branch_id1 = BranchId::new();
+    let branch_id2 = BranchId::new();
 
     let ns1 = Namespace::new(
         "tenant".to_string(),
         "app".to_string(),
         "agent".to_string(),
-        run_id1,
+        branch_id1,
     );
     let ns2 = Namespace::new(
         "tenant".to_string(),
         "app".to_string(),
         "agent".to_string(),
-        run_id2,
+        branch_id2,
     );
 
-    // Write data from two different runs
+    // Write data from two different branches
     {
         let db = Database::open(&db_path).expect("Failed to open database");
 
         let wal = db.wal().unwrap();
         let mut wal_guard = wal.lock();
 
-        // Transaction from run 1
+        // Transaction from branch 1
         wal_guard
             .append(&WALEntry::BeginTxn {
                 txn_id: 1,
-                branch_id: run_id1,
+                branch_id: branch_id1,
                 timestamp: now(),
             })
             .unwrap();
 
         wal_guard
             .append(&WALEntry::Write {
-                branch_id: run_id1,
-                key: Key::new_kv(ns1.clone(), "run1_key"),
-                value: Value::String("run1_value".to_string()),
+                branch_id: branch_id1,
+                key: Key::new_kv(ns1.clone(), "branch1_key"),
+                value: Value::String("branch1_value".to_string()),
                 version: 1,
             })
             .unwrap();
@@ -292,24 +292,24 @@ fn test_multiple_run_ids() {
         wal_guard
             .append(&WALEntry::CommitTxn {
                 txn_id: 1,
-                branch_id: run_id1,
+                branch_id: branch_id1,
             })
             .unwrap();
 
-        // Transaction from run 2
+        // Transaction from branch 2
         wal_guard
             .append(&WALEntry::BeginTxn {
                 txn_id: 2,
-                branch_id: run_id2,
+                branch_id: branch_id2,
                 timestamp: now(),
             })
             .unwrap();
 
         wal_guard
             .append(&WALEntry::Write {
-                branch_id: run_id2,
-                key: Key::new_kv(ns2.clone(), "run2_key"),
-                value: Value::String("run2_value".to_string()),
+                branch_id: branch_id2,
+                key: Key::new_kv(ns2.clone(), "branch2_key"),
+                value: Value::String("branch2_value".to_string()),
                 version: 2,
             })
             .unwrap();
@@ -317,7 +317,7 @@ fn test_multiple_run_ids() {
         wal_guard
             .append(&WALEntry::CommitTxn {
                 txn_id: 2,
-                branch_id: run_id2,
+                branch_id: branch_id2,
             })
             .unwrap();
 
@@ -325,25 +325,25 @@ fn test_multiple_run_ids() {
         db.flush().unwrap();
     }
 
-    // Reopen and verify both runs' data is preserved
+    // Reopen and verify both branches' data is preserved
     {
         let db = Database::open(&db_path).expect("Failed to reopen database");
 
-        // Run 1 data
-        let run1_val = db
+        // Branch 1 data
+        let branch1_val = db
             .storage()
-            .get(&Key::new_kv(ns1, "run1_key"))
+            .get(&Key::new_kv(ns1, "branch1_key"))
             .unwrap()
-            .expect("run1_key should exist");
-        assert_eq!(run1_val.value, Value::String("run1_value".to_string()));
+            .expect("branch1_key should exist");
+        assert_eq!(branch1_val.value, Value::String("branch1_value".to_string()));
 
-        // Run 2 data
-        let run2_val = db
+        // Branch 2 data
+        let branch2_val = db
             .storage()
-            .get(&Key::new_kv(ns2, "run2_key"))
+            .get(&Key::new_kv(ns2, "branch2_key"))
             .unwrap()
-            .expect("run2_key should exist");
-        assert_eq!(run2_val.value, Value::String("run2_value".to_string()));
+            .expect("branch2_key should exist");
+        assert_eq!(branch2_val.value, Value::String("branch2_value".to_string()));
     }
 }
 

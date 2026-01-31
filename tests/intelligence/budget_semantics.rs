@@ -17,7 +17,7 @@ use std::collections::HashSet;
 #[test]
 fn test_tier3_budget_truncates_not_corrupts() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_large_dataset(&db, &branch_id, 100);
 
     let kv = KVStore::new(db.clone());
@@ -55,7 +55,7 @@ fn test_tier3_budget_truncates_not_corrupts() {
 #[test]
 fn test_tier3_truncation_sets_flag() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_large_dataset(&db, &branch_id, 100);
 
     let kv = KVStore::new(db.clone());
@@ -87,7 +87,7 @@ fn test_tier3_truncation_sets_flag() {
 #[test]
 fn test_tier3_budget_preserves_prefix_ordering() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_large_dataset(&db, &branch_id, 50);
 
     let kv = KVStore::new(db.clone());
@@ -125,7 +125,7 @@ fn test_tier3_budget_preserves_prefix_ordering() {
 #[test]
 fn test_tier3_scores_decreasing_with_budget() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_large_dataset(&db, &branch_id, 50);
 
     let kv = KVStore::new(db.clone());
@@ -150,7 +150,7 @@ fn test_tier3_scores_decreasing_with_budget() {
 #[test]
 fn test_tier3_budget_no_duplicates() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_large_dataset(&db, &branch_id, 50);
 
     let hybrid = db.hybrid();
@@ -172,29 +172,29 @@ fn test_tier3_budget_no_duplicates() {
     );
 }
 
-/// Budget respects run isolation
+/// Budget respects branch isolation
 #[test]
-fn test_tier3_budget_respects_run_isolation() {
+fn test_tier3_budget_respects_branch_isolation() {
     let db = create_test_db();
-    let run1 = test_run_id();
-    let run2 = test_run_id();
+    let branch1 = test_branch_id();
+    let branch2 = test_branch_id();
 
-    populate_large_dataset(&db, &run1, 25);
-    populate_large_dataset(&db, &run2, 25);
+    populate_large_dataset(&db, &branch1, 25);
+    populate_large_dataset(&db, &branch2, 25);
 
     let kv = KVStore::new(db.clone());
 
     let budget = SearchBudget::default()
         .with_candidates(15)
         .with_per_primitive(15);
-    let req1 = SearchRequest::new(run1, "searchable")
+    let req1 = SearchRequest::new(branch1, "searchable")
         .with_budget(budget)
         .with_k(50);
 
     let response = kv.search(&req1).unwrap();
 
-    // All results should be from run1 only
-    assert_all_from_run(&response, run1);
+    // All results should be from branch1 only
+    assert_all_from_branch(&response, branch1);
 }
 
 // ============================================================================

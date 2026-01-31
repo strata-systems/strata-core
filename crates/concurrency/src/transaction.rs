@@ -336,7 +336,7 @@ pub struct TransactionContext {
     // Identity
     /// Unique transaction ID
     pub txn_id: u64,
-    /// Run this transaction belongs to
+    /// Branch this transaction belongs to
     pub branch_id: BranchId,
 
     // Snapshot isolation
@@ -422,7 +422,7 @@ impl TransactionContext {
     ///
     /// # Arguments
     /// * `txn_id` - Unique transaction identifier
-    /// * `branch_id` - Run this transaction belongs to
+    /// * `branch_id` - Branch this transaction belongs to
     /// * `start_version` - Snapshot version at transaction start
     ///
     /// # Example
@@ -462,7 +462,7 @@ impl TransactionContext {
     ///
     /// # Arguments
     /// * `txn_id` - Unique transaction identifier
-    /// * `branch_id` - Run this transaction belongs to
+    /// * `branch_id` - Branch this transaction belongs to
     /// * `snapshot` - Snapshot view for this transaction
     ///
     /// # Example
@@ -1250,7 +1250,7 @@ impl TransactionContext {
     /// # Arguments
     ///
     /// * `txn_id` - New transaction ID
-    /// * `branch_id` - New run ID
+    /// * `branch_id` - New branch ID
     /// * `snapshot` - New snapshot view (optional for testing)
     ///
     /// # Example

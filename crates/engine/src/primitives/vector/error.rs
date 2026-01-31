@@ -140,15 +140,15 @@ pub type VectorResult<T> = Result<T, VectorError>;
 
 impl From<VectorError> for StrataError {
     fn from(e: VectorError) -> Self {
-        // Use a placeholder branch_id since VectorError doesn't have run context
-        let placeholder_run_id = BranchId::new();
+        // Use a placeholder branch_id since VectorError doesn't have branch context
+        let placeholder_branch_id = BranchId::new();
 
         match e {
             VectorError::CollectionNotFound { name } => StrataError::NotFound {
-                entity_ref: EntityRef::vector(placeholder_run_id, name, ""),
+                entity_ref: EntityRef::vector(placeholder_branch_id, name, ""),
             },
             VectorError::CollectionAlreadyExists { name } => StrataError::InvalidOperation {
-                entity_ref: EntityRef::vector(placeholder_run_id, name, ""),
+                entity_ref: EntityRef::vector(placeholder_branch_id, name, ""),
                 reason: "Collection already exists".to_string(),
             },
             VectorError::DimensionMismatch { expected, got } => {
@@ -158,7 +158,7 @@ impl From<VectorError> for StrataError {
                 message: format!("Invalid dimension: {} (must be > 0)", dimension),
             },
             VectorError::VectorNotFound { key } => StrataError::NotFound {
-                entity_ref: EntityRef::vector(placeholder_run_id, "unknown", key),
+                entity_ref: EntityRef::vector(placeholder_branch_id, "unknown", key),
             },
             VectorError::EmptyEmbedding => StrataError::InvalidInput {
                 message: "Empty embedding".to_string(),
@@ -170,7 +170,7 @@ impl From<VectorError> for StrataError {
                 message: format!("Invalid key '{}': {}", key, reason),
             },
             VectorError::ConfigMismatch { collection, field } => StrataError::InvalidOperation {
-                entity_ref: EntityRef::vector(placeholder_run_id, collection, ""),
+                entity_ref: EntityRef::vector(placeholder_branch_id, collection, ""),
                 reason: format!("Config field '{}' cannot be changed", field),
             },
             VectorError::SearchLimitExceeded { requested, max } => StrataError::CapacityExceeded {

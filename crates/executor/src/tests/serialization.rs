@@ -230,7 +230,7 @@ fn test_command_vector_create_collection() {
 // =============================================================================
 
 #[test]
-fn test_command_run_create() {
+fn test_command_branch_create() {
     test_command_round_trip(Command::BranchCreate {
         branch_id: Some("my-branch".to_string()),
         metadata: Some(Value::Object(
@@ -242,7 +242,7 @@ fn test_command_run_create() {
 }
 
 #[test]
-fn test_command_run_list() {
+fn test_command_branch_list() {
     test_command_round_trip(Command::BranchList {
         state: Some(BranchStatus::Active),
         limit: Some(10),
@@ -390,7 +390,7 @@ fn test_output_vector_matches() {
 }
 
 #[test]
-fn test_output_run_info() {
+fn test_output_branch_info() {
     test_output_round_trip(Output::BranchWithVersion {
         info: BranchInfo {
             id: BranchId::from("test-branch"),
@@ -415,7 +415,7 @@ fn test_output_database_info() {
     test_output_round_trip(Output::DatabaseInfo(DatabaseInfo {
         version: "0.1.0".to_string(),
         uptime_secs: 3600,
-        run_count: 10,
+        branch_count: 10,
         total_keys: 1000,
     }));
 }

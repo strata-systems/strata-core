@@ -62,8 +62,8 @@ pub mod primitive_ids {
     pub const EVENT: u8 = 3;
     /// State Cell primitive
     pub const STATE: u8 = 4;
-    /// Run Index primitive (ID 5 was formerly TRACE, skipped for compatibility)
-    pub const RUN: u8 = 6;
+    /// Branch Index primitive (ID 5 was formerly TRACE, skipped for compatibility)
+    pub const BRANCH: u8 = 6;
     /// Vector primitive
     pub const VECTOR: u8 = 7;
 
@@ -74,7 +74,7 @@ pub mod primitive_ids {
             JSON => "JSON",
             EVENT => "Event",
             STATE => "State",
-            RUN => "Run",
+            BRANCH => "Branch",
             VECTOR => "Vector",
             _ => "Unknown",
         }
@@ -82,7 +82,7 @@ pub mod primitive_ids {
 
     /// Check if primitive ID is valid
     pub fn is_valid(id: u8) -> bool {
-        // IDs 1-4 (KV, JSON, Event, State), 6-7 (Run, Vector) are valid
+        // IDs 1-4 (KV, JSON, Event, State), 6-7 (Branch, Vector) are valid
         // ID 5 (formerly Trace) is no longer valid
         matches!(id, 1..=4 | 6..=7)
     }
@@ -393,7 +393,7 @@ mod tests {
             primitive_ids::JSON,
             primitive_ids::EVENT,
             primitive_ids::STATE,
-            primitive_ids::RUN,
+            primitive_ids::BRANCH,
             primitive_ids::VECTOR,
         ];
         let mut set = HashSet::new();
@@ -409,7 +409,7 @@ mod tests {
         assert_eq!(primitive_ids::EVENT, 3);
         assert_eq!(primitive_ids::STATE, 4);
         // ID 5 was formerly TRACE, now skipped
-        assert_eq!(primitive_ids::RUN, 6);
+        assert_eq!(primitive_ids::BRANCH, 6);
         assert_eq!(primitive_ids::VECTOR, 7);
     }
 
@@ -421,7 +421,7 @@ mod tests {
         assert_eq!(primitive_ids::name(primitive_ids::STATE), "State");
         // ID 5 (formerly TRACE) is now unknown
         assert_eq!(primitive_ids::name(5), "Unknown");
-        assert_eq!(primitive_ids::name(primitive_ids::RUN), "Run");
+        assert_eq!(primitive_ids::name(primitive_ids::BRANCH), "Branch");
         assert_eq!(primitive_ids::name(primitive_ids::VECTOR), "Vector");
         assert_eq!(primitive_ids::name(99), "Unknown");
     }

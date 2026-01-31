@@ -31,7 +31,7 @@ pub use writeset::{Mutation, Writeset, WritesetError};
 
 pub use primitives::{
     EventSnapshotEntry, JsonSnapshotEntry, KvSnapshotEntry, PrimitiveSerializeError,
-    RunSnapshotEntry, SnapshotSerializer, StateSnapshotEntry,
+    BranchSnapshotEntry, SnapshotSerializer, StateSnapshotEntry,
     VectorCollectionSnapshotEntry, VectorSnapshotEntry,
 };
 pub use watermark::{CheckpointInfo, SnapshotWatermark, WatermarkError};

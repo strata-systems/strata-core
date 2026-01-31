@@ -1,17 +1,17 @@
-//! RunBundle error types
+//! BranchBundle error types
 
 use std::io;
 use thiserror::Error;
 
-/// Errors that can occur during RunBundle operations
+/// Errors that can occur during BranchBundle operations
 #[derive(Debug, Error)]
-pub enum RunBundleError {
-    /// Run not found in BranchIndex
-    #[error("Run not found: {0}")]
-    RunNotFound(String),
+pub enum BranchBundleError {
+    /// Branch not found in BranchIndex
+    #[error("Branch not found: {0}")]
+    BranchNotFound(String),
 
-    /// Run is not in a terminal state (cannot export)
-    #[error("Run is not in terminal state (current: {0}). Only Completed, Failed, Cancelled, or Archived runs can be exported.")]
+    /// Branch is not in a terminal state (cannot export)
+    #[error("Branch is not in terminal state (current: {0}). Only Completed, Failed, Cancelled, or Archived branches can be exported.")]
     NotTerminal(String),
 
     /// Invalid bundle format or structure
@@ -33,9 +33,9 @@ pub enum RunBundleError {
         actual: String,
     },
 
-    /// Run already exists (import conflict)
-    #[error("Run already exists: {0}")]
-    RunAlreadyExists(String),
+    /// Branch already exists (import conflict)
+    #[error("Branch already exists: {0}")]
+    BranchAlreadyExists(String),
 
     /// Unsupported bundle format version
     #[error("Unsupported format version: {version}. Supported: 2 (v1 bundles must be re-exported)")]
@@ -78,7 +78,7 @@ pub enum RunBundleError {
     },
 }
 
-impl RunBundleError {
+impl BranchBundleError {
     /// Create an archive error
     pub fn archive(msg: impl Into<String>) -> Self {
         Self::Archive(msg.into())
@@ -110,8 +110,8 @@ impl RunBundleError {
     }
 }
 
-/// Result type for RunBundle operations
-pub type RunBundleResult<T> = Result<T, RunBundleError>;
+/// Result type for BranchBundle operations
+pub type BranchBundleResult<T> = Result<T, BranchBundleError>;
 
 #[cfg(test)]
 mod tests {
@@ -119,14 +119,14 @@ mod tests {
 
     #[test]
     fn test_error_display() {
-        let err = RunBundleError::RunNotFound("abc-123".to_string());
+        let err = BranchBundleError::BranchNotFound("abc-123".to_string());
         assert!(err.to_string().contains("abc-123"));
 
-        let err = RunBundleError::NotTerminal("Active".to_string());
+        let err = BranchBundleError::NotTerminal("Active".to_string());
         assert!(err.to_string().contains("Active"));
         assert!(err.to_string().contains("terminal"));
 
-        let err = RunBundleError::ChecksumMismatch {
+        let err = BranchBundleError::ChecksumMismatch {
             file: "WAL.runlog".to_string(),
             expected: "abc".to_string(),
             actual: "def".to_string(),
@@ -138,20 +138,20 @@ mod tests {
 
     #[test]
     fn test_error_constructors() {
-        let err = RunBundleError::archive("tar failed");
-        assert!(matches!(err, RunBundleError::Archive(_)));
+        let err = BranchBundleError::archive("tar failed");
+        assert!(matches!(err, BranchBundleError::Archive(_)));
 
-        let err = RunBundleError::compression("zstd failed");
-        assert!(matches!(err, RunBundleError::Compression(_)));
+        let err = BranchBundleError::compression("zstd failed");
+        assert!(matches!(err, BranchBundleError::Compression(_)));
 
-        let err = RunBundleError::missing_file("MANIFEST.json");
-        assert!(matches!(err, RunBundleError::MissingFile(_)));
+        let err = BranchBundleError::missing_file("MANIFEST.json");
+        assert!(matches!(err, BranchBundleError::MissingFile(_)));
     }
 
     #[test]
     fn test_io_error_conversion() {
         let io_err = io::Error::new(io::ErrorKind::NotFound, "file not found");
-        let bundle_err: RunBundleError = io_err.into();
-        assert!(matches!(bundle_err, RunBundleError::Io(_)));
+        let bundle_err: BranchBundleError = io_err.into();
+        assert!(matches!(bundle_err, BranchBundleError::Io(_)));
     }
 }

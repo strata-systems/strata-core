@@ -201,7 +201,7 @@ fn list_returns_all_cells() {
 
 #[test]
 #[ignore = "requires: StateCell::list"]
-fn list_empty_run_returns_empty() {
+fn list_empty_branch_returns_empty() {
     let _test_db = TestDb::new();
     // list() is not yet in the MVP API
 }

@@ -1,8 +1,8 @@
 //! Core types for Strata database
 //!
 //! This module defines the foundational types:
-//! - BranchId: Unique identifier for agent runs
-//! - Namespace: Hierarchical namespace (tenant/app/agent/run)
+//! - BranchId: Unique identifier for agent branches
+//! - Namespace: Hierarchical namespace (tenant/app/agent/branch)
 //! - TypeTag: Type discriminator for unified storage
 //! - Key: Composite key (namespace + type_tag + user_key)
 
@@ -10,11 +10,11 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use uuid::Uuid;
 
-/// Unique identifier for an agent run
+/// Unique identifier for an agent branch
 ///
 /// A BranchId is a wrapper around a UUID v4, providing unique identification
 /// for each agent execution branch. BranchIds are used throughout the system
-/// to scope data and enable run-specific queries.
+/// to scope data and enable branch-specific queries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct BranchId(Uuid);
 
@@ -57,7 +57,7 @@ impl fmt::Display for BranchId {
     }
 }
 
-/// Hierarchical namespace: tenant → app → agent → run
+/// Hierarchical namespace: tenant → app → agent → branch
 ///
 /// Namespaces provide multi-tenant isolation and hierarchical organization
 /// of data. The hierarchy enables efficient querying and access control.
@@ -71,7 +71,7 @@ pub struct Namespace {
     pub app: String,
     /// Agent identifier
     pub agent: String,
-    /// Run identifier
+    /// Branch identifier
     pub branch_id: BranchId,
 }
 
@@ -86,10 +86,10 @@ impl Namespace {
         }
     }
 
-    /// Create a namespace for a run with default tenant/app/agent
+    /// Create a namespace for a branch with default tenant/app/agent
     ///
     /// This is a convenience method for primitives that only need
-    /// run-level isolation. Uses "default" for tenant, app, and agent.
+    /// branch-level isolation. Uses "default" for tenant, app, and agent.
     pub fn for_branch(branch_id: BranchId) -> Self {
         Self {
             tenant: "default".to_string(),
@@ -147,7 +147,7 @@ impl PartialOrd for Namespace {
 ///
 /// Note: 0x04 was formerly Trace (TraceStore was removed in 0.12.0)
 ///
-/// Ordering: KV < Event < State < Run < Vector < Json < VectorConfig
+/// Ordering: KV < Event < State < Branch < Vector < Json < VectorConfig
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum TypeTag {
@@ -160,7 +160,7 @@ pub enum TypeTag {
     /// Reserved for backwards compatibility (TraceStore was removed)
     #[deprecated(since = "0.12.0", note = "TraceStore primitive was removed")]
     Trace = 0x04,
-    /// Run index entries
+    /// Branch index entries
     Branch = 0x05,
     /// Vector store entries
     Vector = 0x10,
@@ -230,9 +230,9 @@ impl TypeTag {
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Key {
-    /// Namespace (tenant/app/agent/run hierarchy)
+    /// Namespace (tenant/app/agent/branch hierarchy)
     pub namespace: Namespace,
-    /// Type discriminator (KV, Event, State, Trace, Run, etc.)
+    /// Type discriminator (KV, Event, State, Trace, Branch, etc.)
     pub type_tag: TypeTag,
     /// User-defined key bytes (supports arbitrary binary keys)
     pub user_key: Vec<u8>,
@@ -277,7 +277,7 @@ impl Key {
         Self::new(namespace, TypeTag::State, key.as_ref().to_vec())
     }
 
-    /// Create a run index key
+    /// Create a branch index key
     ///
     /// Helper that automatically sets type_tag to TypeTag::Branch and
     /// uses the branch_id as the key
@@ -285,22 +285,22 @@ impl Key {
         Self::new(namespace, TypeTag::Branch, branch_id.as_bytes().to_vec())
     }
 
-    /// Create a run index key from string branch_id
+    /// Create a branch index key from string branch_id
     ///
     /// Alternative helper that accepts string branch_id for index keys
     pub fn new_branch_with_id(namespace: Namespace, branch_id: &str) -> Self {
         Self::new(namespace, TypeTag::Branch, branch_id.as_bytes().to_vec())
     }
 
-    /// Create a run index secondary index key
+    /// Create a branch index secondary index key
     ///
     /// Index keys enable efficient queries by status, tag, or parent.
     /// Format: `__idx_{index_type}__{index_value}__{branch_id}`
     ///
     /// Example index types:
-    /// - by-status: `__idx_status__Active__run123`
-    /// - by-tag: `__idx_tag__experiment__run123`
-    /// - by-parent: `__idx_parent__parent123__run123`
+    /// - by-status: `__idx_status__Active__branch123`
+    /// - by-tag: `__idx_tag__experiment__branch123`
+    /// - by-parent: `__idx_parent__parent123__branch123`
     pub fn new_branch_index(
         namespace: Namespace,
         index_type: &str,
@@ -634,28 +634,28 @@ mod tests {
 
     #[test]
     fn test_namespace_equality() {
-        let run_id1 = BranchId::new();
-        let run_id2 = BranchId::new();
+        let branch_id1 = BranchId::new();
+        let branch_id2 = BranchId::new();
 
         let ns1 = Namespace::new(
             "acme".to_string(),
             "chatbot".to_string(),
             "agent-42".to_string(),
-            run_id1,
+            branch_id1,
         );
 
         let ns2 = Namespace::new(
             "acme".to_string(),
             "chatbot".to_string(),
             "agent-42".to_string(),
-            run_id1,
+            branch_id1,
         );
 
         let ns3 = Namespace::new(
             "acme".to_string(),
             "chatbot".to_string(),
             "agent-42".to_string(),
-            run_id2,
+            branch_id2,
         );
 
         assert_eq!(ns1, ns2, "Namespaces with same values should be equal");
@@ -731,38 +731,38 @@ mod tests {
 
     #[test]
     fn test_namespace_ordering() {
-        let run1 = BranchId::new();
-        let run2 = BranchId::new();
+        let branch1 = BranchId::new();
+        let branch2 = BranchId::new();
 
         let ns1 = Namespace::new(
             "tenant1".to_string(),
             "app1".to_string(),
             "agent1".to_string(),
-            run1,
+            branch1,
         );
         let ns2 = Namespace::new(
             "tenant1".to_string(),
             "app1".to_string(),
             "agent1".to_string(),
-            run2,
+            branch2,
         );
         let ns3 = Namespace::new(
             "tenant2".to_string(),
             "app1".to_string(),
             "agent1".to_string(),
-            run1,
+            branch1,
         );
         let ns4 = Namespace::new(
             "tenant1".to_string(),
             "app2".to_string(),
             "agent1".to_string(),
-            run1,
+            branch1,
         );
         let ns5 = Namespace::new(
             "tenant1".to_string(),
             "app1".to_string(),
             "agent2".to_string(),
-            run1,
+            branch1,
         );
 
         // Same tenant/app/agent, different branch_id - order depends on UUID
@@ -798,26 +798,26 @@ mod tests {
     fn test_namespace_btreemap_ordering() {
         use std::collections::BTreeMap;
 
-        let run1 = BranchId::new();
-        let run2 = BranchId::new();
+        let branch1 = BranchId::new();
+        let branch2 = BranchId::new();
 
         let ns1 = Namespace::new(
             "acme".to_string(),
             "app1".to_string(),
             "agent1".to_string(),
-            run1,
+            branch1,
         );
         let ns2 = Namespace::new(
             "acme".to_string(),
             "app1".to_string(),
             "agent2".to_string(),
-            run2,
+            branch2,
         );
         let ns3 = Namespace::new(
             "acme".to_string(),
             "app2".to_string(),
             "agent1".to_string(),
-            run1,
+            branch1,
         );
 
         let mut map = BTreeMap::new();
@@ -1034,10 +1034,10 @@ mod tests {
         assert_eq!(state_key.type_tag, TypeTag::State);
         assert_eq!(state_key.user_key, b"state1");
 
-        // Test run index helper
-        let run_key = Key::new_branch(ns.clone(), branch_id);
-        assert_eq!(run_key.type_tag, TypeTag::Branch);
-        assert_eq!(run_key.user_key, branch_id.as_bytes().to_vec());
+        // Test branch index helper
+        let branch_key = Key::new_branch(ns.clone(), branch_id);
+        assert_eq!(branch_key.type_tag, TypeTag::Branch);
+        assert_eq!(branch_key.user_key, branch_id.as_bytes().to_vec());
     }
 
     #[test]
@@ -1066,19 +1066,19 @@ mod tests {
         );
 
         // Test by-status index
-        let key = Key::new_branch_index(ns.clone(), "status", "Active", "run-123");
+        let key = Key::new_branch_index(ns.clone(), "status", "Active", "branch-123");
         assert_eq!(key.type_tag, TypeTag::Branch);
         assert!(key
             .user_key_string()
             .unwrap()
-            .contains("__idx_status__Active__run-123"));
+            .contains("__idx_status__Active__branch-123"));
 
         // Test by-tag index
-        let tag_key = Key::new_branch_index(ns.clone(), "tag", "experiment", "run-456");
+        let tag_key = Key::new_branch_index(ns.clone(), "tag", "experiment", "branch-456");
         assert!(tag_key
             .user_key_string()
             .unwrap()
-            .contains("__idx_tag__experiment__run-456"));
+            .contains("__idx_tag__experiment__branch-456"));
     }
 
     #[test]
@@ -1144,19 +1144,19 @@ mod tests {
     fn test_key_btree_ordering() {
         use std::collections::BTreeMap;
 
-        let run1 = BranchId::new();
+        let branch1 = BranchId::new();
 
         let ns1 = Namespace::new(
             "tenant1".to_string(),
             "app1".to_string(),
             "agent1".to_string(),
-            run1,
+            branch1,
         );
         let ns2 = Namespace::new(
             "tenant2".to_string(),
             "app1".to_string(),
             "agent1".to_string(),
-            run1,
+            branch1,
         );
 
         // Test ordering: namespace → type_tag → user_key
@@ -1400,10 +1400,10 @@ mod tests {
     fn test_key_new_branch_with_id_string_vs_branch_id() {
         let ns = Namespace::for_branch(BranchId::new());
         let branch_id = BranchId::new();
-        let run_str = format!("{}", branch_id);
+        let branch_str = format!("{}", branch_id);
 
         let key_from_id = Key::new_branch(ns.clone(), branch_id);
-        let key_from_str = Key::new_branch_with_id(ns.clone(), &run_str);
+        let key_from_str = Key::new_branch_with_id(ns.clone(), &branch_str);
 
         // These use different byte representations (UUID bytes vs UTF-8 string bytes)
         assert_ne!(key_from_id.user_key, key_from_str.user_key,

@@ -7,11 +7,11 @@
 //!
 //! Different primitives use different versioning schemes:
 //!
-//! - **TxnId**: Transaction-based versioning (KV, Json, Vector, Run)
+//! - **TxnId**: Transaction-based versioning (KV, Json, Vector, Branch)
 //!   Multiple entities modified in the same transaction share this version.
 //!
 //! - **Sequence**: Position-based versioning (EventLog)
-//!   Represents position in an append-only log. Unique within a run's event log.
+//!   Represents position in an append-only log. Unique within a branch's event log.
 //!
 //! - **Counter**: Per-entity counter (StateCell)
 //!   Increments on each modification. Used for CAS operations.
@@ -37,7 +37,7 @@ use serde::{Deserialize, Serialize};
 pub enum Version {
     /// Transaction-based version
     ///
-    /// Used by: KV, Json, Vector, Run
+    /// Used by: KV, Json, Vector, Branch
     ///
     /// Represents a global transaction ID. Multiple entities modified
     /// in the same transaction share this version.
@@ -48,7 +48,7 @@ pub enum Version {
     /// Used by: EventLog
     ///
     /// Represents position in an append-only log.
-    /// Unique within a run's event log.
+    /// Unique within a branch's event log.
     Sequence(u64),
 
     /// Counter-based version

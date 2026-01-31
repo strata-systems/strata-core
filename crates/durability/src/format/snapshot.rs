@@ -191,8 +191,8 @@ pub mod primitive_tags {
     pub const EVENT: u8 = 0x02;
     /// State cell
     pub const STATE: u8 = 0x03;
-    /// Run
-    pub const RUN: u8 = 0x05;
+    /// Branch
+    pub const BRANCH: u8 = 0x05;
     /// JSON document
     pub const JSON: u8 = 0x06;
     /// Vector embedding
@@ -204,7 +204,7 @@ pub mod primitive_tags {
             KV => "KV",
             EVENT => "Event",
             STATE => "State",
-            RUN => "Run",
+            BRANCH => "Branch",
             JSON => "Json",
             VECTOR => "Vector",
             _ => "Unknown",
@@ -212,7 +212,7 @@ pub mod primitive_tags {
     }
 
     /// All valid primitive tags in order
-    pub const ALL_TAGS: [u8; 6] = [KV, EVENT, STATE, RUN, JSON, VECTOR];
+    pub const ALL_TAGS: [u8; 6] = [KV, EVENT, STATE, BRANCH, JSON, VECTOR];
 }
 
 /// Generate snapshot file path
@@ -346,7 +346,7 @@ mod tests {
         assert_eq!(primitive_tags::tag_name(primitive_tags::KV), "KV");
         assert_eq!(primitive_tags::tag_name(primitive_tags::EVENT), "Event");
         assert_eq!(primitive_tags::tag_name(primitive_tags::STATE), "State");
-        assert_eq!(primitive_tags::tag_name(primitive_tags::RUN), "Run");
+        assert_eq!(primitive_tags::tag_name(primitive_tags::BRANCH), "Branch");
         assert_eq!(primitive_tags::tag_name(primitive_tags::JSON), "Json");
         assert_eq!(primitive_tags::tag_name(primitive_tags::VECTOR), "Vector");
         assert_eq!(primitive_tags::tag_name(0xFF), "Unknown");
@@ -361,7 +361,7 @@ mod tests {
                 primitive_tags::KV,
                 primitive_tags::EVENT,
                 primitive_tags::STATE,
-                primitive_tags::RUN,
+                primitive_tags::BRANCH,
                 primitive_tags::JSON,
                 primitive_tags::VECTOR,
             ]

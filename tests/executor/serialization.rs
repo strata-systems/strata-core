@@ -25,7 +25,7 @@ fn kv_put_roundtrip() {
 }
 
 #[test]
-fn kv_put_with_run_roundtrip() {
+fn kv_put_with_branch_roundtrip() {
     let cmd = Command::KvPut {
         branch: Some(BranchId::from("550e8400-e29b-41d4-a716-446655440401")),
         key: "key".into(),
@@ -85,7 +85,7 @@ fn vector_search_roundtrip() {
 }
 
 #[test]
-fn run_create_roundtrip() {
+fn branch_create_roundtrip() {
     let cmd = Command::BranchCreate {
         branch_id: Some("550e8400-e29b-41d4-a716-446655440401-id".into()),
         metadata: Some(Value::Object([
@@ -132,7 +132,7 @@ fn kv_put_json_format() {
 }
 
 #[test]
-fn run_field_omitted_when_none() {
+fn branch_field_omitted_when_none() {
     let cmd = Command::KvPut {
         branch: None,
         key: "k".into(),
@@ -146,7 +146,7 @@ fn run_field_omitted_when_none() {
 }
 
 #[test]
-fn run_field_present_when_some() {
+fn branch_field_present_when_some() {
     let cmd = Command::KvPut {
         branch: Some(BranchId::from("550e8400-e29b-41d4-a716-446655440401")),
         key: "k".into(),
@@ -182,7 +182,7 @@ fn deserialize_kv_put_minimal() {
 }
 
 #[test]
-fn deserialize_kv_put_with_run() {
+fn deserialize_kv_put_with_branch() {
     // Value uses tagged enum serialization: {"String": "v"}
     let json = r#"{"KvPut":{"branch":"550e8400-e29b-41d4-a716-446655440401","key":"k","value":{"String":"v"}}}"#;
 
@@ -421,7 +421,7 @@ fn distance_metric_roundtrip() {
 // ============================================================================
 
 #[test]
-fn run_status_roundtrip() {
+fn branch_status_roundtrip() {
     let cmd = Command::BranchList {
         state: Some(BranchStatus::Active),
         limit: None,

@@ -196,22 +196,22 @@ fn stress_ttl_expiration_cleanup() {
     assert_eq!(expired_count, 10_000, "All keys should be expired");
 }
 
-/// Many runs concurrent access
+/// Many branches concurrent access
 #[test]
 #[ignore]
-fn stress_many_runs_concurrent() {
+fn stress_many_branches_concurrent() {
     let store = Arc::new(ShardedStore::new());
-    let num_runs = 100;
-    let keys_per_run = 100;
+    let num_branches = 100;
+    let keys_per_branch = 100;
 
     let start = Instant::now();
 
-    let handles: Vec<_> = (0..num_runs)
+    let handles: Vec<_> = (0..num_branches)
         .map(|_| {
             let store = Arc::clone(&store);
             thread::spawn(move || {
                 let branch_id = BranchId::new();
-                for i in 0..keys_per_run {
+                for i in 0..keys_per_branch {
                     let key = create_test_key(branch_id, &format!("key_{}", i));
                     Storage::put(&*store, key, Value::Int(i), None).unwrap();
                 }
@@ -227,7 +227,7 @@ fn stress_many_runs_concurrent() {
     // Verify all data
     let verify_start = Instant::now();
     for branch_id in branch_ids {
-        for i in 0..keys_per_run {
+        for i in 0..keys_per_branch {
             let key = create_test_key(branch_id, &format!("key_{}", i));
             let val = Storage::get(&*store, &key).unwrap();
             assert_eq!(val.unwrap().value, Value::Int(i));
@@ -236,8 +236,8 @@ fn stress_many_runs_concurrent() {
     let verify_elapsed = verify_start.elapsed();
 
     println!(
-        "{} runs x {} keys: write {:?}, verify {:?}",
-        num_runs, keys_per_run, write_elapsed, verify_elapsed
+        "{} branches x {} keys: write {:?}, verify {:?}",
+        num_branches, keys_per_branch, write_elapsed, verify_elapsed
     );
 }
 

@@ -2,7 +2,7 @@
 //!
 //! This crate orchestrates all lower layers:
 //! - Database: Main database struct with open/close
-//! - Branch lifecycle: begin_run, end_run, fork_run (Epic 5)
+//! - Branch lifecycle: begin_branch, end_branch, fork_branch (Epic 5)
 //! - Transaction coordination
 //! - Recovery integration
 //! - Background tasks (snapshots, TTL cleanup)

@@ -20,7 +20,7 @@ pub fn search(
     k: Option<u64>,
     primitives: Option<Vec<String>>,
 ) -> Result<Output> {
-    let branch_id = to_core_branch_id(&branch)?;
+    let core_branch_id = to_core_branch_id(&branch)?;
 
     // Build primitive filter from string names
     let primitive_filter = primitives.map(|names| {
@@ -38,7 +38,7 @@ pub fn search(
             .collect::<Vec<_>>()
     });
 
-    let mut req = SearchRequest::new(branch_id, &query);
+    let mut req = SearchRequest::new(core_branch_id, &query);
     if let Some(top_k) = k {
         req = req.with_k(top_k as usize);
     }

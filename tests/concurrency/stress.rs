@@ -188,10 +188,10 @@ fn stress_large_transaction() {
     assert_eq!(txn.pending_operations().puts, 10_000);
 }
 
-/// Many concurrent transactions on different runs
+/// Many concurrent transactions on different branches
 #[test]
 #[ignore]
-fn stress_many_runs() {
+fn stress_many_branches() {
     let store = Arc::new(ShardedStore::new());
     let manager = Arc::new(TransactionManager::new(1));
     let barrier = Arc::new(Barrier::new(100));
@@ -205,7 +205,7 @@ fn stress_many_runs() {
             let commits = Arc::clone(&commits);
 
             thread::spawn(move || {
-                let branch_id = BranchId::new(); // Each thread gets unique run
+                let branch_id = BranchId::new(); // Each thread gets unique branch
                 let key = create_test_key(branch_id, "data");
 
                 barrier.wait();
@@ -230,9 +230,9 @@ fn stress_many_runs() {
     }
 
     let total = commits.load(Ordering::Relaxed);
-    println!("Total commits across 100 runs: {}", total);
+    println!("Total commits across 100 branches: {}", total);
 
-    // All should commit (no cross-run contention)
+    // All should commit (no cross-branch contention)
     assert_eq!(total, 100 * 100);
 }
 

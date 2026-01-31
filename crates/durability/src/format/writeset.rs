@@ -342,8 +342,8 @@ impl Writeset {
             return Err(WritesetError::InsufficientData);
         }
 
-        let run_id_bytes: [u8; 16] = bytes[cursor..cursor + 16].try_into().unwrap();
-        let branch_id = BranchId::from_bytes(run_id_bytes);
+        let branch_id_bytes: [u8; 16] = bytes[cursor..cursor + 16].try_into().unwrap();
+        let branch_id = BranchId::from_bytes(branch_id_bytes);
         cursor += 16;
 
         match tag {
@@ -448,7 +448,7 @@ pub enum WritesetError {
 mod tests {
     use super::*;
 
-    fn test_run_id() -> BranchId {
+    fn test_branch_id() -> BranchId {
         BranchId::from_bytes([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
     }
 
@@ -467,7 +467,7 @@ mod tests {
 
     #[test]
     fn test_writeset_put_kv() {
-        let branch_id = test_run_id();
+        let branch_id = test_branch_id();
         let entity_ref = EntityRef::kv(branch_id, "my-key");
 
         let mut ws = Writeset::new();
@@ -493,7 +493,7 @@ mod tests {
 
     #[test]
     fn test_writeset_delete() {
-        let branch_id = test_run_id();
+        let branch_id = test_branch_id();
         let entity_ref = EntityRef::state(branch_id, "my-state");
 
         let mut ws = Writeset::new();
@@ -513,7 +513,7 @@ mod tests {
 
     #[test]
     fn test_writeset_append() {
-        let branch_id = test_run_id();
+        let branch_id = test_branch_id();
         let entity_ref = EntityRef::event(branch_id, 100);
 
         let mut ws = Writeset::new();
@@ -539,7 +539,7 @@ mod tests {
 
     #[test]
     fn test_writeset_multiple_mutations() {
-        let branch_id = test_run_id();
+        let branch_id = test_branch_id();
 
         let mut ws = Writeset::new();
         ws.put(EntityRef::kv(branch_id, "key1"), vec![1], 1);
@@ -558,7 +558,7 @@ mod tests {
 
     #[test]
     fn test_entity_ref_all_variants() {
-        let branch_id = test_run_id();
+        let branch_id = test_branch_id();
 
         let refs = vec![
             EntityRef::kv(branch_id, "key"),
@@ -589,7 +589,7 @@ mod tests {
 
     #[test]
     fn test_writeset_large_value() {
-        let branch_id = test_run_id();
+        let branch_id = test_branch_id();
         let large_value = vec![0xAB; 10000];
 
         let mut ws = Writeset::new();
@@ -608,7 +608,7 @@ mod tests {
 
     #[test]
     fn test_writeset_unicode_keys() {
-        let branch_id = test_run_id();
+        let branch_id = test_branch_id();
 
         let mut ws = Writeset::new();
         ws.put(EntityRef::kv(branch_id, "键值对"), vec![1], 1);
@@ -623,7 +623,7 @@ mod tests {
 
     #[test]
     fn test_writeset_empty_strings() {
-        let branch_id = test_run_id();
+        let branch_id = test_branch_id();
 
         let mut ws = Writeset::new();
         ws.put(EntityRef::kv(branch_id, ""), vec![1], 1);
@@ -657,7 +657,7 @@ mod tests {
 
     #[test]
     fn test_mutation_entity_ref() {
-        let branch_id = test_run_id();
+        let branch_id = test_branch_id();
         let entity_ref = EntityRef::kv(branch_id, "key");
 
         let put = Mutation::Put {

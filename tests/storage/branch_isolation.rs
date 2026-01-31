@@ -1,6 +1,6 @@
-//! Run Isolation Tests
+//! Branch Isolation Tests
 //!
-//! Tests that different runs are properly isolated in the storage layer.
+//! Tests that different branches are properly isolated in the storage layer.
 
 use strata_core::traits::Storage;
 use strata_core::types::{Key, Namespace};
@@ -20,14 +20,14 @@ fn create_test_key(branch_id: BranchId, name: &str) -> Key {
 // ============================================================================
 
 #[test]
-fn different_runs_have_separate_namespaces() {
+fn different_branches_have_separate_namespaces() {
     let store = ShardedStore::new();
-    let run1 = BranchId::new();
-    let run2 = BranchId::new();
+    let branch1 = BranchId::new();
+    let branch2 = BranchId::new();
 
-    // Same key name, different runs
-    let key1 = create_test_key(run1, "shared_name");
-    let key2 = create_test_key(run2, "shared_name");
+    // Same key name, different branches
+    let key1 = create_test_key(branch1, "shared_name");
+    let key2 = create_test_key(branch2, "shared_name");
 
     Storage::put(&store, key1.clone(), Value::Int(100), None).unwrap();
     Storage::put(&store, key2.clone(), Value::Int(200), None).unwrap();
@@ -40,31 +40,31 @@ fn different_runs_have_separate_namespaces() {
 }
 
 #[test]
-fn clear_run_only_affects_target_run() {
+fn clear_branch_only_affects_target_branch() {
     let store = ShardedStore::new();
-    let run1 = BranchId::new();
-    let run2 = BranchId::new();
+    let branch1 = BranchId::new();
+    let branch2 = BranchId::new();
 
-    // Put keys in both runs
+    // Put keys in both branches
     for i in 0..5 {
-        let key1 = create_test_key(run1, &format!("key_{}", i));
-        let key2 = create_test_key(run2, &format!("key_{}", i));
+        let key1 = create_test_key(branch1, &format!("key_{}", i));
+        let key2 = create_test_key(branch2, &format!("key_{}", i));
         Storage::put(&store, key1, Value::Int(i), None).unwrap();
         Storage::put(&store, key2, Value::Int(i + 100), None).unwrap();
     }
 
-    // Clear run1
-    store.clear_branch(&run1);
+    // Clear branch1
+    store.clear_branch(&branch1);
 
-    // Run1 should be empty
+    // Branch1 should be empty
     for i in 0..5 {
-        let key1 = create_test_key(run1, &format!("key_{}", i));
+        let key1 = create_test_key(branch1, &format!("key_{}", i));
         assert!(Storage::get(&store, &key1).unwrap().is_none());
     }
 
-    // Run2 should still have data
+    // Branch2 should still have data
     for i in 0..5 {
-        let key2 = create_test_key(run2, &format!("key_{}", i));
+        let key2 = create_test_key(branch2, &format!("key_{}", i));
         let val = Storage::get(&store, &key2).unwrap();
         assert!(val.is_some());
         assert_eq!(val.unwrap().value, Value::Int(i + 100));
@@ -72,24 +72,24 @@ fn clear_run_only_affects_target_run() {
 }
 
 #[test]
-fn delete_in_one_run_doesnt_affect_other() {
+fn delete_in_one_branch_doesnt_affect_other() {
     let store = ShardedStore::new();
-    let run1 = BranchId::new();
-    let run2 = BranchId::new();
+    let branch1 = BranchId::new();
+    let branch2 = BranchId::new();
 
-    let key1 = create_test_key(run1, "shared");
-    let key2 = create_test_key(run2, "shared");
+    let key1 = create_test_key(branch1, "shared");
+    let key2 = create_test_key(branch2, "shared");
 
     Storage::put(&store, key1.clone(), Value::Int(1), None).unwrap();
     Storage::put(&store, key2.clone(), Value::Int(2), None).unwrap();
 
-    // Delete in run1
+    // Delete in branch1
     Storage::delete(&store, &key1).unwrap();
 
-    // Run1 deleted
+    // Branch1 deleted
     assert!(Storage::get(&store, &key1).unwrap().is_none());
 
-    // Run2 unaffected
+    // Branch2 unaffected
     assert_eq!(
         Storage::get(&store, &key2).unwrap().unwrap().value,
         Value::Int(2)
@@ -97,21 +97,21 @@ fn delete_in_one_run_doesnt_affect_other() {
 }
 
 // ============================================================================
-// Concurrent Access Across Runs
+// Concurrent Access Across Branches
 // ============================================================================
 
 #[test]
-fn concurrent_writes_to_different_runs() {
+fn concurrent_writes_to_different_branches() {
     let store = Arc::new(ShardedStore::new());
-    let num_runs = 8;
-    let keys_per_run = 100;
+    let num_branches = 8;
+    let keys_per_branch = 100;
 
-    let handles: Vec<_> = (0..num_runs)
+    let handles: Vec<_> = (0..num_branches)
         .map(|_| {
             let store = Arc::clone(&store);
             thread::spawn(move || {
                 let branch_id = BranchId::new();
-                for i in 0..keys_per_run {
+                for i in 0..keys_per_branch {
                     let key = create_test_key(branch_id, &format!("key_{}", i));
                     Storage::put(&*store, key, Value::Int(i), None).unwrap();
                 }
@@ -122,26 +122,26 @@ fn concurrent_writes_to_different_runs() {
 
     let branch_ids: Vec<BranchId> = handles.into_iter().map(|h| h.join().unwrap()).collect();
 
-    // Verify all runs have their data
+    // Verify all branches have their data
     for branch_id in branch_ids {
-        for i in 0..keys_per_run {
+        for i in 0..keys_per_branch {
             let key = create_test_key(branch_id, &format!("key_{}", i));
             let val = Storage::get(&*store, &key).unwrap();
-            assert!(val.is_some(), "Run {:?} key {} missing", branch_id, i);
+            assert!(val.is_some(), "Branch {:?} key {} missing", branch_id, i);
             assert_eq!(val.unwrap().value, Value::Int(i));
         }
     }
 }
 
 #[test]
-fn concurrent_reads_and_writes_different_runs() {
+fn concurrent_reads_and_writes_different_branches() {
     let store = Arc::new(ShardedStore::new());
-    let read_run = BranchId::new();
-    let write_run = BranchId::new();
+    let read_branch = BranchId::new();
+    let write_branch = BranchId::new();
 
-    // Pre-populate read run
+    // Pre-populate read branch
     for i in 0..100 {
-        let key = create_test_key(read_run, &format!("key_{}", i));
+        let key = create_test_key(read_branch, &format!("key_{}", i));
         Storage::put(&*store, key, Value::Int(i), None).unwrap();
     }
 
@@ -153,7 +153,7 @@ fn concurrent_reads_and_writes_different_runs() {
         let mut reads = 0u64;
         for _ in 0..1000 {
             for i in 0..100 {
-                let key = create_test_key(read_run, &format!("key_{}", i));
+                let key = create_test_key(read_branch, &format!("key_{}", i));
                 let val = Storage::get(&*store_read, &key).unwrap();
                 assert!(val.is_some());
                 assert_eq!(val.unwrap().value, Value::Int(i));
@@ -163,11 +163,11 @@ fn concurrent_reads_and_writes_different_runs() {
         reads
     });
 
-    // Writer thread (different run)
+    // Writer thread (different branch)
     let writer = thread::spawn(move || {
         for i in 0..1000 {
             for j in 0..10 {
-                let key = create_test_key(write_run, &format!("key_{}", j));
+                let key = create_test_key(write_branch, &format!("key_{}", j));
                 Storage::put(&*store_write, key, Value::Int(i), None).unwrap();
             }
         }
@@ -180,30 +180,30 @@ fn concurrent_reads_and_writes_different_runs() {
 }
 
 // ============================================================================
-// Run Listing
+// Branch Listing
 // ============================================================================
 
 #[test]
-fn run_ids_lists_all_active_runs() {
+fn branch_ids_lists_all_active_branches() {
     let store = ShardedStore::new();
-    let run1 = BranchId::new();
-    let run2 = BranchId::new();
-    let run3 = BranchId::new();
+    let branch1 = BranchId::new();
+    let branch2 = BranchId::new();
+    let branch3 = BranchId::new();
 
-    // Put one key in each run
-    let key1 = create_test_key(run1, "k");
-    let key2 = create_test_key(run2, "k");
-    let key3 = create_test_key(run3, "k");
+    // Put one key in each branch
+    let key1 = create_test_key(branch1, "k");
+    let key2 = create_test_key(branch2, "k");
+    let key3 = create_test_key(branch3, "k");
 
     Storage::put(&store, key1, Value::Int(1), None).unwrap();
     Storage::put(&store, key2, Value::Int(2), None).unwrap();
     Storage::put(&store, key3, Value::Int(3), None).unwrap();
 
-    let runs = store.branch_ids();
-    assert_eq!(runs.len(), 3);
-    assert!(runs.contains(&run1));
-    assert!(runs.contains(&run2));
-    assert!(runs.contains(&run3));
+    let branches = store.branch_ids();
+    assert_eq!(branches.len(), 3);
+    assert!(branches.contains(&branch1));
+    assert!(branches.contains(&branch2));
+    assert!(branches.contains(&branch3));
 }
 
 #[test]
@@ -222,7 +222,7 @@ fn branch_entry_count() {
 }
 
 #[test]
-fn list_run_keys() {
+fn list_branch_keys() {
     let store = ShardedStore::new();
     let branch_id = BranchId::new();
     let ns = Namespace::for_branch(branch_id);
@@ -238,11 +238,11 @@ fn list_run_keys() {
 }
 
 // ============================================================================
-// Empty Run Handling
+// Empty Branch Handling
 // ============================================================================
 
 #[test]
-fn get_from_nonexistent_run_returns_none() {
+fn get_from_nonexistent_branch_returns_none() {
     let store = ShardedStore::new();
     let branch_id = BranchId::new();
     let key = create_test_key(branch_id, "never_written");
@@ -252,7 +252,7 @@ fn get_from_nonexistent_run_returns_none() {
 }
 
 #[test]
-fn clear_nonexistent_run_succeeds() {
+fn clear_nonexistent_branch_succeeds() {
     let store = ShardedStore::new();
     let branch_id = BranchId::new();
 
@@ -261,7 +261,7 @@ fn clear_nonexistent_run_succeeds() {
 }
 
 #[test]
-fn run_entry_count_for_empty_run() {
+fn branch_entry_count_for_empty_branch() {
     let store = ShardedStore::new();
     let branch_id = BranchId::new();
 

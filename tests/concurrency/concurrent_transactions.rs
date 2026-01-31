@@ -1,8 +1,8 @@
 //! Concurrent Transaction Tests
 //!
 //! Tests for concurrent transaction scenarios:
-//! - Parallel commits on different runs
-//! - Serial commits on same run
+//! - Parallel commits on different branches
+//! - Serial commits on same branch
 //! - High contention scenarios
 
 use strata_concurrency::manager::TransactionManager;
@@ -41,7 +41,7 @@ fn parallel_commits_different_runs_no_contention() {
             let commits = Arc::clone(&commits);
 
             thread::spawn(move || {
-                let branch_id = BranchId::new(); // Each thread gets unique run
+                let branch_id = BranchId::new(); // Each thread gets unique branch
                 let key = create_test_key(branch_id, "data");
 
                 // Setup initial value
@@ -74,20 +74,20 @@ fn parallel_commits_different_runs_no_contention() {
         handle.join().unwrap();
     }
 
-    // All 40 commits should succeed (no cross-run contention)
+    // All 40 commits should succeed (no cross-branch contention)
     assert_eq!(commits.load(Ordering::Relaxed), 40);
 }
 
 #[test]
-fn different_runs_have_independent_namespaces() {
+fn different_branches_have_independent_namespaces() {
     let store = Arc::new(ShardedStore::new());
-    let run1 = BranchId::new();
-    let run2 = BranchId::new();
+    let branch1 = BranchId::new();
+    let branch2 = BranchId::new();
 
-    let key1 = create_test_key(run1, "shared_name");
-    let key2 = create_test_key(run2, "shared_name");
+    let key1 = create_test_key(branch1, "shared_name");
+    let key2 = create_test_key(branch2, "shared_name");
 
-    // Write different values to same logical name in different runs
+    // Write different values to same logical name in different branches
     Storage::put(&*store, key1.clone(), Value::Int(100), None).unwrap();
     Storage::put(&*store, key2.clone(), Value::Int(200), None).unwrap();
 

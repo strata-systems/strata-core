@@ -416,7 +416,7 @@ pub enum Command {
         path: String,
     },
 
-    /// Validate a .runbundle.tar.zst archive without importing.
+    /// Validate a .branchbundle.tar.zst archive without importing.
     /// Returns: `Output::BundleValidated`
     BranchBundleValidate {
         path: String,

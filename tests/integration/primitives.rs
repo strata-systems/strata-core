@@ -315,9 +315,9 @@ fn all_six_primitives_together() {
     p.vector.create_collection(branch_id, "memory", config_small()).unwrap();
     p.vector.insert(branch_id, "memory", "m1", &[1.0, 0.0, 0.0], None).unwrap();
 
-    // Run index - runs must be explicitly created via create_branch()
+    // Branch index - branches must be explicitly created via create_branch()
     // We're using a random BranchId here which is NOT registered with BranchIndex
-    // In production, you would either use the default run or create one explicitly
+    // In production, you would either use the default branch or create one explicitly
 
     // Verify all readable
     assert_eq!(p.kv.get(&branch_id, "config").unwrap(), Some(Value::String("enabled".into())));

@@ -20,7 +20,7 @@ use std::sync::Arc;
 #[test]
 fn test_tier1_rule1_search_returns_docref_not_data() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let kv = KVStore::new(db.clone());
@@ -58,13 +58,13 @@ fn test_tier1_rule1_docref_size_bounded() {
 #[test]
 fn test_tier1_rule2_all_primitives_searchable() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
 
     let kv = KVStore::new(db.clone());
-    let run_index = BranchIndex::new(db.clone());
+    let branch_index = BranchIndex::new(db.clone());
 
-    // Create a run first
-    run_index.create_branch(&branch_id.to_string()).unwrap();
+    // Create a branch first
+    branch_index.create_branch(&branch_id.to_string()).unwrap();
 
     let req = SearchRequest::new(branch_id, "test");
 
@@ -72,14 +72,14 @@ fn test_tier1_rule2_all_primitives_searchable() {
     let _: SearchResponse = kv.search(&req).unwrap();
 
     // BranchIndex implements Searchable
-    let _: SearchResponse = run_index.search(&req).unwrap();
+    let _: SearchResponse = branch_index.search(&req).unwrap();
 }
 
 /// Primitive search returns valid SearchResponse
 #[test]
 fn test_tier1_rule2_primitive_search_returns_search_response() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let kv = KVStore::new(db.clone());
@@ -101,7 +101,7 @@ fn test_tier1_rule2_primitive_search_returns_search_response() {
 #[test]
 fn test_tier1_rule3_hybrid_orchestrates() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let hybrid = db.hybrid();
@@ -122,7 +122,7 @@ fn test_tier1_rule3_hybrid_orchestrates() {
 #[test]
 fn test_tier1_rule3_hybrid_respects_filter() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let hybrid = db.hybrid();
@@ -141,12 +141,12 @@ fn test_tier1_rule3_hybrid_respects_filter() {
 #[test]
 fn test_tier1_rule4_snapshot_consistent() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
 
     let kv = KVStore::new(db.clone());
-    let run_index = BranchIndex::new(db.clone());
+    let branch_index = BranchIndex::new(db.clone());
 
-    run_index.create_branch(&branch_id.to_string()).unwrap();
+    branch_index.create_branch(&branch_id.to_string()).unwrap();
     kv.put(&branch_id, "initial", Value::String("searchable term".into()))
         .unwrap();
 
@@ -225,7 +225,7 @@ fn test_tier1_rule6_fuser_is_trait() {
 #[test]
 fn test_tier1_rule6_can_swap_fuser() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     // Use custom fuser
@@ -242,7 +242,7 @@ fn test_tier1_rule6_can_swap_fuser() {
 // ============================================================================
 
 /// PrimitiveType has exactly 6 variants
-/// The six primitives are: Kv, Event, State, Run, Json, Vector
+/// The six primitives are: Kv, Event, State, Branch, Json, Vector
 #[test]
 fn test_tier1_primitive_type_count() {
     let all = PrimitiveType::all();
@@ -261,7 +261,7 @@ fn test_tier1_primitive_types_distinct() {
 #[test]
 fn test_tier1_docref_primitive_type_correct() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let kv = KVStore::new(db.clone());
@@ -279,9 +279,9 @@ fn test_tier1_docref_primitive_type_correct() {
 
 /// DocRef correctly reports branch_id
 #[test]
-fn test_tier1_docref_run_id_correct() {
+fn test_tier1_docref_branch_id_correct() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let kv = KVStore::new(db.clone());

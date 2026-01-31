@@ -797,27 +797,27 @@ fn test_crash_with_delete_operation() {
     }
 }
 
-/// Test: Interleaved transactions from different run IDs
-/// Expected: Each run's incomplete transactions discarded independently
+/// Test: Interleaved transactions from different branch IDs
+/// Expected: Each branch's incomplete transactions discarded independently
 #[test]
-fn test_crash_interleaved_run_ids() {
+fn test_crash_interleaved_branch_ids() {
     let temp_dir = TempDir::new().unwrap();
     let db_path = temp_dir.path().join("interleaved_crash");
 
-    let run_id1 = BranchId::new();
-    let run_id2 = BranchId::new();
+    let branch_id1 = BranchId::new();
+    let branch_id2 = BranchId::new();
 
     let ns1 = Namespace::new(
         "tenant".to_string(),
         "app".to_string(),
         "agent".to_string(),
-        run_id1,
+        branch_id1,
     );
     let ns2 = Namespace::new(
         "tenant".to_string(),
         "app".to_string(),
         "agent".to_string(),
-        run_id2,
+        branch_id2,
     );
 
     // Write interleaved transactions
@@ -827,95 +827,95 @@ fn test_crash_interleaved_run_ids() {
         let wal = db.wal().unwrap();
         let mut wal_guard = wal.lock();
 
-        // Run 1, Txn 1 - committed
+        // Branch 1, Txn 1 - committed
         wal_guard
             .append(&WALEntry::BeginTxn {
                 txn_id: 1,
-                branch_id: run_id1,
+                branch_id: branch_id1,
                 timestamp: now(),
             })
             .unwrap();
         wal_guard
             .append(&WALEntry::Write {
-                branch_id: run_id1,
-                key: Key::new_kv(ns1.clone(), "run1_committed"),
-                value: Value::Bytes(b"r1c".to_vec()),
+                branch_id: branch_id1,
+                key: Key::new_kv(ns1.clone(), "branch1_committed"),
+                value: Value::Bytes(b"b1c".to_vec()),
                 version: 1,
             })
             .unwrap();
         wal_guard
             .append(&WALEntry::CommitTxn {
                 txn_id: 1,
-                branch_id: run_id1,
+                branch_id: branch_id1,
             })
             .unwrap();
 
-        // Run 2, Txn 2 - incomplete
+        // Branch 2, Txn 2 - incomplete
         wal_guard
             .append(&WALEntry::BeginTxn {
                 txn_id: 2,
-                branch_id: run_id2,
+                branch_id: branch_id2,
                 timestamp: now(),
             })
             .unwrap();
         wal_guard
             .append(&WALEntry::Write {
-                branch_id: run_id2,
-                key: Key::new_kv(ns2.clone(), "run2_incomplete"),
-                value: Value::Bytes(b"r2i".to_vec()),
+                branch_id: branch_id2,
+                key: Key::new_kv(ns2.clone(), "branch2_incomplete"),
+                value: Value::Bytes(b"b2i".to_vec()),
                 version: 2,
             })
             .unwrap();
-        // NO CommitTxn for run 2
+        // NO CommitTxn for branch 2
 
-        // Run 1, Txn 3 - incomplete
+        // Branch 1, Txn 3 - incomplete
         wal_guard
             .append(&WALEntry::BeginTxn {
                 txn_id: 3,
-                branch_id: run_id1,
+                branch_id: branch_id1,
                 timestamp: now(),
             })
             .unwrap();
         wal_guard
             .append(&WALEntry::Write {
-                branch_id: run_id1,
-                key: Key::new_kv(ns1.clone(), "run1_incomplete"),
-                value: Value::Bytes(b"r1i".to_vec()),
+                branch_id: branch_id1,
+                key: Key::new_kv(ns1.clone(), "branch1_incomplete"),
+                value: Value::Bytes(b"b1i".to_vec()),
                 version: 3,
             })
             .unwrap();
-        // NO CommitTxn for run 1 txn 3
+        // NO CommitTxn for branch 1 txn 3
     }
 
     // Recover
     {
         let db = Database::open(&db_path).unwrap();
 
-        // Run 1 committed should exist
+        // Branch 1 committed should exist
         assert!(
             db.storage()
-                .get(&Key::new_kv(ns1.clone(), "run1_committed"))
+                .get(&Key::new_kv(ns1.clone(), "branch1_committed"))
                 .unwrap()
                 .is_some(),
-            "run1_committed should exist"
+            "branch1_committed should exist"
         );
 
-        // Run 1 incomplete should NOT exist
+        // Branch 1 incomplete should NOT exist
         assert!(
             db.storage()
-                .get(&Key::new_kv(ns1, "run1_incomplete"))
+                .get(&Key::new_kv(ns1, "branch1_incomplete"))
                 .unwrap()
                 .is_none(),
-            "run1_incomplete should not exist"
+            "branch1_incomplete should not exist"
         );
 
-        // Run 2 incomplete should NOT exist
+        // Branch 2 incomplete should NOT exist
         assert!(
             db.storage()
-                .get(&Key::new_kv(ns2, "run2_incomplete"))
+                .get(&Key::new_kv(ns2, "branch2_incomplete"))
                 .unwrap()
                 .is_none(),
-            "run2_incomplete should not exist"
+            "branch2_incomplete should not exist"
         );
     }
 }

@@ -1,6 +1,6 @@
-//! Run Isolation Tests
+//! Branch Isolation Tests
 //!
-//! Tests that verify data isolation between different runs.
+//! Tests that verify data isolation between different branches.
 
 use crate::common::*;
 use strata_core::primitives::json::JsonPath;
@@ -18,24 +18,24 @@ fn event_payload(data: Value) -> Value {
 // ============================================================================
 
 #[test]
-fn kv_runs_are_isolated() {
+fn kv_branches_are_isolated() {
     let test_db = TestDb::new();
     let kv = test_db.kv();
 
     let branch_a = BranchId::new();
     let branch_b = BranchId::new();
 
-    // Same key, different runs
+    // Same key, different branches
     kv.put(&branch_a, "key", Value::Int(1)).unwrap();
     kv.put(&branch_b, "key", Value::Int(2)).unwrap();
 
-    // Each run sees its own value
+    // Each branch sees its own value
     assert_eq!(kv.get(&branch_a, "key").unwrap().unwrap(), Value::Int(1));
     assert_eq!(kv.get(&branch_b, "key").unwrap().unwrap(), Value::Int(2));
 }
 
 #[test]
-fn kv_delete_doesnt_affect_other_run() {
+fn kv_delete_doesnt_affect_other_branch() {
     let test_db = TestDb::new();
     let kv = test_db.kv();
 
@@ -47,15 +47,15 @@ fn kv_delete_doesnt_affect_other_run() {
 
     kv.delete(&branch_a, "key").unwrap();
 
-    // Run A's key is gone
+    // Branch A's key is gone
     assert!(kv.get(&branch_a, "key").unwrap().is_none());
 
-    // Run B's key still exists
+    // Branch B's key still exists
     assert_eq!(kv.get(&branch_b, "key").unwrap().unwrap(), Value::Int(2));
 }
 
 #[test]
-fn kv_list_only_shows_run_keys() {
+fn kv_list_only_shows_branch_keys() {
     let test_db = TestDb::new();
     let kv = test_db.kv();
 
@@ -82,7 +82,7 @@ fn kv_list_only_shows_run_keys() {
 // ============================================================================
 
 #[test]
-fn eventlog_runs_are_isolated() {
+fn eventlog_branches_are_isolated() {
     let test_db = TestDb::new();
     let event = test_db.event();
 
@@ -90,7 +90,7 @@ fn eventlog_runs_are_isolated() {
     let branch_b = BranchId::new();
 
     event.append(&branch_a, "type", event_payload(Value::String("branch_a".into()))).unwrap();
-    event.append(&branch_a, "type", event_payload(Value::String("run_a_2".into()))).unwrap();
+    event.append(&branch_a, "type", event_payload(Value::String("branch_a_2".into()))).unwrap();
     event.append(&branch_b, "type", event_payload(Value::String("branch_b".into()))).unwrap();
 
     assert_eq!(event.len(&branch_a).unwrap(), 2);
@@ -98,14 +98,14 @@ fn eventlog_runs_are_isolated() {
 }
 
 #[test]
-fn eventlog_sequence_numbers_per_run() {
+fn eventlog_sequence_numbers_per_branch() {
     let test_db = TestDb::new();
     let event = test_db.event();
 
     let branch_a = BranchId::new();
     let branch_b = BranchId::new();
 
-    // Both runs start sequence at 0
+    // Both branches start sequence at 0
     let seq_a = event.append(&branch_a, "type", event_payload(Value::Int(1))).unwrap();
     let seq_b = event.append(&branch_b, "type", event_payload(Value::Int(1))).unwrap();
 
@@ -114,7 +114,7 @@ fn eventlog_sequence_numbers_per_run() {
 }
 
 #[test]
-fn eventlog_independent_per_run() {
+fn eventlog_independent_per_branch() {
     let test_db = TestDb::new();
     let event = test_db.event();
 
@@ -126,7 +126,7 @@ fn eventlog_independent_per_run() {
         event.append(&branch_b, "type", event_payload(Value::Int(i * 10))).unwrap();
     }
 
-    // Both runs should have 5 events independently
+    // Both branches should have 5 events independently
     assert_eq!(event.len(&branch_a).unwrap(), 5);
     assert_eq!(event.len(&branch_b).unwrap(), 5);
 
@@ -142,14 +142,14 @@ fn eventlog_independent_per_run() {
 // ============================================================================
 
 #[test]
-fn statecell_runs_are_isolated() {
+fn statecell_branches_are_isolated() {
     let test_db = TestDb::new();
     let state = test_db.state();
 
     let branch_a = BranchId::new();
     let branch_b = BranchId::new();
 
-    // Same cell name, different runs
+    // Same cell name, different branches
     state.init(&branch_a, "cell", Value::Int(1)).unwrap();
     state.init(&branch_b, "cell", Value::Int(2)).unwrap();
 
@@ -171,13 +171,13 @@ fn statecell_cas_isolated() {
     let version_a = state.readv(&branch_a, "cell").unwrap().unwrap().version();
     let version_b = state.readv(&branch_b, "cell").unwrap().unwrap().version();
 
-    // CAS on run A
+    // CAS on branch A
     state.cas(&branch_a, "cell", version_a, Value::Int(100)).unwrap();
 
-    // Run B unchanged
+    // Branch B unchanged
     assert_eq!(state.read(&branch_b, "cell").unwrap().unwrap(), Value::Int(0));
 
-    // CAS on run B still works with its original version
+    // CAS on branch B still works with its original version
     state.cas(&branch_b, "cell", version_b, Value::Int(200)).unwrap();
 
     // Both have their own values
@@ -190,25 +190,25 @@ fn statecell_cas_isolated() {
 // ============================================================================
 
 #[test]
-fn jsonstore_runs_are_isolated() {
+fn jsonstore_branches_are_isolated() {
     let test_db = TestDb::new();
     let json = test_db.json();
 
     let branch_a = BranchId::new();
     let branch_b = BranchId::new();
 
-    json.create(&branch_a, "doc", serde_json::json!({"run": "a"}).into()).unwrap();
-    json.create(&branch_b, "doc", serde_json::json!({"run": "b"}).into()).unwrap();
+    json.create(&branch_a, "doc", serde_json::json!({"branch": "a"}).into()).unwrap();
+    json.create(&branch_b, "doc", serde_json::json!({"branch": "b"}).into()).unwrap();
 
     let a_doc = json.get(&branch_a, "doc", &JsonPath::root()).unwrap().unwrap();
     let b_doc = json.get(&branch_b, "doc", &JsonPath::root()).unwrap().unwrap();
 
-    assert_eq!(a_doc["run"], "a");
-    assert_eq!(b_doc["run"], "b");
+    assert_eq!(a_doc["branch"], "a");
+    assert_eq!(b_doc["branch"], "b");
 }
 
 #[test]
-fn jsonstore_count_per_run() {
+fn jsonstore_count_per_branch() {
     let test_db = TestDb::new();
     let json = test_db.json();
 
@@ -228,7 +228,7 @@ fn jsonstore_count_per_run() {
 // ============================================================================
 
 #[test]
-fn vectorstore_collections_per_run() {
+fn vectorstore_collections_per_branch() {
     let test_db = TestDb::new();
     let vector = test_db.vector();
 
@@ -237,7 +237,7 @@ fn vectorstore_collections_per_run() {
 
     let config = config_small();
 
-    // Same collection name, different runs
+    // Same collection name, different branches
     vector.create_collection(branch_a, "coll", config.clone()).unwrap();
     vector.create_collection(branch_b, "coll", config.clone()).unwrap();
 
@@ -247,7 +247,7 @@ fn vectorstore_collections_per_run() {
     assert!(a_colls.iter().any(|c| c.name == "coll"));
     assert!(b_colls.iter().any(|c| c.name == "coll"));
 
-    // Delete from run A doesn't affect run B
+    // Delete from branch A doesn't affect branch B
     vector.delete_collection(branch_a, "coll").unwrap();
 
     let a_colls = vector.list_collections(branch_a).unwrap();
@@ -257,7 +257,7 @@ fn vectorstore_collections_per_run() {
 }
 
 #[test]
-fn vectorstore_vectors_per_run() {
+fn vectorstore_vectors_per_branch() {
     let test_db = TestDb::new();
     let vector = test_db.vector();
 
@@ -280,24 +280,24 @@ fn vectorstore_vectors_per_run() {
 }
 
 // ============================================================================
-// Cross-Primitive Run Isolation
+// Cross-Primitive Branch Isolation
 // ============================================================================
 
 #[test]
-fn all_primitives_isolated_by_run() {
+fn all_primitives_isolated_by_branch() {
     let test_db = TestDb::new();
     let prims = test_db.all_primitives();
 
     let branch_a = BranchId::new();
     let branch_b = BranchId::new();
 
-    // Write to all primitives in run A
+    // Write to all primitives in branch A
     prims.kv.put(&branch_a, "key", Value::Int(1)).unwrap();
     prims.event.append(&branch_a, "type", event_payload(Value::Int(1))).unwrap();
     prims.state.init(&branch_a, "cell", Value::Int(1)).unwrap();
     prims.json.create(&branch_a, "doc", serde_json::json!({"n": 1}).into()).unwrap();
 
-    // Run B should see nothing
+    // Branch B should see nothing
     assert!(prims.kv.get(&branch_b, "key").unwrap().is_none());
     assert_eq!(prims.event.len(&branch_b).unwrap(), 0);
     assert!(prims.state.read(&branch_b, "cell").unwrap().is_none());
@@ -305,19 +305,19 @@ fn all_primitives_isolated_by_run() {
 }
 
 #[test]
-fn many_runs_no_interference() {
+fn many_branches_no_interference() {
     let test_db = TestDb::new();
     let kv = test_db.kv();
 
-    // Create 10 runs, each with its own data
-    let runs: Vec<BranchId> = (0..10).map(|_| BranchId::new()).collect();
+    // Create 10 branches, each with its own data
+    let branches: Vec<BranchId> = (0..10).map(|_| BranchId::new()).collect();
 
-    for (i, branch_id) in runs.iter().enumerate() {
+    for (i, branch_id) in branches.iter().enumerate() {
         kv.put(branch_id, "data", Value::Int(i as i64)).unwrap();
     }
 
-    // Each run sees only its own data
-    for (i, branch_id) in runs.iter().enumerate() {
+    // Each branch sees only its own data
+    for (i, branch_id) in branches.iter().enumerate() {
         let val = kv.get(branch_id, "data").unwrap().unwrap();
         assert_eq!(val, Value::Int(i as i64));
     }

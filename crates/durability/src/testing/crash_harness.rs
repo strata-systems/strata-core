@@ -261,7 +261,7 @@ impl VerificationResult {
 /// State mismatch found during verification
 #[derive(Debug, Clone)]
 pub struct StateMismatch {
-    /// Entity identifier (e.g., "kv:run:key")
+    /// Entity identifier (e.g., "kv:branch:key")
     pub entity: String,
     /// Expected value
     pub expected: String,

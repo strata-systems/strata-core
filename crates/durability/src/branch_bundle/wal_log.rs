@@ -1,7 +1,7 @@
-//! WAL.runlog reader and writer (v2 — TransactionPayload / msgpack)
+//! WAL.branchlog reader and writer (v2 — TransactionPayload / msgpack)
 //!
-//! This module handles the binary format for run-scoped transaction payloads
-//! within a RunBundle archive.
+//! This module handles the binary format for branch-scoped transaction payloads
+//! within a BranchBundle archive.
 //!
 //! ## Format (v2)
 //!
@@ -17,13 +17,13 @@
 //! ├─────────────────────────────────────────────────────────────────┤
 //! │ For each entry:                                                 │
 //! │   Length: u32 (4 bytes, LE)                                     │
-//! │   Data: [u8; length] (msgpack-serialized RunlogPayload)         │
+//! │   Data: [u8; length] (msgpack-serialized BranchlogPayload)         │
 //! │   CRC32: u32 (4 bytes, LE)                                      │
 //! └─────────────────────────────────────────────────────────────────┘
 //! ```
 
-use crate::branch_bundle::error::{RunBundleError, RunBundleResult};
-use crate::branch_bundle::types::{xxh3_hex, WAL_RUNLOG_MAGIC, WAL_RUNLOG_VERSION};
+use crate::branch_bundle::error::{BranchBundleError, BranchBundleResult};
+use crate::branch_bundle::types::{xxh3_hex, WAL_BRANCHLOG_MAGIC, WAL_BRANCHLOG_VERSION};
 use serde::{Deserialize, Serialize};
 use strata_core::types::Key;
 use strata_core::value::Value;
@@ -33,18 +33,18 @@ use std::io::{Read, Write};
 const HEADER_SIZE: usize = 16;
 
 // =============================================================================
-// RunlogPayload — the v2 record type
+// BranchlogPayload — the v2 record type
 // =============================================================================
 
-/// A single committed transaction's data for inclusion in a run bundle.
+/// A single committed transaction's data for inclusion in a branch bundle.
 ///
 /// This is the v2 replacement for the legacy `WALEntry`-based format.
-/// Each `RunlogPayload` represents one committed transaction with its
+/// Each `BranchlogPayload` represents one committed transaction with its
 /// puts and deletes. Transaction framing (BeginTxn/CommitTxn) is not
 /// needed because bundles only contain committed data.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct RunlogPayload {
-    /// The run this payload belongs to
+pub struct BranchlogPayload {
+    /// The branch this payload belongs to
     pub branch_id: String,
     /// Commit version of this transaction
     pub version: u64,
@@ -54,16 +54,16 @@ pub struct RunlogPayload {
     pub deletes: Vec<Key>,
 }
 
-impl RunlogPayload {
+impl BranchlogPayload {
     /// Serialize to MessagePack bytes.
     pub fn to_bytes(&self) -> Vec<u8> {
-        rmp_serde::to_vec(self).expect("RunlogPayload serialization should not fail")
+        rmp_serde::to_vec(self).expect("BranchlogPayload serialization should not fail")
     }
 
     /// Deserialize from MessagePack bytes.
-    pub fn from_bytes(bytes: &[u8]) -> RunBundleResult<Self> {
+    pub fn from_bytes(bytes: &[u8]) -> BranchBundleResult<Self> {
         rmp_serde::from_slice(bytes).map_err(|e| {
-            RunBundleError::serialization(format!("msgpack decode RunlogPayload: {}", e))
+            BranchBundleError::serialization(format!("msgpack decode BranchlogPayload: {}", e))
         })
     }
 }
@@ -83,22 +83,22 @@ pub struct WalLogInfo {
     pub checksum: String,
 }
 
-/// Writer for WAL.runlog format (v2)
+/// Writer for WAL.branchlog format (v2)
 pub struct WalLogWriter;
 
 impl WalLogWriter {
-    /// Write payloads to a writer in .runlog v2 format
+    /// Write payloads to a writer in .branchlog v2 format
     ///
     /// Returns information about the written data including checksum.
     pub fn write<W: Write>(
-        payloads: &[RunlogPayload],
+        payloads: &[BranchlogPayload],
         mut writer: W,
-    ) -> RunBundleResult<WalLogInfo> {
+    ) -> BranchBundleResult<WalLogInfo> {
         let mut buffer = Vec::new();
 
         // Write header
-        buffer.extend_from_slice(WAL_RUNLOG_MAGIC);
-        buffer.extend_from_slice(&WAL_RUNLOG_VERSION.to_le_bytes());
+        buffer.extend_from_slice(WAL_BRANCHLOG_MAGIC);
+        buffer.extend_from_slice(&WAL_BRANCHLOG_VERSION.to_le_bytes());
         buffer.extend_from_slice(&(payloads.len() as u32).to_le_bytes());
 
         // Write entries
@@ -122,7 +122,7 @@ impl WalLogWriter {
         let bytes_written = buffer.len() as u64;
         writer
             .write_all(&buffer)
-            .map_err(RunBundleError::from)?;
+            .map_err(BranchBundleError::from)?;
 
         Ok(WalLogInfo {
             entry_count: payloads.len() as u64,
@@ -134,7 +134,7 @@ impl WalLogWriter {
     /// Write payloads to a Vec<u8>
     ///
     /// Convenience method for testing and in-memory operations.
-    pub fn write_to_vec(payloads: &[RunlogPayload]) -> RunBundleResult<(Vec<u8>, WalLogInfo)> {
+    pub fn write_to_vec(payloads: &[BranchlogPayload]) -> BranchBundleResult<(Vec<u8>, WalLogInfo)> {
         let mut buffer = Vec::new();
         let info = Self::write(payloads, &mut buffer)?;
         Ok((buffer, info))
@@ -145,33 +145,33 @@ impl WalLogWriter {
 // Reader
 // =============================================================================
 
-/// Reader for WAL.runlog format (v2)
+/// Reader for WAL.branchlog format (v2)
 pub struct WalLogReader;
 
 impl WalLogReader {
     /// Read all payloads from a reader
     ///
     /// Validates the header and CRC32 of each entry.
-    pub fn read<R: Read>(mut reader: R) -> RunBundleResult<Vec<RunlogPayload>> {
+    pub fn read<R: Read>(mut reader: R) -> BranchBundleResult<Vec<BranchlogPayload>> {
         // Read header
         let mut header = [0u8; HEADER_SIZE];
         reader
             .read_exact(&mut header)
-            .map_err(|e| RunBundleError::invalid_bundle(format!("failed to read header: {}", e)))?;
+            .map_err(|e| BranchBundleError::invalid_bundle(format!("failed to read header: {}", e)))?;
 
         // Validate magic
-        if &header[0..10] != WAL_RUNLOG_MAGIC {
-            return Err(RunBundleError::invalid_bundle(format!(
+        if &header[0..10] != WAL_BRANCHLOG_MAGIC {
+            return Err(BranchBundleError::invalid_bundle(format!(
                 "invalid magic: expected {:?}, got {:?}",
-                WAL_RUNLOG_MAGIC,
+                WAL_BRANCHLOG_MAGIC,
                 &header[0..10]
             )));
         }
 
         // Parse version
         let version = u16::from_le_bytes([header[10], header[11]]);
-        if version != WAL_RUNLOG_VERSION {
-            return Err(RunBundleError::UnsupportedVersion {
+        if version != WAL_BRANCHLOG_VERSION {
+            return Err(BranchBundleError::UnsupportedVersion {
                 version: version as u32,
             });
         }
@@ -191,30 +191,30 @@ impl WalLogReader {
     /// Read payloads from a byte slice
     ///
     /// Convenience method for testing and in-memory operations.
-    pub fn read_from_slice(data: &[u8]) -> RunBundleResult<Vec<RunlogPayload>> {
+    pub fn read_from_slice(data: &[u8]) -> BranchBundleResult<Vec<BranchlogPayload>> {
         Self::read(std::io::Cursor::new(data))
     }
 
-    /// Validate a WAL.runlog without fully parsing entries
+    /// Validate a WAL.branchlog without fully parsing entries
     ///
     /// Checks header and entry CRCs without deserializing entry contents.
     /// Returns the entry count if valid.
-    pub fn validate<R: Read>(mut reader: R) -> RunBundleResult<u32> {
+    pub fn validate<R: Read>(mut reader: R) -> BranchBundleResult<u32> {
         // Read header
         let mut header = [0u8; HEADER_SIZE];
         reader
             .read_exact(&mut header)
-            .map_err(|e| RunBundleError::invalid_bundle(format!("failed to read header: {}", e)))?;
+            .map_err(|e| BranchBundleError::invalid_bundle(format!("failed to read header: {}", e)))?;
 
         // Validate magic
-        if &header[0..10] != WAL_RUNLOG_MAGIC {
-            return Err(RunBundleError::invalid_bundle("invalid magic"));
+        if &header[0..10] != WAL_BRANCHLOG_MAGIC {
+            return Err(BranchBundleError::invalid_bundle("invalid magic"));
         }
 
         // Parse version
         let version = u16::from_le_bytes([header[10], header[11]]);
-        if version != WAL_RUNLOG_VERSION {
-            return Err(RunBundleError::UnsupportedVersion {
+        if version != WAL_BRANCHLOG_VERSION {
+            return Err(BranchBundleError::UnsupportedVersion {
                 version: version as u32,
             });
         }
@@ -233,15 +233,15 @@ impl WalLogReader {
     /// Get header info without reading entries
     ///
     /// Returns (version, entry_count) if header is valid.
-    pub fn read_header<R: Read>(mut reader: R) -> RunBundleResult<(u16, u32)> {
+    pub fn read_header<R: Read>(mut reader: R) -> BranchBundleResult<(u16, u32)> {
         let mut header = [0u8; HEADER_SIZE];
         reader
             .read_exact(&mut header)
-            .map_err(|e| RunBundleError::invalid_bundle(format!("failed to read header: {}", e)))?;
+            .map_err(|e| BranchBundleError::invalid_bundle(format!("failed to read header: {}", e)))?;
 
         // Validate magic
-        if &header[0..10] != WAL_RUNLOG_MAGIC {
-            return Err(RunBundleError::invalid_bundle("invalid magic"));
+        if &header[0..10] != WAL_BRANCHLOG_MAGIC {
+            return Err(BranchBundleError::invalid_bundle("invalid magic"));
         }
 
         let version = u16::from_le_bytes([header[10], header[11]]);
@@ -255,7 +255,7 @@ impl WalLogReader {
 // Streaming Reader (for large files)
 // =============================================================================
 
-/// Iterator over RunlogPayload entries for streaming reads
+/// Iterator over BranchlogPayload entries for streaming reads
 pub struct WalLogIterator<R: Read> {
     reader: R,
     remaining: u32,
@@ -266,11 +266,11 @@ impl<R: Read> WalLogIterator<R> {
     /// Create a new iterator from a reader
     ///
     /// Reads and validates the header, then returns an iterator over entries.
-    pub fn new(mut reader: R) -> RunBundleResult<Self> {
+    pub fn new(mut reader: R) -> BranchBundleResult<Self> {
         let (version, entry_count) = WalLogReader::read_header(&mut reader)?;
 
-        if version != WAL_RUNLOG_VERSION {
-            return Err(RunBundleError::UnsupportedVersion {
+        if version != WAL_BRANCHLOG_VERSION {
+            return Err(BranchBundleError::UnsupportedVersion {
                 version: version as u32,
             });
         }
@@ -289,7 +289,7 @@ impl<R: Read> WalLogIterator<R> {
 }
 
 impl<R: Read> Iterator for WalLogIterator<R> {
-    type Item = RunBundleResult<RunlogPayload>;
+    type Item = BranchBundleResult<BranchlogPayload>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.remaining == 0 {
@@ -313,11 +313,11 @@ impl<R: Read> Iterator for WalLogIterator<R> {
 // =============================================================================
 
 /// Read a single entry from a reader (length + data + CRC)
-fn read_single_entry<R: Read>(reader: &mut R, index: usize) -> RunBundleResult<RunlogPayload> {
+fn read_single_entry<R: Read>(reader: &mut R, index: usize) -> BranchBundleResult<BranchlogPayload> {
     // Read length
     let mut len_bytes = [0u8; 4];
     reader.read_exact(&mut len_bytes).map_err(|e| {
-        RunBundleError::InvalidWalEntry {
+        BranchBundleError::InvalidWalEntry {
             index,
             reason: format!("failed to read length: {}", e),
         }
@@ -326,7 +326,7 @@ fn read_single_entry<R: Read>(reader: &mut R, index: usize) -> RunBundleResult<R
 
     // Sanity check
     if len > 100 * 1024 * 1024 {
-        return Err(RunBundleError::InvalidWalEntry {
+        return Err(BranchBundleError::InvalidWalEntry {
             index,
             reason: format!("entry length {} exceeds maximum", len),
         });
@@ -335,7 +335,7 @@ fn read_single_entry<R: Read>(reader: &mut R, index: usize) -> RunBundleResult<R
     // Read data
     let mut data = vec![0u8; len];
     reader.read_exact(&mut data).map_err(|e| {
-        RunBundleError::InvalidWalEntry {
+        BranchBundleError::InvalidWalEntry {
             index,
             reason: format!("failed to read data: {}", e),
         }
@@ -344,7 +344,7 @@ fn read_single_entry<R: Read>(reader: &mut R, index: usize) -> RunBundleResult<R
     // Read and verify CRC
     let mut crc_bytes = [0u8; 4];
     reader.read_exact(&mut crc_bytes).map_err(|e| {
-        RunBundleError::InvalidWalEntry {
+        BranchBundleError::InvalidWalEntry {
             index,
             reason: format!("failed to read crc: {}", e),
         }
@@ -353,7 +353,7 @@ fn read_single_entry<R: Read>(reader: &mut R, index: usize) -> RunBundleResult<R
     let actual_crc = crc32fast::hash(&data);
 
     if expected_crc != actual_crc {
-        return Err(RunBundleError::InvalidWalEntry {
+        return Err(BranchBundleError::InvalidWalEntry {
             index,
             reason: format!(
                 "CRC mismatch: expected {:08x}, got {:08x}",
@@ -363,18 +363,18 @@ fn read_single_entry<R: Read>(reader: &mut R, index: usize) -> RunBundleResult<R
     }
 
     // Deserialize
-    RunlogPayload::from_bytes(&data).map_err(|e| RunBundleError::InvalidWalEntry {
+    BranchlogPayload::from_bytes(&data).map_err(|e| BranchBundleError::InvalidWalEntry {
         index,
         reason: format!("msgpack decode: {}", e),
     })
 }
 
 /// Validate a single entry's CRC without deserializing
-fn validate_single_entry<R: Read>(reader: &mut R, index: usize) -> RunBundleResult<()> {
+fn validate_single_entry<R: Read>(reader: &mut R, index: usize) -> BranchBundleResult<()> {
     // Read length
     let mut len_bytes = [0u8; 4];
     reader.read_exact(&mut len_bytes).map_err(|e| {
-        RunBundleError::InvalidWalEntry {
+        BranchBundleError::InvalidWalEntry {
             index,
             reason: format!("failed to read length: {}", e),
         }
@@ -383,7 +383,7 @@ fn validate_single_entry<R: Read>(reader: &mut R, index: usize) -> RunBundleResu
 
     // Sanity check
     if len > 100 * 1024 * 1024 {
-        return Err(RunBundleError::InvalidWalEntry {
+        return Err(BranchBundleError::InvalidWalEntry {
             index,
             reason: format!("entry length {} exceeds maximum", len),
         });
@@ -392,7 +392,7 @@ fn validate_single_entry<R: Read>(reader: &mut R, index: usize) -> RunBundleResu
     // Read entry data
     let mut data = vec![0u8; len];
     reader.read_exact(&mut data).map_err(|e| {
-        RunBundleError::InvalidWalEntry {
+        BranchBundleError::InvalidWalEntry {
             index,
             reason: format!("failed to read data: {}", e),
         }
@@ -401,7 +401,7 @@ fn validate_single_entry<R: Read>(reader: &mut R, index: usize) -> RunBundleResu
     // Read and verify CRC32
     let mut crc_bytes = [0u8; 4];
     reader.read_exact(&mut crc_bytes).map_err(|e| {
-        RunBundleError::InvalidWalEntry {
+        BranchBundleError::InvalidWalEntry {
             index,
             reason: format!("failed to read crc: {}", e),
         }
@@ -410,7 +410,7 @@ fn validate_single_entry<R: Read>(reader: &mut R, index: usize) -> RunBundleResu
     let actual_crc = crc32fast::hash(&data);
 
     if expected_crc != actual_crc {
-        return Err(RunBundleError::InvalidWalEntry {
+        return Err(BranchBundleError::InvalidWalEntry {
             index,
             reason: format!(
                 "CRC mismatch: expected {:08x}, got {:08x}",
@@ -428,18 +428,18 @@ mod tests {
     use strata_core::types::{Key, Namespace, BranchId, TypeTag};
     use strata_core::value::Value;
 
-    fn make_test_run_id() -> (BranchId, String) {
+    fn make_test_branch_id() -> (BranchId, String) {
         let branch_id = BranchId::new();
-        let run_id_str = branch_id.to_string();
-        (branch_id, run_id_str)
+        let branch_id_str = branch_id.to_string();
+        (branch_id, branch_id_str)
     }
 
-    fn make_test_payloads(run_id_str: &str) -> Vec<RunlogPayload> {
-        let branch_id = BranchId::from_string(run_id_str).unwrap_or_else(|| BranchId::new());
+    fn make_test_payloads(branch_id_str: &str) -> Vec<BranchlogPayload> {
+        let branch_id = BranchId::from_string(branch_id_str).unwrap_or_else(|| BranchId::new());
         let ns = Namespace::for_branch(branch_id);
         vec![
-            RunlogPayload {
-                branch_id: run_id_str.to_string(),
+            BranchlogPayload {
+                branch_id: branch_id_str.to_string(),
                 version: 1,
                 puts: vec![
                     (
@@ -453,8 +453,8 @@ mod tests {
                 ],
                 deletes: vec![],
             },
-            RunlogPayload {
-                branch_id: run_id_str.to_string(),
+            BranchlogPayload {
+                branch_id: branch_id_str.to_string(),
                 version: 2,
                 puts: vec![],
                 deletes: vec![Key::new(ns, TypeTag::KV, b"key1".to_vec())],
@@ -464,8 +464,8 @@ mod tests {
 
     #[test]
     fn test_write_read_roundtrip() {
-        let (_run_id, run_id_str) = make_test_run_id();
-        let payloads = make_test_payloads(&run_id_str);
+        let (_branch_id, branch_id_str) = make_test_branch_id();
+        let payloads = make_test_payloads(&branch_id_str);
 
         // Write
         let (data, info) = WalLogWriter::write_to_vec(&payloads).unwrap();
@@ -485,7 +485,7 @@ mod tests {
 
     #[test]
     fn test_empty_entries() {
-        let payloads: Vec<RunlogPayload> = vec![];
+        let payloads: Vec<BranchlogPayload> = vec![];
 
         let (data, info) = WalLogWriter::write_to_vec(&payloads).unwrap();
 
@@ -498,8 +498,8 @@ mod tests {
 
     #[test]
     fn test_validate_only() {
-        let (_run_id, run_id_str) = make_test_run_id();
-        let payloads = make_test_payloads(&run_id_str);
+        let (_branch_id, branch_id_str) = make_test_branch_id();
+        let payloads = make_test_payloads(&branch_id_str);
 
         let (data, _) = WalLogWriter::write_to_vec(&payloads).unwrap();
 
@@ -510,13 +510,13 @@ mod tests {
 
     #[test]
     fn test_read_header() {
-        let (_run_id, run_id_str) = make_test_run_id();
-        let payloads = make_test_payloads(&run_id_str);
+        let (_branch_id, branch_id_str) = make_test_branch_id();
+        let payloads = make_test_payloads(&branch_id_str);
 
         let (data, _) = WalLogWriter::write_to_vec(&payloads).unwrap();
 
         let (version, count) = WalLogReader::read_header(std::io::Cursor::new(&data)).unwrap();
-        assert_eq!(version, WAL_RUNLOG_VERSION);
+        assert_eq!(version, WAL_BRANCHLOG_VERSION);
         assert_eq!(count, 2);
     }
 
@@ -526,13 +526,13 @@ mod tests {
         data[0..10].copy_from_slice(b"WRONG_MAGI");
 
         let result = WalLogReader::read_from_slice(&data);
-        assert!(matches!(result, Err(RunBundleError::InvalidBundle(_))));
+        assert!(matches!(result, Err(BranchBundleError::InvalidBundle(_))));
     }
 
     #[test]
     fn test_corrupted_entry_crc() {
-        let (_run_id, run_id_str) = make_test_run_id();
-        let payloads = make_test_payloads(&run_id_str);
+        let (_branch_id, branch_id_str) = make_test_branch_id();
+        let payloads = make_test_payloads(&branch_id_str);
 
         let (mut data, _) = WalLogWriter::write_to_vec(&payloads).unwrap();
 
@@ -544,28 +544,28 @@ mod tests {
         let result = WalLogReader::read_from_slice(&data);
         assert!(matches!(
             result,
-            Err(RunBundleError::InvalidWalEntry { index: 0, .. })
+            Err(BranchBundleError::InvalidWalEntry { index: 0, .. })
         ));
     }
 
     #[test]
     fn test_streaming_iterator() {
-        let (_run_id, run_id_str) = make_test_run_id();
-        let payloads = make_test_payloads(&run_id_str);
+        let (_branch_id, branch_id_str) = make_test_branch_id();
+        let payloads = make_test_payloads(&branch_id_str);
 
         let (data, _) = WalLogWriter::write_to_vec(&payloads).unwrap();
 
         let iter = WalLogIterator::new(std::io::Cursor::new(&data)).unwrap();
         assert_eq!(iter.entry_count(), 2);
 
-        let read_payloads: Vec<RunlogPayload> = iter.map(|r| r.unwrap()).collect();
+        let read_payloads: Vec<BranchlogPayload> = iter.map(|r| r.unwrap()).collect();
         assert_eq!(read_payloads.len(), payloads.len());
     }
 
     #[test]
     fn test_checksum_consistency() {
-        let (_run_id, run_id_str) = make_test_run_id();
-        let payloads = make_test_payloads(&run_id_str);
+        let (_branch_id, branch_id_str) = make_test_branch_id();
+        let payloads = make_test_payloads(&branch_id_str);
 
         // Write twice, checksums should match
         let (data1, info1) = WalLogWriter::write_to_vec(&payloads).unwrap();
@@ -578,13 +578,13 @@ mod tests {
     #[test]
     fn test_large_entry() {
         let branch_id = BranchId::new();
-        let run_id_str = branch_id.to_string();
+        let branch_id_str = branch_id.to_string();
         let ns = Namespace::for_branch(branch_id);
 
         // Create payload with large value
         let large_value = "x".repeat(1024 * 1024); // 1MB string
-        let payloads = vec![RunlogPayload {
-            branch_id: run_id_str,
+        let payloads = vec![BranchlogPayload {
+            branch_id: branch_id_str,
             version: 1,
             puts: vec![(
                 Key::new(ns, TypeTag::KV, b"large_key".to_vec()),
@@ -602,7 +602,7 @@ mod tests {
     }
 
     // ========================================================================
-    // Adversarial WAL.runlog Tests
+    // Adversarial WAL.branchlog Tests
     // ========================================================================
 
     #[test]
@@ -616,7 +616,7 @@ mod tests {
     #[test]
     fn test_wrong_version() {
         let mut data = vec![0u8; HEADER_SIZE];
-        data[0..10].copy_from_slice(WAL_RUNLOG_MAGIC);
+        data[0..10].copy_from_slice(WAL_BRANCHLOG_MAGIC);
         // Set version to 999
         data[10..12].copy_from_slice(&999u16.to_le_bytes());
         data[12..16].copy_from_slice(&0u32.to_le_bytes()); // 0 entries
@@ -628,7 +628,7 @@ mod tests {
     #[test]
     fn test_v1_version_rejected() {
         let mut data = vec![0u8; HEADER_SIZE];
-        data[0..10].copy_from_slice(WAL_RUNLOG_MAGIC);
+        data[0..10].copy_from_slice(WAL_BRANCHLOG_MAGIC);
         // Set version to 1 (old format)
         data[10..12].copy_from_slice(&1u16.to_le_bytes());
         data[12..16].copy_from_slice(&0u32.to_le_bytes());
@@ -636,14 +636,14 @@ mod tests {
         let result = WalLogReader::read_from_slice(&data);
         assert!(matches!(
             result,
-            Err(RunBundleError::UnsupportedVersion { version: 1 })
+            Err(BranchBundleError::UnsupportedVersion { version: 1 })
         ));
     }
 
     #[test]
     fn test_entry_count_mismatch_more_declared() {
-        let (_run_id, run_id_str) = make_test_run_id();
-        let payloads = make_test_payloads(&run_id_str);
+        let (_branch_id, branch_id_str) = make_test_branch_id();
+        let payloads = make_test_payloads(&branch_id_str);
 
         let (mut data, _) = WalLogWriter::write_to_vec(&payloads).unwrap();
 
@@ -657,8 +657,8 @@ mod tests {
 
     #[test]
     fn test_iterator_stops_on_corruption() {
-        let (_run_id, run_id_str) = make_test_run_id();
-        let payloads = make_test_payloads(&run_id_str);
+        let (_branch_id, branch_id_str) = make_test_branch_id();
+        let payloads = make_test_payloads(&branch_id_str);
 
         let (mut data, _) = WalLogWriter::write_to_vec(&payloads).unwrap();
 
@@ -681,11 +681,11 @@ mod tests {
     #[test]
     fn test_checksum_changes_with_different_data() {
         let branch_id = BranchId::new();
-        let run_id_str = branch_id.to_string();
+        let branch_id_str = branch_id.to_string();
         let ns = Namespace::for_branch(branch_id);
 
-        let payloads1 = vec![RunlogPayload {
-            branch_id: run_id_str.clone(),
+        let payloads1 = vec![BranchlogPayload {
+            branch_id: branch_id_str.clone(),
             version: 1,
             puts: vec![(
                 Key::new(ns.clone(), TypeTag::KV, b"key1".to_vec()),
@@ -694,8 +694,8 @@ mod tests {
             deletes: vec![],
         }];
 
-        let payloads2 = vec![RunlogPayload {
-            branch_id: run_id_str,
+        let payloads2 = vec![BranchlogPayload {
+            branch_id: branch_id_str,
             version: 1,
             puts: vec![(
                 Key::new(ns, TypeTag::KV, b"key1".to_vec()),
@@ -716,11 +716,11 @@ mod tests {
     #[test]
     fn test_payload_with_deletes() {
         let branch_id = BranchId::new();
-        let run_id_str = branch_id.to_string();
+        let branch_id_str = branch_id.to_string();
         let ns = Namespace::for_branch(branch_id);
 
-        let payloads = vec![RunlogPayload {
-            branch_id: run_id_str,
+        let payloads = vec![BranchlogPayload {
+            branch_id: branch_id_str,
             version: 5,
             puts: vec![(
                 Key::new(ns.clone(), TypeTag::KV, b"kept".to_vec()),

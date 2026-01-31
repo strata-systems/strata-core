@@ -129,10 +129,10 @@ fn stress_large_batch_kv() {
     assert_eq!(keys.len(), 10_000);
 }
 
-/// Many concurrent runs
+/// Many concurrent branches
 #[test]
 #[ignore]
-fn stress_many_concurrent_runs() {
+fn stress_many_concurrent_branches() {
     let test_db = TestDb::new_in_memory();
     let db = test_db.db.clone();
 
@@ -145,12 +145,12 @@ fn stress_many_concurrent_runs() {
         let success = success.clone();
 
         thread::spawn(move || {
-            let branch_id = BranchId::new(); // Each thread has its own run
+            let branch_id = BranchId::new(); // Each thread has its own branch
             let kv = KVStore::new(db.clone());
 
             barrier.wait();
 
-            // Each run does independent work
+            // Each branch does independent work
             for i in 0..100 {
                 kv.put(&branch_id, &format!("key_{}", i), Value::Int(i)).unwrap();
             }
@@ -171,7 +171,7 @@ fn stress_many_concurrent_runs() {
 
     let total = success.load(Ordering::Relaxed);
     println!("Successful verifications: {}", total);
-    assert_eq!(total, 50 * 100); // All should succeed (no cross-run interference)
+    assert_eq!(total, 50 * 100); // All should succeed (no cross-branch interference)
 }
 
 /// Cross-primitive stress

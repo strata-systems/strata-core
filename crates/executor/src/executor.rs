@@ -70,7 +70,7 @@ impl Executor {
                 Ok(Output::DatabaseInfo(crate::types::DatabaseInfo {
                     version: env!("CARGO_PKG_VERSION").to_string(),
                     uptime_secs: 0,
-                    run_count: 0,
+                    branch_count: 0,
                     total_keys: 0,
                 }))
             }

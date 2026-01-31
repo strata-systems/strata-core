@@ -5,7 +5,7 @@
 //! - Durability: none, batched, strict
 //! - Primitives: single vs cross-primitive
 //! - Scale: 1k, 10k, 100k records
-//! - Branching: run isolation and forking
+//! - Branching: branch isolation and forking
 
 #[path = "../common/mod.rs"]
 mod common;

@@ -205,7 +205,7 @@ fn all_primitives_work_in_all_modes() {
         let event = EventLog::new(db.clone());
         let state = StateCell::new(db.clone());
         let json = JsonStore::new(db.clone());
-        let run_idx = BranchIndex::new(db.clone());
+        let branch_idx = BranchIndex::new(db.clone());
 
         // KV
         kv.put(&branch_id, "k", Value::Int(1)).unwrap();
@@ -220,7 +220,7 @@ fn all_primitives_work_in_all_modes() {
         json.create(&branch_id, "j", serde_json::json!({"x": 4}).into()).unwrap();
 
         // BranchIndex
-        run_idx.create_branch("test_run").unwrap();
+        branch_idx.create_branch("test_branch").unwrap();
 
         // All succeeded
         true

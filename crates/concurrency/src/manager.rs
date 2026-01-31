@@ -50,18 +50,18 @@ use std::sync::atomic::{AtomicU64, Ordering};
 ///
 /// # Thread Safety
 ///
-/// Commits are serialized per-run via internal locks to prevent TOCTOU
+/// Commits are serialized per-branch via internal locks to prevent TOCTOU
 /// (time-of-check-to-time-of-use) races between validation and storage application.
-/// This ensures that no other transaction on the same run can modify storage
+/// This ensures that no other transaction on the same branch can modify storage
 /// between the time we validate and the time we apply our writes.
 ///
-/// Transactions on different runs can commit in parallel, as ShardedStore
-/// maintains per-run shards and there's no cross-run conflict.
+/// Transactions on different branches can commit in parallel, as ShardedStore
+/// maintains per-branch shards and there's no cross-branch conflict.
 pub struct TransactionManager {
     /// Global version counter
     ///
     /// Monotonically increasing. Each committed transaction increments by 1.
-    /// Shared across all runs for consistent MVCC ordering.
+    /// Shared across all branches for consistent MVCC ordering.
     version: AtomicU64,
 
     /// Next transaction ID
@@ -69,17 +69,17 @@ pub struct TransactionManager {
     /// Unique identifier for transactions. Used in WAL entries.
     next_txn_id: AtomicU64,
 
-    /// Per-run commit locks
+    /// Per-branch commit locks
     ///
-    /// Prevents TOCTOU race between validation and apply within the same run.
+    /// Prevents TOCTOU race between validation and apply within the same branch.
     /// Without this lock, the following race can occur:
     /// 1. T1 validates (succeeds, storage at v1)
     /// 2. T2 validates (succeeds, storage still at v1)
     /// 3. T1 applies (storage now at v2)
     /// 4. T2 applies (uses stale validation from step 2)
     ///
-    /// Using per-run locks allows parallel commits for different runs while
-    /// still preventing TOCTOU within each run.
+    /// Using per-branch locks allows parallel commits for different branches while
+    /// still preventing TOCTOU within each branch.
     commit_locks: DashMap<BranchId, Mutex<()>>,
 }
 
@@ -157,7 +157,7 @@ impl TransactionManager {
     ///
     /// # Commit Sequence
     ///
-    /// 1. Acquire per-run commit lock (prevents TOCTOU race within same run)
+    /// 1. Acquire per-branch commit lock (prevents TOCTOU race within same branch)
     /// 2. Validate and mark committed (in-memory state transition)
     /// 3. Allocate commit version
     /// 4. Write to WAL if provided (BeginTxn, operations, CommitTxn)
@@ -170,23 +170,23 @@ impl TransactionManager {
     ///
     /// # Thread Safety
     ///
-    /// Per-run commit locks ensure that validation and apply happen atomically
-    /// with respect to other transactions on the same run. This prevents the
+    /// Per-branch commit locks ensure that validation and apply happen atomically
+    /// with respect to other transactions on the same branch. This prevents the
     /// TOCTOU race where validation passes but storage changes before apply.
     ///
-    /// Transactions on different runs can commit in parallel.
+    /// Transactions on different branches can commit in parallel.
     pub fn commit<S: Storage>(
         &self,
         txn: &mut TransactionContext,
         store: &S,
         mut wal: Option<&mut WalWriter>,
     ) -> std::result::Result<u64, CommitError> {
-        // Acquire per-run commit lock to prevent TOCTOU race between validation and apply
-        // This ensures no other transaction on the same run can modify storage between
+        // Acquire per-branch commit lock to prevent TOCTOU race between validation and apply
+        // This ensures no other transaction on the same branch can modify storage between
         // our validation check and our apply_writes call.
-        // Transactions on different runs can proceed in parallel.
-        let run_lock = self.commit_locks.entry(txn.branch_id).or_insert_with(|| Mutex::new(()));
-        let _commit_guard = run_lock.lock();
+        // Transactions on different branches can proceed in parallel.
+        let branch_lock = self.commit_locks.entry(txn.branch_id).or_insert_with(|| Mutex::new(()));
+        let _commit_guard = branch_lock.lock();
 
         // Step 1: Validate and mark committed (in-memory)
         // This performs: Active → Validating → Committed
@@ -332,8 +332,8 @@ mod tests {
     }
 
     #[test]
-    fn test_per_run_commit_locks_allow_parallel_different_runs() {
-        // This test verifies that commits on different runs can proceed in parallel
+    fn test_per_branch_commit_locks_allow_parallel_different_branches() {
+        // This test verifies that commits on different branches can proceed in parallel
         // by checking that both commits complete and produce unique versions
         // Note: WalWriter requires &mut so we use a Mutex for shared access from threads
         let temp_dir = TempDir::new().unwrap();
@@ -342,20 +342,20 @@ mod tests {
         let store = Arc::new(ShardedStore::new());
         let manager = Arc::new(TransactionManager::new(0));
 
-        let run_id1 = BranchId::new();
-        let run_id2 = BranchId::new();
-        let ns1 = create_test_namespace(run_id1);
-        let ns2 = create_test_namespace(run_id2);
+        let branch_id1 = BranchId::new();
+        let branch_id2 = BranchId::new();
+        let ns1 = create_test_namespace(branch_id1);
+        let ns2 = create_test_namespace(branch_id2);
         let key1 = create_test_key(&ns1, "key1");
         let key2 = create_test_key(&ns2, "key2");
 
         // Prepare transactions
         let snapshot1 = store.snapshot();
-        let mut txn1 = TransactionContext::with_snapshot(1, run_id1, Box::new(snapshot1));
+        let mut txn1 = TransactionContext::with_snapshot(1, branch_id1, Box::new(snapshot1));
         txn1.put(key1.clone(), Value::Int(1)).unwrap();
 
         let snapshot2 = store.snapshot();
-        let mut txn2 = TransactionContext::with_snapshot(2, run_id2, Box::new(snapshot2));
+        let mut txn2 = TransactionContext::with_snapshot(2, branch_id2, Box::new(snapshot2));
         txn2.put(key2.clone(), Value::Int(2)).unwrap();
 
         // Commit both in parallel threads
@@ -391,8 +391,8 @@ mod tests {
     }
 
     #[test]
-    fn test_same_run_commits_serialize() {
-        // This test verifies that commits on the same run are serialized
+    fn test_same_branch_commits_serialize() {
+        // This test verifies that commits on the same branch are serialized
         // (one completes before the other starts its critical section)
         let temp_dir = TempDir::new().unwrap();
         let wal_dir = temp_dir.path().join("wal");
@@ -414,7 +414,7 @@ mod tests {
             assert_eq!(v, 1);
         }
 
-        // Commit second transaction on same run
+        // Commit second transaction on same branch
         {
             let snapshot = store.snapshot();
             let mut txn = TransactionContext::with_snapshot(2, branch_id, Box::new(snapshot));
@@ -434,8 +434,8 @@ mod tests {
     }
 
     #[test]
-    fn test_many_parallel_commits_different_runs() {
-        // Stress test: many parallel commits on different runs
+    fn test_many_parallel_commits_different_branches() {
+        // Stress test: many parallel commits on different branches
         let temp_dir = TempDir::new().unwrap();
         let wal_dir = temp_dir.path().join("wal");
         let wal = Arc::new(ParkingMutex::new(create_test_wal(&wal_dir)));

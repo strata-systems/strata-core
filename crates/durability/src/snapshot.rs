@@ -483,7 +483,7 @@ where
             primitive_ids::JSON => json.snapshot_deserialize(&section.data)?,
             primitive_ids::EVENT => event.snapshot_deserialize(&section.data)?,
             primitive_ids::STATE => state.snapshot_deserialize(&section.data)?,
-            primitive_ids::RUN => run.snapshot_deserialize(&section.data)?,
+            primitive_ids::BRANCH => run.snapshot_deserialize(&section.data)?,
             _ => {
                 // Unknown primitive - log warning but continue
                 // This allows forward compatibility with newer snapshots
@@ -702,7 +702,7 @@ mod tests {
             PrimitiveSection::new(primitive_ids::JSON, b"json-data".to_vec()),
             PrimitiveSection::new(primitive_ids::EVENT, b"event-data".to_vec()),
             PrimitiveSection::new(primitive_ids::STATE, b"state-data".to_vec()),
-            PrimitiveSection::new(primitive_ids::RUN, b"run-data".to_vec()),
+            PrimitiveSection::new(primitive_ids::BRANCH, b"branch-data".to_vec()),
         ];
 
         let mut writer = SnapshotWriter::new();
@@ -716,7 +716,7 @@ mod tests {
             primitive_ids::JSON,
             primitive_ids::EVENT,
             primitive_ids::STATE,
-            primitive_ids::RUN,
+            primitive_ids::BRANCH,
         ]
         .iter()
         .enumerate()
@@ -792,7 +792,7 @@ mod tests {
             data: vec![4],
         };
         let run = MockPrimitive {
-            type_id: primitive_ids::RUN,
+            type_id: primitive_ids::BRANCH,
             data: vec![6],
         };
 
@@ -810,7 +810,7 @@ mod tests {
             PrimitiveSection::new(primitive_ids::JSON, vec![20]),
             PrimitiveSection::new(primitive_ids::EVENT, vec![30]),
             PrimitiveSection::new(primitive_ids::STATE, vec![40]),
-            PrimitiveSection::new(primitive_ids::RUN, vec![60]),
+            PrimitiveSection::new(primitive_ids::BRANCH, vec![60]),
         ];
 
         let mut kv = MockPrimitive {
@@ -830,7 +830,7 @@ mod tests {
             data: vec![],
         };
         let mut run = MockPrimitive {
-            type_id: primitive_ids::RUN,
+            type_id: primitive_ids::BRANCH,
             data: vec![],
         };
 
@@ -870,7 +870,7 @@ mod tests {
             data: vec![],
         };
         let mut run = MockPrimitive {
-            type_id: primitive_ids::RUN,
+            type_id: primitive_ids::BRANCH,
             data: vec![],
         };
 
@@ -1025,7 +1025,7 @@ mod tests {
             PrimitiveSection::new(primitive_ids::JSON, b"json".to_vec()),
             PrimitiveSection::new(primitive_ids::EVENT, b"event".to_vec()),
             PrimitiveSection::new(primitive_ids::STATE, b"state".to_vec()),
-            PrimitiveSection::new(primitive_ids::RUN, b"run".to_vec()),
+            PrimitiveSection::new(primitive_ids::BRANCH, b"branch".to_vec()),
             PrimitiveSection::new(primitive_ids::VECTOR, b"vector".to_vec()),
         ];
 

@@ -374,8 +374,8 @@ mod tests {
         let state = EntityRef::state(branch_id, "cell");
         assert!(format!("{}", state).starts_with("state://"));
 
-        let run_ref = EntityRef::branch(branch_id);
-        assert!(format!("{}", run_ref).starts_with("branch://"));
+        let branch_ref = EntityRef::branch(branch_id);
+        assert!(format!("{}", branch_ref).starts_with("branch://"));
 
         let json = EntityRef::json(branch_id, "test-doc");
         assert!(format!("{}", json).starts_with("json://"));
@@ -513,14 +513,14 @@ mod tests {
     #[test]
     fn test_entity_ref_display_contains_branch_id() {
         let branch_id = BranchId::new();
-        let run_str = format!("{}", branch_id);
+        let branch_str = format!("{}", branch_id);
 
         let kv = EntityRef::kv(branch_id, "mykey");
-        assert!(format!("{}", kv).contains(&run_str), "Display should contain branch_id");
+        assert!(format!("{}", kv).contains(&branch_str), "Display should contain branch_id");
 
         let event = EntityRef::event(branch_id, 42);
         let display = format!("{}", event);
-        assert!(display.contains(&run_str));
+        assert!(display.contains(&branch_str));
         assert!(display.contains("42"));
     }
 

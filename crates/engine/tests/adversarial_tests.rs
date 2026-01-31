@@ -13,7 +13,7 @@
 //! 2. EventLog: Concurrent appends, hash chain integrity, payload validation
 //! 3. StateCell: CAS contention, version monotonicity under stress
 //! 4. VectorStore: Numerical precision, concurrent operations
-//! 5. BranchIndex: Concurrent run operations, cascade delete
+//! 5. BranchIndex: Concurrent branch operations, cascade delete
 //!
 //! These tests follow the TESTING_METHODOLOGY.md principles:
 //! - Test behavior, not implementation
@@ -1023,9 +1023,9 @@ fn test_vector_concurrent_upserts_same_collection() {
 // Module 5: Cross-Primitive Adversarial Tests
 // ============================================================================
 
-/// Test run isolation - operations in one run don't affect another
+/// Test branch isolation - operations in one branch don't affect another
 #[test]
-fn test_run_isolation_comprehensive() {
+fn test_branch_isolation_comprehensive() {
     let (db, _temp, _) = setup();
     let branch_a = BranchId::new();
     let branch_b = BranchId::new();
@@ -1034,12 +1034,12 @@ fn test_run_isolation_comprehensive() {
     let event_log = EventLog::new(db.clone());
     let state_cell = StateCell::new(db.clone());
 
-    // Write to run A
+    // Write to branch A
     kv.put(&branch_a, "key", Value::Int(1)).unwrap();
     event_log.append(&branch_a, "event", empty_payload()).unwrap();
     state_cell.init(&branch_a, "cell", Value::Int(100)).unwrap();
 
-    // Write to run B
+    // Write to branch B
     kv.put(&branch_b, "key", Value::Int(2)).unwrap();
     event_log.append(&branch_b, "event", empty_payload()).unwrap();
     state_cell.init(&branch_b, "cell", Value::Int(200)).unwrap();
@@ -1048,41 +1048,41 @@ fn test_run_isolation_comprehensive() {
     assert_eq!(
         kv.get(&branch_a, "key").unwrap().unwrap(),
         Value::Int(1),
-        "Run A should see its own KV value"
+        "Branch A should see its own KV value"
     );
     assert_eq!(
         kv.get(&branch_b, "key").unwrap().unwrap(),
         Value::Int(2),
-        "Run B should see its own KV value"
+        "Branch B should see its own KV value"
     );
 
     assert_eq!(
         event_log.len(&branch_a).unwrap(),
         1,
-        "Run A should have 1 event"
+        "Branch A should have 1 event"
     );
     assert_eq!(
         event_log.len(&branch_b).unwrap(),
         1,
-        "Run B should have 1 event"
+        "Branch B should have 1 event"
     );
 
     assert_eq!(
         state_cell.read(&branch_a, "cell").unwrap().unwrap().value,
         Value::Int(100),
-        "Run A should see its own state"
+        "Branch A should see its own state"
     );
     assert_eq!(
         state_cell.read(&branch_b, "cell").unwrap().unwrap().value,
         Value::Int(200),
-        "Run B should see its own state"
+        "Branch B should see its own state"
     );
 
-    // Delete from run A shouldn't affect run B
+    // Delete from branch A shouldn't affect branch B
     kv.delete(&branch_a, "key").unwrap();
     assert!(
         kv.get(&branch_b, "key").unwrap().is_some(),
-        "Run B key should still exist after deleting from run A"
+        "Branch B key should still exist after deleting from branch A"
     );
 }
 

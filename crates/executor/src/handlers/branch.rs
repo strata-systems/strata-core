@@ -59,13 +59,13 @@ pub fn branch_create(
 ) -> Result<Output> {
     // Users can provide any string as a branch name (like git branch names).
     // If not provided, generate a UUID for anonymous branches.
-    let name = match &branch_id {
+    let branch_str = match &branch_id {
         Some(s) => s.clone(),
         None => uuid::Uuid::new_v4().to_string(),
     };
 
     // MVP: ignore metadata, use simple create_branch
-    let versioned = convert_result(p.branch.create_branch(&name))?;
+    let versioned = convert_result(p.branch.create_branch(&branch_str))?;
 
     Ok(Output::BranchWithVersion {
         info: metadata_to_branch_info(&versioned.value),
@@ -128,7 +128,7 @@ pub fn branch_delete(p: &Arc<Primitives>, branch: BranchId) -> Result<Output> {
 /// Handle BranchExport command.
 pub fn branch_export(p: &Arc<Primitives>, branch_id: String, path: String) -> Result<Output> {
     let export_path = std::path::Path::new(&path);
-    let info = strata_engine::bundle::export_run(&p.db, &branch_id, export_path).map_err(|e| {
+    let info = strata_engine::bundle::export_branch(&p.db, &branch_id, export_path).map_err(|e| {
         Error::Io {
             reason: format!("Export failed: {}", e),
         }
@@ -145,7 +145,7 @@ pub fn branch_export(p: &Arc<Primitives>, branch_id: String, path: String) -> Re
 /// Handle BranchImport command.
 pub fn branch_import(p: &Arc<Primitives>, path: String) -> Result<Output> {
     let import_path = std::path::Path::new(&path);
-    let info = strata_engine::bundle::import_run(&p.db, import_path).map_err(|e| {
+    let info = strata_engine::bundle::import_branch(&p.db, import_path).map_err(|e| {
         Error::Io {
             reason: format!("Import failed: {}", e),
         }
@@ -193,7 +193,7 @@ mod tests {
         let m = BranchMetadata {
             name: "test-branch".to_string(),
             branch_id: "some-uuid".to_string(),
-            parent_run: None,
+            parent_branch: None,
             status: strata_engine::BranchStatus::Active,
             created_at: 1000000,
             updated_at: 2000000,

@@ -13,9 +13,9 @@
 //! sees consistent state, avoiding the data loss bug where each VectorStore::new()
 //! created a private, empty backends map.
 //!
-//! ## Run Isolation
+//! ## Branch Isolation
 //!
-//! All operations are scoped to a `BranchId`. Different runs cannot see
+//! All operations are scoped to a `BranchId`. Different branches cannot see
 //! each other's collections or vectors.
 //!
 //! ## Thread Safety
@@ -250,7 +250,7 @@ impl VectorStore {
         Ok(())
     }
 
-    /// List all collections for a run
+    /// List all collections for a branch
     ///
     /// Returns CollectionInfo for each collection, including current vector count.
     /// Results are sorted by name for determinism (Invariant R4).
@@ -1411,35 +1411,35 @@ mod tests {
     }
 
     // ========================================
-    // Run Isolation Tests (Rule #2)
+    // Branch Isolation Tests (Rule #2)
     // ========================================
 
     #[test]
-    fn test_run_isolation() {
+    fn test_branch_isolation() {
         let (_temp, _db, store) = setup();
-        let run1 = BranchId::new();
-        let run2 = BranchId::new();
+        let branch1 = BranchId::new();
+        let branch2 = BranchId::new();
 
         let config = VectorConfig::for_minilm();
 
-        // Create same-named collection in different runs
+        // Create same-named collection in different branches
         store
-            .create_collection(run1, "shared_name", config.clone())
+            .create_collection(branch1, "shared_name", config.clone())
             .unwrap();
         store
-            .create_collection(run2, "shared_name", config)
+            .create_collection(branch2, "shared_name", config)
             .unwrap();
 
-        // Each run sees only its own collection
-        let list1 = store.list_collections(run1).unwrap();
-        let list2 = store.list_collections(run2).unwrap();
+        // Each branch sees only its own collection
+        let list1 = store.list_collections(branch1).unwrap();
+        let list2 = store.list_collections(branch2).unwrap();
 
         assert_eq!(list1.len(), 1);
         assert_eq!(list2.len(), 1);
 
-        // Deleting from one run doesn't affect the other
-        store.delete_collection(run1, "shared_name").unwrap();
-        assert!(store.get_collection(run2, "shared_name").unwrap().is_some());
+        // Deleting from one branch doesn't affect the other
+        store.delete_collection(branch1, "shared_name").unwrap();
+        assert!(store.get_collection(branch2, "shared_name").unwrap().is_some());
     }
 
     // ========================================

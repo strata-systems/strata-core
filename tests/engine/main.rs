@@ -13,5 +13,5 @@ mod acid_properties;
 mod adversarial;
 mod adversarial_deep;
 mod cross_primitive;
-mod run_isolation;
+mod branch_isolation;
 mod stress;

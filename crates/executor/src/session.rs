@@ -38,7 +38,7 @@ use crate::{Command, Error, Executor, Output, Result};
 /// When no transaction is active, commands delegate to the inner `Executor`.
 /// When a transaction is active, data commands (KV, Event, State, JSON)
 /// route through the engine's `Transaction<'a>` / `TransactionOps` trait,
-/// while non-transactional commands (Run, Vector, DB) still delegate to
+/// while non-transactional commands (Branch, Vector, DB) still delegate to
 /// the `Executor`.
 pub struct Session {
     executor: Executor,

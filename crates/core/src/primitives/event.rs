@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 /// - Timestamp and hash chain for integrity
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Event {
-    /// Sequence number (auto-assigned, monotonic per run)
+    /// Sequence number (auto-assigned, monotonic per branch)
     pub sequence: u64,
     /// Event type (user-defined category)
     pub event_type: String,

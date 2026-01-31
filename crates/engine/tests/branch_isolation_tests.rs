@@ -1,7 +1,7 @@
-//! Run Isolation Integration Tests
+//! Branch Isolation Integration Tests
 //!
-//! Tests verifying that different runs are completely isolated from each other.
-//! Each run has its own namespace and cannot see or affect other runs' data.
+//! Tests verifying that different branches are completely isolated from each other.
+//! Each branch has its own namespace and cannot see or affect other branches' data.
 
 use strata_core::contract::Version;
 use strata_core::types::BranchId;
@@ -33,34 +33,34 @@ fn setup() -> (Arc<Database>, TempDir) {
     (db, temp_dir)
 }
 
-/// Test KV isolation - same key in different runs are independent
+/// Test KV isolation - same key in different branches are independent
 #[test]
 fn test_kv_isolation() {
     let (db, _temp) = setup();
     let kv = KVStore::new(db.clone());
 
-    let run1 = BranchId::new();
-    let run2 = BranchId::new();
+    let branch1 = BranchId::new();
+    let branch2 = BranchId::new();
 
-    // Same key, different runs
-    kv.put(&run1, "key", Value::Int(1)).unwrap();
-    kv.put(&run2, "key", Value::Int(2)).unwrap();
+    // Same key, different branches
+    kv.put(&branch1, "key", Value::Int(1)).unwrap();
+    kv.put(&branch2, "key", Value::Int(2)).unwrap();
 
-    // Each run sees ONLY its own data
-    assert_eq!(kv.get(&run1, "key").unwrap(), Some(Value::Int(1)));
-    assert_eq!(kv.get(&run2, "key").unwrap(), Some(Value::Int(2)));
+    // Each branch sees ONLY its own data
+    assert_eq!(kv.get(&branch1, "key").unwrap(), Some(Value::Int(1)));
+    assert_eq!(kv.get(&branch2, "key").unwrap(), Some(Value::Int(2)));
 
     // List shows only own keys
-    let run1_keys = kv.list(&run1, None).unwrap();
-    let run2_keys = kv.list(&run2, None).unwrap();
+    let branch1_keys = kv.list(&branch1, None).unwrap();
+    let branch2_keys = kv.list(&branch2, None).unwrap();
 
-    assert_eq!(run1_keys.len(), 1);
-    assert_eq!(run2_keys.len(), 1);
-    assert!(run1_keys.contains(&"key".to_string()));
-    assert!(run2_keys.contains(&"key".to_string()));
+    assert_eq!(branch1_keys.len(), 1);
+    assert_eq!(branch2_keys.len(), 1);
+    assert!(branch1_keys.contains(&"key".to_string()));
+    assert!(branch2_keys.contains(&"key".to_string()));
 }
 
-/// Test EventLog isolation - each run has independent sequence numbers
+/// Test EventLog isolation - each branch has independent sequence numbers
 #[test]
 fn test_event_log_isolation() {
     let (db, _temp) = setup();
@@ -68,15 +68,15 @@ fn test_event_log_isolation() {
 
     use strata_core::contract::Version;
 
-    let run1 = BranchId::new();
-    let run2 = BranchId::new();
+    let branch1 = BranchId::new();
+    let branch2 = BranchId::new();
 
-    // Both runs start at sequence 0
+    // Both branches start at sequence 0
     let v1 = event_log
-        .append(&run1, "event", string_payload("run1"))
+        .append(&branch1, "event", string_payload("branch1"))
         .unwrap();
     let v2 = event_log
-        .append(&run2, "event", string_payload("run2"))
+        .append(&branch2, "event", string_payload("branch2"))
         .unwrap();
 
     // Independent sequences - both start at 0
@@ -84,173 +84,173 @@ fn test_event_log_isolation() {
     assert!(matches!(v2, Version::Sequence(0)));
 
     // Each has length 1
-    assert_eq!(event_log.len(&run1).unwrap(), 1);
-    assert_eq!(event_log.len(&run2).unwrap(), 1);
+    assert_eq!(event_log.len(&branch1).unwrap(), 1);
+    assert_eq!(event_log.len(&branch2).unwrap(), 1);
 
     // Note: verify_chain() removed in MVP simplification
 
-    // Appending more to run1 doesn't affect run2
+    // Appending more to branch1 doesn't affect branch2
     event_log
-        .append(&run1, "event2", string_payload("run1-2"))
+        .append(&branch1, "event2", string_payload("branch1-2"))
         .unwrap();
     event_log
-        .append(&run1, "event3", string_payload("run1-3"))
+        .append(&branch1, "event3", string_payload("branch1-3"))
         .unwrap();
 
-    assert_eq!(event_log.len(&run1).unwrap(), 3);
-    assert_eq!(event_log.len(&run2).unwrap(), 1); // Still 1
+    assert_eq!(event_log.len(&branch1).unwrap(), 3);
+    assert_eq!(event_log.len(&branch2).unwrap(), 1); // Still 1
 }
 
-/// Test StateCell isolation - same cell name in different runs are independent
+/// Test StateCell isolation - same cell name in different branches are independent
 #[test]
 fn test_state_cell_isolation() {
     let (db, _temp) = setup();
     let state_cell = StateCell::new(db.clone());
 
-    let run1 = BranchId::new();
-    let run2 = BranchId::new();
+    let branch1 = BranchId::new();
+    let branch2 = BranchId::new();
 
-    // Same cell name, different runs
-    state_cell.init(&run1, "counter", Value::Int(0)).unwrap();
-    state_cell.init(&run2, "counter", Value::Int(100)).unwrap();
+    // Same cell name, different branches
+    state_cell.init(&branch1, "counter", Value::Int(0)).unwrap();
+    state_cell.init(&branch2, "counter", Value::Int(100)).unwrap();
 
-    // Each run sees its own value
-    let state1 = state_cell.read(&run1, "counter").unwrap().unwrap();
-    let state2 = state_cell.read(&run2, "counter").unwrap().unwrap();
+    // Each branch sees its own value
+    let state1 = state_cell.read(&branch1, "counter").unwrap().unwrap();
+    let state2 = state_cell.read(&branch2, "counter").unwrap().unwrap();
 
     assert_eq!(state1, Value::Int(0));
     assert_eq!(state2, Value::Int(100));
 
-    // CAS on run1 doesn't affect run2
-    state_cell.cas(&run1, "counter", Version::counter(1), Value::Int(10)).unwrap();
+    // CAS on branch1 doesn't affect branch2
+    state_cell.cas(&branch1, "counter", Version::counter(1), Value::Int(10)).unwrap();
 
-    let state1 = state_cell.read(&run1, "counter").unwrap().unwrap();
-    let state2 = state_cell.read(&run2, "counter").unwrap().unwrap();
+    let state1 = state_cell.read(&branch1, "counter").unwrap().unwrap();
+    let state2 = state_cell.read(&branch2, "counter").unwrap().unwrap();
 
     assert_eq!(state1, Value::Int(10));
     assert_eq!(state2, Value::Int(100)); // Unchanged
 }
 
-/// Test that queries in one run context NEVER return data from another run
+/// Test that queries in one branch context NEVER return data from another branch
 #[test]
-fn test_cross_run_query_isolation() {
+fn test_cross_branch_query_isolation() {
     let (db, _temp) = setup();
 
-    let run1 = BranchId::new();
-    let run2 = BranchId::new();
+    let branch1 = BranchId::new();
+    let branch2 = BranchId::new();
 
-    // Create extensive data in both runs
+    // Create extensive data in both branches
     let kv = KVStore::new(db.clone());
     let event_log = EventLog::new(db.clone());
     let state_cell = StateCell::new(db.clone());
 
-    // Run1 data
+    // Branch1 data
     for i in 0..10 {
-        kv.put(&run1, &format!("key{}", i), Value::Int(i)).unwrap();
-        event_log.append(&run1, "event", int_payload(i)).unwrap();
+        kv.put(&branch1, &format!("key{}", i), Value::Int(i)).unwrap();
+        event_log.append(&branch1, "event", int_payload(i)).unwrap();
     }
     state_cell
-        .init(&run1, "state", Value::String("run1".into()))
+        .init(&branch1, "state", Value::String("branch1".into()))
         .unwrap();
 
-    // Run2 data
+    // Branch2 data
     for i in 0..5 {
-        kv.put(&run2, &format!("key{}", i), Value::Int(i + 100))
+        kv.put(&branch2, &format!("key{}", i), Value::Int(i + 100))
             .unwrap();
         event_log
-            .append(&run2, "event", int_payload(i + 100))
+            .append(&branch2, "event", int_payload(i + 100))
             .unwrap();
     }
     state_cell
-        .init(&run2, "state", Value::String("run2".into()))
+        .init(&branch2, "state", Value::String("branch2".into()))
         .unwrap();
 
     // Verify counts are isolated
-    assert_eq!(kv.list(&run1, None).unwrap().len(), 10);
-    assert_eq!(kv.list(&run2, None).unwrap().len(), 5);
+    assert_eq!(kv.list(&branch1, None).unwrap().len(), 10);
+    assert_eq!(kv.list(&branch2, None).unwrap().len(), 5);
 
-    assert_eq!(event_log.len(&run1).unwrap(), 10);
-    assert_eq!(event_log.len(&run2).unwrap(), 5);
+    assert_eq!(event_log.len(&branch1).unwrap(), 10);
+    assert_eq!(event_log.len(&branch2).unwrap(), 5);
 
     // Verify values are isolated
-    assert_eq!(kv.get(&run1, "key0").unwrap(), Some(Value::Int(0)));
-    assert_eq!(kv.get(&run2, "key0").unwrap(), Some(Value::Int(100)));
+    assert_eq!(kv.get(&branch1, "key0").unwrap(), Some(Value::Int(0)));
+    assert_eq!(kv.get(&branch2, "key0").unwrap(), Some(Value::Int(100)));
 
-    // Run1 cannot see run2's keys that don't exist in run1
-    // (run2 only has key0-key4, run1 has key0-key9)
+    // Branch1 cannot see branch2's keys that don't exist in branch1
+    // (branch2 only has key0-key4, branch1 has key0-key9)
     // Actually both have overlapping key names, but different values
     assert_eq!(
-        state_cell.read(&run1, "state").unwrap().unwrap(),
-        Value::String("run1".into())
+        state_cell.read(&branch1, "state").unwrap().unwrap(),
+        Value::String("branch1".into())
     );
     assert_eq!(
-        state_cell.read(&run2, "state").unwrap().unwrap(),
-        Value::String("run2".into())
+        state_cell.read(&branch2, "state").unwrap().unwrap(),
+        Value::String("branch2".into())
     );
 }
 
-/// Test that deleting a run only affects that run's data
+/// Test that deleting a branch only affects that branch's data
 #[test]
-fn test_run_delete_isolation() {
+fn test_branch_delete_isolation() {
     let (db, _temp) = setup();
 
-    let run_index = BranchIndex::new(db.clone());
+    let branch_index = BranchIndex::new(db.clone());
     let kv = KVStore::new(db.clone());
     let event_log = EventLog::new(db.clone());
     let state_cell = StateCell::new(db.clone());
 
-    // Create two runs via BranchIndex
-    let meta1 = run_index.create_branch("run1").unwrap();
-    let meta2 = run_index.create_branch("run2").unwrap();
+    // Create two branches via BranchIndex
+    let meta1 = branch_index.create_branch("branch1").unwrap();
+    let meta2 = branch_index.create_branch("branch2").unwrap();
 
-    let run1 = BranchId::from_string(&meta1.value.branch_id).unwrap();
-    let run2 = BranchId::from_string(&meta2.value.branch_id).unwrap();
+    let branch1 = BranchId::from_string(&meta1.value.branch_id).unwrap();
+    let branch2 = BranchId::from_string(&meta2.value.branch_id).unwrap();
 
-    // Write data to both runs
-    kv.put(&run1, "key", Value::Int(1)).unwrap();
-    kv.put(&run2, "key", Value::Int(2)).unwrap();
+    // Write data to both branches
+    kv.put(&branch1, "key", Value::Int(1)).unwrap();
+    kv.put(&branch2, "key", Value::Int(2)).unwrap();
 
-    event_log.append(&run1, "event", empty_payload()).unwrap();
-    event_log.append(&run2, "event", empty_payload()).unwrap();
+    event_log.append(&branch1, "event", empty_payload()).unwrap();
+    event_log.append(&branch2, "event", empty_payload()).unwrap();
 
-    state_cell.init(&run1, "cell", Value::Int(10)).unwrap();
-    state_cell.init(&run2, "cell", Value::Int(20)).unwrap();
+    state_cell.init(&branch1, "cell", Value::Int(10)).unwrap();
+    state_cell.init(&branch2, "cell", Value::Int(20)).unwrap();
 
-    // Verify both runs have data
-    assert!(kv.get(&run1, "key").unwrap().is_some());
-    assert!(kv.get(&run2, "key").unwrap().is_some());
+    // Verify both branches have data
+    assert!(kv.get(&branch1, "key").unwrap().is_some());
+    assert!(kv.get(&branch2, "key").unwrap().is_some());
 
-    // Delete run1 (cascading delete)
-    run_index.delete_branch("run1").unwrap();
+    // Delete branch1 (cascading delete)
+    branch_index.delete_branch("branch1").unwrap();
 
-    // run1 data is GONE
-    assert!(kv.get(&run1, "key").unwrap().is_none());
-    assert_eq!(event_log.len(&run1).unwrap(), 0);
-    assert!(state_cell.read(&run1, "cell").unwrap().is_none());
+    // branch1 data is GONE
+    assert!(kv.get(&branch1, "key").unwrap().is_none());
+    assert_eq!(event_log.len(&branch1).unwrap(), 0);
+    assert!(state_cell.read(&branch1, "cell").unwrap().is_none());
 
-    // run2 data is UNTOUCHED
-    assert_eq!(kv.get(&run2, "key").unwrap(), Some(Value::Int(2)));
-    assert_eq!(event_log.len(&run2).unwrap(), 1);
-    assert!(state_cell.read(&run2, "cell").unwrap().is_some());
+    // branch2 data is UNTOUCHED
+    assert_eq!(kv.get(&branch2, "key").unwrap(), Some(Value::Int(2)));
+    assert_eq!(event_log.len(&branch2).unwrap(), 1);
+    assert!(state_cell.read(&branch2, "cell").unwrap().is_some());
 }
 
-/// Test that many concurrent runs remain isolated
+/// Test that many concurrent branches remain isolated
 #[test]
-fn test_many_runs_isolation() {
+fn test_many_branches_isolation() {
     let (db, _temp) = setup();
     let kv = KVStore::new(db.clone());
 
-    // Create 100 runs
-    let runs: Vec<BranchId> = (0..100).map(|_| BranchId::new()).collect();
+    // Create 100 branches
+    let branches: Vec<BranchId> = (0..100).map(|_| BranchId::new()).collect();
 
-    // Each run writes its own data
-    for (i, branch_id) in runs.iter().enumerate() {
+    // Each branch writes its own data
+    for (i, branch_id) in branches.iter().enumerate() {
         kv.put(branch_id, "value", Value::Int(i as i64)).unwrap();
-        kv.put(branch_id, "run_index", Value::Int(i as i64)).unwrap();
+        kv.put(branch_id, "branch_index", Value::Int(i as i64)).unwrap();
     }
 
-    // Verify each run sees only its data
-    for (i, branch_id) in runs.iter().enumerate() {
+    // Verify each branch sees only its data
+    for (i, branch_id) in branches.iter().enumerate() {
         let value = kv.get(branch_id, "value").unwrap().unwrap();
         assert_eq!(value, Value::Int(i as i64));
 
@@ -259,66 +259,66 @@ fn test_many_runs_isolation() {
     }
 }
 
-/// Test StateCell CAS isolation - version conflicts don't cross runs
+/// Test StateCell CAS isolation - version conflicts don't cross branches
 #[test]
 fn test_state_cell_cas_isolation() {
     let (db, _temp) = setup();
     let state_cell = StateCell::new(db.clone());
 
-    let run1 = BranchId::new();
-    let run2 = BranchId::new();
+    let branch1 = BranchId::new();
+    let branch2 = BranchId::new();
 
     // Both init same cell name
-    state_cell.init(&run1, "cell", Value::Int(0)).unwrap();
-    state_cell.init(&run2, "cell", Value::Int(0)).unwrap();
+    state_cell.init(&branch1, "cell", Value::Int(0)).unwrap();
+    state_cell.init(&branch2, "cell", Value::Int(0)).unwrap();
 
-    // CAS on run1 with version 1
-    state_cell.cas(&run1, "cell", Version::counter(1), Value::Int(10)).unwrap();
+    // CAS on branch1 with version 1
+    state_cell.cas(&branch1, "cell", Version::counter(1), Value::Int(10)).unwrap();
 
-    // CAS on run2 with version 1 should ALSO succeed (independent versions)
-    let result = state_cell.cas(&run2, "cell", Version::counter(1), Value::Int(20));
+    // CAS on branch2 with version 1 should ALSO succeed (independent versions)
+    let result = state_cell.cas(&branch2, "cell", Version::counter(1), Value::Int(20));
     assert!(result.is_ok());
 
     // Both have been updated
-    let s1 = state_cell.read(&run1, "cell").unwrap().unwrap();
-    let s2 = state_cell.read(&run2, "cell").unwrap().unwrap();
+    let s1 = state_cell.read(&branch1, "cell").unwrap().unwrap();
+    let s2 = state_cell.read(&branch2, "cell").unwrap().unwrap();
 
     assert_eq!(s1, Value::Int(10));
     assert_eq!(s2, Value::Int(20));
 }
 
-/// Test EventLog chain isolation - chains are independent per run
+/// Test EventLog chain isolation - chains are independent per branch
 #[test]
 fn test_event_log_chain_isolation() {
     let (db, _temp) = setup();
     let event_log = EventLog::new(db.clone());
 
-    let run1 = BranchId::new();
-    let run2 = BranchId::new();
+    let branch1 = BranchId::new();
+    let branch2 = BranchId::new();
 
-    // Build chain in run1
-    event_log.append(&run1, "e1", int_payload(0)).unwrap();
-    event_log.append(&run1, "e2", int_payload(1)).unwrap();
-    event_log.append(&run1, "e3", int_payload(2)).unwrap();
+    // Build chain in branch1
+    event_log.append(&branch1, "e1", int_payload(0)).unwrap();
+    event_log.append(&branch1, "e2", int_payload(1)).unwrap();
+    event_log.append(&branch1, "e3", int_payload(2)).unwrap();
 
-    // Build different chain in run2
-    event_log.append(&run2, "x1", int_payload(100)).unwrap();
-    event_log.append(&run2, "x2", int_payload(101)).unwrap();
+    // Build different chain in branch2
+    event_log.append(&branch2, "x1", int_payload(100)).unwrap();
+    event_log.append(&branch2, "x2", int_payload(101)).unwrap();
 
     // Read events to get hashes
-    let event1_0 = event_log.read(&run1, 0).unwrap().unwrap();
-    let event2_0 = event_log.read(&run2, 0).unwrap().unwrap();
+    let event1_0 = event_log.read(&branch1, 0).unwrap().unwrap();
+    let event2_0 = event_log.read(&branch2, 0).unwrap().unwrap();
 
     // Chains have different hashes (different content)
     assert_ne!(event1_0.value.hash, event2_0.value.hash);
 
-    // Read event from run1 - prev_hash links within run1 only
-    let event1_1 = event_log.read(&run1, 1).unwrap().unwrap();
+    // Read event from branch1 - prev_hash links within branch1 only
+    let event1_1 = event_log.read(&branch1, 1).unwrap().unwrap();
     assert_eq!(event1_1.value.prev_hash, event1_0.value.hash);
 
     // Note: verify_chain() removed in MVP simplification
     // Verify chain lengths independently
-    assert_eq!(event_log.len(&run1).unwrap(), 3);
-    assert_eq!(event_log.len(&run2).unwrap(), 2);
+    assert_eq!(event_log.len(&branch1).unwrap(), 3);
+    assert_eq!(event_log.len(&branch2).unwrap(), 2);
 }
 

@@ -1,48 +1,48 @@
-//! RunBundle — portable run archive format (v2)
+//! BranchBundle — portable branch archive format (v2)
 //!
-//! This module implements export and import of Strata runs as portable,
-//! immutable `.runbundle.tar.zst` archives.
+//! This module implements export and import of Strata branches as portable,
+//! immutable `.branchbundle.tar.zst` archives.
 //!
 //! ## Archive Structure
 //!
 //! ```text
-//! archive.runbundle.tar.zst
-//! └── runbundle/
+//! archive.branchbundle.tar.zst
+//! └── branchbundle/
 //!     ├── MANIFEST.json   — format version, checksums
-//!     ├── RUN.json        — run metadata (name, state, timestamps)
-//!     └── WAL.runlog      — binary log of RunlogPayload entries (msgpack v2)
+//!     ├── BRANCH.json     — branch metadata (name, state, timestamps)
+//!     └── WAL.branchlog   — binary log of BranchlogPayload entries (msgpack v2)
 //! ```
 //!
 //! ## Format Version
 //!
-//! v2 uses `RunlogPayload` records (msgpack-serialized) instead of the legacy
+//! v2 uses `BranchlogPayload` records (msgpack-serialized) instead of the legacy
 //! `WALEntry` format (bincode). Each payload represents one committed transaction
 //! with its puts and deletes.
 //!
 //! ## Usage
 //!
-//! Export a completed run:
+//! Export a completed branch:
 //! ```ignore
-//! let info = db.export_run(&branch_id, Path::new("./my-run.runbundle.tar.zst"))?;
+//! let info = db.export_branch(&branch_id, Path::new("./my-branch.branchbundle.tar.zst"))?;
 //! ```
 //!
 //! Verify a bundle:
 //! ```ignore
-//! let info = db.verify_bundle(Path::new("./my-run.runbundle.tar.zst"))?;
+//! let info = db.verify_bundle(Path::new("./my-branch.branchbundle.tar.zst"))?;
 //! ```
 //!
 //! Import into a database:
 //! ```ignore
-//! let info = db.import_run(Path::new("./my-run.runbundle.tar.zst"))?;
+//! let info = db.import_branch(Path::new("./my-branch.branchbundle.tar.zst"))?;
 //! ```
 //!
 //! ## Design Principles
 //!
 //! - **Explicit**: All operations are explicit, no background behavior
-//! - **Immutable**: Only terminal runs (Completed, Failed, Cancelled, Archived) can be exported
+//! - **Immutable**: Only terminal branches (Completed, Failed, Cancelled, Archived) can be exported
 //! - **Portable**: Archives can be moved between machines, stored in VCS
 //! - **Inspectable**: Standard tools (tar, jq) can inspect contents
-//! - **Deterministic**: Same run exported twice produces identical bundles
+//! - **Deterministic**: Same branch exported twice produces identical bundles
 
 pub mod error;
 pub mod reader;
@@ -51,12 +51,12 @@ pub mod wal_log;
 pub mod writer;
 
 // Re-export public types
-pub use error::{RunBundleError, RunBundleResult};
-pub use reader::{BundleContents as ReadBundleContents, RunBundleReader};
+pub use error::{BranchBundleError, BranchBundleResult};
+pub use reader::{BundleContents as ReadBundleContents, BranchBundleReader};
 pub use types::{
-    paths, xxh3_hex, BundleContents, BundleManifest, BundleRunInfo, BundleVerifyInfo,
-    ExportOptions, ImportedRunInfo, RunExportInfo, RUNBUNDLE_EXTENSION, RUNBUNDLE_FORMAT_VERSION,
-    WAL_RUNLOG_MAGIC, WAL_RUNLOG_VERSION,
+    paths, xxh3_hex, BundleContents, BundleManifest, BundleBranchInfo, BundleVerifyInfo,
+    ExportOptions, ImportedBranchInfo, BranchExportInfo, BRANCHBUNDLE_EXTENSION, BRANCHBUNDLE_FORMAT_VERSION,
+    WAL_BRANCHLOG_MAGIC, WAL_BRANCHLOG_VERSION,
 };
-pub use wal_log::{RunlogPayload, WalLogInfo, WalLogIterator, WalLogReader, WalLogWriter};
-pub use writer::RunBundleWriter;
+pub use wal_log::{BranchlogPayload, WalLogInfo, WalLogIterator, WalLogReader, WalLogWriter};
+pub use writer::BranchBundleWriter;

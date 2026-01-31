@@ -52,7 +52,7 @@ impl<'a> Branches<'a> {
             limit: None,
             offset: None,
         })? {
-            Output::BranchInfoList(runs) => Ok(runs.into_iter().map(|r| r.info.id.0).collect()),
+            Output::BranchInfoList(branches) => Ok(branches.into_iter().map(|r| r.info.id.0).collect()),
             _ => Err(Error::Internal {
                 reason: "Unexpected output for BranchList".into(),
             }),

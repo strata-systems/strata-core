@@ -3,7 +3,7 @@
 //! ## Role: Determinism Boundary Recorder
 //!
 //! EventLog records nondeterministic external inputs that cross the determinism boundary.
-//! Its purpose is to enable deterministic replay of agent runs by capturing exactly
+//! Its purpose is to enable deterministic replay of agent branches by capturing exactly
 //! the information needed to reproduce nondeterministic behavior.
 //!
 //! Key invariant: If an operation's result is NOT recorded in EventLog, that operation
@@ -12,7 +12,7 @@
 //! ## Design Principles
 //!
 //! 1. **Single-Writer-Ordered**: All appends serialize through CAS on metadata key.
-//!    Parallel append is NOT supported - event ordering must be total within a run.
+//!    Parallel append is NOT supported - event ordering must be total within a branch.
 //!
 //! 2. **Causal Hash Chaining**: Each event includes SHA-256 hash of previous event.
 //!    Provides tamper-evidence and deterministic verification.
@@ -21,7 +21,7 @@
 //!
 //! 4. **Object-Only Payloads**: All payloads must be JSON objects (not primitives/arrays).
 //!
-//! 5. **Global Sequences**: Streams are filters over a single global sequence per run.
+//! 5. **Global Sequences**: Streams are filters over a single global sequence per branch.
 //!
 //! ## Hash Chain
 //!
@@ -86,7 +86,7 @@ impl StreamMeta {
     }
 }
 
-/// EventLog metadata stored per run
+/// EventLog metadata stored per branch
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct EventLogMeta {
     /// Next sequence number to assign
@@ -229,7 +229,7 @@ fn from_stored_value<T: for<'de> Deserialize<'de>>(
 
 /// Immutable append-only event stream
 ///
-/// DESIGN: Single-writer-ordered per run.
+/// DESIGN: Single-writer-ordered per branch.
 /// All appends serialize through CAS on metadata key.
 ///
 /// # Example
@@ -270,7 +270,7 @@ impl EventLog {
         &self.db
     }
 
-    /// Build namespace for run-scoped operations
+    /// Build namespace for branch-scoped operations
     fn namespace_for_branch(&self, branch_id: &BranchId) -> Namespace {
         Namespace::for_branch(*branch_id)
     }
@@ -284,7 +284,7 @@ impl EventLog {
     /// automatically with exponential backoff.
     ///
     /// # Arguments
-    /// * `branch_id` - The run to append to
+    /// * `branch_id` - The branch to append to
     /// * `event_type` - User-defined event category (non-empty, max 256 chars)
     /// * `payload` - Event data (must be a JSON object, no NaN/Infinity)
     ///
@@ -783,27 +783,27 @@ mod tests {
     }
 
     #[test]
-    fn test_run_isolation() {
+    fn test_branch_isolation() {
         let (_temp, _db, log) = setup();
-        let run1 = BranchId::new();
-        let run2 = BranchId::new();
+        let branch1 = BranchId::new();
+        let branch2 = BranchId::new();
 
-        log.append(&run1, "run1_event", int_payload(1)).unwrap();
-        log.append(&run1, "run1_event", int_payload(2)).unwrap();
-        log.append(&run2, "run2_event", int_payload(100)).unwrap();
+        log.append(&branch1, "branch1_event", int_payload(1)).unwrap();
+        log.append(&branch1, "branch1_event", int_payload(2)).unwrap();
+        log.append(&branch2, "branch2_event", int_payload(100)).unwrap();
 
-        assert_eq!(log.len(&run1).unwrap(), 2);
-        assert_eq!(log.len(&run2).unwrap(), 1);
+        assert_eq!(log.len(&branch1).unwrap(), 2);
+        assert_eq!(log.len(&branch2).unwrap(), 1);
 
-        // Check run1 events
-        let event0 = log.read(&run1, 0).unwrap().unwrap();
-        let event1 = log.read(&run1, 1).unwrap().unwrap();
-        assert_eq!(event0.value.event_type, "run1_event");
-        assert_eq!(event1.value.event_type, "run1_event");
+        // Check branch1 events
+        let event0 = log.read(&branch1, 0).unwrap().unwrap();
+        let event1 = log.read(&branch1, 1).unwrap().unwrap();
+        assert_eq!(event0.value.event_type, "branch1_event");
+        assert_eq!(event1.value.event_type, "branch1_event");
 
-        // Check run2 events
-        let event2 = log.read(&run2, 0).unwrap().unwrap();
-        assert_eq!(event2.value.event_type, "run2_event");
+        // Check branch2 events
+        let event2 = log.read(&branch2, 0).unwrap().unwrap();
+        assert_eq!(event2.value.event_type, "branch2_event");
     }
 
     // ========== Read Tests ==========
@@ -1048,22 +1048,22 @@ mod tests {
     }
 
     #[test]
-    fn test_fast_read_run_isolation() {
+    fn test_fast_read_branch_isolation() {
         let (_temp, _db, log) = setup();
-        let run1 = BranchId::new();
-        let run2 = BranchId::new();
+        let branch1 = BranchId::new();
+        let branch2 = BranchId::new();
 
-        log.append(&run1, "run1", int_payload(1)).unwrap();
-        log.append(&run2, "run2", int_payload(2)).unwrap();
+        log.append(&branch1, "branch1", int_payload(1)).unwrap();
+        log.append(&branch2, "branch2", int_payload(2)).unwrap();
 
-        // Each run sees only its own events
-        let event1 = log.read(&run1, 0).unwrap().unwrap();
-        let event2 = log.read(&run2, 0).unwrap().unwrap();
+        // Each branch sees only its own events
+        let event1 = log.read(&branch1, 0).unwrap().unwrap();
+        let event2 = log.read(&branch2, 0).unwrap().unwrap();
 
-        assert_eq!(event1.value.event_type, "run1");
-        assert_eq!(event2.value.event_type, "run2");
+        assert_eq!(event1.value.event_type, "branch1");
+        assert_eq!(event2.value.event_type, "branch2");
 
-        // Cross-run reads return None
-        assert!(log.read(&run1, 1).unwrap().is_none());
+        // Cross-branch reads return None
+        assert!(log.read(&branch1, 1).unwrap().is_none());
     }
 }

@@ -343,7 +343,7 @@ fn rollback_without_transaction_fails() {
 // ============================================================================
 
 #[test]
-fn run_commands_bypass_transaction() {
+fn branch_commands_bypass_transaction() {
     let mut session = create_session();
 
     session.execute(Command::TxnBegin {

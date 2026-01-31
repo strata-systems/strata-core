@@ -46,13 +46,13 @@ pub use snapshot_types::{
 };
 pub use wal::DurabilityMode;
 
-// RunBundle types
+// BranchBundle types
 pub use branch_bundle::{
-    BundleContents, BundleManifest, BundleRunInfo, BundleVerifyInfo,
-    ExportOptions, ImportedRunInfo, ReadBundleContents, RunBundleError, RunBundleReader,
-    RunBundleResult, RunBundleWriter, RunExportInfo, RunlogPayload,
+    BundleContents, BundleManifest, BundleBranchInfo, BundleVerifyInfo,
+    ExportOptions, ImportedBranchInfo, ReadBundleContents, BranchBundleError, BranchBundleReader,
+    BranchBundleResult, BranchBundleWriter, BranchExportInfo, BranchlogPayload,
     WalLogInfo, WalLogIterator, WalLogReader, WalLogWriter,
-    RUNBUNDLE_EXTENSION, RUNBUNDLE_FORMAT_VERSION,
+    BRANCHBUNDLE_EXTENSION, BRANCHBUNDLE_FORMAT_VERSION,
 };
 
 // === Re-exports from moved modules ===
@@ -79,7 +79,7 @@ pub use format::{
     // MANIFEST format
     Manifest, ManifestError, ManifestManager,
     // WAL format
-    Mutation, PrimitiveSerializeError, RunSnapshotEntry, SectionHeader, SegmentHeader,
+    Mutation, PrimitiveSerializeError, BranchSnapshotEntry, SectionHeader, SegmentHeader,
     SnapshotHeader as FormatSnapshotHeader, SnapshotHeaderError, SnapshotSerializer,
     SnapshotWatermark, StateSnapshotEntry, VectorCollectionSnapshotEntry, VectorSnapshotEntry,
     WalRecord, WalRecordError, WalSegment, WatermarkError, Writeset, WritesetError,

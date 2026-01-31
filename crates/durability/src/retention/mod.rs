@@ -1,7 +1,7 @@
 //! Retention policy system for version history management
 //!
 //! This module provides user-configurable retention policies that control
-//! how much version history is retained per run.
+//! how much version history is retained per branch.
 //!
 //! # Overview
 //!
@@ -48,12 +48,12 @@ pub mod system_namespace {
         key.starts_with(RETENTION_POLICY_PREFIX)
     }
 
-    /// Generate retention policy key for a run
+    /// Generate retention policy key for a branch
     pub fn retention_policy_key(branch_id: &[u8; 16]) -> String {
         format!("{}{}", RETENTION_POLICY_PREFIX, hex_encode(branch_id))
     }
 
-    /// Extract run ID from retention policy key
+    /// Extract branch ID from retention policy key
     pub fn branch_id_from_retention_key(key: &str) -> Option<[u8; 16]> {
         if !is_retention_policy_key(key) {
             return None;
@@ -109,7 +109,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_id_extraction() {
+    fn test_branch_id_extraction() {
         let branch_id = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
         let key = system_namespace::retention_policy_key(&branch_id);
 
@@ -118,7 +118,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_id_extraction_invalid() {
+    fn test_branch_id_extraction_invalid() {
         // Not a retention key
         assert!(system_namespace::branch_id_from_retention_key("user/key").is_none());
 

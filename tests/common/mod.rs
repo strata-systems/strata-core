@@ -90,7 +90,7 @@ impl TestDb {
             json: JsonStore::new(self.db.clone()),
             event: EventLog::new(self.db.clone()),
             state: StateCell::new(self.db.clone()),
-            run: BranchIndex::new(self.db.clone()),
+            branch: BranchIndex::new(self.db.clone()),
             vector: VectorStore::new(self.db.clone()),
         }
     }
@@ -111,7 +111,7 @@ impl TestDb {
         StateCell::new(self.db.clone())
     }
 
-    pub fn run_index(&self) -> BranchIndex {
+    pub fn branch_index(&self) -> BranchIndex {
         BranchIndex::new(self.db.clone())
     }
 
@@ -154,7 +154,7 @@ impl TestDb {
             .expect("Failed to reopen database");
     }
 
-    /// Create a new run ID for this test.
+    /// Create a new branch ID for this test.
     pub fn new_branch(&mut self) -> BranchId {
         self.branch_id = BranchId::new();
         self.branch_id
@@ -173,7 +173,7 @@ pub struct AllPrimitives {
     pub json: JsonStore,
     pub event: EventLog,
     pub state: StateCell,
-    pub run: BranchIndex,
+    pub branch: BranchIndex,
     pub vector: VectorStore,
 }
 
@@ -1164,12 +1164,12 @@ pub mod search {
 pub mod core_types {
     use strata_core::{EntityRef, PrimitiveType, BranchId, BranchName, Timestamp, Version, Versioned};
 
-    pub fn test_run_id() -> BranchId {
+    pub fn test_branch_id() -> BranchId {
         BranchId::new()
     }
 
-    pub fn test_run_name(name: &str) -> BranchName {
-        BranchName::new(name.to_string()).expect("valid test run name")
+    pub fn test_branch_name(name: &str) -> BranchName {
+        BranchName::new(name.to_string()).expect("valid test branch name")
     }
 
     pub fn test_timestamp(micros: u64) -> Timestamp {

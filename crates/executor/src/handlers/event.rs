@@ -22,15 +22,15 @@ pub fn event_append(
     event_type: String,
     payload: strata_core::Value,
 ) -> Result<Output> {
-    let branch_id = bridge::to_core_branch_id(&branch)?;
-    let version = convert_result(p.event.append(&branch_id, &event_type, payload))?;
+    let core_branch_id = bridge::to_core_branch_id(&branch)?;
+    let version = convert_result(p.event.append(&core_branch_id, &event_type, payload))?;
     Ok(Output::Version(bridge::extract_version(&version)))
 }
 
 /// Handle EventRead command.
 pub fn event_read(p: &Arc<Primitives>, branch: BranchId, sequence: u64) -> Result<Output> {
-    let branch_id = bridge::to_core_branch_id(&branch)?;
-    let event = convert_result(p.event.read(&branch_id, sequence))?;
+    let core_branch_id = bridge::to_core_branch_id(&branch)?;
+    let event = convert_result(p.event.read(&core_branch_id, sequence))?;
 
     let result = event.map(|e| VersionedValue {
         value: e.value.payload,
@@ -47,8 +47,8 @@ pub fn event_read_by_type(
     branch: BranchId,
     event_type: String,
 ) -> Result<Output> {
-    let branch_id = bridge::to_core_branch_id(&branch)?;
-    let events = convert_result(p.event.read_by_type(&branch_id, &event_type))?;
+    let core_branch_id = bridge::to_core_branch_id(&branch)?;
+    let events = convert_result(p.event.read_by_type(&core_branch_id, &event_type))?;
 
     let versioned: Vec<VersionedValue> = events
         .into_iter()
@@ -67,8 +67,8 @@ pub fn event_read_by_type(
 
 /// Handle EventLen command.
 pub fn event_len(p: &Arc<Primitives>, branch: BranchId) -> Result<Output> {
-    let branch_id = bridge::to_core_branch_id(&branch)?;
-    let count = convert_result(p.event.len(&branch_id))?;
+    let core_branch_id = bridge::to_core_branch_id(&branch)?;
+    let count = convert_result(p.event.len(&core_branch_id))?;
     Ok(Output::Uint(count))
 }
 

@@ -1,6 +1,6 @@
 //! Retention policy types
 //!
-//! Controls how much version history is retained per run.
+//! Controls how much version history is retained per branch.
 //! Policies are stored as database entries and are themselves versioned.
 //!
 //! # Policy Types
@@ -31,7 +31,7 @@ use std::time::Duration;
 
 use strata_core::PrimitiveType;
 
-/// Retention policy for a run
+/// Retention policy for a branch
 ///
 /// Controls how much version history is retained.
 /// Policies are stored as database entries and are themselves versioned.

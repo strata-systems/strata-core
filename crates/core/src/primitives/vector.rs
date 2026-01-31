@@ -336,7 +336,7 @@ pub struct CollectionInfo {
 /// Unique identifier for a collection within a branch
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CollectionId {
-    /// Run ID this collection belongs to
+    /// Branch ID this collection belongs to
     pub branch_id: BranchId,
     /// Collection name
     pub name: String,

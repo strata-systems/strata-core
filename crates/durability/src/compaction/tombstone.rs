@@ -326,7 +326,7 @@ impl TombstoneIndex {
         self.tombstones.get(&lookup_key).map(|v| v.as_slice())
     }
 
-    /// Get all tombstones for a run
+    /// Get all tombstones for a branch
     pub fn get_by_branch(&self, branch_id: &[u8; 16]) -> Vec<&Tombstone> {
         self.tombstones
             .iter()
@@ -454,7 +454,7 @@ pub enum TombstoneError {
 mod tests {
     use super::*;
 
-    fn test_run_id() -> [u8; 16] {
+    fn test_branch_id() -> [u8; 16] {
         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     }
 
@@ -489,14 +489,14 @@ mod tests {
     #[test]
     fn test_tombstone_new() {
         let ts = Tombstone::new(
-            test_run_id(),
+            test_branch_id(),
             0,
             b"test-key".to_vec(),
             42,
             TombstoneReason::UserDelete,
         );
 
-        assert_eq!(ts.branch_id, test_run_id());
+        assert_eq!(ts.branch_id, test_branch_id());
         assert_eq!(ts.primitive_type, 0);
         assert_eq!(ts.key, b"test-key");
         assert_eq!(ts.version, 42);
@@ -507,7 +507,7 @@ mod tests {
     #[test]
     fn test_tombstone_with_timestamp() {
         let ts = Tombstone::with_timestamp(
-            test_run_id(),
+            test_branch_id(),
             1,
             b"key".to_vec(),
             100,
@@ -521,7 +521,7 @@ mod tests {
     #[test]
     fn test_tombstone_roundtrip() {
         let ts = Tombstone::with_timestamp(
-            test_run_id(),
+            test_branch_id(),
             2,
             b"my-key".to_vec(),
             42,
@@ -544,7 +544,7 @@ mod tests {
     #[test]
     fn test_tombstone_empty_key() {
         let ts = Tombstone::with_timestamp(
-            test_run_id(),
+            test_branch_id(),
             0,
             Vec::new(),
             1,
@@ -569,7 +569,7 @@ mod tests {
         let mut index = TombstoneIndex::new();
 
         let ts = Tombstone::new(
-            test_run_id(),
+            test_branch_id(),
             0,
             b"key1".to_vec(),
             1,
@@ -578,10 +578,10 @@ mod tests {
 
         index.add(ts);
 
-        assert!(index.is_tombstoned(&test_run_id(), 0, b"key1", 1));
-        assert!(!index.is_tombstoned(&test_run_id(), 0, b"key1", 2));
-        assert!(!index.is_tombstoned(&test_run_id(), 0, b"key2", 1));
-        assert!(!index.is_tombstoned(&test_run_id(), 1, b"key1", 1));
+        assert!(index.is_tombstoned(&test_branch_id(), 0, b"key1", 1));
+        assert!(!index.is_tombstoned(&test_branch_id(), 0, b"key1", 2));
+        assert!(!index.is_tombstoned(&test_branch_id(), 0, b"key2", 1));
+        assert!(!index.is_tombstoned(&test_branch_id(), 1, b"key1", 1));
     }
 
     #[test]
@@ -590,7 +590,7 @@ mod tests {
 
         for version in 1..=5 {
             let ts = Tombstone::new(
-                test_run_id(),
+                test_branch_id(),
                 0,
                 b"key".to_vec(),
                 version,
@@ -602,9 +602,9 @@ mod tests {
         assert_eq!(index.len(), 5);
 
         for version in 1..=5 {
-            assert!(index.is_tombstoned(&test_run_id(), 0, b"key", version));
+            assert!(index.is_tombstoned(&test_branch_id(), 0, b"key", version));
         }
-        assert!(!index.is_tombstoned(&test_run_id(), 0, b"key", 6));
+        assert!(!index.is_tombstoned(&test_branch_id(), 0, b"key", 6));
     }
 
     #[test]
@@ -612,55 +612,55 @@ mod tests {
         let mut index = TombstoneIndex::new();
 
         index.add(Tombstone::new(
-            test_run_id(),
+            test_branch_id(),
             0,
             b"key".to_vec(),
             1,
             TombstoneReason::UserDelete,
         ));
         index.add(Tombstone::new(
-            test_run_id(),
+            test_branch_id(),
             0,
             b"key".to_vec(),
             2,
             TombstoneReason::Compaction,
         ));
 
-        let tombstones = index.get(&test_run_id(), 0, b"key").unwrap();
+        let tombstones = index.get(&test_branch_id(), 0, b"key").unwrap();
         assert_eq!(tombstones.len(), 2);
     }
 
     #[test]
     fn test_tombstone_index_get_by_branch() {
         let mut index = TombstoneIndex::new();
-        let run1 = test_run_id();
-        let mut run2 = test_run_id();
-        run2[0] = 99;
+        let branch1 = test_branch_id();
+        let mut branch2 = test_branch_id();
+        branch2[0] = 99;
 
         index.add(Tombstone::new(
-            run1,
+            branch1,
             0,
             b"key1".to_vec(),
             1,
             TombstoneReason::UserDelete,
         ));
         index.add(Tombstone::new(
-            run1,
+            branch1,
             0,
             b"key2".to_vec(),
             1,
             TombstoneReason::UserDelete,
         ));
         index.add(Tombstone::new(
-            run2,
+            branch2,
             0,
             b"key1".to_vec(),
             1,
             TombstoneReason::UserDelete,
         ));
 
-        assert_eq!(index.get_by_branch(&run1).len(), 2);
-        assert_eq!(index.get_by_branch(&run2).len(), 1);
+        assert_eq!(index.get_by_branch(&branch1).len(), 2);
+        assert_eq!(index.get_by_branch(&branch2).len(), 1);
     }
 
     #[test]
@@ -668,21 +668,21 @@ mod tests {
         let mut index = TombstoneIndex::new();
 
         index.add(Tombstone::new(
-            test_run_id(),
+            test_branch_id(),
             0,
             b"k1".to_vec(),
             1,
             TombstoneReason::UserDelete,
         ));
         index.add(Tombstone::new(
-            test_run_id(),
+            test_branch_id(),
             0,
             b"k2".to_vec(),
             1,
             TombstoneReason::Compaction,
         ));
         index.add(Tombstone::new(
-            test_run_id(),
+            test_branch_id(),
             0,
             b"k3".to_vec(),
             1,
@@ -702,7 +702,7 @@ mod tests {
         let mut index = TombstoneIndex::new();
 
         index.add(Tombstone::with_timestamp(
-            test_run_id(),
+            test_branch_id(),
             0,
             b"k1".to_vec(),
             1,
@@ -710,7 +710,7 @@ mod tests {
             100,
         ));
         index.add(Tombstone::with_timestamp(
-            test_run_id(),
+            test_branch_id(),
             0,
             b"k2".to_vec(),
             1,
@@ -718,7 +718,7 @@ mod tests {
             200,
         ));
         index.add(Tombstone::with_timestamp(
-            test_run_id(),
+            test_branch_id(),
             0,
             b"k3".to_vec(),
             1,
@@ -732,9 +732,9 @@ mod tests {
         assert_eq!(removed, 2);
         assert_eq!(index.len(), 1);
 
-        assert!(!index.is_tombstoned(&test_run_id(), 0, b"k1", 1));
-        assert!(!index.is_tombstoned(&test_run_id(), 0, b"k2", 1));
-        assert!(index.is_tombstoned(&test_run_id(), 0, b"k3", 1));
+        assert!(!index.is_tombstoned(&test_branch_id(), 0, b"k1", 1));
+        assert!(!index.is_tombstoned(&test_branch_id(), 0, b"k2", 1));
+        assert!(index.is_tombstoned(&test_branch_id(), 0, b"k3", 1));
     }
 
     #[test]
@@ -742,7 +742,7 @@ mod tests {
         let mut index = TombstoneIndex::new();
 
         index.add(Tombstone::new(
-            test_run_id(),
+            test_branch_id(),
             0,
             b"k".to_vec(),
             1,
@@ -760,7 +760,7 @@ mod tests {
         let mut index = TombstoneIndex::new();
 
         index.add(Tombstone::with_timestamp(
-            test_run_id(),
+            test_branch_id(),
             0,
             b"key1".to_vec(),
             1,
@@ -768,7 +768,7 @@ mod tests {
             100,
         ));
         index.add(Tombstone::with_timestamp(
-            test_run_id(),
+            test_branch_id(),
             1,
             b"key2".to_vec(),
             2,
@@ -780,8 +780,8 @@ mod tests {
         let parsed = TombstoneIndex::from_bytes(&bytes).unwrap();
 
         assert_eq!(parsed.len(), 2);
-        assert!(parsed.is_tombstoned(&test_run_id(), 0, b"key1", 1));
-        assert!(parsed.is_tombstoned(&test_run_id(), 1, b"key2", 2));
+        assert!(parsed.is_tombstoned(&test_branch_id(), 0, b"key1", 1));
+        assert!(parsed.is_tombstoned(&test_branch_id(), 1, b"key2", 2));
     }
 
     #[test]
@@ -789,14 +789,14 @@ mod tests {
         let mut index = TombstoneIndex::new();
 
         index.add(Tombstone::new(
-            test_run_id(),
+            test_branch_id(),
             0,
             b"k1".to_vec(),
             1,
             TombstoneReason::UserDelete,
         ));
         index.add(Tombstone::new(
-            test_run_id(),
+            test_branch_id(),
             0,
             b"k2".to_vec(),
             2,

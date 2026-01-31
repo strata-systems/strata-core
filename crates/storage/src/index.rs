@@ -11,8 +11,8 @@ use std::collections::{HashMap, HashSet};
 /// Secondary index: BranchId → Keys
 ///
 /// Enables efficient scan_by_branch queries for replay by maintaining
-/// a mapping from each BranchId to all keys belonging to that run.
-/// This changes scan_by_branch from O(total data) to O(run size).
+/// a mapping from each BranchId to all keys belonging to that branch.
+/// This changes scan_by_branch from O(total data) to O(branch size).
 #[derive(Debug, Default)]
 pub struct BranchIndex {
     index: HashMap<BranchId, HashSet<Key>>,
@@ -26,7 +26,7 @@ impl BranchIndex {
         }
     }
 
-    /// Add key to run's index
+    /// Add key to branch's index
     ///
     /// Inserts the key into the set of keys for the given branch_id.
     /// If the branch_id doesn't exist yet, creates a new entry.
@@ -34,7 +34,7 @@ impl BranchIndex {
         self.index.entry(branch_id).or_default().insert(key);
     }
 
-    /// Remove key from run's index
+    /// Remove key from branch's index
     ///
     /// Removes the key from the set for the given branch_id.
     /// If the set becomes empty, removes the branch_id entry entirely
@@ -48,18 +48,18 @@ impl BranchIndex {
         }
     }
 
-    /// Get all keys for a run
+    /// Get all keys for a branch
     ///
     /// Returns a reference to the set of keys for the given branch_id,
-    /// or None if no keys exist for that run.
+    /// or None if no keys exist for that branch.
     pub fn get(&self, branch_id: &BranchId) -> Option<&HashSet<Key>> {
         self.index.get(branch_id)
     }
 
-    /// Remove all keys for a run (for cleanup)
+    /// Remove all keys for a branch (for cleanup)
     ///
     /// Removes the entire entry for a branch_id, useful for
-    /// cleaning up after a run is complete.
+    /// cleaning up after a branch is complete.
     pub fn remove_branch(&mut self, branch_id: &BranchId) {
         self.index.remove(branch_id);
     }
@@ -69,7 +69,7 @@ impl BranchIndex {
         self.index.is_empty()
     }
 
-    /// Get the number of runs in the index
+    /// Get the number of branches in the index
     pub fn len(&self) -> usize {
         self.index.len()
     }
@@ -153,14 +153,14 @@ mod tests {
     // ========================================
 
     #[test]
-    fn test_run_index_insert_and_get() {
+    fn test_branch_index_insert_and_get() {
         let mut index = BranchIndex::new();
         let branch_id = BranchId::new();
         let ns = test_namespace(branch_id);
         let key1 = Key::new_kv(ns.clone(), "key1");
         let key2 = Key::new_kv(ns.clone(), "key2");
 
-        // Insert two keys for the same run
+        // Insert two keys for the same branch
         index.insert(branch_id, key1.clone());
         index.insert(branch_id, key2.clone());
 
@@ -172,7 +172,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_index_remove() {
+    fn test_branch_index_remove() {
         let mut index = BranchIndex::new();
         let branch_id = BranchId::new();
         let ns = test_namespace(branch_id);
@@ -199,29 +199,29 @@ mod tests {
     }
 
     #[test]
-    fn test_run_index_multiple_runs() {
+    fn test_branch_index_multiple_branches() {
         let mut index = BranchIndex::new();
-        let run1 = BranchId::new();
-        let run2 = BranchId::new();
-        let ns1 = test_namespace(run1);
-        let ns2 = test_namespace(run2);
+        let branch1 = BranchId::new();
+        let branch2 = BranchId::new();
+        let ns1 = test_namespace(branch1);
+        let ns2 = test_namespace(branch2);
 
         let key1 = Key::new_kv(ns1.clone(), "key1");
         let key2 = Key::new_kv(ns2.clone(), "key2");
 
-        index.insert(run1, key1.clone());
-        index.insert(run2, key2.clone());
+        index.insert(branch1, key1.clone());
+        index.insert(branch2, key2.clone());
 
-        // Verify each run has its own key
-        assert_eq!(index.get(&run1).unwrap().len(), 1);
-        assert_eq!(index.get(&run2).unwrap().len(), 1);
-        assert!(index.get(&run1).unwrap().contains(&key1));
-        assert!(index.get(&run2).unwrap().contains(&key2));
+        // Verify each branch has its own key
+        assert_eq!(index.get(&branch1).unwrap().len(), 1);
+        assert_eq!(index.get(&branch2).unwrap().len(), 1);
+        assert!(index.get(&branch1).unwrap().contains(&key1));
+        assert!(index.get(&branch2).unwrap().contains(&key2));
         assert_eq!(index.len(), 2);
     }
 
     #[test]
-    fn test_run_index_remove_run() {
+    fn test_branch_index_remove_branch() {
         let mut index = BranchIndex::new();
         let branch_id = BranchId::new();
         let ns = test_namespace(branch_id);
@@ -229,7 +229,7 @@ mod tests {
         index.insert(branch_id, Key::new_kv(ns.clone(), "key1"));
         index.insert(branch_id, Key::new_kv(ns.clone(), "key2"));
 
-        // Remove entire run
+        // Remove entire branch
         index.remove_branch(&branch_id);
 
         assert!(index.get(&branch_id).is_none());
@@ -237,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_index_default() {
+    fn test_branch_index_default() {
         let index = BranchIndex::default();
         assert!(index.is_empty());
         assert_eq!(index.len(), 0);

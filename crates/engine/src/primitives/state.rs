@@ -87,7 +87,7 @@ impl StateCell {
         Self { db }
     }
 
-    /// Build namespace for run-scoped operations
+    /// Build namespace for branch-scoped operations
     fn namespace_for_branch(&self, branch_id: &BranchId) -> Namespace {
         Namespace::for_branch(*branch_id)
     }
@@ -430,16 +430,16 @@ mod tests {
     }
 
     #[test]
-    fn test_run_isolation() {
+    fn test_branch_isolation() {
         let (_temp, _db, sc) = setup();
-        let run1 = BranchId::new();
-        let run2 = BranchId::new();
+        let branch1 = BranchId::new();
+        let branch2 = BranchId::new();
 
-        sc.init(&run1, "shared", Value::Int(1)).unwrap();
-        sc.init(&run2, "shared", Value::Int(2)).unwrap();
+        sc.init(&branch1, "shared", Value::Int(1)).unwrap();
+        sc.init(&branch2, "shared", Value::Int(2)).unwrap();
 
-        let value1 = sc.read(&run1, "shared").unwrap().unwrap();
-        let value2 = sc.read(&run2, "shared").unwrap().unwrap();
+        let value1 = sc.read(&branch1, "shared").unwrap().unwrap();
+        let value2 = sc.read(&branch2, "shared").unwrap().unwrap();
 
         assert_eq!(value1, Value::Int(1));
         assert_eq!(value2, Value::Int(2));
@@ -640,16 +640,16 @@ mod tests {
     }
 
     #[test]
-    fn test_read_run_isolation() {
+    fn test_read_branch_isolation() {
         let (_temp, _db, sc) = setup();
-        let run1 = BranchId::new();
-        let run2 = BranchId::new();
+        let branch1 = BranchId::new();
+        let branch2 = BranchId::new();
 
-        sc.init(&run1, "shared", Value::Int(1)).unwrap();
-        sc.init(&run2, "shared", Value::Int(2)).unwrap();
+        sc.init(&branch1, "shared", Value::Int(1)).unwrap();
+        sc.init(&branch2, "shared", Value::Int(2)).unwrap();
 
-        let value1 = sc.read(&run1, "shared").unwrap().unwrap();
-        let value2 = sc.read(&run2, "shared").unwrap().unwrap();
+        let value1 = sc.read(&branch1, "shared").unwrap().unwrap();
+        let value2 = sc.read(&branch2, "shared").unwrap().unwrap();
 
         assert_eq!(value1, Value::Int(1));
         assert_eq!(value2, Value::Int(2));

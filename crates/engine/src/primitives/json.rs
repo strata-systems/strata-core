@@ -5,10 +5,10 @@
 //! JsonStore holds ONLY `Arc<Database>`. No internal state, no caches,
 //! no maps, no locks. All data lives in ShardedStore via Key::new_json().
 //!
-//! ## Run Isolation
+//! ## Branch Isolation
 //!
 //! All operations are scoped to a branch_id. Keys are prefixed with the
-//! run's namespace, ensuring complete isolation between runs.
+//! branch's namespace, ensuring complete isolation between branches.
 //!
 //! ## Thread Safety
 //!
@@ -178,7 +178,7 @@ impl JsonStore {
         &self.db
     }
 
-    /// Build namespace for run-scoped operations
+    /// Build namespace for branch-scoped operations
     fn namespace_for_branch(&self, branch_id: &BranchId) -> Namespace {
         Namespace::for_branch(*branch_id)
     }
@@ -482,7 +482,7 @@ impl JsonStore {
     /// List documents in the store with cursor-based pagination
     ///
     /// Supports Primitive Contract Invariant 6: Introspectable.
-    /// Returns document IDs for a run, optionally filtered by prefix.
+    /// Returns document IDs for a branch, optionally filtered by prefix.
     ///
     /// # Arguments
     ///
@@ -689,18 +689,18 @@ mod tests {
     }
 
     #[test]
-    fn test_key_for_run_isolation() {
+    fn test_key_for_branch_isolation() {
         let db = Database::ephemeral().unwrap();
         let store = JsonStore::new(db);
 
-        let run1 = BranchId::new();
-        let run2 = BranchId::new();
+        let branch1 = BranchId::new();
+        let branch2 = BranchId::new();
         let doc_id = "test-doc";
 
-        let key1 = store.key_for(&run1, &doc_id);
-        let key2 = store.key_for(&run2, &doc_id);
+        let key1 = store.key_for(&branch1, &doc_id);
+        let key2 = store.key_for(&branch2, &doc_id);
 
-        // Keys for different runs should be different even for same doc_id
+        // Keys for different branches should be different even for same doc_id
         assert_ne!(key1, key2);
     }
 
@@ -715,7 +715,7 @@ mod tests {
         let key1 = store.key_for(&branch_id, &doc_id);
         let key2 = store.key_for(&branch_id, &doc_id);
 
-        // Same run and doc_id should produce same key
+        // Same branch and doc_id should produce same key
         assert_eq!(key1, key2);
     }
 
@@ -929,13 +929,13 @@ mod tests {
         let db = Database::ephemeral().unwrap();
         let store = JsonStore::new(db);
 
-        let run1 = BranchId::new();
-        let run2 = BranchId::new();
+        let branch1 = BranchId::new();
+        let branch2 = BranchId::new();
         let doc_id = "test-doc";
 
-        // Same doc_id can be created in different runs
-        let v1 = store.create(&run1, &doc_id, JsonValue::from(1i64)).unwrap();
-        let v2 = store.create(&run2, &doc_id, JsonValue::from(2i64)).unwrap();
+        // Same doc_id can be created in different branches
+        let v1 = store.create(&branch1, &doc_id, JsonValue::from(1i64)).unwrap();
+        let v2 = store.create(&branch2, &doc_id, JsonValue::from(2i64)).unwrap();
 
         assert_eq!(v1, Version::counter(1));
         assert_eq!(v2, Version::counter(1));
@@ -1115,21 +1115,21 @@ mod tests {
     }
 
     #[test]
-    fn test_exists_run_isolation() {
+    fn test_exists_branch_isolation() {
         let db = Database::ephemeral().unwrap();
         let store = JsonStore::new(db);
 
-        let run1 = BranchId::new();
-        let run2 = BranchId::new();
+        let branch1 = BranchId::new();
+        let branch2 = BranchId::new();
         let doc_id = "test-doc";
 
         store
-            .create(&run1, &doc_id, JsonValue::from(42i64))
+            .create(&branch1, &doc_id, JsonValue::from(42i64))
             .unwrap();
 
-        // Document exists in run1 but not in run2
-        assert!(store.exists(&run1, &doc_id).unwrap());
-        assert!(!store.exists(&run2, &doc_id).unwrap());
+        // Document exists in branch1 but not in branch2
+        assert!(store.exists(&branch1, &doc_id).unwrap());
+        assert!(!store.exists(&branch2, &doc_id).unwrap());
     }
 
     // ========================================
@@ -1508,24 +1508,24 @@ mod tests {
     }
 
     #[test]
-    fn test_destroy_run_isolation() {
+    fn test_destroy_branch_isolation() {
         let db = Database::ephemeral().unwrap();
         let store = JsonStore::new(db);
 
-        let run1 = BranchId::new();
-        let run2 = BranchId::new();
+        let branch1 = BranchId::new();
+        let branch2 = BranchId::new();
         let doc_id = "test-doc";
 
-        // Create document in both runs
-        store.create(&run1, &doc_id, JsonValue::from(1i64)).unwrap();
-        store.create(&run2, &doc_id, JsonValue::from(2i64)).unwrap();
+        // Create document in both branches
+        store.create(&branch1, &doc_id, JsonValue::from(1i64)).unwrap();
+        store.create(&branch2, &doc_id, JsonValue::from(2i64)).unwrap();
 
-        // Destroy in run1
-        store.destroy(&run1, &doc_id).unwrap();
+        // Destroy in branch1
+        store.destroy(&branch1, &doc_id).unwrap();
 
-        // Document should be gone from run1 but still exist in run2
-        assert!(!store.exists(&run1, &doc_id).unwrap());
-        assert!(store.exists(&run2, &doc_id).unwrap());
+        // Document should be gone from branch1 but still exist in branch2
+        assert!(!store.exists(&branch1, &doc_id).unwrap());
+        assert!(store.exists(&branch2, &doc_id).unwrap());
     }
 
     #[test]

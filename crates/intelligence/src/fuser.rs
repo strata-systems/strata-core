@@ -314,14 +314,14 @@ mod tests {
         let branch_id = BranchId::new();
 
         let kv_ref = make_kv_doc_ref(&branch_id, "test");
-        let run_ref = EntityRef::Branch { branch_id: branch_id.clone() };
+        let branch_ref = EntityRef::Branch { branch_id: branch_id.clone() };
 
         let kv_hits = vec![make_hit(kv_ref, 0.7, 1)];
-        let run_hits = vec![make_hit(run_ref, 0.9, 1)];
+        let branch_hits = vec![make_hit(branch_ref, 0.9, 1)];
 
         let results = vec![
             (PrimitiveType::Kv, make_response(kv_hits)),
-            (PrimitiveType::Branch, make_response(run_hits)),
+            (PrimitiveType::Branch, make_response(branch_hits)),
         ];
 
         let result = fuser.fuse(results, 10);

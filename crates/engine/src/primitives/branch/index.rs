@@ -28,13 +28,13 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 /// Namespace UUID for generating deterministic branch IDs from names.
-/// Must match the executor's RUN_NAMESPACE for consistency.
-const RUN_NAMESPACE: Uuid = Uuid::from_bytes([
+/// Must match the executor's BRANCH_NAMESPACE for consistency.
+const BRANCH_NAMESPACE: Uuid = Uuid::from_bytes([
     0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1,
     0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8,
 ]);
 
-/// Resolve a run name to a core BranchId using the same logic as the executor.
+/// Resolve a branch name to a core BranchId using the same logic as the executor.
 ///
 /// - "default" → nil UUID (all zeros)
 /// - Valid UUID string → parsed directly
@@ -45,16 +45,16 @@ fn resolve_branch_name(name: &str) -> BranchId {
     } else if let Ok(u) = Uuid::parse_str(name) {
         BranchId::from_bytes(*u.as_bytes())
     } else {
-        let uuid = Uuid::new_v5(&RUN_NAMESPACE, name.as_bytes());
+        let uuid = Uuid::new_v5(&BRANCH_NAMESPACE, name.as_bytes());
         BranchId::from_bytes(*uuid.as_bytes())
     }
 }
 
-// ========== Global Run ID for BranchIndex Operations ==========
+// ========== Global Branch ID for BranchIndex Operations ==========
 
 /// Get the global BranchId used for BranchIndex operations
 ///
-/// BranchIndex is a global index (not scoped to any particular run),
+/// BranchIndex is a global index (not scoped to any particular branch),
 /// so we use a nil UUID as a sentinel value.
 fn global_branch_id() -> BranchId {
     BranchId::from_bytes([0; 16])
@@ -102,7 +102,8 @@ pub struct BranchMetadata {
     /// Unique branch identifier (UUID) for internal use and namespacing
     pub branch_id: String,
     /// Parent branch name if forked (post-MVP)
-    pub parent_run: Option<String>,
+    pub parent_branch: Option<String>,
+
     /// Current status
     pub status: BranchStatus,
     /// Creation timestamp (microseconds since epoch)
@@ -130,7 +131,7 @@ impl BranchMetadata {
         Self {
             name: name.to_string(),
             branch_id: branch_id.to_string(),
-            parent_run: None,
+            parent_branch: None,
             status: BranchStatus::Active,
             created_at: now,
             updated_at: now,
@@ -186,7 +187,7 @@ fn from_stored_value<T: for<'de> Deserialize<'de>>(
 ///
 /// ## Design
 ///
-/// BranchIndex provides run lifecycle management. It is a stateless facade
+/// BranchIndex provides branch lifecycle management. It is a stateless facade
 /// over the Database engine, holding only an `Arc<Database>` reference.
 ///
 /// ## MVP Methods
@@ -243,15 +244,15 @@ impl BranchIndex {
             // Check if branch already exists
             if txn.get(&key)?.is_some() {
                 return Err(StrataError::invalid_input(format!(
-                    "Run '{}' already exists",
+                    "Branch '{}' already exists",
                     branch_id
                 )));
             }
 
-            let run_meta = BranchMetadata::new(branch_id);
-            txn.put(key, to_stored_value(&run_meta))?;
+            let branch_meta = BranchMetadata::new(branch_id);
+            txn.put(key, to_stored_value(&branch_meta))?;
 
-            Ok(run_meta.into_versioned())
+            Ok(branch_meta.into_versioned())
         })
     }
 
@@ -312,26 +313,26 @@ impl BranchIndex {
     /// USE WITH CAUTION - this is irreversible!
     pub fn delete_branch(&self, branch_id: &str) -> StrataResult<()> {
         // First get the branch metadata
-        let run_meta = self
+        let branch_meta = self
             .get_branch(branch_id)?
-            .ok_or_else(|| StrataError::invalid_input(format!("Run '{}' not found", branch_id)))?
+            .ok_or_else(|| StrataError::invalid_input(format!("Branch '{}' not found", branch_id)))?
             .value;
 
         // Resolve the executor's deterministic BranchId for this name.
         // Data written through the executor uses this UUID for namespace scoping.
-        let executor_run_id = resolve_branch_name(branch_id);
+        let executor_branch_id = resolve_branch_name(branch_id);
 
         // Also get the metadata BranchId (random UUID from BranchMetadata::new).
         // Data written directly through engine primitives (KVStore, EventLog, etc.)
         // may use this UUID.
-        let metadata_run_id = BranchId::from_string(&run_meta.branch_id);
+        let metadata_branch_id = BranchId::from_string(&branch_meta.branch_id);
 
         // Delete data from the executor's namespace
-        self.delete_branch_data_internal(executor_run_id)?;
+        self.delete_branch_data_internal(executor_branch_id)?;
 
         // If the metadata BranchId differs, also delete from that namespace
-        if let Some(meta_id) = metadata_run_id {
-            if meta_id != executor_run_id {
+        if let Some(meta_id) = metadata_branch_id {
+            if meta_id != executor_branch_id {
                 self.delete_branch_data_internal(meta_id)?;
             }
         }
@@ -489,12 +490,12 @@ mod tests {
     }
 
     #[test]
-    fn test_run_status_default() {
+    fn test_branch_status_default() {
         assert_eq!(BranchStatus::default(), BranchStatus::Active);
     }
 
     #[test]
-    fn test_run_status_as_str() {
+    fn test_branch_status_as_str() {
         assert_eq!(BranchStatus::Active.as_str(), "Active");
     }
 }

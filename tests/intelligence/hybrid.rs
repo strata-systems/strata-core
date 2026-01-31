@@ -23,7 +23,7 @@ fn test_tier8_db_hybrid_returns_hybrid_search() {
 #[test]
 fn test_tier8_hybrid_empty_db() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
 
     let hybrid = db.hybrid();
     let req = SearchRequest::new(branch_id, "test");
@@ -36,7 +36,7 @@ fn test_tier8_hybrid_empty_db() {
 #[test]
 fn test_tier8_hybrid_finds_results() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let hybrid = db.hybrid();
@@ -50,7 +50,7 @@ fn test_tier8_hybrid_finds_results() {
 #[test]
 fn test_tier8_hybrid_includes_kv() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let hybrid = db.hybrid();
@@ -74,7 +74,7 @@ fn test_tier8_hybrid_includes_kv() {
 #[test]
 fn test_tier8_hybrid_respects_filter() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let hybrid = db.hybrid();
@@ -90,7 +90,7 @@ fn test_tier8_hybrid_respects_filter() {
 #[test]
 fn test_tier8_hybrid_empty_filter() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let hybrid = db.hybrid();
@@ -104,7 +104,7 @@ fn test_tier8_hybrid_empty_filter() {
 #[test]
 fn test_tier8_hybrid_multi_filter() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let hybrid = db.hybrid();
@@ -129,7 +129,7 @@ fn test_tier8_hybrid_multi_filter() {
 #[test]
 fn test_tier8_hybrid_custom_fuser() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let hybrid = HybridSearch::new(db.clone()).with_fuser(Arc::new(RRFFuser::default()));
@@ -144,7 +144,7 @@ fn test_tier8_hybrid_custom_fuser() {
 #[test]
 fn test_tier8_hybrid_rrf_valid() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let hybrid = HybridSearch::new(db.clone()).with_fuser(Arc::new(RRFFuser::default()));
@@ -165,7 +165,7 @@ fn test_tier8_hybrid_rrf_valid() {
 #[test]
 fn test_tier8_hybrid_deterministic() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let req = SearchRequest::new(branch_id, "test");
@@ -176,7 +176,7 @@ fn test_tier8_hybrid_deterministic() {
 #[test]
 fn test_tier8_hybrid_valid_ranks() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let hybrid = db.hybrid();
@@ -190,7 +190,7 @@ fn test_tier8_hybrid_valid_ranks() {
 #[test]
 fn test_tier8_hybrid_valid_scores() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let hybrid = db.hybrid();
@@ -208,7 +208,7 @@ fn test_tier8_hybrid_valid_scores() {
 #[test]
 fn test_tier8_hybrid_populates_stats() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let hybrid = db.hybrid();

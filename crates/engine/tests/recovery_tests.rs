@@ -298,108 +298,108 @@ fn test_state_cell_set_survives_recovery() {
 
 /// Test BranchIndex survives recovery
 #[test]
-fn test_run_index_survives_recovery() {
+fn test_branch_index_survives_recovery() {
     let temp_dir = TempDir::new().unwrap();
     let path = get_path(&temp_dir);
     let db = Database::open(&path).unwrap();
 
-    let run_index = BranchIndex::new(db.clone());
+    let branch_index = BranchIndex::new(db.clone());
 
-    // Create run with metadata
-    let run_meta = run_index.create_branch("test-run").unwrap();
-    let run_name = run_meta.value.name.clone();
+    // Create branch with metadata
+    let branch_meta = branch_index.create_branch("test-branch").unwrap();
+    let branch_name = branch_meta.value.name.clone();
 
     // Note: update_status and add_tags removed in MVP simplification
 
     // Verify before crash
-    let run = run_index.get_branch(&run_name).unwrap().unwrap();
-    assert_eq!(run.value.name, "test-run");
+    let branch = branch_index.get_branch(&branch_name).unwrap().unwrap();
+    assert_eq!(branch.value.name, "test-branch");
 
     // Simulate crash
-    drop(run_index);
+    drop(branch_index);
     drop(db);
 
     // Recovery
     let db = Database::open(&path).unwrap();
-    let run_index = BranchIndex::new(db.clone());
+    let branch_index = BranchIndex::new(db.clone());
 
-    // Run preserved
-    let recovered = run_index.get_branch(&run_name).unwrap().unwrap();
-    assert_eq!(recovered.value.name, "test-run");
+    // Branch preserved
+    let recovered = branch_index.get_branch(&branch_name).unwrap().unwrap();
+    assert_eq!(recovered.value.name, "test-branch");
 }
 
 /// Test BranchIndex list survives recovery
 #[test]
-fn test_run_index_list_survives_recovery() {
+fn test_branch_index_list_survives_recovery() {
     let temp_dir = TempDir::new().unwrap();
     let path = get_path(&temp_dir);
     let db = Database::open(&path).unwrap();
 
-    let run_index = BranchIndex::new(db.clone());
+    let branch_index = BranchIndex::new(db.clone());
 
-    // Create multiple runs
-    run_index.create_branch("run1").unwrap();
-    run_index.create_branch("run2").unwrap();
-    run_index.create_branch("run3").unwrap();
+    // Create multiple branches
+    branch_index.create_branch("branch1").unwrap();
+    branch_index.create_branch("branch2").unwrap();
+    branch_index.create_branch("branch3").unwrap();
 
     // Note: update_status and query_by_status removed in MVP simplification
 
     // Simulate crash
-    drop(run_index);
+    drop(branch_index);
     drop(db);
 
     // Recovery
     let db = Database::open(&path).unwrap();
-    let run_index = BranchIndex::new(db.clone());
+    let branch_index = BranchIndex::new(db.clone());
 
-    // List all runs works
-    let runs = run_index.list_branches().unwrap();
-    assert_eq!(runs.len(), 3);
-    assert!(runs.contains(&"run1".to_string()));
-    assert!(runs.contains(&"run2".to_string()));
-    assert!(runs.contains(&"run3".to_string()));
+    // List all branches works
+    let branches = branch_index.list_branches().unwrap();
+    assert_eq!(branches.len(), 3);
+    assert!(branches.contains(&"branch1".to_string()));
+    assert!(branches.contains(&"branch2".to_string()));
+    assert!(branches.contains(&"branch3".to_string()));
 }
 
 /// Test BranchIndex cascading delete survives recovery
 #[test]
-fn test_run_delete_survives_recovery() {
+fn test_branch_delete_survives_recovery() {
     let temp_dir = TempDir::new().unwrap();
     let path = get_path(&temp_dir);
     let db = Database::open(&path).unwrap();
 
-    let run_index = BranchIndex::new(db.clone());
+    let branch_index = BranchIndex::new(db.clone());
     let kv = KVStore::new(db.clone());
 
-    // Create two runs
-    let meta1 = run_index.create_branch("run1").unwrap();
-    let meta2 = run_index.create_branch("run2").unwrap();
-    let run1 = BranchId::from_string(&meta1.value.branch_id).unwrap();
-    let run2 = BranchId::from_string(&meta2.value.branch_id).unwrap();
+    // Create two branches
+    let meta1 = branch_index.create_branch("branch1").unwrap();
+    let meta2 = branch_index.create_branch("branch2").unwrap();
+    let branch1 = BranchId::from_string(&meta1.value.branch_id).unwrap();
+    let branch2 = BranchId::from_string(&meta2.value.branch_id).unwrap();
 
     // Write data to both
-    kv.put(&run1, "key", Value::Int(1)).unwrap();
-    kv.put(&run2, "key", Value::Int(2)).unwrap();
+    kv.put(&branch1, "key", Value::Int(1)).unwrap();
+    kv.put(&branch2, "key", Value::Int(2)).unwrap();
 
-    // Delete run1
-    run_index.delete_branch("run1").unwrap();
+    // Delete branch1
+    branch_index.delete_branch("branch1").unwrap();
 
     // Simulate crash
-    drop(run_index);
+    drop(branch_index);
     drop(kv);
     drop(db);
 
     // Recovery
     let db = Database::open(&path).unwrap();
-    let run_index = BranchIndex::new(db.clone());
+    let branch_index = BranchIndex::new(db.clone());
     let kv = KVStore::new(db.clone());
 
-    // run1 is still deleted
-    assert!(run_index.get_branch("run1").unwrap().is_none());
-    assert!(kv.get(&run1, "key").unwrap().is_none());
+    // branch1 is still deleted
+    assert!(branch_index.get_branch("branch1").unwrap().is_none());
+    assert!(kv.get(&branch1, "key").unwrap().is_none());
 
-    // run2 data preserved
-    assert!(run_index.get_branch("run2").unwrap().is_some());
-    assert_eq!(kv.get(&run2, "key").unwrap(), Some(Value::Int(2)));
+    // branch2 data preserved
+    assert!(branch_index.get_branch("branch2").unwrap().is_some());
+    assert_eq!(kv.get(&branch2, "key").unwrap(), Some(Value::Int(2)));
 }
 
 /// Test cross-primitive transaction survives recovery
@@ -505,14 +505,14 @@ fn test_all_primitives_recover_together() {
     let branch_id: BranchId;
     {
         let db = Database::open(&path).unwrap();
-        let run_index = BranchIndex::new(db.clone());
+        let branch_index = BranchIndex::new(db.clone());
         let kv = KVStore::new(db.clone());
         let event_log = EventLog::new(db.clone());
         let state_cell = StateCell::new(db.clone());
 
-        // Create run
-        let run_meta = run_index.create_branch("full-test").unwrap();
-        branch_id = BranchId::from_string(&run_meta.value.branch_id).unwrap();
+        // Create branch
+        let branch_meta = branch_index.create_branch("full-test").unwrap();
+        branch_id = BranchId::from_string(&branch_meta.value.branch_id).unwrap();
 
         // Populate all primitives
         kv.put(&branch_id, "full_key", Value::String("full_value".into()))
@@ -533,14 +533,14 @@ fn test_all_primitives_recover_together() {
     // Phase 2: Verify all recovered
     {
         let db = Database::open(&path).unwrap();
-        let run_index = BranchIndex::new(db.clone());
+        let branch_index = BranchIndex::new(db.clone());
         let kv = KVStore::new(db.clone());
         let event_log = EventLog::new(db.clone());
         let state_cell = StateCell::new(db.clone());
 
         // BranchIndex
-        let run = run_index.get_branch("full-test").unwrap().unwrap();
-        assert_eq!(run.value.name, "full-test");
+        let branch = branch_index.get_branch("full-test").unwrap().unwrap();
+        assert_eq!(branch.value.name, "full-test");
 
         // KV
         assert_eq!(

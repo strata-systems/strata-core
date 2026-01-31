@@ -18,12 +18,12 @@
 //!
 //! ## Stories Implemented
 //!
-//! - begin_run() - Creates run metadata, writes WAL entry
-//! - end_run() - Marks run completed, writes WAL entry
-//! - BranchIndex - Event offset tracking for O(run size) replay
-//! - replay_run() - Returns ReadOnlyView
-//! - diff_runs() - Key-level comparison
-//! - Orphaned run detection
+//! - begin_branch() - Creates branch metadata, writes WAL entry
+//! - end_branch() - Marks branch completed, writes WAL entry
+//! - BranchIndex - Event offset tracking for O(branch size) replay
+//! - replay_branch() - Returns ReadOnlyView
+//! - diff_branches() - Key-level comparison
+//! - Orphaned branch detection
 
 use strata_core::branch_types::{BranchEventOffsets, BranchMetadata, BranchStatus};
 use strata_core::types::{Key, BranchId};
@@ -67,7 +67,7 @@ impl From<BranchError> for StrataError {
         match e {
             BranchError::AlreadyExists(branch_id) => StrataError::InvalidOperation {
                 entity_ref: EntityRef::branch(branch_id),
-                reason: format!("Run '{}' already exists", branch_id),
+                reason: format!("Branch '{}' already exists", branch_id),
             },
             BranchError::NotFound(branch_id) => StrataError::BranchNotFound { branch_id },
             BranchError::NotActive(branch_id) => StrataError::InvalidOperation {
@@ -87,102 +87,102 @@ impl From<BranchError> for StrataError {
 // Branch Index
 // ============================================================================
 
-/// Branch index for tracking runs and their events
+/// Branch index for tracking branches and their events
 ///
-/// Maps runs to their metadata and event offsets for O(run size) replay.
+/// Maps branches to their metadata and event offsets for O(branch size) replay.
 #[derive(Debug, Default)]
 pub struct BranchIndex {
-    /// Run metadata by run ID
-    runs: HashMap<BranchId, BranchMetadata>,
-    /// Event offsets by run ID (for O(run size) replay)
+    /// Branch metadata by branch ID
+    branches: HashMap<BranchId, BranchMetadata>,
+    /// Event offsets by branch ID (for O(branch size) replay)
     branch_events: HashMap<BranchId, BranchEventOffsets>,
 }
 
 impl BranchIndex {
-    /// Create a new empty run index
+    /// Create a new empty branch index
     pub fn new() -> Self {
         BranchIndex {
-            runs: HashMap::new(),
+            branches: HashMap::new(),
             branch_events: HashMap::new(),
         }
     }
 
-    /// Insert a new run
+    /// Insert a new branch
     pub fn insert(&mut self, branch_id: BranchId, metadata: BranchMetadata) {
-        self.runs.insert(branch_id, metadata);
+        self.branches.insert(branch_id, metadata);
         self.branch_events.insert(branch_id, BranchEventOffsets::new());
     }
 
-    /// Check if a run exists
+    /// Check if a branch exists
     pub fn exists(&self, branch_id: BranchId) -> bool {
-        self.runs.contains_key(&branch_id)
+        self.branches.contains_key(&branch_id)
     }
 
-    /// Get run metadata
+    /// Get branch metadata
     pub fn get(&self, branch_id: BranchId) -> Option<&BranchMetadata> {
-        self.runs.get(&branch_id)
+        self.branches.get(&branch_id)
     }
 
-    /// Get mutable run metadata
+    /// Get mutable branch metadata
     pub fn get_mut(&mut self, branch_id: BranchId) -> Option<&mut BranchMetadata> {
-        self.runs.get_mut(&branch_id)
+        self.branches.get_mut(&branch_id)
     }
 
-    /// Record an event offset for a run
+    /// Record an event offset for a branch
     pub fn record_event(&mut self, branch_id: BranchId, offset: u64) {
         if let Some(offsets) = self.branch_events.get_mut(&branch_id) {
             offsets.push(offset);
         }
-        if let Some(meta) = self.runs.get_mut(&branch_id) {
+        if let Some(meta) = self.branches.get_mut(&branch_id) {
             meta.increment_event_count();
         }
     }
 
-    /// Get event offsets for a run (for O(run size) replay)
+    /// Get event offsets for a branch (for O(branch size) replay)
     pub fn get_event_offsets(&self, branch_id: BranchId) -> Option<&[u64]> {
         self.branch_events.get(&branch_id).map(|o| o.as_slice())
     }
 
-    /// List all runs
+    /// List all branches
     pub fn list(&self) -> Vec<&BranchMetadata> {
-        self.runs.values().collect()
+        self.branches.values().collect()
     }
 
-    /// List all run IDs
+    /// List all branch IDs
     pub fn list_branch_ids(&self) -> Vec<BranchId> {
-        self.runs.keys().copied().collect()
+        self.branches.keys().copied().collect()
     }
 
-    /// Get run status
+    /// Get branch status
     pub fn status(&self, branch_id: BranchId) -> BranchStatus {
-        match self.runs.get(&branch_id) {
+        match self.branches.get(&branch_id) {
             Some(meta) => meta.status,
             None => BranchStatus::NotFound,
         }
     }
 
-    /// Find runs that are still active (potential orphans after crash)
+    /// Find branches that are still active (potential orphans after crash)
     pub fn find_active(&self) -> Vec<BranchId> {
-        self.runs
+        self.branches
             .iter()
             .filter(|(_, meta)| meta.status.is_active())
             .map(|(id, _)| *id)
             .collect()
     }
 
-    /// Mark runs as orphaned
+    /// Mark branches as orphaned
     pub fn mark_orphaned(&mut self, branch_ids: &[BranchId]) {
         for branch_id in branch_ids {
-            if let Some(meta) = self.runs.get_mut(branch_id) {
+            if let Some(meta) = self.branches.get_mut(branch_id) {
                 meta.mark_orphaned();
             }
         }
     }
 
-    /// Count runs by status
+    /// Count branches by status
     pub fn count_by_status(&self) -> HashMap<BranchStatus, usize> {
         let mut counts = HashMap::new();
-        for meta in self.runs.values() {
+        for meta in self.branches.values() {
             *counts.entry(meta.status).or_insert(0) += 1;
         }
         counts
@@ -208,11 +208,11 @@ impl BranchIndex {
 /// - P6: Idempotent (running twice produces identical view)
 #[derive(Debug, Clone)]
 pub struct ReadOnlyView {
-    /// Run this view is for
+    /// Branch this view is for
     pub branch_id: BranchId,
-    /// KV state at run end
+    /// KV state at branch end
     kv_state: HashMap<Key, Value>,
-    /// Events during run (simplified as key-value pairs)
+    /// Events during branch (simplified as key-value pairs)
     events: Vec<(String, Value)>,
     /// Number of operations in this view
     operation_count: u64,
@@ -292,7 +292,7 @@ impl ReadOnlyView {
 }
 
 // ============================================================================
-// Run Diff
+// Branch Diff
 // ============================================================================
 
 /// A single diff entry
@@ -302,9 +302,9 @@ pub struct DiffEntry {
     pub key: String,
     /// Primitive type
     pub primitive: PrimitiveType,
-    /// Value in run A (if present)
+    /// Value in branch A (if present)
     pub value_a: Option<String>,
-    /// Value in run B (if present)
+    /// Value in branch B (if present)
     pub value_b: Option<String>,
 }
 
@@ -345,12 +345,12 @@ impl DiffEntry {
     }
 }
 
-/// Diff between two runs at key level
+/// Diff between two branches at key level
 #[derive(Debug, Clone)]
 pub struct BranchDiff {
-    /// Run A (base)
+    /// Branch A (base)
     pub branch_a: BranchId,
-    /// Run B (comparison)
+    /// Branch B (comparison)
     pub branch_b: BranchId,
     /// Keys added in B (not in A)
     pub added: Vec<DiffEntry>,
@@ -517,13 +517,13 @@ mod tests {
     // ========== BranchIndex Tests ==========
 
     #[test]
-    fn test_run_index_new() {
+    fn test_branch_index_new() {
         let index = BranchIndex::new();
         assert!(index.list().is_empty());
     }
 
     #[test]
-    fn test_run_index_insert_and_get() {
+    fn test_branch_index_insert_and_get() {
         let mut index = BranchIndex::new();
         let branch_id = BranchId::new();
         let metadata = BranchMetadata::new(branch_id, 1000, 0);
@@ -537,14 +537,14 @@ mod tests {
     }
 
     #[test]
-    fn test_run_index_status() {
+    fn test_branch_index_status() {
         let mut index = BranchIndex::new();
         let branch_id = BranchId::new();
 
-        // Non-existent run
+        // Non-existent branch
         assert_eq!(index.status(branch_id), BranchStatus::NotFound);
 
-        // Insert run
+        // Insert branch
         let metadata = BranchMetadata::new(branch_id, 1000, 0);
         index.insert(branch_id, metadata);
 
@@ -552,7 +552,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_index_record_event() {
+    fn test_branch_index_record_event() {
         let mut index = BranchIndex::new();
         let branch_id = BranchId::new();
         let metadata = BranchMetadata::new(branch_id, 1000, 0);
@@ -570,7 +570,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_index_find_active() {
+    fn test_branch_index_find_active() {
         let mut index = BranchIndex::new();
 
         let run1 = BranchId::new();
@@ -581,7 +581,7 @@ mod tests {
         index.insert(run2, BranchMetadata::new(run2, 2000, 100));
         index.insert(run3, BranchMetadata::new(run3, 3000, 200));
 
-        // Complete run2
+        // Complete branch2
         index.get_mut(run2).unwrap().complete(2500, 150);
 
         let active = index.find_active();
@@ -660,7 +660,7 @@ mod tests {
     // ========== BranchDiff Tests ==========
 
     #[test]
-    fn test_run_diff_empty() {
+    fn test_branch_diff_empty() {
         let branch_a = BranchId::new();
         let branch_b = BranchId::new();
 
@@ -673,7 +673,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_diff_added() {
+    fn test_branch_diff_added() {
         let branch_a = BranchId::new();
         let branch_b = BranchId::new();
         let ns = test_namespace();
@@ -691,7 +691,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_diff_removed() {
+    fn test_branch_diff_removed() {
         let branch_a = BranchId::new();
         let branch_b = BranchId::new();
         let ns = test_namespace();
@@ -709,7 +709,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_diff_modified() {
+    fn test_branch_diff_modified() {
         let branch_a = BranchId::new();
         let branch_b = BranchId::new();
         let ns = test_namespace();
@@ -730,7 +730,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_diff_summary() {
+    fn test_branch_diff_summary() {
         let diff = BranchDiff {
             branch_a: BranchId::new(),
             branch_b: BranchId::new(),
@@ -754,13 +754,13 @@ mod tests {
         assert_eq!(diff.summary(), "+1 -2 ~1 (total: 4)");
     }
 
-    // ========== Orphaned Run Detection Tests ==========
+    // ========== Orphaned Branch Detection Tests ==========
 
     #[test]
     fn test_orphaned_detection() {
         let mut index = BranchIndex::new();
 
-        // Create some runs
+        // Create some branches
         let run1 = BranchId::new();
         let run2 = BranchId::new();
         let run3 = BranchId::new();
@@ -769,7 +769,7 @@ mod tests {
         index.insert(run2, BranchMetadata::new(run2, 2000, 100));
         index.insert(run3, BranchMetadata::new(run3, 3000, 200));
 
-        // Complete run2 properly
+        // Complete branch2 properly
         index.get_mut(run2).unwrap().complete(2500, 150);
 
         // Simulate crash - run1 and run3 are still active
@@ -1046,7 +1046,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_error_conversions() {
+    fn test_branch_error_conversions() {
         // Test From<BranchError> for StrataError
         let error = BranchError::AlreadyExists(BranchId::new());
         let strata_error: StrataError = error.into();

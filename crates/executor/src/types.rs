@@ -244,7 +244,7 @@ pub struct RetentionVersionInfo {
 pub struct DatabaseInfo {
     pub version: String,
     pub uptime_secs: u64,
-    pub run_count: u64,
+    pub branch_count: u64,
     pub total_keys: u64,
 }
 

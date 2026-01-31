@@ -110,10 +110,10 @@ impl CheckpointCoordinator {
             ));
         }
 
-        if let Some(runs) = data.runs {
+        if let Some(runs) = data.branches {
             sections.push(SnapshotSection::new(
-                primitive_tags::RUN,
-                self.serializer.serialize_runs(&runs),
+                primitive_tags::BRANCH,
+                self.serializer.serialize_branches(&runs),
             ));
         }
 
@@ -170,8 +170,8 @@ pub struct CheckpointData {
     pub events: Option<Vec<crate::format::primitives::EventSnapshotEntry>>,
     /// State primitive entries
     pub states: Option<Vec<crate::format::primitives::StateSnapshotEntry>>,
-    /// Run primitive entries
-    pub runs: Option<Vec<crate::format::primitives::RunSnapshotEntry>>,
+    /// Branch primitive entries
+    pub branches: Option<Vec<crate::format::primitives::BranchSnapshotEntry>>,
     /// JSON primitive entries
     pub json: Option<Vec<crate::format::primitives::JsonSnapshotEntry>>,
     /// Vector primitive entries
@@ -208,9 +208,9 @@ impl CheckpointData {
         self
     }
 
-    /// Set Run entries
-    pub fn with_runs(mut self, entries: Vec<crate::format::primitives::RunSnapshotEntry>) -> Self {
-        self.runs = Some(entries);
+    /// Set Branch entries
+    pub fn with_branches(mut self, entries: Vec<crate::format::primitives::BranchSnapshotEntry>) -> Self {
+        self.branches = Some(entries);
         self
     }
 

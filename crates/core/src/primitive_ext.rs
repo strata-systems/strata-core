@@ -101,7 +101,7 @@ pub enum PrimitiveExtError {
 /// | JSON | 0x20-0x2F | FROZEN |
 /// | Event | 0x30-0x3F | FROZEN |
 /// | State | 0x40-0x4F | FROZEN |
-/// | Run | 0x60-0x6F | FROZEN |
+/// | Branch | 0x60-0x6F | FROZEN |
 /// | Vector | 0x70-0x7F | RESERVED |
 /// | Future | 0x80-0xFF | AVAILABLE |
 ///
@@ -113,7 +113,7 @@ pub enum PrimitiveExtError {
 /// | JSON | 2 |
 /// | Event | 3 |
 /// | State | 4 |
-/// | Run | 6 |
+/// | Branch | 6 |
 /// | Vector | 7 |
 pub trait PrimitiveStorageExt: Send + Sync {
     /// Unique identifier for this primitive type
@@ -180,8 +180,8 @@ pub mod primitive_type_ids {
     pub const EVENT: u8 = 3;
     /// State Cell
     pub const STATE: u8 = 4;
-    /// Run Index
-    pub const RUN: u8 = 6;
+    /// Branch Index
+    pub const BRANCH: u8 = 6;
     /// Vector Store (reserved)
     pub const VECTOR: u8 = 7;
 }
@@ -216,10 +216,10 @@ pub mod wal_ranges {
     /// State primitive end
     pub const STATE_END: u8 = 0x4F;
 
-    /// Run primitive (0x60-0x6F)
-    pub const RUN_START: u8 = 0x60;
-    /// Run primitive end
-    pub const RUN_END: u8 = 0x6F;
+    /// Branch primitive (0x60-0x6F)
+    pub const BRANCH_START: u8 = 0x60;
+    /// Branch primitive end
+    pub const BRANCH_END: u8 = 0x6F;
 
     /// Vector primitive - RESERVED (0x70-0x7F)
     pub const VECTOR_START: u8 = 0x70;
@@ -243,7 +243,7 @@ pub fn primitive_for_wal_type(wal_type: u8) -> Option<&'static str> {
         JSON_START..=JSON_END => Some("json"),
         EVENT_START..=EVENT_END => Some("event"),
         STATE_START..=STATE_END => Some("state"),
-        RUN_START..=RUN_END => Some("run"),
+        BRANCH_START..=BRANCH_END => Some("branch"),
         VECTOR_START..=VECTOR_END => Some("vector"),
         _ => None, // Unknown or future - not assigned
     }
@@ -284,9 +284,9 @@ mod tests {
         assert_eq!(primitive_for_wal_type(0x40), Some("state"));
         assert_eq!(primitive_for_wal_type(0x42), Some("state"));
 
-        // Run
-        assert_eq!(primitive_for_wal_type(0x60), Some("run"));
-        assert_eq!(primitive_for_wal_type(0x63), Some("run"));
+        // Branch
+        assert_eq!(primitive_for_wal_type(0x60), Some("branch"));
+        assert_eq!(primitive_for_wal_type(0x63), Some("branch"));
 
         // Vector
         assert_eq!(primitive_for_wal_type(0x70), Some("vector"));
@@ -319,7 +319,7 @@ mod tests {
         assert_eq!(primitive_type_ids::JSON, 2);
         assert_eq!(primitive_type_ids::EVENT, 3);
         assert_eq!(primitive_type_ids::STATE, 4);
-        assert_eq!(primitive_type_ids::RUN, 6);
+        assert_eq!(primitive_type_ids::BRANCH, 6);
         assert_eq!(primitive_type_ids::VECTOR, 7);
     }
 

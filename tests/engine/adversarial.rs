@@ -369,7 +369,7 @@ fn versions_monotonically_increase() {
     }
 }
 
-/// EventLog sequence numbers should be monotonic within a run.
+/// EventLog sequence numbers should be monotonic within a branch.
 #[test]
 fn eventlog_sequence_monotonic() {
     let test_db = TestDb::new();
@@ -416,20 +416,20 @@ fn statecell_cas_version_ordering() {
 }
 
 // ============================================================================
-// Run Isolation Under Contention
+// Branch Isolation Under Contention
 // ============================================================================
 
-/// Writes to different runs should never interfere, even under contention.
+/// Writes to different branches should never interfere, even under contention.
 #[test]
-fn run_isolation_under_contention() {
+fn branch_isolation_under_contention() {
     let test_db = TestDb::new_in_memory();
     let db = test_db.db.clone();
 
-    let runs: Vec<BranchId> = (0..4).map(|_| BranchId::new()).collect();
+    let branches: Vec<BranchId> = (0..4).map(|_| BranchId::new()).collect();
     let barrier = Arc::new(Barrier::new(4));
     let errors = Arc::new(AtomicU64::new(0));
 
-    let handles: Vec<_> = runs.iter().enumerate().map(|(i, &branch_id)| {
+    let handles: Vec<_> = branches.iter().enumerate().map(|(i, &branch_id)| {
         let db = db.clone();
         let b = barrier.clone();
         let err_count = errors.clone();
@@ -439,7 +439,7 @@ fn run_isolation_under_contention() {
 
             let kv = KVStore::new(db.clone());
 
-            // Each run writes to "key" with its own value
+            // Each branch writes to "key" with its own value
             for j in 0..50 {
                 if kv.put(&branch_id, "key", Value::Int((i * 100 + j) as i64)).is_err() {
                     err_count.fetch_add(1, Ordering::Relaxed);
@@ -463,7 +463,7 @@ fn run_isolation_under_contention() {
     }
 
     assert_eq!(errors.load(Ordering::Relaxed), 0,
-        "Run isolation violated under contention");
+        "Branch isolation violated under contention");
 }
 
 // ============================================================================

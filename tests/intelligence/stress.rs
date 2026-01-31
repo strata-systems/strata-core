@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 #[ignore]
 fn test_tier10_large_dataset() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
 
     populate_large_dataset(&db, &branch_id, 10_000);
 
@@ -48,7 +48,7 @@ fn test_tier10_large_dataset() {
 #[ignore]
 fn test_tier10_hybrid_large_dataset() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
 
     populate_large_dataset(&db, &branch_id, 10_000);
 
@@ -80,7 +80,7 @@ fn test_tier10_hybrid_large_dataset() {
 #[ignore]
 fn test_tier10_concurrent_searches() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
 
     populate_large_dataset(&db, &branch_id, 1000);
 
@@ -113,11 +113,11 @@ fn test_tier10_concurrent_read_write() {
     use std::sync::Arc;
 
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
 
     let kv = KVStore::new(db.clone());
-    let run_index = BranchIndex::new(db.clone());
-    run_index.create_branch(&branch_id.to_string()).unwrap();
+    let branch_index = BranchIndex::new(db.clone());
+    branch_index.create_branch(&branch_id.to_string()).unwrap();
 
     // Add some initial data
     for i in 0..100 {
@@ -133,14 +133,14 @@ fn test_tier10_concurrent_read_write() {
 
     // Writer thread
     let writer_db = Arc::clone(&db);
-    let writer_run_id = branch_id;
+    let writer_branch_id = branch_id;
     let writer_stop = Arc::clone(&stop);
     let writer = thread::spawn(move || {
         let kv = KVStore::new(writer_db);
         let mut i = 0;
         while !writer_stop.load(Ordering::Relaxed) {
             kv.put(
-                &writer_run_id,
+                &writer_branch_id,
                 &format!("new_{}", i),
                 Value::String("new searchable content".into()),
             )
@@ -181,23 +181,23 @@ fn test_tier10_concurrent_read_write() {
 }
 
 // ============================================================================
-// Multiple Run Tests
+// Multiple Branch Tests
 // ============================================================================
 
-/// Search works with many runs
+/// Search works with many branches
 #[test]
 #[ignore]
-fn test_tier10_many_runs() {
+fn test_tier10_many_branches() {
     let db = create_test_db();
 
     let kv = KVStore::new(db.clone());
-    let run_index = BranchIndex::new(db.clone());
+    let branch_index = BranchIndex::new(db.clone());
 
-    // Create 100 runs with data
+    // Create 100 branches with data
     let mut branch_ids = Vec::new();
     for i in 0..100 {
-        let branch_id = test_run_id();
-        run_index.create_branch(&branch_id.to_string()).unwrap();
+        let branch_id = test_branch_id();
+        branch_index.create_branch(&branch_id.to_string()).unwrap();
 
         for j in 0..10 {
             kv.put(
@@ -211,13 +211,13 @@ fn test_tier10_many_runs() {
         branch_ids.push(branch_id);
     }
 
-    // Search each run
+    // Search each branch
     for branch_id in &branch_ids {
         let req = SearchRequest::new(*branch_id, "searchable").with_k(20);
         let response = kv.search(&req).unwrap();
 
         assert!(!response.hits.is_empty());
-        assert_all_from_run(&response, *branch_id);
+        assert_all_from_branch(&response, *branch_id);
     }
 }
 
@@ -230,7 +230,7 @@ fn test_tier10_many_runs() {
 #[ignore]
 fn test_tier10_no_memory_leak() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
 
     populate_large_dataset(&db, &branch_id, 1000);
 
@@ -254,7 +254,7 @@ fn test_tier10_no_memory_leak() {
 #[test]
 fn test_tier10_empty_query() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let hybrid = db.hybrid();
@@ -268,7 +268,7 @@ fn test_tier10_empty_query() {
 #[test]
 fn test_tier10_long_query() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let hybrid = db.hybrid();
@@ -284,11 +284,11 @@ fn test_tier10_long_query() {
 #[test]
 fn test_tier10_unicode_query() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
 
     let kv = KVStore::new(db.clone());
-    let run_index = BranchIndex::new(db.clone());
-    run_index.create_branch(&branch_id.to_string()).unwrap();
+    let branch_index = BranchIndex::new(db.clone());
+    branch_index.create_branch(&branch_id.to_string()).unwrap();
 
     kv.put(
         &branch_id,
@@ -308,7 +308,7 @@ fn test_tier10_unicode_query() {
 #[test]
 fn test_tier10_special_chars_query() {
     let db = create_test_db();
-    let branch_id = test_run_id();
+    let branch_id = test_branch_id();
     populate_test_data(&db, &branch_id);
 
     let hybrid = db.hybrid();

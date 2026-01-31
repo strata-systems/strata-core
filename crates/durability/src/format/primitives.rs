@@ -58,7 +58,7 @@ pub struct StateSnapshotEntry {
 ///
 /// Format: branch_id(16 bytes UUID) + name_len(4) + name + created_at(8) + metadata_len(4) + metadata
 #[derive(Debug, Clone, PartialEq)]
-pub struct RunSnapshotEntry {
+pub struct BranchSnapshotEntry {
     /// Run identifier (UUID bytes)
     pub branch_id: [u8; 16],
     /// Run name
@@ -360,7 +360,7 @@ impl SnapshotSerializer {
     }
 
     /// Serialize Run entries to bytes
-    pub fn serialize_runs(&self, entries: &[RunSnapshotEntry]) -> Vec<u8> {
+    pub fn serialize_branches(&self, entries: &[BranchSnapshotEntry]) -> Vec<u8> {
         let mut data = Vec::new();
 
         data.extend_from_slice(&(entries.len() as u32).to_le_bytes());
@@ -383,7 +383,7 @@ impl SnapshotSerializer {
     }
 
     /// Deserialize Run entries from bytes
-    pub fn deserialize_runs(&self, data: &[u8]) -> Result<Vec<RunSnapshotEntry>, PrimitiveSerializeError> {
+    pub fn deserialize_branches(&self, data: &[u8]) -> Result<Vec<BranchSnapshotEntry>, PrimitiveSerializeError> {
         let mut cursor = 0;
 
         if data.len() < 4 {
@@ -437,7 +437,7 @@ impl SnapshotSerializer {
             let metadata = self.codec.decode(&data[cursor..cursor + metadata_len])?;
             cursor += metadata_len;
 
-            entries.push(RunSnapshotEntry {
+            entries.push(BranchSnapshotEntry {
                 branch_id,
                 name,
                 created_at,
@@ -820,18 +820,18 @@ mod tests {
     }
 
     #[test]
-    fn test_runs_roundtrip() {
+    fn test_branches_roundtrip() {
         let serializer = test_serializer();
 
-        let entries = vec![RunSnapshotEntry {
+        let entries = vec![BranchSnapshotEntry {
             branch_id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
-            name: "my-run".to_string(),
+            name: "my-branch".to_string(),
             created_at: 1000,
             metadata: b"{}".to_vec(),
         }];
 
-        let data = serializer.serialize_runs(&entries);
-        let parsed = serializer.deserialize_runs(&data).unwrap();
+        let data = serializer.serialize_branches(&entries);
+        let parsed = serializer.deserialize_branches(&data).unwrap();
 
         assert_eq!(entries, parsed);
     }

@@ -1,12 +1,12 @@
-//! Run lifecycle types
+//! Branch lifecycle types
 //!
-//! This module defines the run lifecycle types for durability and replay.
-//! These are distinct from the run management types in `primitives::run_index`.
+//! This module defines the branch lifecycle types for durability and replay.
+//! These are distinct from the branch management types in `primitives::branch_index`.
 //!
 //! ## Design
 //!
 //! - `BranchStatus`: Durability-focused lifecycle states (Active, Completed, Orphaned, NotFound)
-//! - `BranchMetadata`: Run metadata for replay and recovery
+//! - `BranchMetadata`: Branch metadata for replay and recovery
 //!
 //! ## Replay Invariants (P1-P6)
 //!
@@ -22,42 +22,42 @@
 use crate::types::BranchId;
 use serde::{Deserialize, Serialize};
 
-/// Run lifecycle status for durability and replay
+/// Branch lifecycle status for durability and replay
 ///
 /// This enum represents the lifecycle states relevant to durability:
-/// - Active: Run in progress (begin_run called, end_run not yet called)
-/// - Completed: Run finished normally (end_run called)
-/// - Orphaned: Run was never ended (crash without end_run marker)
-/// - NotFound: Run doesn't exist in the system
+/// - Active: Branch in progress (begin_branch called, end_branch not yet called)
+/// - Completed: Branch finished normally (end_branch called)
+/// - Orphaned: Branch was never ended (crash without end_branch marker)
+/// - NotFound: Branch doesn't exist in the system
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BranchStatus {
-    /// Run is active (begin_run called, end_run not yet called)
+    /// Branch is active (begin_branch called, end_branch not yet called)
     Active,
-    /// Run completed normally (end_run called)
+    /// Branch completed normally (end_branch called)
     Completed,
-    /// Run was never ended (orphaned - no end_run marker in WAL)
+    /// Branch was never ended (orphaned - no end_branch marker in WAL)
     Orphaned,
-    /// Run doesn't exist
+    /// Branch doesn't exist
     NotFound,
 }
 
 impl BranchStatus {
-    /// Check if run is still active
+    /// Check if branch is still active
     pub fn is_active(&self) -> bool {
         matches!(self, BranchStatus::Active)
     }
 
-    /// Check if run is completed
+    /// Check if branch is completed
     pub fn is_completed(&self) -> bool {
         matches!(self, BranchStatus::Completed)
     }
 
-    /// Check if run is orphaned
+    /// Check if branch is orphaned
     pub fn is_orphaned(&self) -> bool {
         matches!(self, BranchStatus::Orphaned)
     }
 
-    /// Check if run exists (any status except NotFound)
+    /// Check if branch exists (any status except NotFound)
     pub fn exists(&self) -> bool {
         !matches!(self, BranchStatus::NotFound)
     }
@@ -79,29 +79,29 @@ impl std::fmt::Display for BranchStatus {
     }
 }
 
-/// Run metadata for replay and recovery
+/// Branch metadata for replay and recovery
 ///
-/// Contains all information needed to replay a run and track its lifecycle.
+/// Contains all information needed to replay a branch and track its lifecycle.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BranchMetadata {
-    /// Run ID
+    /// Branch ID
     pub branch_id: BranchId,
     /// Current status
     pub status: BranchStatus,
-    /// When run started (microseconds since epoch)
+    /// When branch started (microseconds since epoch)
     pub started_at: u64,
-    /// When run ended (if completed)
+    /// When branch ended (if completed)
     pub ended_at: Option<u64>,
-    /// Number of events in this run
+    /// Number of events in this branch
     pub event_count: u64,
-    /// WAL offset where run began
+    /// WAL offset where branch began
     pub begin_wal_offset: u64,
-    /// WAL offset where run ended (if completed)
+    /// WAL offset where branch ended (if completed)
     pub end_wal_offset: Option<u64>,
 }
 
 impl BranchMetadata {
-    /// Create metadata for a new run
+    /// Create metadata for a new branch
     pub fn new(branch_id: BranchId, started_at: u64, begin_wal_offset: u64) -> Self {
         BranchMetadata {
             branch_id,
@@ -114,14 +114,14 @@ impl BranchMetadata {
         }
     }
 
-    /// Mark run as completed
+    /// Mark branch as completed
     pub fn complete(&mut self, ended_at: u64, end_wal_offset: u64) {
         self.status = BranchStatus::Completed;
         self.ended_at = Some(ended_at);
         self.end_wal_offset = Some(end_wal_offset);
     }
 
-    /// Mark run as orphaned
+    /// Mark branch as orphaned
     pub fn mark_orphaned(&mut self) {
         self.status = BranchStatus::Orphaned;
     }
@@ -137,13 +137,13 @@ impl BranchMetadata {
     }
 }
 
-/// Event offsets for a run (for O(run size) replay)
+/// Event offsets for a branch (for O(branch size) replay)
 ///
-/// Maps a run to its event offsets in the EventLog,
+/// Maps a branch to its event offsets in the EventLog,
 /// enabling efficient replay without scanning the entire log.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BranchEventOffsets {
-    /// WAL offsets of events belonging to this run
+    /// WAL offsets of events belonging to this branch
     pub offsets: Vec<u64>,
 }
 
@@ -181,7 +181,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_run_status_transitions() {
+    fn test_branch_status_transitions() {
         let branch_id = BranchId::new();
         let mut meta = BranchMetadata::new(branch_id, 1000, 0);
         assert_eq!(meta.status, BranchStatus::Active);
@@ -196,7 +196,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_status_orphaned() {
+    fn test_branch_status_orphaned() {
         let branch_id = BranchId::new();
         let mut meta = BranchMetadata::new(branch_id, 1000, 0);
         assert_eq!(meta.status, BranchStatus::Active);
@@ -208,7 +208,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_status_not_found() {
+    fn test_branch_status_not_found() {
         let status = BranchStatus::NotFound;
         assert!(!status.exists());
         assert!(!status.is_active());
@@ -217,7 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_status_as_str() {
+    fn test_branch_status_as_str() {
         assert_eq!(BranchStatus::Active.as_str(), "Active");
         assert_eq!(BranchStatus::Completed.as_str(), "Completed");
         assert_eq!(BranchStatus::Orphaned.as_str(), "Orphaned");
@@ -225,13 +225,13 @@ mod tests {
     }
 
     #[test]
-    fn test_run_status_display() {
+    fn test_branch_status_display() {
         assert_eq!(format!("{}", BranchStatus::Active), "Active");
         assert_eq!(format!("{}", BranchStatus::Completed), "Completed");
     }
 
     #[test]
-    fn test_run_metadata_serialization() {
+    fn test_branch_metadata_serialization() {
         let branch_id = BranchId::new();
         let meta = BranchMetadata::new(branch_id, 1000, 50);
 
@@ -242,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_event_offsets() {
+    fn test_branch_event_offsets() {
         let mut offsets = BranchEventOffsets::new();
         assert!(offsets.is_empty());
         assert_eq!(offsets.len(), 0);
@@ -257,7 +257,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_metadata_event_count() {
+    fn test_branch_metadata_event_count() {
         let branch_id = BranchId::new();
         let mut meta = BranchMetadata::new(branch_id, 1000, 0);
         assert_eq!(meta.event_count, 0);
@@ -270,15 +270,15 @@ mod tests {
     }
 
     #[test]
-    fn test_run_metadata_duration_active() {
+    fn test_branch_metadata_duration_active() {
         let branch_id = BranchId::new();
         let meta = BranchMetadata::new(branch_id, 1000, 0);
-        // Active run has no duration
+        // Active branch has no duration
         assert!(meta.duration_micros().is_none());
     }
 
     #[test]
-    fn test_run_event_offsets_serialization() {
+    fn test_branch_event_offsets_serialization() {
         let mut offsets = BranchEventOffsets::new();
         offsets.push(10);
         offsets.push(20);
@@ -289,14 +289,14 @@ mod tests {
     }
 
     #[test]
-    fn test_run_event_offsets_default() {
+    fn test_branch_event_offsets_default() {
         let offsets = BranchEventOffsets::default();
         assert!(offsets.is_empty());
         assert_eq!(offsets.len(), 0);
     }
 
     #[test]
-    fn test_run_status_serialization_roundtrip() {
+    fn test_branch_status_serialization_roundtrip() {
         for status in [BranchStatus::Active, BranchStatus::Completed, BranchStatus::Orphaned, BranchStatus::NotFound] {
             let json = serde_json::to_string(&status).unwrap();
             let restored: BranchStatus = serde_json::from_str(&json).unwrap();
@@ -305,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_metadata_double_completion() {
+    fn test_branch_metadata_double_completion() {
         let branch_id = BranchId::new();
         let mut meta = BranchMetadata::new(branch_id, 1000, 0);
         meta.complete(2000, 100);
@@ -318,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_metadata_orphaned_after_completed() {
+    fn test_branch_metadata_orphaned_after_completed() {
         let branch_id = BranchId::new();
         let mut meta = BranchMetadata::new(branch_id, 1000, 0);
         meta.complete(2000, 100);
@@ -328,7 +328,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_metadata_ended_before_started() {
+    fn test_branch_metadata_ended_before_started() {
         let branch_id = BranchId::new();
         let mut meta = BranchMetadata::new(branch_id, 2000, 0);
         meta.complete(1000, 50);
@@ -337,7 +337,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_status_hash_uniqueness() {
+    fn test_branch_status_hash_uniqueness() {
         use std::collections::HashSet;
         let statuses = [BranchStatus::Active, BranchStatus::Completed, BranchStatus::Orphaned, BranchStatus::NotFound];
         let set: HashSet<BranchStatus> = statuses.iter().copied().collect();
@@ -345,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_status_display_all_variants() {
+    fn test_branch_status_display_all_variants() {
         assert_eq!(format!("{}", BranchStatus::Active), "Active");
         assert_eq!(format!("{}", BranchStatus::Completed), "Completed");
         assert_eq!(format!("{}", BranchStatus::Orphaned), "Orphaned");
@@ -353,7 +353,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_event_offsets_ordering_not_enforced() {
+    fn test_branch_event_offsets_ordering_not_enforced() {
         // Offsets are just a Vec - no ordering enforcement
         let mut offsets = BranchEventOffsets::new();
         offsets.push(300);
