@@ -76,6 +76,10 @@ pub fn state_cas(
     match expected_counter {
         None => {
             // Init semantics: create only if cell doesn't exist.
+            // Check existence first since init() is idempotent.
+            if convert_result(p.state.read(&branch_id, &cell))?.is_some() {
+                return Ok(Output::MaybeVersion(None));
+            }
             match p.state.init(&branch_id, &cell, value) {
                 Ok(versioned) => Ok(Output::MaybeVersion(Some(bridge::extract_version(&versioned.version)))),
                 Err(_) => Ok(Output::MaybeVersion(None)),
