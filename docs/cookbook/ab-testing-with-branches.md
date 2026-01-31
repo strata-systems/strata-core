@@ -1,12 +1,12 @@
-# A/B Testing with Runs
+# A/B Testing with Branches
 
-This recipe shows how to use runs to compare different agent strategies side by side.
+This recipe shows how to use branches to compare different agent strategies side by side.
 
 ## Pattern
 
-1. Create one run per variant (strategy A, strategy B)
-2. Run each strategy in its own isolated run
-3. Compare the results by reading from each run
+1. Create one branch per variant (strategy A, strategy B)
+2. Run each strategy in its own isolated branch
+3. Compare the results by reading from each branch
 
 ## Implementation
 
@@ -14,12 +14,12 @@ This recipe shows how to use runs to compare different agent strategies side by 
 use stratadb::{Strata, Value};
 
 fn ab_test(db: &mut Strata) -> stratadb::Result<()> {
-    // Create runs for each variant
-    db.create_run("variant-a")?;
-    db.create_run("variant-b")?;
+    // Create branches for each variant
+    db.create_branch("variant-a")?;
+    db.create_branch("variant-b")?;
 
     // === Run Strategy A ===
-    db.set_run("variant-a")?;
+    db.set_branch("variant-a")?;
 
     db.kv_put("config:strategy", "conservative")?;
     db.kv_put("config:temperature", 0.3)?;
@@ -37,7 +37,7 @@ fn ab_test(db: &mut Strata) -> stratadb::Result<()> {
     db.state_set("status", "completed")?;
 
     // === Run Strategy B ===
-    db.set_run("variant-b")?;
+    db.set_branch("variant-b")?;
 
     db.kv_put("config:strategy", "aggressive")?;
     db.kv_put("config:temperature", 0.9)?;
@@ -57,13 +57,13 @@ fn ab_test(db: &mut Strata) -> stratadb::Result<()> {
     // === Compare Results ===
     compare_variants(db, "variant-a", "variant-b")?;
 
-    db.set_run("default")?;
+    db.set_branch("default")?;
     Ok(())
 }
 
 fn compare_variants(db: &mut Strata, a: &str, b: &str) -> stratadb::Result<()> {
     // Read variant A results
-    db.set_run(a)?;
+    db.set_branch(a)?;
     let score_a = db.kv_get("result:score")?
         .and_then(|v| v.as_int())
         .unwrap_or(0);
@@ -71,7 +71,7 @@ fn compare_variants(db: &mut Strata, a: &str, b: &str) -> stratadb::Result<()> {
     let strategy_a = db.kv_get("config:strategy")?;
 
     // Read variant B results
-    db.set_run(b)?;
+    db.set_branch(b)?;
     let score_b = db.kv_get("result:score")?
         .and_then(|v| v.as_int())
         .unwrap_or(0);
@@ -94,9 +94,9 @@ fn multi_variant_test(db: &mut Strata, variants: &[(&str, f64)]) -> stratadb::Re
     // variants: (name, temperature) pairs
 
     for (name, temperature) in variants {
-        let run_name = format!("variant-{}", name);
-        db.create_run(&run_name)?;
-        db.set_run(&run_name)?;
+        let branch_name = format!("variant-{}", name);
+        db.create_branch(&branch_name)?;
+        db.set_branch(&branch_name)?;
 
         db.kv_put("config:temperature", *temperature)?;
         // ... run the agent ...
@@ -104,13 +104,13 @@ fn multi_variant_test(db: &mut Strata, variants: &[(&str, f64)]) -> stratadb::Re
     }
 
     // Compare all variants
-    db.set_run("default")?;
+    db.set_branch("default")?;
     let mut best_score = 0i64;
     let mut best_variant = String::new();
 
     for (name, _) in variants {
-        let run_name = format!("variant-{}", name);
-        db.set_run(&run_name)?;
+        let branch_name = format!("variant-{}", name);
+        db.set_branch(&branch_name)?;
         let score = db.kv_get("result:score")?
             .and_then(|v| v.as_int())
             .unwrap_or(0);
@@ -123,10 +123,10 @@ fn multi_variant_test(db: &mut Strata, variants: &[(&str, f64)]) -> stratadb::Re
     println!("Best variant: {} (score: {})", best_variant, best_score);
 
     // Clean up losing variants
-    db.set_run("default")?;
+    db.set_branch("default")?;
     for (name, _) in variants {
         if *name != best_variant.as_str() {
-            db.delete_run(&format!("variant-{}", name))?;
+            db.delete_branch(&format!("variant-{}", name))?;
         }
     }
 
@@ -136,6 +136,6 @@ fn multi_variant_test(db: &mut Strata, variants: &[(&str, f64)]) -> stratadb::Re
 
 ## See Also
 
-- [Runs Concept](../concepts/runs.md) — data isolation model
-- [Run Management Guide](../guides/run-management.md) — creating and managing runs
+- [Branches Concept](../concepts/branches.md) — data isolation model
+- [Branch Management Guide](../guides/branch-management.md) — creating and managing branches
 - [Agent State Management](agent-state-management.md) — full session pattern
