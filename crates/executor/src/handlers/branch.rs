@@ -191,7 +191,7 @@ mod tests {
     #[test]
     fn test_metadata_to_branch_info() {
         let m = BranchMetadata {
-            name: "test-run".to_string(),
+            name: "test-branch".to_string(),
             branch_id: "some-uuid".to_string(),
             parent_branch: None,
             status: strata_engine::BranchStatus::Active,
@@ -202,7 +202,7 @@ mod tests {
             version: 1,
         };
         let info = metadata_to_branch_info(&m);
-        assert_eq!(info.id.as_str(), "test-run");
+        assert_eq!(info.id.as_str(), "test-branch");
         assert_eq!(info.status, crate::types::BranchStatus::Active);
     }
 }

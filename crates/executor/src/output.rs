@@ -19,7 +19,7 @@ use crate::types::*;
 /// ```ignore
 /// use strata_executor::{Command, Output, Executor};
 ///
-/// let result = executor.execute(Command::KvGet { run, key })?;
+/// let result = executor.execute(Command::KvGet { branch, key })?;
 ///
 /// match result {
 ///     Output::MaybeVersioned(Some(v)) => println!("Found: {:?}", v.value),

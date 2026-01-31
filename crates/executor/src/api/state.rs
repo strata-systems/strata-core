@@ -13,7 +13,7 @@ impl Strata {
     /// Set a state cell value (unconditional write).
     pub fn state_set(&self, cell: &str, value: impl Into<Value>) -> Result<u64> {
         match self.executor.execute(Command::StateSet {
-            run: self.branch_id(),
+            branch: self.branch_id(),
             cell: cell.to_string(),
             value: value.into(),
         })? {
@@ -27,12 +27,28 @@ impl Strata {
     /// Read a state cell value.
     pub fn state_read(&self, cell: &str) -> Result<Option<Value>> {
         match self.executor.execute(Command::StateRead {
-            run: self.branch_id(),
+            branch: self.branch_id(),
             cell: cell.to_string(),
         })? {
             Output::Maybe(v) => Ok(v),
             _ => Err(Error::Internal {
                 reason: "Unexpected output for StateRead".into(),
+            }),
+        }
+    }
+
+    /// Get the full version history for a state cell.
+    ///
+    /// Returns all versions of the cell, newest first, or None if the cell
+    /// doesn't exist.
+    pub fn state_readv(&self, cell: &str) -> Result<Option<Vec<crate::types::VersionedValue>>> {
+        match self.executor.execute(Command::StateReadv {
+            branch: self.branch_id(),
+            cell: cell.to_string(),
+        })? {
+            Output::VersionHistory(h) => Ok(h),
+            _ => Err(Error::Internal {
+                reason: "Unexpected output for StateReadv".into(),
             }),
         }
     }
@@ -45,7 +61,7 @@ impl Strata {
         value: impl Into<Value>,
     ) -> Result<Option<u64>> {
         match self.executor.execute(Command::StateCas {
-            run: self.branch_id(),
+            branch: self.branch_id(),
             cell: cell.to_string(),
             expected_counter,
             value: value.into(),
@@ -60,7 +76,7 @@ impl Strata {
     /// Initialize a state cell (only if it doesn't exist).
     pub fn state_init(&self, cell: &str, value: impl Into<Value>) -> Result<u64> {
         match self.executor.execute(Command::StateInit {
-            run: self.branch_id(),
+            branch: self.branch_id(),
             cell: cell.to_string(),
             value: value.into(),
         })? {

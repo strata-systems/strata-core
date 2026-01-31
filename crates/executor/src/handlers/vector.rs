@@ -69,13 +69,13 @@ fn to_vector_match(m: strata_engine::VectorMatch) -> Result<VectorMatch> {
 /// Handle VectorUpsert command.
 pub fn vector_upsert(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     collection: String,
     key: String,
     vector: Vec<f32>,
     metadata: Option<Value>,
 ) -> Result<Output> {
-    let branch_id = to_core_branch_id(&run)?;
+    let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_not_internal_collection(&collection))?;
 
     // Auto-create collection on first upsert (ignore AlreadyExists error)
@@ -99,11 +99,11 @@ pub fn vector_upsert(
 /// Handle VectorGet command.
 pub fn vector_get(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     collection: String,
     key: String,
 ) -> Result<Output> {
-    let branch_id = to_core_branch_id(&run)?;
+    let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_not_internal_collection(&collection))?;
 
     let result = convert_vector_result(p.vector.get(branch_id, &collection, &key))?;
@@ -121,11 +121,11 @@ pub fn vector_get(
 /// Handle VectorDelete command.
 pub fn vector_delete(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     collection: String,
     key: String,
 ) -> Result<Output> {
-    let branch_id = to_core_branch_id(&run)?;
+    let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_not_internal_collection(&collection))?;
     let existed = convert_vector_result(p.vector.delete(branch_id, &collection, &key))?;
     Ok(Output::Bool(existed))
@@ -134,14 +134,14 @@ pub fn vector_delete(
 /// Handle VectorSearch command.
 pub fn vector_search(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     collection: String,
     query: Vec<f32>,
     k: u64,
     filter: Option<Vec<MetadataFilter>>,
     _metric: Option<DistanceMetric>,
 ) -> Result<Output> {
-    let branch_id = to_core_branch_id(&run)?;
+    let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_not_internal_collection(&collection))?;
 
     let engine_filter = filter.as_ref().and_then(|f| to_engine_filter(f));
@@ -156,12 +156,12 @@ pub fn vector_search(
 /// Handle VectorCreateCollection command.
 pub fn vector_create_collection(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     collection: String,
     dimension: u64,
     metric: DistanceMetric,
 ) -> Result<Output> {
-    let branch_id = to_core_branch_id(&run)?;
+    let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_not_internal_collection(&collection))?;
 
     let config = convert_result(
@@ -175,10 +175,10 @@ pub fn vector_create_collection(
 /// Handle VectorDeleteCollection command.
 pub fn vector_delete_collection(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     collection: String,
 ) -> Result<Output> {
-    let branch_id = to_core_branch_id(&run)?;
+    let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_not_internal_collection(&collection))?;
 
     // Try to delete - returns error if not found, which we convert to false
@@ -190,8 +190,8 @@ pub fn vector_delete_collection(
 }
 
 /// Handle VectorListCollections command.
-pub fn vector_list_collections(p: &Arc<Primitives>, run: BranchId) -> Result<Output> {
-    let branch_id = to_core_branch_id(&run)?;
+pub fn vector_list_collections(p: &Arc<Primitives>, branch: BranchId) -> Result<Output> {
+    let branch_id = to_core_branch_id(&branch)?;
     let collections = convert_vector_result(p.vector.list_collections(branch_id))?;
 
     // Filter out internal collections (starting with '_')

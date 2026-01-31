@@ -64,7 +64,7 @@ fn kv_put_returns_version() {
     let executor = create_executor();
 
     let output = executor.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "test_key".into(),
         value: Value::String("test_value".into()),
     }).unwrap();
@@ -81,14 +81,14 @@ fn kv_get_returns_maybe_versioned() {
 
     // Put first
     executor.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "k".into(),
         value: Value::Int(42),
     }).unwrap();
 
     // Get
     let output = executor.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "k".into(),
     }).unwrap();
 
@@ -105,7 +105,7 @@ fn kv_get_missing_returns_none() {
     let executor = create_executor();
 
     let output = executor.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "nonexistent".into(),
     }).unwrap();
 
@@ -117,13 +117,13 @@ fn kv_delete_returns_bool() {
     let executor = create_executor();
 
     executor.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "k".into(),
         value: Value::Int(1),
     }).unwrap();
 
     let output = executor.execute(Command::KvDelete {
-        run: None,
+        branch: None,
         key: "k".into(),
     }).unwrap();
 
@@ -131,7 +131,7 @@ fn kv_delete_returns_bool() {
 
     // Delete again - should return false
     let output = executor.execute(Command::KvDelete {
-        run: None,
+        branch: None,
         key: "k".into(),
     }).unwrap();
 
@@ -147,7 +147,7 @@ fn event_append_returns_version() {
     let executor = create_executor();
 
     let output = executor.execute(Command::EventAppend {
-        run: None,
+        branch: None,
         event_type: "test_stream".into(),
         payload: event_payload("data", Value::String("event1".into())),
     }).unwrap();
@@ -161,14 +161,14 @@ fn event_len_returns_count() {
 
     for i in 0..5 {
         executor.execute(Command::EventAppend {
-            run: None,
+            branch: None,
             event_type: "counting".into(),
             payload: event_payload("i", Value::Int(i)),
         }).unwrap();
     }
 
     let output = executor.execute(Command::EventLen {
-        run: None,
+        branch: None,
     }).unwrap();
 
     match output {
@@ -186,7 +186,7 @@ fn state_set_read_cycle() {
     let executor = create_executor();
 
     let output = executor.execute(Command::StateSet {
-        run: None,
+        branch: None,
         cell: "status".into(),
         value: Value::String("active".into()),
     }).unwrap();
@@ -194,7 +194,7 @@ fn state_set_read_cycle() {
     assert!(matches!(output, Output::Version(_)));
 
     let output = executor.execute(Command::StateRead {
-        run: None,
+        branch: None,
         cell: "status".into(),
     }).unwrap();
 
@@ -216,7 +216,7 @@ fn vector_create_collection_and_upsert() {
 
     // Create collection
     let output = executor.execute(Command::VectorCreateCollection {
-        run: None,
+        branch: None,
         collection: "embeddings".into(),
         dimension: 4,
         metric: DistanceMetric::Cosine,
@@ -226,7 +226,7 @@ fn vector_create_collection_and_upsert() {
 
     // Upsert vector
     let output = executor.execute(Command::VectorUpsert {
-        run: None,
+        branch: None,
         collection: "embeddings".into(),
         key: "v1".into(),
         vector: vec![1.0, 0.0, 0.0, 0.0],
@@ -241,14 +241,14 @@ fn vector_search_returns_matches() {
     let executor = create_executor();
 
     executor.execute(Command::VectorCreateCollection {
-        run: None,
+        branch: None,
         collection: "search_test".into(),
         dimension: 4,
         metric: DistanceMetric::Cosine,
     }).unwrap();
 
     executor.execute(Command::VectorUpsert {
-        run: None,
+        branch: None,
         collection: "search_test".into(),
         key: "v1".into(),
         vector: vec![1.0, 0.0, 0.0, 0.0],
@@ -256,7 +256,7 @@ fn vector_search_returns_matches() {
     }).unwrap();
 
     executor.execute(Command::VectorUpsert {
-        run: None,
+        branch: None,
         collection: "search_test".into(),
         key: "v2".into(),
         vector: vec![0.0, 1.0, 0.0, 0.0],
@@ -264,7 +264,7 @@ fn vector_search_returns_matches() {
     }).unwrap();
 
     let output = executor.execute(Command::VectorSearch {
-        run: None,
+        branch: None,
         collection: "search_test".into(),
         query: vec![1.0, 0.0, 0.0, 0.0],
         k: 10,
@@ -286,21 +286,21 @@ fn vector_list_collections() {
     let executor = create_executor();
 
     executor.execute(Command::VectorCreateCollection {
-        run: None,
+        branch: None,
         collection: "coll_a".into(),
         dimension: 4,
         metric: DistanceMetric::Cosine,
     }).unwrap();
 
     executor.execute(Command::VectorCreateCollection {
-        run: None,
+        branch: None,
         collection: "coll_b".into(),
         dimension: 8,
         metric: DistanceMetric::Euclidean,
     }).unwrap();
 
     let output = executor.execute(Command::VectorListCollections {
-        run: None,
+        branch: None,
     }).unwrap();
 
     match output {
@@ -334,7 +334,7 @@ fn branch_create_and_get() {
     };
 
     let output = executor.execute(Command::BranchGet {
-        run: branch_id,
+        branch: branch_id,
     }).unwrap();
 
     match output {
@@ -410,18 +410,18 @@ fn branch_delete_removes_branch() {
 
     // Verify it exists
     let output = executor.execute(Command::BranchExists {
-        run: branch_id.clone(),
+        branch: branch_id.clone(),
     }).unwrap();
     assert!(matches!(output, Output::Bool(true)));
 
     // Delete it
     executor.execute(Command::BranchDelete {
-        run: branch_id.clone(),
+        branch: branch_id.clone(),
     }).unwrap();
 
     // Verify it's gone
     let output = executor.execute(Command::BranchExists {
-        run: branch_id,
+        branch: branch_id,
     }).unwrap();
     assert!(matches!(output, Output::Bool(false)));
 }
@@ -432,7 +432,7 @@ fn branch_exists_returns_bool() {
 
     // Non-existent branch
     let output = executor.execute(Command::BranchExists {
-        run: BranchId::from("non-existent-branch"),
+        branch: BranchId::from("non-existent-branch"),
     }).unwrap();
     assert!(matches!(output, Output::Bool(false)));
 
@@ -444,7 +444,7 @@ fn branch_exists_returns_bool() {
 
     // Now it exists
     let output = executor.execute(Command::BranchExists {
-        run: BranchId::from("exists-test"),
+        branch: BranchId::from("exists-test"),
     }).unwrap();
     assert!(matches!(output, Output::Bool(true)));
 }
@@ -457,16 +457,16 @@ fn branch_exists_returns_bool() {
 fn commands_with_none_branch_use_default() {
     let executor = create_executor();
 
-    // Put with run: None
+    // Put with branch: None
     executor.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "default_test".into(),
         value: Value::String("value".into()),
     }).unwrap();
 
     // Get with explicit default branch
     let output = executor.execute(Command::KvGet {
-        run: Some(BranchId::default()),
+        branch: Some(BranchId::default()),
         key: "default_test".into(),
     }).unwrap();
 
@@ -502,21 +502,21 @@ fn different_branches_are_isolated() {
 
     // Put in branch A
     executor.execute(Command::KvPut {
-        run: Some(branch_a.clone()),
+        branch: Some(branch_a.clone()),
         key: "shared_key".into(),
         value: Value::String("branch_a_value".into()),
     }).unwrap();
 
     // Put in branch B
     executor.execute(Command::KvPut {
-        run: Some(branch_b.clone()),
+        branch: Some(branch_b.clone()),
         key: "shared_key".into(),
         value: Value::String("branch_b_value".into()),
     }).unwrap();
 
     // Get from branch A
     let output = executor.execute(Command::KvGet {
-        run: Some(branch_a),
+        branch: Some(branch_a),
         key: "shared_key".into(),
     }).unwrap();
 
@@ -529,7 +529,7 @@ fn different_branches_are_isolated() {
 
     // Get from branch B
     let output = executor.execute(Command::KvGet {
-        run: Some(branch_b),
+        branch: Some(branch_b),
         key: "shared_key".into(),
     }).unwrap();
 

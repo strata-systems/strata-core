@@ -12,11 +12,11 @@
 //! let mut session = Session::new(db.clone());
 //!
 //! // Begin a transaction
-//! session.execute(Command::TxnBegin { run: None, options: None })?;
+//! session.execute(Command::TxnBegin { branch: None, options: None })?;
 //!
 //! // Data commands route through the transaction
-//! session.execute(Command::KvPut { run: None, key: "k".into(), value: Value::Int(1) })?;
-//! let out = session.execute(Command::KvGet { run: None, key: "k".into() })?;
+//! session.execute(Command::KvPut { branch: None, key: "k".into(), value: Value::Int(1) })?;
+//! let out = session.execute(Command::KvGet { branch: None, key: "k".into() })?;
 //!
 //! // Commit
 //! session.execute(Command::TxnCommit)?;
@@ -122,7 +122,7 @@ impl Session {
         }
 
         let branch = match cmd {
-            Command::TxnBegin { run, .. } => run.clone().unwrap_or_else(BranchId::default),
+            Command::TxnBegin { branch, .. } => branch.clone().unwrap_or_else(BranchId::default),
             _ => unreachable!(),
         };
 

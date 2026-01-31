@@ -28,16 +28,16 @@ fn concurrent_sessions_isolated_views() {
     let mut session_b = Session::new(db.clone());
 
     // Session A begins transaction and writes
-    session_a.execute(Command::TxnBegin { run: None, options: None }).unwrap();
+    session_a.execute(Command::TxnBegin { branch: None, options: None }).unwrap();
     session_a.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "isolated_key".into(),
         value: Value::String("session_a_value".into()),
     }).unwrap();
 
     // Session B should NOT see Session A's uncommitted write
     let output = session_b.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "isolated_key".into(),
     }).unwrap();
 
@@ -56,7 +56,7 @@ fn concurrent_sessions_isolated_views() {
 
     // Now Session B should see it
     let output = session_b.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "isolated_key".into(),
     }).unwrap();
 
@@ -77,7 +77,7 @@ fn concurrent_session_increments() {
 
     // Initialize counter
     executor.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "counter".into(),
         value: Value::Int(0),
     }).unwrap();
@@ -99,13 +99,13 @@ fn concurrent_session_increments() {
                 let mut session = Session::new(db.clone());
 
                 // Begin transaction
-                if session.execute(Command::TxnBegin { run: None, options: None }).is_err() {
+                if session.execute(Command::TxnBegin { branch: None, options: None }).is_err() {
                     continue;
                 }
 
                 // Read current value
                 let current = match session.execute(Command::KvGet {
-                    run: None,
+                    branch: None,
                     key: "counter".into(),
                 }) {
                     Ok(Output::Maybe(Some(val))) => {
@@ -119,7 +119,7 @@ fn concurrent_session_increments() {
 
                 // Write incremented value
                 if session.execute(Command::KvPut {
-                    run: None,
+                    branch: None,
                     key: "counter".into(),
                     value: Value::Int(current + 1),
                 }).is_err() {
@@ -140,7 +140,7 @@ fn concurrent_session_increments() {
 
     // Read final counter value
     let final_value = match executor.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "counter".into(),
     }).unwrap() {
         Output::Maybe(Some(val)) => {
@@ -174,9 +174,9 @@ fn session_drop_rolls_back_transaction() {
     // Write in a transaction, then drop session without commit
     {
         let mut session = Session::new(db.clone());
-        session.execute(Command::TxnBegin { run: None, options: None }).unwrap();
+        session.execute(Command::TxnBegin { branch: None, options: None }).unwrap();
         session.execute(Command::KvPut {
-            run: None,
+            branch: None,
             key: "drop_test".into(),
             value: Value::String("should_not_persist".into()),
         }).unwrap();
@@ -186,7 +186,7 @@ fn session_drop_rolls_back_transaction() {
     // Verify the write was NOT persisted
     let executor = Executor::new(db);
     let output = executor.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "drop_test".into(),
     }).unwrap();
 
@@ -203,9 +203,9 @@ fn session_drop_after_commit_preserves_data() {
 
     {
         let mut session = Session::new(db.clone());
-        session.execute(Command::TxnBegin { run: None, options: None }).unwrap();
+        session.execute(Command::TxnBegin { branch: None, options: None }).unwrap();
         session.execute(Command::KvPut {
-            run: None,
+            branch: None,
             key: "commit_drop_test".into(),
             value: Value::String("should_persist".into()),
         }).unwrap();
@@ -216,7 +216,7 @@ fn session_drop_after_commit_preserves_data() {
     // Verify the write WAS persisted
     let executor = Executor::new(db);
     let output = executor.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "commit_drop_test".into(),
     }).unwrap();
 
@@ -237,9 +237,9 @@ fn session_drop_after_commit_preserves_data() {
 fn double_begin_fails() {
     let mut session = create_session();
 
-    session.execute(Command::TxnBegin { run: None, options: None }).unwrap();
+    session.execute(Command::TxnBegin { branch: None, options: None }).unwrap();
 
-    let result = session.execute(Command::TxnBegin { run: None, options: None });
+    let result = session.execute(Command::TxnBegin { branch: None, options: None });
 
     assert!(result.is_err(), "Double begin should fail");
 }
@@ -270,18 +270,18 @@ fn new_transaction_after_commit() {
     let mut session = create_session();
 
     // First transaction
-    session.execute(Command::TxnBegin { run: None, options: None }).unwrap();
+    session.execute(Command::TxnBegin { branch: None, options: None }).unwrap();
     session.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "txn1".into(),
         value: Value::Int(1),
     }).unwrap();
     session.execute(Command::TxnCommit).unwrap();
 
     // Second transaction on same session
-    session.execute(Command::TxnBegin { run: None, options: None }).unwrap();
+    session.execute(Command::TxnBegin { branch: None, options: None }).unwrap();
     session.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "txn2".into(),
         value: Value::Int(2),
     }).unwrap();
@@ -289,13 +289,13 @@ fn new_transaction_after_commit() {
 
     // Both should be visible
     let output = session.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "txn1".into(),
     }).unwrap();
     assert!(matches!(output, Output::Maybe(Some(_))));
 
     let output = session.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "txn2".into(),
     }).unwrap();
     assert!(matches!(output, Output::Maybe(Some(_))));
@@ -307,18 +307,18 @@ fn new_transaction_after_rollback() {
     let mut session = create_session();
 
     // First transaction - rolled back
-    session.execute(Command::TxnBegin { run: None, options: None }).unwrap();
+    session.execute(Command::TxnBegin { branch: None, options: None }).unwrap();
     session.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "rolled_back".into(),
         value: Value::Int(1),
     }).unwrap();
     session.execute(Command::TxnRollback).unwrap();
 
     // Second transaction - committed
-    session.execute(Command::TxnBegin { run: None, options: None }).unwrap();
+    session.execute(Command::TxnBegin { branch: None, options: None }).unwrap();
     session.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "committed".into(),
         value: Value::Int(2),
     }).unwrap();
@@ -326,13 +326,13 @@ fn new_transaction_after_rollback() {
 
     // Only committed should be visible
     let output = session.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "rolled_back".into(),
     }).unwrap();
     assert!(matches!(output, Output::Maybe(None)));
 
     let output = session.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "committed".into(),
     }).unwrap();
     assert!(matches!(output, Output::Maybe(Some(_))));
@@ -348,13 +348,13 @@ fn empty_string_preserved() {
     let executor = create_executor();
 
     executor.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "empty".into(),
         value: Value::String("".into()),
     }).unwrap();
 
     let output = executor.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "empty".into(),
     }).unwrap();
 
@@ -374,28 +374,28 @@ fn null_value_treated_as_deletion() {
 
     // First store a real value
     executor.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "null_key".into(),
         value: Value::Int(42),
     }).unwrap();
 
     // Verify it exists
     let output = executor.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "null_key".into(),
     }).unwrap();
     assert!(matches!(output, Output::Maybe(Some(_))));
 
     // Now "delete" it by storing null
     executor.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "null_key".into(),
         value: Value::Null,
     }).unwrap();
 
     // Key with null value becomes absent (same as missing key)
     let output = executor.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "null_key".into(),
     }).unwrap();
 
@@ -405,7 +405,7 @@ fn null_value_treated_as_deletion() {
 
     // Missing key also returns None (same behavior)
     let output = executor.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "missing_key".into(),
     }).unwrap();
 
@@ -426,13 +426,13 @@ fn integer_boundaries_preserved() {
 
     for (key, value) in test_values {
         executor.execute(Command::KvPut {
-            run: None,
+            branch: None,
             key: key.into(),
             value: Value::Int(value),
         }).unwrap();
 
         let output = executor.execute(Command::KvGet {
-            run: None,
+            branch: None,
             key: key.into(),
         }).unwrap();
 
@@ -452,13 +452,13 @@ fn float_special_values() {
 
     // Normal floats
     executor.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "pi".into(),
         value: Value::Float(std::f64::consts::PI),
     }).unwrap();
 
     let output = executor.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "pi".into(),
     }).unwrap();
 
@@ -476,13 +476,13 @@ fn float_special_values() {
 
     // Infinity
     executor.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "inf".into(),
         value: Value::Float(f64::INFINITY),
     }).unwrap();
 
     let output = executor.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "inf".into(),
     }).unwrap();
 
@@ -500,13 +500,13 @@ fn float_special_values() {
 
     // NaN - Note: NaN != NaN by IEEE-754
     executor.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "nan".into(),
         value: Value::Float(f64::NAN),
     }).unwrap();
 
     let output = executor.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "nan".into(),
     }).unwrap();
 
@@ -541,13 +541,13 @@ fn large_nested_object() {
     ));
 
     executor.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "large_object".into(),
         value: Value::Object(outer.clone()),
     }).unwrap();
 
     let output = executor.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "large_object".into(),
     }).unwrap();
 
@@ -571,7 +571,7 @@ fn concurrent_reads_consistent() {
 
     // Write initial value
     executor.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "concurrent_read".into(),
         value: Value::Int(42),
     }).unwrap();
@@ -590,7 +590,7 @@ fn concurrent_reads_consistent() {
 
             for _ in 0..reads_per_thread {
                 let output = executor.execute(Command::KvGet {
-                    run: None,
+                    branch: None,
                     key: "concurrent_read".into(),
                 }).unwrap();
 
@@ -629,7 +629,7 @@ fn concurrent_writes_different_keys() {
             for i in 0..writes_per_thread {
                 let key = format!("thread_{}_key_{}", thread_id, i);
                 executor.execute(Command::KvPut {
-                    run: None,
+                    branch: None,
                     key,
                     value: Value::Int((thread_id * 1000 + i) as i64),
                 }).unwrap();
@@ -647,7 +647,7 @@ fn concurrent_writes_different_keys() {
         for i in 0..writes_per_thread {
             let key = format!("thread_{}_key_{}", thread_id, i);
             let output = executor.execute(Command::KvGet {
-                run: None,
+                branch: None,
                 key,
             }).unwrap();
 
@@ -673,7 +673,7 @@ fn kv_put_atomic() {
 
     // Write initial value
     executor.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "atomic_test".into(),
         value: Value::Int(1),
     }).unwrap();
@@ -693,7 +693,7 @@ fn kv_put_atomic() {
             for _ in 0..100 {
                 // Each write should fully succeed (no partial writes)
                 executor.execute(Command::KvPut {
-                    run: None,
+                    branch: None,
                     key: "atomic_test".into(),
                     value: Value::Int(thread_id as i64),
                 }).unwrap();
@@ -707,7 +707,7 @@ fn kv_put_atomic() {
 
     // Final value should be one of the thread IDs (0 to num_threads-1)
     let output = executor.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "atomic_test".into(),
     }).unwrap();
 
@@ -755,25 +755,25 @@ fn executor_branch_isolation() {
 
     // Write same key to both branches with different values
     executor.execute(Command::KvPut {
-        run: Some(branch_a.clone()),
+        branch: Some(branch_a.clone()),
         key: "shared_key".into(),
         value: Value::String("value_in_branch_a".into()),
     }).unwrap();
 
     executor.execute(Command::KvPut {
-        run: Some(branch_b.clone()),
+        branch: Some(branch_b.clone()),
         key: "shared_key".into(),
         value: Value::String("value_in_branch_b".into()),
     }).unwrap();
 
     // Each branch should see its own value
     let output_a = executor.execute(Command::KvGet {
-        run: Some(branch_a),
+        branch: Some(branch_a),
         key: "shared_key".into(),
     }).unwrap();
 
     let output_b = executor.execute(Command::KvGet {
-        run: Some(branch_b),
+        branch: Some(branch_b),
         key: "shared_key".into(),
     }).unwrap();
 
@@ -836,7 +836,7 @@ fn error_recovery() {
 
     // Cause an error (search on nonexistent vector collection)
     let result = executor.execute(Command::VectorSearch {
-        run: None,
+        branch: None,
         collection: "nonexistent".into(),
         query: vec![1.0, 0.0, 0.0, 0.0],
         k: 10,
@@ -847,13 +847,13 @@ fn error_recovery() {
 
     // Executor should still work
     executor.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "recovery_test".into(),
         value: Value::Int(123),
     }).unwrap();
 
     let output = executor.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "recovery_test".into(),
     }).unwrap();
 
@@ -871,10 +871,10 @@ fn session_error_recovery() {
     let mut session = create_session();
 
     // Start transaction
-    session.execute(Command::TxnBegin { run: None, options: None }).unwrap();
+    session.execute(Command::TxnBegin { branch: None, options: None }).unwrap();
 
     // Cause an error (try to begin again)
-    let result = session.execute(Command::TxnBegin { run: None, options: None });
+    let result = session.execute(Command::TxnBegin { branch: None, options: None });
     assert!(result.is_err());
 
     // Session should still have the original transaction active
@@ -884,7 +884,7 @@ fn session_error_recovery() {
     session.execute(Command::TxnCommit).unwrap();
 
     // Should be able to start a new transaction
-    session.execute(Command::TxnBegin { run: None, options: None }).unwrap();
+    session.execute(Command::TxnBegin { branch: None, options: None }).unwrap();
     assert!(session.in_transaction());
     session.execute(Command::TxnRollback).unwrap();
 }

@@ -15,12 +15,12 @@ use crate::{Output, Result};
 /// Handle Search command: cross-primitive search
 pub fn search(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     query: String,
     k: Option<u64>,
     primitives: Option<Vec<String>>,
 ) -> Result<Output> {
-    let core_branch_id = to_core_branch_id(&run)?;
+    let core_branch_id = to_core_branch_id(&branch)?;
 
     // Build primitive filter from string names
     let primitive_filter = primitives.map(|names| {

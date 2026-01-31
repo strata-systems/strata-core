@@ -18,10 +18,10 @@ use crate::{Output, Result};
 /// Handle StateReadv command — get full version history for a state cell.
 pub fn state_readv(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     cell: String,
 ) -> Result<Output> {
-    let branch_id = bridge::to_core_branch_id(&run)?;
+    let branch_id = bridge::to_core_branch_id(&branch)?;
     convert_result(bridge::validate_key(&cell))?;
     let result = convert_result(p.state.readv(&branch_id, &cell))?;
     let mapped = result.map(|history| {
@@ -41,11 +41,11 @@ pub fn state_readv(
 /// Handle StateSet command.
 pub fn state_set(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     cell: String,
     value: Value,
 ) -> Result<Output> {
-    let branch_id = bridge::to_core_branch_id(&run)?;
+    let branch_id = bridge::to_core_branch_id(&branch)?;
     convert_result(bridge::validate_key(&cell))?;
     let versioned = convert_result(p.state.set(&branch_id, &cell, value))?;
     Ok(Output::Version(bridge::extract_version(&versioned.version)))
@@ -54,10 +54,10 @@ pub fn state_set(
 /// Handle StateRead command.
 pub fn state_read(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     cell: String,
 ) -> Result<Output> {
-    let branch_id = bridge::to_core_branch_id(&run)?;
+    let branch_id = bridge::to_core_branch_id(&branch)?;
     convert_result(bridge::validate_key(&cell))?;
     let result = convert_result(p.state.read(&branch_id, &cell))?;
     Ok(Output::Maybe(result))
@@ -66,12 +66,12 @@ pub fn state_read(
 /// Handle StateCas command.
 pub fn state_cas(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     cell: String,
     expected_counter: Option<u64>,
     value: Value,
 ) -> Result<Output> {
-    let branch_id = bridge::to_core_branch_id(&run)?;
+    let branch_id = bridge::to_core_branch_id(&branch)?;
     convert_result(bridge::validate_key(&cell))?;
     match expected_counter {
         None => {
@@ -93,11 +93,11 @@ pub fn state_cas(
 /// Handle StateInit command.
 pub fn state_init(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     cell: String,
     value: Value,
 ) -> Result<Output> {
-    let branch_id = bridge::to_core_branch_id(&run)?;
+    let branch_id = bridge::to_core_branch_id(&branch)?;
     convert_result(bridge::validate_key(&cell))?;
     let versioned = convert_result(p.state.init(&branch_id, &cell, value))?;
     Ok(Output::Version(bridge::extract_version(&versioned.version)))

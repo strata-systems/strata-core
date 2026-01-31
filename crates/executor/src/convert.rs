@@ -19,7 +19,7 @@ impl From<StrataError> for Error {
                 let entity_str = entity_ref.to_string();
                 if entity_str.starts_with("kv:") || entity_str.starts_with("json:") {
                     Error::KeyNotFound { key: entity_str }
-                } else if entity_str.starts_with("run:") {
+                } else if entity_str.starts_with("branch:") {
                     Error::BranchNotFound { branch: entity_str }
                 } else if entity_str.starts_with("collection:")
                     || entity_str.starts_with("vector:")

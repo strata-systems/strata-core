@@ -32,7 +32,7 @@ fn test_kv_put_get_parity() {
 
     // Executor call to write key2
     let exec_result = executor.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "key2".to_string(),
         value: Value::String("executor".into()),
     });
@@ -48,7 +48,7 @@ fn test_kv_put_get_parity() {
     // Now verify we can read back what was written via both methods
     let direct_value = p.kv.get(&branch_id, "key1").unwrap();
     let exec_get = executor.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "key2".to_string(),
     });
 
@@ -62,7 +62,7 @@ fn test_kv_put_get_parity() {
 
     // Cross-check: executor can read primitive write and vice versa
     let cross_read_exec = executor.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "key1".to_string(),
     });
     match cross_read_exec {
@@ -86,7 +86,7 @@ fn test_kv_delete_parity() {
 
     // Delete via executor
     let result = executor.execute(Command::KvDelete {
-        run: None,
+        branch: None,
         key: "to-delete".to_string(),
     });
 
@@ -113,7 +113,7 @@ fn test_kv_list_parity() {
 
     // List via executor with prefix filter
     let result = executor.execute(Command::KvList {
-        run: None,
+        branch: None,
         prefix: Some("user:".to_string()),
     });
 
@@ -128,7 +128,7 @@ fn test_kv_list_parity() {
 
     // List all via executor
     let result_all = executor.execute(Command::KvList {
-        run: None,
+        branch: None,
         prefix: None,
     });
 
@@ -150,7 +150,7 @@ fn test_json_set_get_parity() {
 
     // Set via executor - use root path (empty string means root)
     let result = executor.execute(Command::JsonSet {
-        run: None,
+        branch: None,
         key: "doc1".to_string(),
         path: "".to_string(),  // Root path
         value: Value::Object(
@@ -168,7 +168,7 @@ fn test_json_set_get_parity() {
 
     // Get via executor - JsonGet returns MaybeVersioned
     let exec_get = executor.execute(Command::JsonGet {
-        run: None,
+        branch: None,
         key: "doc1".to_string(),
         path: ".name".to_string(),
     });
@@ -192,7 +192,7 @@ fn test_event_append_read_by_type_parity() {
 
     // Append via executor - EventAppend returns Version
     let result1 = executor.execute(Command::EventAppend {
-        run: None,
+        branch: None,
         event_type: "events".to_string(),
         payload: Value::Object(
             [("type".to_string(), Value::String("click".into()))]
@@ -221,7 +221,7 @@ fn test_event_append_read_by_type_parity() {
 
     // ReadByType query via executor
     let read_result = executor.execute(Command::EventReadByType {
-        run: None,
+        branch: None,
         event_type: "events".to_string(),
     });
 
@@ -244,7 +244,7 @@ fn test_state_set_get_parity() {
 
     // Set via executor
     let result = executor.execute(Command::StateSet {
-        run: None,
+        branch: None,
         cell: "cell1".to_string(),
         value: Value::Int(100),
     });
@@ -268,7 +268,7 @@ fn test_state_set_get_parity() {
 
     // Get cell2 via executor
     let exec_get = executor.execute(Command::StateRead {
-        run: None,
+        branch: None,
         cell: "cell2".to_string(),
     });
 
@@ -291,7 +291,7 @@ fn test_vector_create_collection_parity() {
 
     // Create collection via executor
     let result = executor.execute(Command::VectorCreateCollection {
-        run: None,
+        branch: None,
         collection: "embeddings".to_string(),
         dimension: 4,
         metric: DistanceMetric::Cosine,
@@ -321,7 +321,7 @@ fn test_vector_upsert_search_parity() {
     // Upsert via executor
     executor
         .execute(Command::VectorUpsert {
-            run: None,
+            branch: None,
             collection: "vecs".to_string(),
             key: "v1".to_string(),
             vector: vec![1.0, 0.0, 0.0, 0.0],
@@ -342,7 +342,7 @@ fn test_vector_upsert_search_parity() {
 
     // Search via executor
     let search_result = executor.execute(Command::VectorSearch {
-        run: None,
+        branch: None,
         collection: "vecs".to_string(),
         query: vec![1.0, 0.0, 0.0, 0.0],
         k: 10,
@@ -470,7 +470,7 @@ fn test_branch_isolation_parity() {
     // Write to branch-a
     executor
         .execute(Command::KvPut {
-            run: Some(BranchId::from("550e8400-e29b-41d4-a716-446655440003")),
+            branch: Some(BranchId::from("550e8400-e29b-41d4-a716-446655440003")),
             key: "shared-key".to_string(),
             value: Value::String("from-a".into()),
         })
@@ -479,7 +479,7 @@ fn test_branch_isolation_parity() {
     // Write to branch-b
     executor
         .execute(Command::KvPut {
-            run: Some(BranchId::from("550e8400-e29b-41d4-a716-446655440004")),
+            branch: Some(BranchId::from("550e8400-e29b-41d4-a716-446655440004")),
             key: "shared-key".to_string(),
             value: Value::String("from-b".into()),
         })
@@ -487,7 +487,7 @@ fn test_branch_isolation_parity() {
 
     // Read from branch-a
     let result_a = executor.execute(Command::KvGet {
-        run: Some(BranchId::from("550e8400-e29b-41d4-a716-446655440003")),
+        branch: Some(BranchId::from("550e8400-e29b-41d4-a716-446655440003")),
         key: "shared-key".to_string(),
     });
 
@@ -500,7 +500,7 @@ fn test_branch_isolation_parity() {
 
     // Read from branch-b
     let result_b = executor.execute(Command::KvGet {
-        run: Some(BranchId::from("550e8400-e29b-41d4-a716-446655440004")),
+        branch: Some(BranchId::from("550e8400-e29b-41d4-a716-446655440004")),
         key: "shared-key".to_string(),
     });
 

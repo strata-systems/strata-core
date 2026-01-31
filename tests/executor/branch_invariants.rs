@@ -34,27 +34,27 @@ fn branch_data_is_isolated() {
 
     // Write data to branch A
     executor.execute(Command::KvPut {
-        run: Some(branch_a.clone()),
+        branch: Some(branch_a.clone()),
         key: "secret".into(),
         value: Value::String("branch_a_secret".into()),
     }).unwrap();
 
     executor.execute(Command::StateSet {
-        run: Some(branch_a.clone()),
+        branch: Some(branch_a.clone()),
         cell: "state".into(),
         value: Value::Int(42),
     }).unwrap();
 
     // Branch B should NOT see branch A's data
     let output = executor.execute(Command::KvGet {
-        run: Some(branch_b.clone()),
+        branch: Some(branch_b.clone()),
         key: "secret".into(),
     }).unwrap();
     assert!(matches!(output, Output::Maybe(None)),
         "Branch B should not see Branch A's KV data");
 
     let output = executor.execute(Command::StateRead {
-        run: Some(branch_b.clone()),
+        branch: Some(branch_b.clone()),
         cell: "state".into(),
     }).unwrap();
     assert!(matches!(output, Output::Maybe(None)),
@@ -62,7 +62,7 @@ fn branch_data_is_isolated() {
 
     // Branch A should still see its own data
     let output = executor.execute(Command::KvGet {
-        run: Some(branch_a.clone()),
+        branch: Some(branch_a.clone()),
         key: "secret".into(),
     }).unwrap();
     match output {
@@ -92,38 +92,38 @@ fn branch_delete_removes_all_data() {
 
     // Add data to the branch
     executor.execute(Command::KvPut {
-        run: Some(branch_id.clone()),
+        branch: Some(branch_id.clone()),
         key: "key1".into(),
         value: Value::String("value1".into()),
     }).unwrap();
 
     executor.execute(Command::KvPut {
-        run: Some(branch_id.clone()),
+        branch: Some(branch_id.clone()),
         key: "key2".into(),
         value: Value::Int(123),
     }).unwrap();
 
     executor.execute(Command::StateSet {
-        run: Some(branch_id.clone()),
+        branch: Some(branch_id.clone()),
         cell: "cell1".into(),
         value: Value::Bool(true),
     }).unwrap();
 
     // Verify data exists
     let output = executor.execute(Command::KvGet {
-        run: Some(branch_id.clone()),
+        branch: Some(branch_id.clone()),
         key: "key1".into(),
     }).unwrap();
     assert!(matches!(output, Output::Maybe(Some(_))));
 
     // Delete the branch
     executor.execute(Command::BranchDelete {
-        run: branch_id.clone(),
+        branch: branch_id.clone(),
     }).unwrap();
 
     // Branch should not exist
     let output = executor.execute(Command::BranchExists {
-        run: branch_id.clone(),
+        branch: branch_id.clone(),
     }).unwrap();
     assert!(matches!(output, Output::Bool(false)));
 
@@ -136,7 +136,7 @@ fn branch_delete_removes_all_data() {
     }).unwrap();
 
     let output = executor.execute(Command::KvGet {
-        run: Some(branch_id.clone()),
+        branch: Some(branch_id.clone()),
         key: "key1".into(),
     }).unwrap();
     assert!(matches!(output, Output::Maybe(None)),
@@ -158,14 +158,14 @@ fn branch_delete_cleans_up_data() {
 
     // Add data
     executor.execute(Command::KvPut {
-        run: Some(branch_id.clone()),
+        branch: Some(branch_id.clone()),
         key: "persistent_key".into(),
         value: Value::String("should_be_deleted".into()),
     }).unwrap();
 
     // Delete branch
     executor.execute(Command::BranchDelete {
-        run: branch_id.clone(),
+        branch: branch_id.clone(),
     }).unwrap();
 
     // Recreate branch with same name
@@ -176,7 +176,7 @@ fn branch_delete_cleans_up_data() {
 
     // Data should be gone after deletion
     let output = executor.execute(Command::KvGet {
-        run: Some(branch_id),
+        branch: Some(branch_id),
         key: "persistent_key".into(),
     }).unwrap();
 
@@ -193,16 +193,16 @@ fn branch_delete_cleans_up_data() {
 fn default_branch_always_works() {
     let executor = create_executor();
 
-    // Write to default branch (run: None)
+    // Write to default branch (branch: None)
     executor.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "default_key".into(),
         value: Value::String("default_value".into()),
     }).unwrap();
 
     // Read from default branch
     let output = executor.execute(Command::KvGet {
-        run: None,
+        branch: None,
         key: "default_key".into(),
     }).unwrap();
     match output {
@@ -214,7 +214,7 @@ fn default_branch_always_works() {
 
     // Explicit "default" branch should be equivalent
     let output = executor.execute(Command::KvGet {
-        run: Some(BranchId::from("default")),
+        branch: Some(BranchId::from("default")),
         key: "default_key".into(),
     }).unwrap();
     match output {

@@ -22,7 +22,7 @@ fn test_begin_commit_lifecycle() {
 
     // Begin
     let result = session.execute(Command::TxnBegin {
-        run: None,
+        branch: None,
         options: None,
     });
     assert!(matches!(result, Ok(Output::TxnBegun)));
@@ -40,7 +40,7 @@ fn test_begin_abort_lifecycle() {
 
     // Begin
     let result = session.execute(Command::TxnBegin {
-        run: None,
+        branch: None,
         options: None,
     });
     assert!(matches!(result, Ok(Output::TxnBegun)));
@@ -58,13 +58,13 @@ fn test_double_begin_returns_error() {
 
     session
         .execute(Command::TxnBegin {
-            run: None,
+            branch: None,
             options: None,
         })
         .unwrap();
 
     let result = session.execute(Command::TxnBegin {
-        run: None,
+        branch: None,
         options: None,
     });
     assert!(
@@ -107,7 +107,7 @@ fn test_txn_is_active() {
 
     session
         .execute(Command::TxnBegin {
-            run: None,
+            branch: None,
             options: None,
         })
         .unwrap();
@@ -132,7 +132,7 @@ fn test_txn_info() {
     // With txn active
     session
         .execute(Command::TxnBegin {
-            run: None,
+            branch: None,
             options: None,
         })
         .unwrap();
@@ -155,7 +155,7 @@ fn test_ryw_kv_put_get_inside_txn() {
 
     session
         .execute(Command::TxnBegin {
-            run: None,
+            branch: None,
             options: None,
         })
         .unwrap();
@@ -163,7 +163,7 @@ fn test_ryw_kv_put_get_inside_txn() {
     // Put inside txn
     session
         .execute(Command::KvPut {
-            run: None,
+            branch: None,
             key: "ryw_key".to_string(),
             value: Value::String("written_in_txn".into()),
         })
@@ -172,7 +172,7 @@ fn test_ryw_kv_put_get_inside_txn() {
     // Get should see the written value (read-your-writes)
     let result = session
         .execute(Command::KvGet {
-            run: None,
+            branch: None,
             key: "ryw_key".to_string(),
         })
         .unwrap();
@@ -198,14 +198,14 @@ fn test_ryw_kv_get_inside_txn() {
 
     session
         .execute(Command::TxnBegin {
-            run: None,
+            branch: None,
             options: None,
         })
         .unwrap();
 
     session
         .execute(Command::KvPut {
-            run: None,
+            branch: None,
             key: "exists_key".to_string(),
             value: Value::Int(42),
         })
@@ -213,7 +213,7 @@ fn test_ryw_kv_get_inside_txn() {
 
     let result = session
         .execute(Command::KvGet {
-            run: None,
+            branch: None,
             key: "exists_key".to_string(),
         })
         .unwrap();
@@ -239,7 +239,7 @@ fn test_drop_with_active_txn_does_not_panic() {
 
     session
         .execute(Command::TxnBegin {
-            run: None,
+            branch: None,
             options: None,
         })
         .unwrap();
@@ -247,7 +247,7 @@ fn test_drop_with_active_txn_does_not_panic() {
     // Write something inside the txn
     session
         .execute(Command::KvPut {
-            run: None,
+            branch: None,
             key: "abandoned".to_string(),
             value: Value::Bool(true),
         })
@@ -273,7 +273,7 @@ fn test_non_transactional_commands_delegate_during_txn() {
 
     session
         .execute(Command::TxnBegin {
-            run: None,
+            branch: None,
             options: None,
         })
         .unwrap();
@@ -299,7 +299,7 @@ fn test_data_commands_without_txn_delegate() {
 
     // KvPut without txn delegates to executor
     let result = session.execute(Command::KvPut {
-        run: None,
+        branch: None,
         key: "no_txn_key".to_string(),
         value: Value::Int(99),
     });
@@ -308,7 +308,7 @@ fn test_data_commands_without_txn_delegate() {
     // KvGet without txn delegates to executor
     let result = session
         .execute(Command::KvGet {
-            run: None,
+            branch: None,
             key: "no_txn_key".to_string(),
         })
         .unwrap();
@@ -330,7 +330,7 @@ fn test_begin_with_explicit_branch() {
     let mut session = create_test_session();
 
     let result = session.execute(Command::TxnBegin {
-        run: Some(crate::types::BranchId::from("default")),
+        branch: Some(crate::types::BranchId::from("default")),
         options: None,
     });
     assert!(matches!(result, Ok(Output::TxnBegun)));
@@ -349,14 +349,14 @@ fn test_multiple_txn_cycles() {
     for i in 0..3 {
         session
             .execute(Command::TxnBegin {
-                run: None,
+                branch: None,
                 options: None,
             })
             .unwrap();
 
         session
             .execute(Command::KvPut {
-                run: None,
+                branch: None,
                 key: format!("cycle_{}", i),
                 value: Value::Int(i as i64),
             })
@@ -378,13 +378,13 @@ fn test_event_append_in_txn() {
 
     session
         .execute(Command::TxnBegin {
-            run: None,
+            branch: None,
             options: None,
         })
         .unwrap();
 
     let result = session.execute(Command::EventAppend {
-        run: None,
+        branch: None,
         event_type: "test_stream".to_string(),
         payload: Value::Object(std::collections::HashMap::from([
             ("data".to_string(), Value::String("event_data".into())),
@@ -405,13 +405,13 @@ fn test_state_init_in_txn() {
 
     session
         .execute(Command::TxnBegin {
-            run: None,
+            branch: None,
             options: None,
         })
         .unwrap();
 
     let result = session.execute(Command::StateInit {
-        run: None,
+        branch: None,
         cell: "counter".to_string(),
         value: Value::Int(0),
     });

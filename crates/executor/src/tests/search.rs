@@ -19,7 +19,7 @@ fn test_search_empty_database() {
     let executor = create_executor();
 
     let result = executor.execute(Command::Search {
-        run: None,
+        branch: None,
         query: "nonexistent".to_string(),
         k: None,
         primitives: None,
@@ -40,7 +40,7 @@ fn test_search_returns_empty_for_kv_primitive() {
     // Insert some data
     executor
         .execute(Command::KvPut {
-            run: None,
+            branch: None,
             key: "greeting".to_string(),
             value: Value::String("hello world".into()),
         })
@@ -48,7 +48,7 @@ fn test_search_returns_empty_for_kv_primitive() {
 
     executor
         .execute(Command::KvPut {
-            run: None,
+            branch: None,
             key: "farewell".to_string(),
             value: Value::String("goodbye world".into()),
         })
@@ -57,7 +57,7 @@ fn test_search_returns_empty_for_kv_primitive() {
     // Search for "hello" - KV primitive returns empty results
     // (search is handled by intelligence layer, not primitives)
     let result = executor.execute(Command::Search {
-        run: None,
+        branch: None,
         query: "hello".to_string(),
         k: Some(10),
         primitives: Some(vec!["kv".to_string()]),
@@ -83,7 +83,7 @@ fn test_search_with_primitive_filter() {
     // Insert KV data
     executor
         .execute(Command::KvPut {
-            run: None,
+            branch: None,
             key: "test_key".to_string(),
             value: Value::String("searchable data".into()),
         })
@@ -91,7 +91,7 @@ fn test_search_with_primitive_filter() {
 
     // Search only in event primitive
     let result = executor.execute(Command::Search {
-        run: None,
+        branch: None,
         query: "searchable".to_string(),
         k: Some(10),
         primitives: Some(vec!["event".to_string()]),
@@ -116,7 +116,7 @@ fn test_search_command_infrastructure_works() {
     // Test that the Search command executes without error
     // even when no results are found
     let result = executor.execute(Command::Search {
-        run: None,
+        branch: None,
         query: "test query".to_string(),
         k: Some(5),
         primitives: None,

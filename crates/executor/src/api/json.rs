@@ -56,7 +56,7 @@ impl Strata {
     /// ```
     pub fn json_set(&self, key: &str, path: &str, value: impl Into<Value>) -> Result<u64> {
         match self.executor.execute(Command::JsonSet {
-            run: self.branch_id(),
+            branch: self.branch_id(),
             key: key.to_string(),
             path: path.to_string(),
             value: value.into(),
@@ -90,13 +90,29 @@ impl Strata {
     /// ```
     pub fn json_get(&self, key: &str, path: &str) -> Result<Option<Value>> {
         match self.executor.execute(Command::JsonGet {
-            run: self.branch_id(),
+            branch: self.branch_id(),
             key: key.to_string(),
             path: path.to_string(),
         })? {
             Output::Maybe(v) => Ok(v),
             _ => Err(Error::Internal {
                 reason: "Unexpected output for JsonGet".into(),
+            }),
+        }
+    }
+
+    /// Get the full version history for a JSON document.
+    ///
+    /// Returns all versions of the document, newest first, or None if the
+    /// document doesn't exist.
+    pub fn json_getv(&self, key: &str) -> Result<Option<Vec<crate::types::VersionedValue>>> {
+        match self.executor.execute(Command::JsonGetv {
+            branch: self.branch_id(),
+            key: key.to_string(),
+        })? {
+            Output::VersionHistory(h) => Ok(h),
+            _ => Err(Error::Internal {
+                reason: "Unexpected output for JsonGetv".into(),
             }),
         }
     }
@@ -125,7 +141,7 @@ impl Strata {
     /// ```
     pub fn json_delete(&self, key: &str, path: &str) -> Result<u64> {
         match self.executor.execute(Command::JsonDelete {
-            run: self.branch_id(),
+            branch: self.branch_id(),
             key: key.to_string(),
             path: path.to_string(),
         })? {
@@ -166,7 +182,7 @@ impl Strata {
         limit: u64,
     ) -> Result<(Vec<String>, Option<String>)> {
         match self.executor.execute(Command::JsonList {
-            run: self.branch_id(),
+            branch: self.branch_id(),
             prefix,
             cursor,
             limit,

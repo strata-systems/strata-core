@@ -13,8 +13,8 @@ use crate::types::BranchId;
 use crate::{Output, Result};
 
 /// Handle KvGetv command — get full version history for a key.
-pub fn kv_getv(p: &Arc<Primitives>, run: BranchId, key: String) -> Result<Output> {
-    let branch_id = to_core_branch_id(&run)?;
+pub fn kv_getv(p: &Arc<Primitives>, branch: BranchId, key: String) -> Result<Output> {
+    let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_key(&key))?;
     let result = convert_result(p.kv.getv(&branch_id, &key))?;
     let mapped = result.map(|history| {
@@ -34,27 +34,27 @@ pub fn kv_getv(p: &Arc<Primitives>, run: BranchId, key: String) -> Result<Output
 /// Handle KvPut command.
 pub fn kv_put(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     key: String,
     value: Value,
 ) -> Result<Output> {
-    let branch_id = to_core_branch_id(&run)?;
+    let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_key(&key))?;
     let version = convert_result(p.kv.put(&branch_id, &key, value))?;
     Ok(Output::Version(extract_version(&version)))
 }
 
 /// Handle KvGet command.
-pub fn kv_get(p: &Arc<Primitives>, run: BranchId, key: String) -> Result<Output> {
-    let branch_id = to_core_branch_id(&run)?;
+pub fn kv_get(p: &Arc<Primitives>, branch: BranchId, key: String) -> Result<Output> {
+    let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_key(&key))?;
     let result = convert_result(p.kv.get(&branch_id, &key))?;
     Ok(Output::Maybe(result))
 }
 
 /// Handle KvDelete command.
-pub fn kv_delete(p: &Arc<Primitives>, run: BranchId, key: String) -> Result<Output> {
-    let branch_id = to_core_branch_id(&run)?;
+pub fn kv_delete(p: &Arc<Primitives>, branch: BranchId, key: String) -> Result<Output> {
+    let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_key(&key))?;
     let existed = convert_result(p.kv.delete(&branch_id, &key))?;
     Ok(Output::Bool(existed))
@@ -63,10 +63,10 @@ pub fn kv_delete(p: &Arc<Primitives>, run: BranchId, key: String) -> Result<Outp
 /// Handle KvList command.
 pub fn kv_list(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     prefix: Option<String>,
 ) -> Result<Output> {
-    let branch_id = to_core_branch_id(&run)?;
+    let branch_id = to_core_branch_id(&branch)?;
     if let Some(ref pfx) = prefix {
         if !pfx.is_empty() {
             convert_result(validate_key(pfx))?;

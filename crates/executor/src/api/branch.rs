@@ -36,9 +36,9 @@ impl Strata {
     ///
     /// # Returns
     /// `Some(VersionedBranchInfo)` if the branch exists, `None` otherwise.
-    pub fn branch_get(&self, run: &str) -> Result<Option<VersionedBranchInfo>> {
+    pub fn branch_get(&self, name: &str) -> Result<Option<VersionedBranchInfo>> {
         match self.executor.execute(Command::BranchGet {
-            run: BranchId::from(run),
+            branch: BranchId::from(name),
         })? {
             Output::BranchInfoVersioned(info) => Ok(Some(info)),
             Output::Maybe(None) => Ok(None),
@@ -65,7 +65,7 @@ impl Strata {
             limit,
             offset,
         })? {
-            Output::BranchInfoList(runs) => Ok(runs),
+            Output::BranchInfoList(branches) => Ok(branches),
             _ => Err(Error::Internal {
                 reason: "Unexpected output for BranchList".into(),
             }),
@@ -73,9 +73,9 @@ impl Strata {
     }
 
     /// Check if a branch exists.
-    pub fn branch_exists(&self, run: &str) -> Result<bool> {
+    pub fn branch_exists(&self, name: &str) -> Result<bool> {
         match self.executor.execute(Command::BranchExists {
-            run: BranchId::from(run),
+            branch: BranchId::from(name),
         })? {
             Output::Bool(exists) => Ok(exists),
             _ => Err(Error::Internal {
@@ -91,9 +91,9 @@ impl Strata {
     /// - All branch-scoped data (KV, Events, States, JSON, Vectors)
     ///
     /// USE WITH CAUTION - this is irreversible!
-    pub fn branch_delete(&self, run: &str) -> Result<()> {
+    pub fn branch_delete(&self, name: &str) -> Result<()> {
         match self.executor.execute(Command::BranchDelete {
-            run: BranchId::from(run),
+            branch: BranchId::from(name),
         })? {
             Output::Unit => Ok(()),
             _ => Err(Error::Internal {

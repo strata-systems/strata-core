@@ -17,10 +17,10 @@ use crate::{Output, Result};
 /// Handle JsonGetv command — get full version history for a JSON document.
 pub fn json_getv(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     key: String,
 ) -> Result<Output> {
-    let branch_id = to_core_branch_id(&run)?;
+    let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_key(&key))?;
     let result = convert_result(p.json.getv(&branch_id, &key))?;
     let mapped = result.map(|history| {
@@ -52,12 +52,12 @@ pub fn json_getv(
 /// - If doc exists: set at path.
 pub fn json_set(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     key: String,
     path: String,
     value: Value,
 ) -> Result<Output> {
-    let branch_id = to_core_branch_id(&run)?;
+    let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_key(&key))?;
     let json_path = convert_result(parse_path(&path))?;
     let json_value = convert_result(value_to_json(value))?;
@@ -83,11 +83,11 @@ pub fn json_set(
 /// Handle JsonGet command.
 pub fn json_get(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     key: String,
     path: String,
 ) -> Result<Output> {
-    let branch_id = to_core_branch_id(&run)?;
+    let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_key(&key))?;
     let json_path = convert_result(parse_path(&path))?;
 
@@ -104,11 +104,11 @@ pub fn json_get(
 /// - Non-root path: delete at path (returns 1).
 pub fn json_delete(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     key: String,
     path: String,
 ) -> Result<Output> {
-    let branch_id = to_core_branch_id(&run)?;
+    let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_key(&key))?;
     let json_path = convert_result(parse_path(&path))?;
 
@@ -124,12 +124,12 @@ pub fn json_delete(
 /// Handle JsonList command.
 pub fn json_list(
     p: &Arc<Primitives>,
-    run: BranchId,
+    branch: BranchId,
     prefix: Option<String>,
     cursor: Option<String>,
     limit: u64,
 ) -> Result<Output> {
-    let branch_id = to_core_branch_id(&run)?;
+    let branch_id = to_core_branch_id(&branch)?;
 
     let result = convert_result(p.json.list(
         &branch_id,

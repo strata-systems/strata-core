@@ -9,7 +9,7 @@
 //! | `event` | 11 | EventLog |
 //! | `state` | 8 | StateCell |
 //! | `vector` | 19 | VectorStore |
-//! | `run` | 24 | BranchIndex |
+//! | `branch` | 24 | BranchIndex |
 //! | `transaction` | 5 | TransactionControl |
 //! | `retention` | 3 | RetentionSubstrate |
 //! | `database` | 4 | Database-level |

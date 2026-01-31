@@ -62,7 +62,7 @@ impl<'a> Branches<'a> {
     /// Check if a branch exists.
     pub fn exists(&self, name: &str) -> Result<bool> {
         match self.executor.execute(Command::BranchExists {
-            run: BranchId::from(name),
+            branch: BranchId::from(name),
         })? {
             Output::Bool(exists) => Ok(exists),
             _ => Err(Error::Internal {
@@ -107,7 +107,7 @@ impl<'a> Branches<'a> {
         }
 
         match self.executor.execute(Command::BranchDelete {
-            run: BranchId::from(name),
+            branch: BranchId::from(name),
         })? {
             Output::Unit => Ok(()),
             _ => Err(Error::Internal {

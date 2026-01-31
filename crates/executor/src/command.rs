@@ -33,15 +33,14 @@ use crate::types::*;
 /// | Retention | 3 | Retention policy |
 /// | Database | 4 | Database-level operations |
 ///
-/// # Run field
+/// # Branch field
 ///
-/// Data-scoped commands have an optional `run` field. When omitted (or `None`),
-/// the executor resolves it to the default branch before dispatch. Existing JSON
-/// with `"run": "default"` continues to work; new callers can simply omit the
-/// field.
+/// Data-scoped commands have an optional `branch` field. When omitted (or `None`),
+/// the executor resolves it to the default branch before dispatch. JSON
+/// with `"branch": "default"` works; new callers can simply omit the field.
 ///
 /// Branch lifecycle commands (BranchGet, BranchDelete, etc.) keep a required
-/// `run: BranchId` since they explicitly operate on a specific branch.
+/// `branch: BranchId` since they explicitly operate on a specific branch.
 ///
 /// # Example
 ///
@@ -51,14 +50,14 @@ use crate::types::*;
 ///
 /// // Explicit branch
 /// let cmd = Command::KvPut {
-///     run: Some(BranchId::default()),
+///     branch: Some(BranchId::default()),
 ///     key: "foo".into(),
 ///     value: Value::Int(42),
 /// };
 ///
 /// // Omit branch (defaults to "default")
 /// let cmd = Command::KvPut {
-///     run: None,
+///     branch: None,
 ///     key: "foo".into(),
 ///     value: Value::Int(42),
 /// };
@@ -71,7 +70,7 @@ pub enum Command {
     /// Returns: `Output::Version`
     KvPut {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         key: String,
         value: Value,
     },
@@ -80,7 +79,7 @@ pub enum Command {
     /// Returns: `Output::MaybeValue`
     KvGet {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         key: String,
     },
 
@@ -88,7 +87,7 @@ pub enum Command {
     /// Returns: `Output::Bool` (true if key existed)
     KvDelete {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         key: String,
     },
 
@@ -96,7 +95,7 @@ pub enum Command {
     /// Returns: `Output::Keys`
     KvList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         prefix: Option<String>,
     },
 
@@ -104,7 +103,7 @@ pub enum Command {
     /// Returns: `Output::VersionHistory`
     KvGetv {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         key: String,
     },
 
@@ -113,7 +112,7 @@ pub enum Command {
     /// Returns: `Output::Version`
     JsonSet {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         key: String,
         path: String,
         value: Value,
@@ -123,7 +122,7 @@ pub enum Command {
     /// Returns: `Output::MaybeVersioned`
     JsonGet {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         key: String,
         path: String,
     },
@@ -132,7 +131,7 @@ pub enum Command {
     /// Returns: `Output::Uint` (count of elements removed)
     JsonDelete {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         key: String,
         path: String,
     },
@@ -141,7 +140,7 @@ pub enum Command {
     /// Returns: `Output::VersionHistory`
     JsonGetv {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         key: String,
     },
 
@@ -149,7 +148,7 @@ pub enum Command {
     /// Returns: `Output::JsonListResult`
     JsonList {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         prefix: Option<String>,
         cursor: Option<String>,
         limit: u64,
@@ -162,7 +161,7 @@ pub enum Command {
     /// Returns: `Output::Version`
     EventAppend {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         event_type: String,
         payload: Value,
     },
@@ -171,7 +170,7 @@ pub enum Command {
     /// Returns: `Output::MaybeVersioned`
     EventRead {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         sequence: u64,
     },
 
@@ -179,7 +178,7 @@ pub enum Command {
     /// Returns: `Output::VersionedValues`
     EventReadByType {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         event_type: String,
     },
 
@@ -187,7 +186,7 @@ pub enum Command {
     /// Returns: `Output::Uint`
     EventLen {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
     },
 
     // ==================== State (4 MVP) ====================
@@ -197,7 +196,7 @@ pub enum Command {
     /// Returns: `Output::Version`
     StateSet {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         cell: String,
         value: Value,
     },
@@ -206,7 +205,7 @@ pub enum Command {
     /// Returns: `Output::MaybeVersioned`
     StateRead {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         cell: String,
     },
 
@@ -214,7 +213,7 @@ pub enum Command {
     /// Returns: `Output::MaybeVersion`
     StateCas {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         cell: String,
         expected_counter: Option<u64>,
         value: Value,
@@ -224,7 +223,7 @@ pub enum Command {
     /// Returns: `Output::VersionHistory`
     StateReadv {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         cell: String,
     },
 
@@ -232,7 +231,7 @@ pub enum Command {
     /// Returns: `Output::Version`
     StateInit {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         cell: String,
         value: Value,
     },
@@ -244,7 +243,7 @@ pub enum Command {
     /// Returns: `Output::Version`
     VectorUpsert {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         collection: String,
         key: String,
         vector: Vec<f32>,
@@ -255,7 +254,7 @@ pub enum Command {
     /// Returns: `Output::MaybeVectorData`
     VectorGet {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         collection: String,
         key: String,
     },
@@ -264,7 +263,7 @@ pub enum Command {
     /// Returns: `Output::Bool`
     VectorDelete {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         collection: String,
         key: String,
     },
@@ -273,7 +272,7 @@ pub enum Command {
     /// Returns: `Output::VectorMatches`
     VectorSearch {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         collection: String,
         query: Vec<f32>,
         k: u64,
@@ -285,7 +284,7 @@ pub enum Command {
     /// Returns: `Output::Version`
     VectorCreateCollection {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         collection: String,
         dimension: u64,
         metric: DistanceMetric,
@@ -295,7 +294,7 @@ pub enum Command {
     /// Returns: `Output::Bool`
     VectorDeleteCollection {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         collection: String,
     },
 
@@ -303,7 +302,7 @@ pub enum Command {
     /// Returns: `Output::VectorCollectionList`
     VectorListCollections {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
     },
 
     // ==================== Branch (5 MVP) ====================
@@ -317,7 +316,7 @@ pub enum Command {
     /// Get branch info.
     /// Returns: `Output::BranchInfoVersioned` or `Output::Maybe(None)`
     BranchGet {
-        run: BranchId,
+        branch: BranchId,
     },
 
     /// List all branches.
@@ -331,13 +330,13 @@ pub enum Command {
     /// Check if a branch exists.
     /// Returns: `Output::Bool`
     BranchExists {
-        run: BranchId,
+        branch: BranchId,
     },
 
     /// Delete a branch and all its data (cascading delete).
     /// Returns: `Output::Unit`
     BranchDelete {
-        run: BranchId,
+        branch: BranchId,
     },
 
     // ==================== Transaction (5) ====================
@@ -345,7 +344,7 @@ pub enum Command {
     /// Returns: `Output::TxnBegun`
     TxnBegin {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         options: Option<TxnOptions>,
     },
 
@@ -373,21 +372,21 @@ pub enum Command {
     /// Returns: `Output::RetentionResult`
     RetentionApply {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
     },
 
     /// Get retention statistics.
     /// Returns: `Output::RetentionStats`
     RetentionStats {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
     },
 
     /// Preview what would be deleted by retention policy.
     /// Returns: `Output::RetentionPreview`
     RetentionPreview {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
     },
 
     // ==================== Database (4) ====================
@@ -429,7 +428,7 @@ pub enum Command {
     /// Returns: `Output::SearchResults`
     Search {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        run: Option<BranchId>,
+        branch: Option<BranchId>,
         query: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         k: Option<u64>,
@@ -439,64 +438,64 @@ pub enum Command {
 }
 
 impl Command {
-    /// Fill in the default branch for any data command where run is `None`.
+    /// Fill in the default branch for any data command where branch is `None`.
     ///
     /// Called by the executor before dispatch so handlers always receive a
     /// concrete `BranchId`.
     pub fn resolve_default_branch(&mut self) {
         macro_rules! resolve {
-            ($run:expr) => {
-                if $run.is_none() {
-                    *$run = Some(BranchId::default());
+            ($branch:expr) => {
+                if $branch.is_none() {
+                    *$branch = Some(BranchId::default());
                 }
             };
         }
 
         match self {
             // KV
-            Command::KvPut { run, .. }
-            | Command::KvGet { run, .. }
-            | Command::KvDelete { run, .. }
-            | Command::KvList { run, .. }
-            | Command::KvGetv { run, .. }
+            Command::KvPut { branch, .. }
+            | Command::KvGet { branch, .. }
+            | Command::KvDelete { branch, .. }
+            | Command::KvList { branch, .. }
+            | Command::KvGetv { branch, .. }
             // JSON
-            | Command::JsonSet { run, .. }
-            | Command::JsonGet { run, .. }
-            | Command::JsonGetv { run, .. }
-            | Command::JsonDelete { run, .. }
-            | Command::JsonList { run, .. }
+            | Command::JsonSet { branch, .. }
+            | Command::JsonGet { branch, .. }
+            | Command::JsonGetv { branch, .. }
+            | Command::JsonDelete { branch, .. }
+            | Command::JsonList { branch, .. }
             // Event (4 MVP)
-            | Command::EventAppend { run, .. }
-            | Command::EventRead { run, .. }
-            | Command::EventReadByType { run, .. }
-            | Command::EventLen { run, .. }
+            | Command::EventAppend { branch, .. }
+            | Command::EventRead { branch, .. }
+            | Command::EventReadByType { branch, .. }
+            | Command::EventLen { branch, .. }
             // State
-            | Command::StateSet { run, .. }
-            | Command::StateRead { run, .. }
-            | Command::StateReadv { run, .. }
-            | Command::StateCas { run, .. }
-            | Command::StateInit { run, .. }
+            | Command::StateSet { branch, .. }
+            | Command::StateRead { branch, .. }
+            | Command::StateReadv { branch, .. }
+            | Command::StateCas { branch, .. }
+            | Command::StateInit { branch, .. }
             // Vector (7 MVP)
-            | Command::VectorUpsert { run, .. }
-            | Command::VectorGet { run, .. }
-            | Command::VectorDelete { run, .. }
-            | Command::VectorSearch { run, .. }
-            | Command::VectorCreateCollection { run, .. }
-            | Command::VectorDeleteCollection { run, .. }
-            | Command::VectorListCollections { run, .. }
+            | Command::VectorUpsert { branch, .. }
+            | Command::VectorGet { branch, .. }
+            | Command::VectorDelete { branch, .. }
+            | Command::VectorSearch { branch, .. }
+            | Command::VectorCreateCollection { branch, .. }
+            | Command::VectorDeleteCollection { branch, .. }
+            | Command::VectorListCollections { branch, .. }
             // Retention
-            | Command::RetentionApply { run, .. }
-            | Command::RetentionStats { run, .. }
-            | Command::RetentionPreview { run, .. }
+            | Command::RetentionApply { branch, .. }
+            | Command::RetentionStats { branch, .. }
+            | Command::RetentionPreview { branch, .. }
             // Transaction begin
-            | Command::TxnBegin { run, .. }
+            | Command::TxnBegin { branch, .. }
             // Intelligence
-            | Command::Search { run, .. } => {
-                resolve!(run);
+            | Command::Search { branch, .. } => {
+                resolve!(branch);
             }
 
             // Branch lifecycle (5 MVP), Transaction, and Database commands have no
-            // optional run to resolve.
+            // optional branch to resolve.
             Command::BranchCreate { .. }
             | Command::BranchGet { .. }
             | Command::BranchList { .. }

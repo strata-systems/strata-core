@@ -148,7 +148,7 @@ impl Strata {
     fn ensure_default_branch(executor: &Executor) -> Result<()> {
         // Check if default branch exists
         match executor.execute(Command::BranchExists {
-            run: BranchId::default(),
+            branch: BranchId::default(),
         })? {
             Output::Bool(exists) => {
                 if !exists {
@@ -475,11 +475,11 @@ mod tests {
         let mut db = create_strata();
 
         // Create a branch first
-        db.create_branch("my-run").unwrap();
+        db.create_branch("my-branch").unwrap();
 
         // Switch to it
-        db.set_branch("my-run").unwrap();
-        assert_eq!(db.current_branch(), "my-run");
+        db.set_branch("my-branch").unwrap();
+        assert_eq!(db.current_branch(), "my-branch");
     }
 
     #[test]
@@ -496,14 +496,14 @@ mod tests {
         let db = create_strata();
 
         // Create a few branches
-        db.create_branch("run-a").unwrap();
-        db.create_branch("run-b").unwrap();
-        db.create_branch("run-c").unwrap();
+        db.create_branch("branch-a").unwrap();
+        db.create_branch("branch-b").unwrap();
+        db.create_branch("branch-c").unwrap();
 
         let branches = db.list_branches().unwrap();
-        assert!(branches.contains(&"run-a".to_string()));
-        assert!(branches.contains(&"run-b".to_string()));
-        assert!(branches.contains(&"run-c".to_string()));
+        assert!(branches.contains(&"branch-a".to_string()));
+        assert!(branches.contains(&"branch-b".to_string()));
+        assert!(branches.contains(&"branch-c".to_string()));
     }
 
     #[test]
@@ -524,11 +524,11 @@ mod tests {
     fn test_delete_current_branch_fails() {
         let mut db = create_strata();
 
-        db.create_branch("current-run").unwrap();
-        db.set_branch("current-run").unwrap();
+        db.create_branch("current-branch").unwrap();
+        db.set_branch("current-branch").unwrap();
 
         // Trying to delete the current branch should fail
-        let result = db.delete_branch("current-run");
+        let result = db.delete_branch("current-branch");
         assert!(result.is_err());
     }
 
@@ -596,12 +596,12 @@ mod tests {
         let db = create_strata();
 
         // Create some branches
-        db.branches().create("run-a").unwrap();
-        db.branches().create("run-b").unwrap();
+        db.branches().create("branch-a").unwrap();
+        db.branches().create("branch-b").unwrap();
 
         let branches = db.branches().list().unwrap();
-        assert!(branches.contains(&"run-a".to_string()));
-        assert!(branches.contains(&"run-b".to_string()));
+        assert!(branches.contains(&"branch-a".to_string()));
+        assert!(branches.contains(&"branch-b".to_string()));
     }
 
     #[test]
@@ -610,24 +610,24 @@ mod tests {
 
         assert!(!db.branches().exists("nonexistent").unwrap());
 
-        db.branches().create("my-run").unwrap();
-        assert!(db.branches().exists("my-run").unwrap());
+        db.branches().create("my-branch").unwrap();
+        assert!(db.branches().exists("my-branch").unwrap());
     }
 
     #[test]
     fn test_branches_create() {
         let db = create_strata();
 
-        db.branches().create("new-run").unwrap();
-        assert!(db.branches().exists("new-run").unwrap());
+        db.branches().create("new-branch").unwrap();
+        assert!(db.branches().exists("new-branch").unwrap());
     }
 
     #[test]
     fn test_branches_create_duplicate_fails() {
         let db = create_strata();
 
-        db.branches().create("my-run").unwrap();
-        let result = db.branches().create("my-run");
+        db.branches().create("my-branch").unwrap();
+        let result = db.branches().create("my-branch");
         assert!(result.is_err());
     }
 

@@ -30,7 +30,7 @@ impl Strata {
     /// ```
     pub fn kv_put(&self, key: &str, value: impl Into<Value>) -> Result<u64> {
         match self.executor.execute(Command::KvPut {
-            run: self.branch_id(),
+            branch: self.branch_id(),
             key: key.to_string(),
             value: value.into(),
         })? {
@@ -45,10 +45,10 @@ impl Strata {
     ///
     /// Returns the latest value for the key, or None if it doesn't exist.
     ///
-    /// Reads from the current run context.
+    /// Reads from the current branch context.
     pub fn kv_get(&self, key: &str) -> Result<Option<Value>> {
         match self.executor.execute(Command::KvGet {
-            run: self.branch_id(),
+            branch: self.branch_id(),
             key: key.to_string(),
         })? {
             Output::Maybe(v) => Ok(v),
@@ -62,10 +62,10 @@ impl Strata {
     ///
     /// Returns `true` if the key existed and was deleted, `false` if it didn't exist.
     ///
-    /// Deletes from the current run context.
+    /// Deletes from the current branch context.
     pub fn kv_delete(&self, key: &str) -> Result<bool> {
         match self.executor.execute(Command::KvDelete {
-            run: self.branch_id(),
+            branch: self.branch_id(),
             key: key.to_string(),
         })? {
             Output::Bool(deleted) => Ok(deleted),
@@ -75,14 +75,41 @@ impl Strata {
         }
     }
 
+    /// Get the full version history for a key.
+    ///
+    /// Returns all versions of the key, newest first, or None if the key
+    /// doesn't exist.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// db.kv_put("counter", 1i64)?;
+    /// db.kv_put("counter", 2i64)?;
+    /// db.kv_put("counter", 3i64)?;
+    ///
+    /// let history = db.kv_getv("counter")?.unwrap();
+    /// assert_eq!(history[0].value, Value::Int(3)); // newest first
+    /// ```
+    pub fn kv_getv(&self, key: &str) -> Result<Option<Vec<crate::types::VersionedValue>>> {
+        match self.executor.execute(Command::KvGetv {
+            branch: self.branch_id(),
+            key: key.to_string(),
+        })? {
+            Output::VersionHistory(h) => Ok(h),
+            _ => Err(Error::Internal {
+                reason: "Unexpected output for KvGetv".into(),
+            }),
+        }
+    }
+
     /// List keys with optional prefix filter.
     ///
     /// Returns all keys matching the prefix (or all keys if prefix is None).
     ///
-    /// Lists from the current run context.
+    /// Lists from the current branch context.
     pub fn kv_list(&self, prefix: Option<&str>) -> Result<Vec<String>> {
         match self.executor.execute(Command::KvList {
-            run: self.branch_id(),
+            branch: self.branch_id(),
             prefix: prefix.map(|s| s.to_string()),
         })? {
             Output::Keys(keys) => Ok(keys),
