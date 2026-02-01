@@ -1,9 +1,9 @@
 //! Audit test for issue #859: contains() ignores tombstones
-//! Verdict: CONFIRMED BUG
+//! Verdict: FIXED (in PR #915, commit 17e7148)
 //!
-//! ShardedStore::contains() only checks HashMap key existence,
-//! without filtering tombstones or checking TTL expiration.
-//! After deleting a key, contains() still returns true.
+//! ShardedStore::contains() was changed from `shard.data.contains_key(key)`
+//! to checking `chain.latest().is_tombstone()`, so it now correctly returns
+//! false for deleted keys and is consistent with get().
 
 use std::sync::Arc;
 use strata_core::traits::Storage;
@@ -26,7 +26,7 @@ fn test_key(ns: &Namespace, name: &str) -> Key {
 }
 
 #[test]
-fn issue_859_contains_returns_true_after_delete() {
+fn issue_859_contains_returns_false_after_delete() {
     let store = Arc::new(ShardedStore::new());
     let ns = test_ns();
     let key = test_key(&ns, "mykey");
@@ -55,15 +55,15 @@ fn issue_859_contains_returns_true_after_delete() {
         "get() should return None after delete"
     );
 
-    // BUG: contains() still returns true because it doesn't check tombstones
+    // FIXED: contains() now correctly returns false after delete
     assert!(
-        store.contains(&key),
-        "BUG CONFIRMED: contains() returns true for deleted key (tombstone not filtered)"
+        !store.contains(&key),
+        "contains() should return false for deleted key (tombstone filtered)"
     );
 }
 
 #[test]
-fn issue_859_contains_should_be_consistent_with_get() {
+fn issue_859_contains_is_consistent_with_get() {
     let store = Arc::new(ShardedStore::new());
     let ns = test_ns();
     let key = test_key(&ns, "consistency_test");
@@ -92,18 +92,18 @@ fn issue_859_contains_should_be_consistent_with_get() {
         "get() should return Some after put"
     );
 
-    // After delete, they should still agree -- but they don't due to the bug
+    // After delete, both should agree
     Storage::delete(&*store, &key).unwrap();
     let get_result = Storage::get(&*store, &key).unwrap();
     let contains_result = store.contains(&key);
 
-    // BUG: get() returns None but contains() returns true
+    // FIXED: get() and contains() are now consistent after delete
     assert!(
         get_result.is_none(),
         "get() correctly returns None after delete"
     );
     assert!(
-        contains_result,
-        "BUG CONFIRMED: contains() returns true after delete (inconsistent with get)"
+        !contains_result,
+        "contains() correctly returns false after delete (consistent with get)"
     );
 }

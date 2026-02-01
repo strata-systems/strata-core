@@ -342,12 +342,12 @@ impl Session {
                             Ok(Output::Maybe(Some(val)))
                         }
                         Some(strata_core::value::Value::Bytes(b)) => {
-                            // JSON documents are stored as MessagePack-encoded bytes
-                            let jv: strata_core::JsonValue =
+                            // JSON documents are stored as MessagePack-encoded JsonDoc structs
+                            let doc: strata_engine::JsonDoc =
                                 rmp_serde::from_slice(&b).map_err(|e| Error::Serialization {
                                     reason: format!("Failed to deserialize JSON document: {}", e),
                                 })?;
-                            let val = convert_result(json_to_value(jv))?;
+                            let val = convert_result(json_to_value(doc.value))?;
                             Ok(Output::Maybe(Some(val)))
                         }
                         Some(other) => Ok(Output::Maybe(Some(other))),

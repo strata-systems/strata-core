@@ -1,9 +1,9 @@
 //! Audit test for issue #878: Storage errors silently treated as version 0 during transaction validation
-//! Verdict: CONFIRMED BUG
+//! Verdict: FIXED (in PR #915, commit 17e7148)
 //!
-//! When store.get(key) returns Err(_) during validation, the code treats it as version 0.
-//! For CAS operations with expected_version=0, this allows the CAS to succeed even though
-//! the key's actual state is unknown (I/O error). This could lead to duplicate key creation.
+//! The validate_transaction and sub-validators now return StrataResult, propagating
+//! storage errors instead of silently treating them as version 0. This prevents
+//! CAS with expected_version=0 from bypassing existence checks when I/O errors occur.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -98,18 +98,19 @@ impl Storage for FailingStore {
         self.inner.put_with_version(key, value, version, ttl)
     }
 
-    fn delete_with_version(&self, key: &Key, version: u64) -> StrataResult<Option<VersionedValue>> {
+    fn delete_with_version(
+        &self,
+        key: &Key,
+        version: u64,
+    ) -> StrataResult<Option<VersionedValue>> {
         self.inner.delete_with_version(key, version)
     }
 }
 
-/// Demonstrates that a CAS with expected_version=0 succeeds when storage
-/// returns an error, even though the key may actually exist.
-///
-/// This is the dangerous case: the CAS "create-if-not-exists" pattern
-/// passes validation when it should fail or return an error.
+/// FIXED: CAS with expected_version=0 now fails when storage returns an I/O error,
+/// instead of silently treating the error as version 0 and allowing the CAS to pass.
 #[test]
-fn issue_878_cas_succeeds_on_storage_error() {
+fn issue_878_cas_fails_on_storage_error() {
     let branch_id = BranchId::new();
     let ns = create_namespace(branch_id);
     let key = create_key(&ns, "important_key");
@@ -133,24 +134,18 @@ fn issue_878_cas_succeeds_on_storage_error() {
     txn.cas(key.clone(), 0, Value::Int(999)).unwrap();
 
     // Commit against the failing store
-    // The CAS validation will get Err(_) from store.get(), treat it as version 0,
-    // which matches expected_version=0, so the CAS PASSES.
-    // This is the bug: the key actually exists at version 5!
     let result = txn.commit(&failing_store);
 
-    // BUG: This succeeds when it should fail or return an error
-    // The CAS expected the key to not exist (version 0), but we can't determine
-    // the actual state because of the I/O error.
+    // FIXED: Storage error is now propagated instead of being treated as version 0
     assert!(
-        result.is_ok(),
-        "CAS incorrectly succeeds when storage returns I/O error (this demonstrates the bug)"
+        result.is_err(),
+        "CAS should fail when storage returns I/O error during validation"
     );
 }
 
-/// Demonstrates that read-set validation with Err is actually conservative
-/// (produces a false conflict when read_version != 0), but still swallows errors.
+/// Read-set validation with storage error produces an error (not a silent conflict).
 #[test]
-fn issue_878_read_set_error_produces_false_conflict() {
+fn issue_878_read_set_error_propagated() {
     let branch_id = BranchId::new();
     let ns = create_namespace(branch_id);
     let key = create_key(&ns, "read_key");
@@ -180,23 +175,19 @@ fn issue_878_read_set_error_produces_false_conflict() {
     let other_key = create_key(&ns, "other");
     txn.put(other_key, Value::Int(1)).unwrap();
 
-    // Commit against failing store
-    // For read_set validation: Err(_) -> version 0, read_version was 3, so 0 != 3 -> conflict
-    // This IS conservative (false conflict), but the error is still silently swallowed
+    // Commit against failing store — storage error during read-set validation
     let result = txn.commit(&failing_store);
 
-    // This produces a false conflict -- the validation fails, but because of the wrong reason
-    // (I/O error treated as version 0 instead of propagating the error)
+    // Validation fails because the storage error is propagated
     assert!(
         result.is_err(),
-        "Read-set validation should produce a conflict (though for wrong reason)"
+        "Read-set validation should fail when storage returns an error"
     );
 }
 
-/// Demonstrates the worst case: CAS with expected_version=0 on a key that exists,
-/// where I/O error masks the existence check.
+/// FIXED: CAS create-if-not-exists no longer bypasses existence check on I/O error.
 #[test]
-fn issue_878_cas_create_if_not_exists_bypassed() {
+fn issue_878_cas_create_if_not_exists_blocked_on_error() {
     let branch_id = BranchId::new();
     let ns = create_namespace(branch_id);
     let unique_key = create_key(&ns, "unique_constraint_key");
@@ -229,10 +220,11 @@ fn issue_878_cas_create_if_not_exists_bypassed() {
     )
     .unwrap();
 
-    // Bug: CAS passes validation because I/O error -> version 0 == expected 0
+    // FIXED: CAS now fails because I/O error is propagated instead of
+    // being silently treated as version 0
     let result = txn.commit(&failing_store);
     assert!(
-        result.is_ok(),
-        "BUG: CAS create-if-not-exists passes despite key existing (I/O error masks existence)"
+        result.is_err(),
+        "CAS create-if-not-exists should fail when storage error prevents existence check"
     );
 }

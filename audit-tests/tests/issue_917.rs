@@ -1,20 +1,18 @@
-//! Audit test for issue #917: JsonGet root path in transaction returns raw serialized string
+//! Audit test for issue #917: JsonGet root path in transaction returns raw serialized bytes
 //! instead of deserialized Value
-//! Verdict: CONFIRMED BUG
+//! Verdict: FIXED
 //!
-//! In session.rs:251-267, when JsonGet with root path ("$" or "") executes in a transaction,
-//! it reads the raw stored value via ctx.get(). JSON documents are stored internally
-//! using rmp_serde (MessagePack) as Value::Bytes, not Value::String.
+//! The session.rs `dispatch_in_txn` handler for JsonGet with root path was deserializing
+//! the MessagePack bytes as a generic `JsonValue` instead of as a `JsonDoc` struct.
+//! Since MessagePack represents structs as arrays, this returned the full internal record
+//! (id, value, version, timestamps) as an Array rather than just the document value.
 //!
-//! The session.rs code has a branch for `Value::String(s)` that deserializes JSON,
-//! but the actual stored format is `Value::Bytes(...)`. This falls through to the
-//! `Some(other) => Ok(Output::Maybe(Some(other)))` branch, returning the raw MessagePack
-//! bytes instead of the deserialized document.
+//! Fix: Deserialize as `JsonDoc` and extract `.value` before converting to output.
 
 use strata_executor::{Command, Output, Session};
 
-/// Confirm the bug: JsonGet with root path "$" inside a transaction returns raw
-/// Value::Bytes (MessagePack) instead of a deserialized Value::Object.
+/// Verify that JsonGet with root path "$" inside a transaction returns a
+/// deserialized Value::Object (not raw bytes or internal struct fields).
 #[test]
 fn issue_917_json_get_root_path_in_transaction() {
     let db = strata_engine::database::Database::ephemeral().unwrap();
@@ -65,27 +63,21 @@ fn issue_917_json_get_root_path_in_transaction() {
 
     match result {
         Output::Maybe(Some(val)) => {
-            // BUG CONFIRMED: The value is raw Value::Bytes (MessagePack) instead of
-            // a deserialized Value::Object.
-            // The session.rs code at line 265 falls through to `Some(other)` because
-            // the stored format is Bytes, not String.
-            let is_bytes = matches!(&val, strata_core::value::Value::Bytes(_));
-            let is_object = matches!(&val, strata_core::value::Value::Object(_));
-
+            // FIXED: The value should be a properly deserialized Object
             assert!(
-                is_bytes || is_object,
-                "JsonGet root path in transaction should return Bytes (bug) or Object (fixed). Got: {:?}",
+                matches!(&val, strata_core::value::Value::Object(_)),
+                "JsonGet root path in transaction should return Object. Got: {:?}",
                 val
             );
 
-            if is_bytes {
-                // Bug is present: raw MessagePack bytes returned to user
-                eprintln!(
-                    "BUG CONFIRMED: JsonGet root path in transaction returned \
-                     Value::Bytes (raw MessagePack) instead of deserialized Object"
+            // Verify the content is correct
+            if let strata_core::value::Value::Object(map) = &val {
+                assert_eq!(
+                    map.get("name"),
+                    Some(&strata_core::value::Value::String("Alice".into()))
                 );
+                assert_eq!(map.get("age"), Some(&strata_core::value::Value::Int(30)));
             }
-            // If is_object, the bug has been fixed
         }
         Output::Maybe(None) => {
             panic!("JsonGet should find the document that was just set");
@@ -99,8 +91,7 @@ fn issue_917_json_get_root_path_in_transaction() {
     session.execute(Command::TxnCommit).unwrap();
 }
 
-/// Confirm that JSON root path works correctly OUTSIDE a transaction (no bug).
-/// This contrasts with the in-transaction path which has the bug.
+/// Confirm that JSON root path works correctly OUTSIDE a transaction too.
 #[test]
 fn issue_917_json_get_root_path_outside_transaction_works() {
     let db = strata_engine::database::Database::ephemeral().unwrap();
@@ -137,8 +128,6 @@ fn issue_917_json_get_root_path_outside_transaction_works() {
 
     match result {
         Output::MaybeVersioned(Some(vv)) => {
-            // Outside a transaction, JsonGet goes through the proper handler which
-            // deserializes correctly and returns versioned metadata
             assert!(
                 matches!(&vv.value, strata_core::value::Value::Object(_)),
                 "JsonGet root path outside transaction should return Object. Got: {:?}",
@@ -146,7 +135,6 @@ fn issue_917_json_get_root_path_outside_transaction_works() {
             );
         }
         Output::Maybe(Some(val)) => {
-            // Fallback for older code paths
             assert!(
                 matches!(&val, strata_core::value::Value::Object(_)),
                 "JsonGet root path outside transaction should return Object. Got: {:?}",
