@@ -79,20 +79,9 @@ pub fn json_set(
     let json_path = convert_result(parse_path(&path))?;
     let json_value = convert_result(value_to_json(value))?;
 
-    let exists = convert_result(p.json.exists(&branch_id, &key))?;
-
-    let version = if !exists && json_path.is_root() {
-        // Document doesn't exist and path is root — create it.
-        convert_result(p.json.create(&branch_id, &key, json_value))?
-    } else if !exists {
-        // Document doesn't exist and path is non-root — create empty object first, then set.
-        let empty_obj = convert_result(value_to_json(Value::Object(Default::default())))?;
-        convert_result(p.json.create(&branch_id, &key, empty_obj))?;
-        convert_result(p.json.set(&branch_id, &key, &json_path, json_value))?
-    } else {
-        // Document exists — set at path.
-        convert_result(p.json.set(&branch_id, &key, &json_path, json_value))?
-    };
+    // Single atomic transaction: checks existence, creates if needed, sets at path.
+    // Produces exactly 1 WAL append (fixes #973).
+    let version = convert_result(p.json.set_or_create(&branch_id, &key, &json_path, json_value))?;
 
     Ok(Output::Version(extract_version(&version)))
 }

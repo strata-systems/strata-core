@@ -366,6 +366,57 @@ impl JsonStore {
         Ok(VersionedHistory::new(versions))
     }
 
+    /// Set value at path, creating the document if it doesn't exist.
+    ///
+    /// Combines exists-check, create, and set into a single atomic transaction,
+    /// producing exactly 1 WAL append regardless of whether the document exists.
+    ///
+    /// - If doc doesn't exist and path is root: creates document with value
+    /// - If doc doesn't exist and path is non-root: creates with empty object, sets at path
+    /// - If doc exists: sets value at path
+    pub fn set_or_create(
+        &self,
+        branch_id: &BranchId,
+        doc_id: &str,
+        path: &JsonPath,
+        value: JsonValue,
+    ) -> StrataResult<Version> {
+        path.validate().map_err(limit_error_to_error)?;
+        value.validate().map_err(limit_error_to_error)?;
+
+        let key = self.key_for(branch_id, doc_id);
+
+        self.db.transaction(*branch_id, |txn| {
+            match txn.get(&key)? {
+                Some(stored) => {
+                    // Document exists — set at path
+                    let mut doc = Self::deserialize_doc(&stored)?;
+                    set_at_path(&mut doc.value, path, value)
+                        .map_err(|e| StrataError::invalid_input(format!("Path error: {}", e)))?;
+                    doc.touch();
+                    let serialized = Self::serialize_doc(&doc)?;
+                    txn.put(key.clone(), serialized)?;
+                    Ok(Version::counter(doc.version))
+                }
+                None => {
+                    // Document doesn't exist — create with value at path
+                    let initial = if path.is_root() {
+                        value
+                    } else {
+                        let mut obj = JsonValue::object();
+                        set_at_path(&mut obj, path, value)
+                            .map_err(|e| StrataError::invalid_input(format!("Path error: {}", e)))?;
+                        obj
+                    };
+                    let doc = JsonDoc::new(doc_id, initial);
+                    let serialized = Self::serialize_doc(&doc)?;
+                    txn.put(key.clone(), serialized)?;
+                    Ok(Version::counter(doc.version))
+                }
+            }
+        })
+    }
+
     /// Check if document exists.
     pub fn exists(&self, branch_id: &BranchId, doc_id: &str) -> StrataResult<bool> {
         let key = self.key_for(branch_id, doc_id);
