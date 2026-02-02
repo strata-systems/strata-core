@@ -140,6 +140,26 @@ impl Strata {
         })
     }
 
+    /// Create a new independent handle to the same database.
+    ///
+    /// Each handle has its own branch context (starting on "default") and can
+    /// be moved to a separate thread. This is the standard way to use Strata
+    /// from multiple threads.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let db = Strata::open("/data/myapp")?;
+    /// let handle = db.new_handle()?;
+    /// std::thread::spawn(move || {
+    ///     handle.kv_put("key", Value::Int(1)).unwrap();
+    /// });
+    /// ```
+    pub fn new_handle(&self) -> Result<Self> {
+        let db = self.executor.primitives().db.clone();
+        Self::from_database(db)
+    }
+
     /// Create a new Strata instance from an existing database.
     ///
     /// Use this when you need more control over database configuration.

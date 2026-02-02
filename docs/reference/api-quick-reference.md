@@ -8,6 +8,7 @@ Every method on the `Strata` struct, grouped by category.
 |--------|-----------|---------|
 | `open` | `(path: impl AsRef<Path>) -> Result<Self>` | New Strata instance |
 | `cache` | `() -> Result<Self>` | Ephemeral in-memory instance |
+| `new_handle` | `() -> Result<Self>` | Independent handle to same database |
 | `ping` | `() -> Result<String>` | Version string |
 | `info` | `() -> Result<DatabaseInfo>` | Database statistics |
 | `flush` | `() -> Result<()>` | Flushes pending writes |
