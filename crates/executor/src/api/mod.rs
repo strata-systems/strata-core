@@ -51,6 +51,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use strata_engine::Database;
+use strata_security::{AccessMode, OpenOptions};
 
 use std::sync::Once;
 
@@ -82,13 +83,14 @@ fn ensure_vector_recovery() {
 pub struct Strata {
     executor: Executor,
     current_branch: BranchId,
+    access_mode: AccessMode,
 }
 
 impl Strata {
     /// Open a database at the given path.
     ///
     /// This is the primary way to create a Strata instance. The database
-    /// will be created if it doesn't exist.
+    /// will be created if it doesn't exist. Opens in read-write mode.
     ///
     /// # Example
     ///
@@ -99,18 +101,38 @@ impl Strata {
     /// db.kv_put("key", Value::String("hello".into()))?;
     /// ```
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
+        Self::open_with(path, OpenOptions::default())
+    }
+
+    /// Open a database at the given path with explicit options.
+    ///
+    /// Use this to open a database in read-only mode or with other
+    /// configuration options.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use strata_executor::{Strata, OpenOptions, AccessMode};
+    ///
+    /// let db = Strata::open_with("/var/data/myapp", OpenOptions::new().access_mode(AccessMode::ReadOnly))?;
+    /// ```
+    pub fn open_with<P: AsRef<Path>>(path: P, opts: OpenOptions) -> Result<Self> {
         ensure_vector_recovery();
         let db = Database::open(path).map_err(|e| Error::Internal {
             reason: format!("Failed to open database: {}", e),
         })?;
-        let executor = Executor::new(db);
+        let access_mode = opts.access_mode;
+        let executor = Executor::new_with_mode(db, access_mode);
 
-        // Ensure the default branch exists
-        Self::ensure_default_branch(&executor)?;
+        match access_mode {
+            AccessMode::ReadWrite => Self::ensure_default_branch(&executor)?,
+            AccessMode::ReadOnly => Self::verify_default_branch(&executor)?,
+        }
 
         Ok(Self {
             executor,
             current_branch: BranchId::default(),
+            access_mode,
         })
     }
 
@@ -137,6 +159,7 @@ impl Strata {
         Ok(Self {
             executor,
             current_branch: BranchId::default(),
+            access_mode: AccessMode::ReadWrite,
         })
     }
 
@@ -157,7 +180,7 @@ impl Strata {
     /// ```
     pub fn new_handle(&self) -> Result<Self> {
         let db = self.executor.primitives().db.clone();
-        Self::from_database(db)
+        Self::from_database_with_mode(db, self.access_mode)
     }
 
     /// Create a new Strata instance from an existing database.
@@ -165,19 +188,29 @@ impl Strata {
     /// Use this when you need more control over database configuration.
     /// For most cases, prefer [`Strata::open()`].
     pub fn from_database(db: Arc<Database>) -> Result<Self> {
-        ensure_vector_recovery();
-        let executor = Executor::new(db);
+        Self::from_database_with_mode(db, AccessMode::ReadWrite)
+    }
 
-        // Ensure the default branch exists
-        Self::ensure_default_branch(&executor)?;
+    /// Create a new Strata instance from an existing database with a
+    /// specific access mode.
+    fn from_database_with_mode(db: Arc<Database>, access_mode: AccessMode) -> Result<Self> {
+        ensure_vector_recovery();
+        let executor = Executor::new_with_mode(db, access_mode);
+
+        match access_mode {
+            AccessMode::ReadWrite => Self::ensure_default_branch(&executor)?,
+            AccessMode::ReadOnly => Self::verify_default_branch(&executor)?,
+        }
 
         Ok(Self {
             executor,
             current_branch: BranchId::default(),
+            access_mode,
         })
     }
 
-    /// Ensures the "default" branch exists in the database.
+    /// Ensures the "default" branch exists in the database, creating it if
+    /// missing.
     fn ensure_default_branch(executor: &Executor) -> Result<()> {
         // Check if default branch exists
         match executor.execute(Command::BranchExists {
@@ -199,9 +232,32 @@ impl Strata {
         }
     }
 
+    /// Verifies the "default" branch exists without attempting to create it.
+    ///
+    /// Used by read-only open to avoid issuing writes.
+    fn verify_default_branch(executor: &Executor) -> Result<()> {
+        // BranchExists is a read command, so the read-only guard won't fire.
+        match executor.execute(Command::BranchExists {
+            branch: BranchId::default(),
+        })? {
+            Output::Bool(true) => Ok(()),
+            Output::Bool(false) => Err(Error::BranchNotFound {
+                branch: "default".to_string(),
+            }),
+            _ => Err(Error::Internal {
+                reason: "Unexpected output for BranchExists".into(),
+            }),
+        }
+    }
+
     /// Get the underlying executor.
     pub fn executor(&self) -> &Executor {
         &self.executor
+    }
+
+    /// Returns the access mode of this database handle.
+    pub fn access_mode(&self) -> AccessMode {
+        self.access_mode
     }
 
     /// Get WAL durability counters for diagnostics.
@@ -239,8 +295,9 @@ impl Strata {
     ///
     /// The returned session wraps a fresh executor and can manage an
     /// optional open transaction across multiple `execute()` calls.
+    /// The session inherits the access mode of this handle.
     pub fn session(&self) -> Session {
-        Session::new(self.executor.primitives().db.clone())
+        Session::new_with_mode(self.executor.primitives().db.clone(), self.access_mode)
     }
 
     // =========================================================================

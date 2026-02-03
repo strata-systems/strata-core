@@ -1,0 +1,13 @@
+[package]
+name = "strata-security"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Access control and configuration for Strata database"
+
+[dependencies]
+serde = { workspace = true }

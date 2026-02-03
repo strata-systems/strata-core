@@ -6,6 +6,7 @@
 use std::sync::Arc;
 
 use strata_engine::Database;
+use strata_security::AccessMode;
 
 use crate::bridge::Primitives;
 use crate::{Command, Error, Output, Result};
@@ -43,6 +44,7 @@ use crate::{Command, Error, Output, Result};
 /// ```
 pub struct Executor {
     primitives: Arc<Primitives>,
+    access_mode: AccessMode,
 }
 
 impl Executor {
@@ -50,7 +52,21 @@ impl Executor {
     pub fn new(db: Arc<Database>) -> Self {
         Self {
             primitives: Arc::new(Primitives::new(db)),
+            access_mode: AccessMode::ReadWrite,
         }
+    }
+
+    /// Create a new executor with an explicit access mode.
+    pub fn new_with_mode(db: Arc<Database>, access_mode: AccessMode) -> Self {
+        Self {
+            primitives: Arc::new(Primitives::new(db)),
+            access_mode,
+        }
+    }
+
+    /// Returns the access mode of this executor.
+    pub fn access_mode(&self) -> AccessMode {
+        self.access_mode
     }
 
     /// Execute a single command.
@@ -58,6 +74,12 @@ impl Executor {
     /// Resolves any `None` branch fields to the default branch before dispatch.
     /// Returns the command result or an error.
     pub fn execute(&self, mut cmd: Command) -> Result<Output> {
+        if self.access_mode == AccessMode::ReadOnly && cmd.is_write() {
+            return Err(Error::AccessDenied {
+                command: cmd.name().to_string(),
+            });
+        }
+
         cmd.resolve_default_branch();
 
         match cmd {

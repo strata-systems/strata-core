@@ -80,6 +80,9 @@ pub use types::*;
 // Re-export Value from strata_core so users don't need to import it
 pub use strata_core::Value;
 
+// Re-export security types so users don't need strata-security directly
+pub use strata_security::{AccessMode, OpenOptions};
+
 // Re-export WAL counters (return type of Strata::durability_counters)
 pub use strata_engine::WalCounters;
 

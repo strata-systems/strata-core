@@ -134,6 +134,11 @@ pub enum Error {
     #[error("overflow: {reason}")]
     Overflow { reason: String },
 
+    // ==================== Access Control ====================
+    /// Write command rejected because the database is read-only
+    #[error("access denied: {command} rejected — database is read-only")]
+    AccessDenied { command: String },
+
     // ==================== Transaction Errors ====================
     /// No active transaction
     #[error("no active transaction")]

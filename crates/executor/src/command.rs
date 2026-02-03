@@ -444,6 +444,97 @@ pub enum Command {
 }
 
 impl Command {
+    /// Returns `true` if this command performs a write operation.
+    ///
+    /// Used by the access-mode guard to reject writes when the database
+    /// is opened in read-only mode.
+    pub fn is_write(&self) -> bool {
+        matches!(
+            self,
+            Command::KvPut { .. }
+                | Command::KvDelete { .. }
+                | Command::JsonSet { .. }
+                | Command::JsonDelete { .. }
+                | Command::EventAppend { .. }
+                | Command::StateSet { .. }
+                | Command::StateCas { .. }
+                | Command::StateInit { .. }
+                | Command::StateDelete { .. }
+                | Command::VectorUpsert { .. }
+                | Command::VectorDelete { .. }
+                | Command::VectorCreateCollection { .. }
+                | Command::VectorDeleteCollection { .. }
+                | Command::BranchCreate { .. }
+                | Command::BranchDelete { .. }
+                | Command::TxnBegin { .. }
+                | Command::TxnCommit
+                | Command::TxnRollback
+                | Command::RetentionApply { .. }
+                | Command::Flush
+                | Command::Compact
+                | Command::BranchExport { .. }
+                | Command::BranchImport { .. }
+        )
+    }
+
+    /// Returns the variant name as a static string.
+    ///
+    /// The exhaustive match ensures the compiler flags any new `Command`
+    /// variant that is added without a corresponding name.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Command::KvPut { .. } => "KvPut",
+            Command::KvGet { .. } => "KvGet",
+            Command::KvDelete { .. } => "KvDelete",
+            Command::KvList { .. } => "KvList",
+            Command::KvGetv { .. } => "KvGetv",
+            Command::JsonSet { .. } => "JsonSet",
+            Command::JsonGet { .. } => "JsonGet",
+            Command::JsonDelete { .. } => "JsonDelete",
+            Command::JsonGetv { .. } => "JsonGetv",
+            Command::JsonList { .. } => "JsonList",
+            Command::EventAppend { .. } => "EventAppend",
+            Command::EventRead { .. } => "EventRead",
+            Command::EventReadByType { .. } => "EventReadByType",
+            Command::EventLen { .. } => "EventLen",
+            Command::StateSet { .. } => "StateSet",
+            Command::StateRead { .. } => "StateRead",
+            Command::StateCas { .. } => "StateCas",
+            Command::StateReadv { .. } => "StateReadv",
+            Command::StateInit { .. } => "StateInit",
+            Command::StateDelete { .. } => "StateDelete",
+            Command::StateList { .. } => "StateList",
+            Command::VectorUpsert { .. } => "VectorUpsert",
+            Command::VectorGet { .. } => "VectorGet",
+            Command::VectorDelete { .. } => "VectorDelete",
+            Command::VectorSearch { .. } => "VectorSearch",
+            Command::VectorCreateCollection { .. } => "VectorCreateCollection",
+            Command::VectorDeleteCollection { .. } => "VectorDeleteCollection",
+            Command::VectorListCollections { .. } => "VectorListCollections",
+            Command::BranchCreate { .. } => "BranchCreate",
+            Command::BranchGet { .. } => "BranchGet",
+            Command::BranchList { .. } => "BranchList",
+            Command::BranchExists { .. } => "BranchExists",
+            Command::BranchDelete { .. } => "BranchDelete",
+            Command::TxnBegin { .. } => "TxnBegin",
+            Command::TxnCommit => "TxnCommit",
+            Command::TxnRollback => "TxnRollback",
+            Command::TxnInfo => "TxnInfo",
+            Command::TxnIsActive => "TxnIsActive",
+            Command::RetentionApply { .. } => "RetentionApply",
+            Command::RetentionStats { .. } => "RetentionStats",
+            Command::RetentionPreview { .. } => "RetentionPreview",
+            Command::Ping => "Ping",
+            Command::Info => "Info",
+            Command::Flush => "Flush",
+            Command::Compact => "Compact",
+            Command::BranchExport { .. } => "BranchExport",
+            Command::BranchImport { .. } => "BranchImport",
+            Command::BranchBundleValidate { .. } => "BranchBundleValidate",
+            Command::Search { .. } => "Search",
+        }
+    }
+
     /// Fill in the default branch for any data command where branch is `None`.
     ///
     /// Called by the executor before dispatch so handlers always receive a

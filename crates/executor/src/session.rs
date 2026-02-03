@@ -28,6 +28,7 @@ use strata_core::types::{Key, Namespace, TypeTag};
 use strata_engine::{
     extensions::StateCellExt, Database, Transaction, TransactionContext, TransactionOps,
 };
+use strata_security::AccessMode;
 
 use crate::bridge::{
     extract_version, json_to_value, parse_path, to_core_branch_id, to_versioned_value,
@@ -63,6 +64,16 @@ impl Session {
         }
     }
 
+    /// Create a new session with an explicit access mode.
+    pub fn new_with_mode(db: Arc<Database>, access_mode: AccessMode) -> Self {
+        Self {
+            executor: Executor::new_with_mode(db.clone(), access_mode),
+            db,
+            txn_ctx: None,
+            txn_branch_id: None,
+        }
+    }
+
     /// Returns whether a transaction is currently active.
     pub fn in_transaction(&self) -> bool {
         self.txn_ctx.is_some()
@@ -70,6 +81,12 @@ impl Session {
 
     /// Execute a command, routing through the active transaction when appropriate.
     pub fn execute(&mut self, mut cmd: Command) -> Result<Output> {
+        if self.executor.access_mode() == AccessMode::ReadOnly && cmd.is_write() {
+            return Err(Error::AccessDenied {
+                command: cmd.name().to_string(),
+            });
+        }
+
         cmd.resolve_default_branch();
 
         match &cmd {

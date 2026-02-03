@@ -14,6 +14,7 @@ description = "Command execution layer for Strata database"
 strata-core = { path = "../core" }
 strata-engine = { path = "../engine" }
 strata-intelligence = { path = "../intelligence" }
+strata-security = { path = "../security" }
 
 # Serialization
 serde = { workspace = true }
