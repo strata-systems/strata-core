@@ -873,7 +873,10 @@ impl Database {
         txn: &mut TransactionContext,
         durability: DurabilityMode,
     ) -> StrataResult<u64> {
-        let mut wal_guard = if durability.requires_wal() {
+        let needs_wal = durability.requires_wal()
+            && (!txn.is_read_only() || !txn.json_writes().is_empty());
+
+        let mut wal_guard = if needs_wal {
             self.wal_writer.as_ref().map(|w| w.lock())
         } else {
             None

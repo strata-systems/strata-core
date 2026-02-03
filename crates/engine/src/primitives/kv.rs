@@ -91,17 +91,18 @@ impl KVStore {
 
     /// Get a value with its version metadata.
     ///
-    /// Reads directly from the committed store (non-transactional) to
-    /// retrieve the latest value together with its version and timestamp.
+    /// Uses a transaction to retrieve the latest value together with its
+    /// version and timestamp, providing snapshot isolation.
     /// Returns `None` if the key doesn't exist.
     pub fn get_versioned(
         &self,
         branch_id: &BranchId,
         key: &str,
     ) -> StrataResult<Option<strata_core::VersionedValue>> {
-        let storage_key = self.key_for(branch_id, key);
-        use strata_core::Storage;
-        self.db.storage().get(&storage_key)
+        self.db.transaction(*branch_id, |txn| {
+            let storage_key = self.key_for(branch_id, key);
+            txn.get_versioned(&storage_key)
+        })
     }
 
     /// Get full version history for a key.
@@ -507,5 +508,41 @@ mod tests {
             Ok(())
         })
         .unwrap();
+    }
+
+    #[test]
+    fn test_get_versioned_returns_version_info() {
+        let (_temp, _db, kv) = setup();
+        let branch_id = BranchId::new();
+
+        let version = kv.put(&branch_id, "vkey", Value::Int(99)).unwrap();
+        let vv = kv.get_versioned(&branch_id, "vkey").unwrap().unwrap();
+        assert_eq!(vv.value, Value::Int(99));
+        assert_eq!(vv.version, version);
+    }
+
+    #[test]
+    fn test_get_versioned_snapshot_isolation() {
+        let (_temp, db, kv) = setup();
+        let branch_id = BranchId::new();
+
+        kv.put(&branch_id, "iso_key", Value::Int(1)).unwrap();
+
+        // Start a manual transaction, read, then check the versioned read
+        // is consistent even if a concurrent write happens
+        let mut txn = db.begin_transaction(branch_id);
+        let storage_key =
+            strata_core::types::Key::new_kv(Namespace::for_branch(branch_id), "iso_key");
+        let vv = txn.get_versioned(&storage_key).unwrap().unwrap();
+        assert_eq!(vv.value, Value::Int(1));
+
+        // Concurrent write after our snapshot
+        kv.put(&branch_id, "iso_key", Value::Int(2)).unwrap();
+
+        // Re-read within same transaction should still see old value
+        let vv2 = txn.get_versioned(&storage_key).unwrap().unwrap();
+        assert_eq!(vv2.value, Value::Int(1));
+
+        db.end_transaction(txn);
     }
 }

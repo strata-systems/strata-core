@@ -13,6 +13,7 @@ use strata_core::primitives::json::{get_at_path, JsonPatch, JsonPath, JsonValue}
 use strata_core::traits::{SnapshotView, Storage};
 use strata_core::types::{BranchId, Key};
 use strata_core::value::Value;
+use strata_core::{Version, Versioned, VersionedValue};
 use strata_core::StrataError;
 use strata_core::StrataResult;
 
@@ -581,6 +582,58 @@ impl TransactionContext {
             self.read_set.insert(key.clone(), 0);
             Ok(None)
         }
+    }
+
+    /// Get a value with version metadata from the transaction
+    ///
+    /// Implements read-your-writes semantics like `get()` but preserves
+    /// version information:
+    /// 1. **write_set hit:** returns `VersionedValue` with `Version::Txn(0)` placeholder
+    /// 2. **delete_set hit:** returns `None`
+    /// 3. **snapshot read:** returns full `VersionedValue` from snapshot, tracks in read_set
+    ///
+    /// # Errors
+    /// Returns `StrataError::invalid_input` if transaction is not active.
+    pub fn get_versioned(&mut self, key: &Key) -> StrataResult<Option<VersionedValue>> {
+        self.ensure_active()?;
+
+        // 1. Check write_set first (read-your-writes)
+        if let Some(value) = self.write_set.get(key) {
+            return Ok(Some(Versioned {
+                value: value.clone(),
+                version: Version::Txn(0),
+                timestamp: strata_core::Timestamp::from_micros(0),
+            }));
+        }
+
+        // 2. Check delete_set (return None if deleted in this txn)
+        if self.delete_set.contains(key) {
+            return Ok(None);
+        }
+
+        // 3. Read from snapshot with version info
+        self.read_versioned_from_snapshot(key)
+    }
+
+    /// Read from snapshot preserving version metadata, and track in read_set
+    fn read_versioned_from_snapshot(
+        &mut self,
+        key: &Key,
+    ) -> StrataResult<Option<VersionedValue>> {
+        let snapshot = self.snapshot.as_ref().ok_or_else(|| {
+            StrataError::invalid_input("Transaction has no snapshot for reads".to_string())
+        })?;
+
+        let versioned = snapshot.get(key)?;
+
+        // Track in read_set for conflict detection
+        if let Some(ref vv) = versioned {
+            self.read_set.insert(key.clone(), vv.version.as_u64());
+        } else {
+            self.read_set.insert(key.clone(), 0);
+        }
+
+        Ok(versioned)
     }
 
     /// Check if a key exists in the transaction's view
@@ -1502,5 +1555,109 @@ impl JsonStoreExt for TransactionContext {
         })?;
 
         Ok(snapshot.get(key)?.is_some())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ClonedSnapshotView;
+    use std::collections::BTreeMap;
+    use strata_core::types::{BranchId, Namespace, TypeTag};
+    use strata_core::value::Value;
+
+    fn test_namespace() -> Namespace {
+        Namespace::new(
+            "tenant".to_string(),
+            "app".to_string(),
+            "agent".to_string(),
+            BranchId::new(),
+        )
+    }
+
+    fn test_key(ns: &Namespace, name: &str) -> Key {
+        Key::new(ns.clone(), TypeTag::KV, name.as_bytes().to_vec())
+    }
+
+    fn snapshot_with_key(key: &Key, value: Value, version: u64) -> Box<dyn SnapshotView> {
+        let mut data = BTreeMap::new();
+        data.insert(
+            key.clone(),
+            VersionedValue::new(value, Version::txn(version)),
+        );
+        Box::new(ClonedSnapshotView::new(version, data))
+    }
+
+    #[test]
+    fn test_get_versioned_from_snapshot() {
+        let ns = test_namespace();
+        let key = test_key(&ns, "k1");
+        let branch_id = BranchId::new();
+        let snap = snapshot_with_key(&key, Value::Int(42), 5);
+        let mut txn = TransactionContext::with_snapshot(1, branch_id, snap);
+
+        let result = txn.get_versioned(&key).unwrap();
+        let vv = result.unwrap();
+        assert_eq!(vv.value, Value::Int(42));
+        assert_eq!(vv.version, Version::Txn(5));
+        // VersionedValue from snapshot preserves timestamp
+    }
+
+    #[test]
+    fn test_get_versioned_from_write_set() {
+        let ns = test_namespace();
+        let key = test_key(&ns, "k1");
+        let branch_id = BranchId::new();
+        let snap = Box::new(ClonedSnapshotView::empty(0));
+        let mut txn = TransactionContext::with_snapshot(1, branch_id, snap);
+
+        txn.put(key.clone(), Value::String("written".into()))
+            .unwrap();
+
+        let result = txn.get_versioned(&key).unwrap();
+        let vv = result.unwrap();
+        assert_eq!(vv.value, Value::String("written".into()));
+        assert_eq!(vv.version, Version::Txn(0)); // placeholder
+    }
+
+    #[test]
+    fn test_get_versioned_from_delete_set() {
+        let ns = test_namespace();
+        let key = test_key(&ns, "k1");
+        let branch_id = BranchId::new();
+        let snap = snapshot_with_key(&key, Value::Int(42), 5);
+        let mut txn = TransactionContext::with_snapshot(1, branch_id, snap);
+
+        txn.delete(key.clone()).unwrap();
+
+        let result = txn.get_versioned(&key).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_versioned_nonexistent() {
+        let ns = test_namespace();
+        let key = test_key(&ns, "missing");
+        let branch_id = BranchId::new();
+        let snap = Box::new(ClonedSnapshotView::empty(10));
+        let mut txn = TransactionContext::with_snapshot(1, branch_id, snap);
+
+        let result = txn.get_versioned(&key).unwrap();
+        assert!(result.is_none());
+        // Tracks version 0 in read_set for conflict detection
+        assert_eq!(txn.read_set.get(&key), Some(&0));
+    }
+
+    #[test]
+    fn test_get_versioned_tracks_read_set() {
+        let ns = test_namespace();
+        let key = test_key(&ns, "k1");
+        let branch_id = BranchId::new();
+        let snap = snapshot_with_key(&key, Value::Int(7), 15);
+        let mut txn = TransactionContext::with_snapshot(1, branch_id, snap);
+
+        let _ = txn.get_versioned(&key).unwrap();
+        // Verify version tracked for conflict detection
+        assert_eq!(txn.read_set.get(&key), Some(&15));
     }
 }

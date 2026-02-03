@@ -194,6 +194,18 @@ impl TransactionManager {
         store: &S,
         mut wal: Option<&mut WalWriter>,
     ) -> std::result::Result<u64, CommitError> {
+        // Fast path: read-only transactions skip lock, validation, version alloc, WAL, apply
+        if txn.is_read_only() && txn.json_writes().is_empty() {
+            if !txn.is_active() {
+                return Err(CommitError::InvalidState(format!(
+                    "Cannot commit transaction {} from {:?} state - must be Active",
+                    txn.txn_id, txn.status
+                )));
+            }
+            txn.status = TransactionStatus::Committed;
+            return Ok(self.version.load(Ordering::SeqCst));
+        }
+
         // Acquire per-branch commit lock to prevent TOCTOU race between validation and apply
         // This ensures no other transaction on the same branch can modify storage between
         // our validation check and our apply_writes call.
@@ -207,7 +219,23 @@ impl TransactionManager {
         // Step 1: Validate and mark committed (in-memory)
         // This performs: Active → Validating → Committed
         // Or: Active → Validating → Aborted (if conflicts detected)
-        txn.commit(store)?;
+        // Skip validation for blind writes (no reads, no CAS, no JSON snapshots/writes)
+        let can_skip_validation = txn.read_set.is_empty()
+            && txn.cas_set.is_empty()
+            && txn.json_snapshot_versions().map_or(true, |v| v.is_empty())
+            && txn.json_writes().is_empty();
+
+        if can_skip_validation {
+            if !txn.is_active() {
+                return Err(CommitError::InvalidState(format!(
+                    "Cannot commit transaction {} from {:?} state - must be Active",
+                    txn.txn_id, txn.status
+                )));
+            }
+            txn.status = TransactionStatus::Committed;
+        } else {
+            txn.commit(store)?;
+        }
 
         // At this point, transaction is in Committed state
         // but NOT yet durable (not in WAL)
@@ -629,5 +657,217 @@ mod tests {
             final_value.is_none(),
             "Blind delete should succeed, removing alice"
         );
+    }
+
+    // ========================================================================
+    // Read-Only Fast Path Tests
+    // ========================================================================
+
+    #[test]
+    fn test_read_only_no_version_increment() {
+        let store = Arc::new(ShardedStore::new());
+        let manager = TransactionManager::new(0);
+        let branch_id = BranchId::new();
+
+        let v_before = manager.current_version();
+
+        // Read-only transaction (just reads, no writes)
+        let snapshot = store.snapshot();
+        let mut txn = TransactionContext::with_snapshot(1, branch_id, Box::new(snapshot));
+        // No operations — pure read-only
+        let result = manager.commit(&mut txn, store.as_ref(), None);
+        assert!(result.is_ok());
+
+        // Version should NOT have been incremented
+        assert_eq!(manager.current_version(), v_before);
+    }
+
+    #[test]
+    fn test_read_only_no_lock_contention() {
+        // Two concurrent read-only transactions on the same branch shouldn't block
+        let store = Arc::new(ShardedStore::new());
+        let manager = Arc::new(TransactionManager::new(0));
+        let branch_id = BranchId::new();
+
+        let manager1 = Arc::clone(&manager);
+        let store1 = Arc::clone(&store);
+        let manager2 = Arc::clone(&manager);
+        let store2 = Arc::clone(&store);
+
+        let h1 = std::thread::spawn(move || {
+            let snapshot = store1.snapshot();
+            let mut txn = TransactionContext::with_snapshot(1, branch_id, Box::new(snapshot));
+            manager1.commit(&mut txn, store1.as_ref(), None)
+        });
+        let h2 = std::thread::spawn(move || {
+            let snapshot = store2.snapshot();
+            let mut txn = TransactionContext::with_snapshot(2, branch_id, Box::new(snapshot));
+            manager2.commit(&mut txn, store2.as_ref(), None)
+        });
+
+        assert!(h1.join().unwrap().is_ok());
+        assert!(h2.join().unwrap().is_ok());
+    }
+
+    #[test]
+    fn test_read_only_with_json_writes_takes_normal_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_dir = temp_dir.path().join("wal");
+        let mut wal = create_test_wal(&wal_dir);
+        let store = Arc::new(ShardedStore::new());
+        let manager = TransactionManager::new(0);
+        let branch_id = BranchId::new();
+
+        let v_before = manager.current_version();
+
+        let snapshot = store.snapshot();
+        let mut txn = TransactionContext::with_snapshot(1, branch_id, Box::new(snapshot));
+        // No KV writes, but has json_writes → not fast-pathed
+        use strata_core::primitives::json::{JsonPatch, JsonPath};
+        txn.record_json_write(
+            create_test_key(&create_test_namespace(branch_id), "doc"),
+            JsonPatch::set_at(JsonPath::root(), serde_json::json!({"a": 1}).into()),
+            0,
+        );
+
+        let result = manager.commit(&mut txn, store.as_ref(), Some(&mut wal));
+        assert!(result.is_ok());
+
+        // Version SHOULD have been incremented (not fast-pathed)
+        assert!(manager.current_version() > v_before);
+    }
+
+    #[test]
+    fn test_read_only_rejects_non_active() {
+        let store = Arc::new(ShardedStore::new());
+        let manager = TransactionManager::new(0);
+        let branch_id = BranchId::new();
+
+        let snapshot = store.snapshot();
+        let mut txn = TransactionContext::with_snapshot(1, branch_id, Box::new(snapshot));
+        txn.mark_aborted("test".to_string()).unwrap();
+
+        let result = manager.commit(&mut txn, store.as_ref(), None);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CommitError::InvalidState(_) => {} // expected
+            other => panic!("Expected InvalidState, got {:?}", other),
+        }
+    }
+
+    // ========================================================================
+    // Blind-Write Validation Skip Tests
+    // ========================================================================
+
+    #[test]
+    fn test_blind_write_skips_validation() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_dir = temp_dir.path().join("wal");
+        let mut wal = create_test_wal(&wal_dir);
+        let store = Arc::new(ShardedStore::new());
+        let manager = TransactionManager::new(0);
+        let branch_id = BranchId::new();
+        let ns = create_test_namespace(branch_id);
+        let key = create_test_key(&ns, "blind");
+
+        // Blind write: put with no prior read
+        let snapshot = store.snapshot();
+        let mut txn = TransactionContext::with_snapshot(1, branch_id, Box::new(snapshot));
+        txn.put(key.clone(), Value::Int(42)).unwrap();
+        assert!(txn.read_set.is_empty()); // Confirms it's a blind write
+
+        let result = manager.commit(&mut txn, store.as_ref(), Some(&mut wal));
+        assert!(result.is_ok());
+
+        let stored = store.get(&key).unwrap().unwrap();
+        assert_eq!(stored.value, Value::Int(42));
+    }
+
+    #[test]
+    fn test_write_with_read_still_validates() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_dir = temp_dir.path().join("wal");
+        let mut wal = create_test_wal(&wal_dir);
+        let store = Arc::new(ShardedStore::new());
+        let manager = TransactionManager::new(0);
+        let branch_id = BranchId::new();
+        let ns = create_test_namespace(branch_id);
+        let key = create_test_key(&ns, "readwrite");
+
+        // Setup: store initial value
+        {
+            let snapshot = store.snapshot();
+            let mut setup = TransactionContext::with_snapshot(1, branch_id, Box::new(snapshot));
+            setup.put(key.clone(), Value::Int(1)).unwrap();
+            manager
+                .commit(&mut setup, store.as_ref(), Some(&mut wal))
+                .unwrap();
+        }
+
+        // T1: read then write (not a blind write)
+        let snapshot = store.snapshot();
+        let mut txn = TransactionContext::with_snapshot(2, branch_id, Box::new(snapshot));
+        let _ = txn.get(&key).unwrap();
+        txn.put(key.clone(), Value::Int(2)).unwrap();
+        assert!(!txn.read_set.is_empty()); // Has reads → goes through validation
+
+        // Concurrent update
+        {
+            let snapshot2 = store.snapshot();
+            let mut txn2 = TransactionContext::with_snapshot(3, branch_id, Box::new(snapshot2));
+            txn2.put(key.clone(), Value::Int(99)).unwrap();
+            manager
+                .commit(&mut txn2, store.as_ref(), Some(&mut wal))
+                .unwrap();
+        }
+
+        // T1 should fail validation (read-write conflict)
+        let result = manager.commit(&mut txn, store.as_ref(), Some(&mut wal));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_write_with_cas_still_validates() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_dir = temp_dir.path().join("wal");
+        let mut wal = create_test_wal(&wal_dir);
+        let store = Arc::new(ShardedStore::new());
+        let manager = TransactionManager::new(0);
+        let branch_id = BranchId::new();
+        let ns = create_test_namespace(branch_id);
+        let key = create_test_key(&ns, "cas_key");
+
+        // CAS operation → not a blind write, should validate
+        let snapshot = store.snapshot();
+        let mut txn = TransactionContext::with_snapshot(1, branch_id, Box::new(snapshot));
+        txn.cas(key.clone(), 0, Value::Int(1)).unwrap();
+        assert!(!txn.cas_set.is_empty());
+
+        let result = manager.commit(&mut txn, store.as_ref(), Some(&mut wal));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_write_with_json_snapshot_still_validates() {
+        let temp_dir = TempDir::new().unwrap();
+        let wal_dir = temp_dir.path().join("wal");
+        let mut wal = create_test_wal(&wal_dir);
+        let store = Arc::new(ShardedStore::new());
+        let manager = TransactionManager::new(0);
+        let branch_id = BranchId::new();
+        let ns = create_test_namespace(branch_id);
+        let key = create_test_key(&ns, "json_doc");
+
+        // Has json_snapshot_versions → should go through full validation path
+        // Use version 0 (key doesn't exist) so validation passes
+        let snapshot = store.snapshot();
+        let mut txn = TransactionContext::with_snapshot(1, branch_id, Box::new(snapshot));
+        txn.put(key.clone(), Value::Int(1)).unwrap();
+        txn.record_json_snapshot_version(key.clone(), 0);
+
+        let result = manager.commit(&mut txn, store.as_ref(), Some(&mut wal));
+        assert!(result.is_ok());
+        // Verify it went through the normal path (version incremented)
+        assert!(manager.current_version() > 0);
     }
 }
