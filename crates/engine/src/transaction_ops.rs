@@ -75,7 +75,7 @@ pub trait TransactionOps {
     fn event_append(&mut self, event_type: &str, payload: Value) -> Result<Version, StrataError>;
 
     /// Read an event by sequence number
-    fn event_read(&self, sequence: u64) -> Result<Option<Versioned<Event>>, StrataError>;
+    fn event_get(&self, sequence: u64) -> Result<Option<Versioned<Event>>, StrataError>;
 
     /// Read a range of events [start, end)
     fn event_range(&self, start: u64, end: u64) -> Result<Vec<Versioned<Event>>, StrataError>;
@@ -88,7 +88,7 @@ pub trait TransactionOps {
     // =========================================================================
 
     /// Read a state cell
-    fn state_read(&self, name: &str) -> Result<Option<Versioned<State>>, StrataError>;
+    fn state_get(&self, name: &str) -> Result<Option<Versioned<State>>, StrataError>;
 
     /// Initialize a state cell (fails if exists)
     fn state_init(&mut self, name: &str, value: Value) -> Result<Version, StrataError>;
@@ -240,7 +240,7 @@ mod tests {
             Ok(Version::seq(self.event_count))
         }
 
-        fn event_read(&self, sequence: u64) -> Result<Option<Versioned<Event>>, StrataError> {
+        fn event_get(&self, sequence: u64) -> Result<Option<Versioned<Event>>, StrataError> {
             // Return None for simplicity - Event struct is complex
             if sequence == 0 || sequence > self.event_count {
                 return Ok(None);
@@ -264,9 +264,9 @@ mod tests {
         }
 
         // State operations - return not implemented error for mock
-        fn state_read(&self, _name: &str) -> Result<Option<Versioned<State>>, StrataError> {
+        fn state_get(&self, _name: &str) -> Result<Option<Versioned<State>>, StrataError> {
             Err(StrataError::Internal {
-                message: "state_read not implemented in mock".to_string(),
+                message: "state_get not implemented in mock".to_string(),
             })
         }
 
@@ -477,7 +477,7 @@ mod tests {
         assert_eq!(ops.event_len().unwrap(), 2);
 
         // Non-existent event (beyond the event count)
-        assert!(ops.event_read(999).unwrap().is_none());
+        assert!(ops.event_get(999).unwrap().is_none());
     }
 
     #[test]
@@ -505,7 +505,7 @@ mod tests {
         let ops: Box<dyn TransactionOps> = Box::new(MockTransactionOps::new());
 
         // State operations should return unimplemented error
-        let result = ops.state_read("test");
+        let result = ops.state_get("test");
         assert!(result.is_err());
 
         // Json operations should return unimplemented error
@@ -534,7 +534,7 @@ mod tests {
         let _ = ops_ref.kv_get("key");
         let _ = ops_ref.kv_exists("key");
         let _ = ops_ref.kv_list(None);
-        let _ = ops_ref.event_read(1);
+        let _ = ops_ref.event_get(1);
         let _ = ops_ref.event_range(1, 10);
         let _ = ops_ref.event_len();
     }

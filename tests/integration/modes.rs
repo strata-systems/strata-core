@@ -65,7 +65,7 @@ fn cache_all_primitives() {
         .init(&branch_id, "default", "s", Value::Int(2))
         .unwrap();
     assert_eq!(
-        state.read(&branch_id, "default", "s").unwrap().unwrap(),
+        state.get(&branch_id, "default", "s").unwrap().unwrap(),
         Value::Int(2)
     );
 
@@ -253,7 +253,7 @@ fn always_mode_all_primitives_survive_reopen() {
         let state = StateCell::new(db.clone());
         assert_eq!(
             state
-                .read(&branch_id, "default", "state_cell")
+                .get(&branch_id, "default", "state_cell")
                 .unwrap()
                 .unwrap(),
             Value::Int(42)

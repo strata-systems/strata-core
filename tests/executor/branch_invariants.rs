@@ -71,7 +71,7 @@ fn branch_data_is_isolated() {
     );
 
     let output = executor
-        .execute(Command::StateRead {
+        .execute(Command::StateGet {
             branch: Some(branch_b.clone()),
             space: None,
             cell: "state".into(),

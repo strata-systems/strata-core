@@ -218,10 +218,10 @@ impl EventHandle {
             .transaction(self.branch_id, |txn| txn.event_append(event_type, payload))
     }
 
-    /// Read an event by sequence number
-    pub fn read(&self, sequence: u64) -> StrataResult<Option<Value>> {
+    /// Get an event by sequence number
+    pub fn get(&self, sequence: u64) -> StrataResult<Option<Value>> {
         self.db
-            .transaction(self.branch_id, |txn| txn.event_read(sequence))
+            .transaction(self.branch_id, |txn| txn.event_get(sequence))
     }
 }
 
@@ -242,10 +242,10 @@ impl StateHandle {
         Self { db, branch_id }
     }
 
-    /// Read current state
-    pub fn read(&self, name: &str) -> StrataResult<Option<Value>> {
+    /// Get current state
+    pub fn get(&self, name: &str) -> StrataResult<Option<Value>> {
         self.db
-            .transaction(self.branch_id, |txn| txn.state_read(name))
+            .transaction(self.branch_id, |txn| txn.state_get(name))
     }
 
     /// Compare-and-swap update

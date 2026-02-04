@@ -180,7 +180,7 @@ fn read_your_writes_state() {
         .unwrap();
 
     let output = session
-        .execute(Command::StateRead {
+        .execute(Command::StateGet {
             branch: None,
             space: None,
             cell: "cell".into(),
@@ -308,7 +308,7 @@ fn rollback_discards_state_writes() {
     // Verify not visible
     let executor = strata_executor::Executor::new(db);
     let output = executor
-        .execute(Command::StateRead {
+        .execute(Command::StateGet {
             branch: None,
             space: None,
             cell: "rollback_cell".into(),
@@ -642,7 +642,7 @@ fn cross_primitive_transaction() {
     ));
 
     let state_out = executor
-        .execute(Command::StateRead {
+        .execute(Command::StateGet {
             branch: None,
             space: None,
             cell: "state_cell".into(),

@@ -40,8 +40,8 @@
 //! | Primitive | Purpose | Key Methods |
 //! |-----------|---------|-------------|
 //! | **KV Store** | Working memory, config | `kv_put`, `kv_get`, `kv_delete`, `kv_list` |
-//! | **Event Log** | Immutable audit trail | `event_append`, `event_read`, `event_read_by_type` |
-//! | **State Cell** | CAS-based coordination | `state_set`, `state_read`, `state_cas` |
+//! | **Event Log** | Immutable audit trail | `event_append`, `event_get`, `event_get_by_type` |
+//! | **State Cell** | CAS-based coordination | `state_set`, `state_get`, `state_cas` |
 //! | **JSON Store** | Structured documents | `json_set`, `json_get`, `json_delete` |
 //! | **Vector Store** | Embeddings, similarity search | `vector_upsert`, `vector_search` |
 //! | **Branch** | Data isolation | `create_branch`, `set_branch`, `list_branches` |

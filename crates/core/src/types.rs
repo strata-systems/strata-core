@@ -302,7 +302,7 @@ impl Key {
 
     /// Create an event type index key
     ///
-    /// Stores a per-type sequence index entry for efficient `read_by_type` lookups.
+    /// Stores a per-type sequence index entry for efficient `get_by_type` lookups.
     /// Key format: `__tidx__{event_type}\0{sequence_be_bytes}`
     ///
     /// The null byte separator ensures correct prefix scanning: scanning
@@ -319,7 +319,7 @@ impl Key {
 
     /// Create a prefix key for scanning all type index entries of a given event type
     ///
-    /// Used by `read_by_type` to find all sequence numbers for a specific event type.
+    /// Used by `get_by_type` to find all sequence numbers for a specific event type.
     pub fn new_event_type_idx_prefix(namespace: Namespace, event_type: &str) -> Self {
         let mut user_key = Vec::with_capacity(8 + event_type.len() + 1);
         user_key.extend_from_slice(b"__tidx__");

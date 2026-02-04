@@ -231,7 +231,7 @@ fn state_set_read_cycle() {
     assert!(matches!(output, Output::Version(_)));
 
     let output = executor
-        .execute(Command::StateRead {
+        .execute(Command::StateGet {
             branch: None,
             space: None,
             cell: "status".into(),

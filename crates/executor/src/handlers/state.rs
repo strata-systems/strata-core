@@ -2,7 +2,7 @@
 //!
 //! This module implements handlers for the 4 MVP State commands:
 //! - StateSet: Unconditional write
-//! - StateRead: Read current state
+//! - StateGet: Read current state
 //! - StateCas: Compare-and-swap
 //! - StateInit: Initialize if not exists
 
@@ -33,8 +33,8 @@ fn require_branch_exists(p: &Arc<Primitives>, branch: &BranchId) -> Result<()> {
     Ok(())
 }
 
-/// Handle StateReadv command — get full version history for a state cell.
-pub fn state_readv(
+/// Handle StateGetv command — get full version history for a state cell.
+pub fn state_getv(
     p: &Arc<Primitives>,
     branch: BranchId,
     space: String,
@@ -42,7 +42,7 @@ pub fn state_readv(
 ) -> Result<Output> {
     let branch_id = bridge::to_core_branch_id(&branch)?;
     convert_result(bridge::validate_key(&cell))?;
-    let result = convert_result(p.state.readv(&branch_id, &space, &cell))?;
+    let result = convert_result(p.state.getv(&branch_id, &space, &cell))?;
     let mapped = result.map(|history| {
         history
             .into_versions()
@@ -68,14 +68,14 @@ pub fn state_set(
     require_branch_exists(p, &branch)?;
     let branch_id = bridge::to_core_branch_id(&branch)?;
     convert_result(bridge::validate_key(&cell))?;
-    let versioned = convert_result(p.state.set(&branch_id, &space, &cell, value))?;
-    Ok(Output::Version(bridge::extract_version(&versioned.version)))
+    let version = convert_result(p.state.set(&branch_id, &space, &cell, value))?;
+    Ok(Output::Version(bridge::extract_version(&version)))
 }
 
-/// Handle StateRead command.
+/// Handle StateGet command.
 ///
 /// Returns `MaybeVersioned` with value, version, and timestamp metadata.
-pub fn state_read(
+pub fn state_get(
     p: &Arc<Primitives>,
     branch: BranchId,
     space: String,
@@ -83,7 +83,7 @@ pub fn state_read(
 ) -> Result<Output> {
     let branch_id = bridge::to_core_branch_id(&branch)?;
     convert_result(bridge::validate_key(&cell))?;
-    let result = convert_result(p.state.read_versioned(&branch_id, &space, &cell))?;
+    let result = convert_result(p.state.get_versioned(&branch_id, &space, &cell))?;
     Ok(Output::MaybeVersioned(
         result.map(bridge::to_versioned_value),
     ))
@@ -105,12 +105,12 @@ pub fn state_cas(
         None => {
             // Init semantics: create only if cell doesn't exist.
             // Check existence first since init() is idempotent.
-            if convert_result(p.state.read(&branch_id, &space, &cell))?.is_some() {
+            if convert_result(p.state.get(&branch_id, &space, &cell))?.is_some() {
                 return Ok(Output::MaybeVersion(None));
             }
             match p.state.init(&branch_id, &space, &cell, value) {
-                Ok(versioned) => Ok(Output::MaybeVersion(Some(bridge::extract_version(
-                    &versioned.version,
+                Ok(version) => Ok(Output::MaybeVersion(Some(bridge::extract_version(
+                    &version,
                 )))),
                 Err(e) => {
                     let err = crate::Error::from(e);
@@ -128,8 +128,8 @@ pub fn state_cas(
                 .state
                 .cas(&branch_id, &space, &cell, Version::Counter(expected), value)
             {
-                Ok(versioned) => Ok(Output::MaybeVersion(Some(bridge::extract_version(
-                    &versioned.version,
+                Ok(version) => Ok(Output::MaybeVersion(Some(bridge::extract_version(
+                    &version,
                 )))),
                 Err(e) => {
                     let err = crate::Error::from(e);
@@ -156,8 +156,8 @@ pub fn state_init(
     require_branch_exists(p, &branch)?;
     let branch_id = bridge::to_core_branch_id(&branch)?;
     convert_result(bridge::validate_key(&cell))?;
-    let versioned = convert_result(p.state.init(&branch_id, &space, &cell, value))?;
-    Ok(Output::Version(bridge::extract_version(&versioned.version)))
+    let version = convert_result(p.state.init(&branch_id, &space, &cell, value))?;
+    Ok(Output::Version(bridge::extract_version(&version)))
 }
 
 /// Handle StateDelete command.

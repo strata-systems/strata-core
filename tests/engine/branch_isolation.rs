@@ -172,8 +172,8 @@ fn eventlog_independent_per_branch() {
     assert_eq!(event.len(&branch_b, "default").unwrap(), 5);
 
     // Events should be readable independently
-    let a_event = event.read(&branch_a, "default", 0).unwrap();
-    let b_event = event.read(&branch_b, "default", 0).unwrap();
+    let a_event = event.get(&branch_a, "default", 0).unwrap();
+    let b_event = event.get(&branch_b, "default", 0).unwrap();
     assert_eq!(a_event.as_ref().unwrap().value.event_type, "type");
     assert_eq!(b_event.as_ref().unwrap().value.event_type, "type");
 }
@@ -199,11 +199,11 @@ fn statecell_branches_are_isolated() {
         .unwrap();
 
     assert_eq!(
-        state.read(&branch_a, "default", "cell").unwrap().unwrap(),
+        state.get(&branch_a, "default", "cell").unwrap().unwrap(),
         Value::Int(1)
     );
     assert_eq!(
-        state.read(&branch_b, "default", "cell").unwrap().unwrap(),
+        state.get(&branch_b, "default", "cell").unwrap().unwrap(),
         Value::Int(2)
     );
 }
@@ -224,12 +224,12 @@ fn statecell_cas_isolated() {
         .unwrap();
 
     let version_a = state
-        .readv(&branch_a, "default", "cell")
+        .getv(&branch_a, "default", "cell")
         .unwrap()
         .unwrap()
         .version();
     let version_b = state
-        .readv(&branch_b, "default", "cell")
+        .getv(&branch_b, "default", "cell")
         .unwrap()
         .unwrap()
         .version();
@@ -241,7 +241,7 @@ fn statecell_cas_isolated() {
 
     // Branch B unchanged
     assert_eq!(
-        state.read(&branch_b, "default", "cell").unwrap().unwrap(),
+        state.get(&branch_b, "default", "cell").unwrap().unwrap(),
         Value::Int(0)
     );
 
@@ -252,11 +252,11 @@ fn statecell_cas_isolated() {
 
     // Both have their own values
     assert_eq!(
-        state.read(&branch_a, "default", "cell").unwrap().unwrap(),
+        state.get(&branch_a, "default", "cell").unwrap().unwrap(),
         Value::Int(100)
     );
     assert_eq!(
-        state.read(&branch_b, "default", "cell").unwrap().unwrap(),
+        state.get(&branch_b, "default", "cell").unwrap().unwrap(),
         Value::Int(200)
     );
 }
@@ -462,7 +462,7 @@ fn all_primitives_isolated_by_branch() {
     assert_eq!(prims.event.len(&branch_b, "default").unwrap(), 0);
     assert!(prims
         .state
-        .read(&branch_b, "default", "cell")
+        .get(&branch_b, "default", "cell")
         .unwrap()
         .is_none());
     assert!(!prims.json.exists(&branch_b, "default", "doc").unwrap());

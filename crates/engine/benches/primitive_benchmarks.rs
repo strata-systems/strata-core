@@ -105,7 +105,7 @@ fn bench_state_cas(c: &mut Criterion) {
     group.bench_function("cas", |b| {
         b.iter(|| {
             let current = state_cell
-                .read_versioned(&branch_id, "bench_cell")
+                .get_versioned(&branch_id, "bench_cell")
                 .unwrap()
                 .unwrap();
             let val = match current.value {
@@ -156,7 +156,7 @@ fn bench_cross_primitive_transaction(c: &mut Criterion) {
 }
 
 /// Benchmark EventLog read operations
-fn bench_event_read(c: &mut Criterion) {
+fn bench_event_get(c: &mut Criterion) {
     let (db, _temp, branch_id) = setup_db();
     let event_log = EventLog::new(db.clone());
 
@@ -174,14 +174,14 @@ fn bench_event_read(c: &mut Criterion) {
     group.bench_function("read", |b| {
         b.iter(|| {
             let i = counter.fetch_add(1, Ordering::SeqCst) % 1000;
-            event_log.read(&branch_id, i).unwrap()
+            event_log.get(&branch_id, i).unwrap()
         })
     });
     group.finish();
 }
 
 /// Benchmark StateCell read operations
-fn bench_state_read(c: &mut Criterion) {
+fn bench_state_get(c: &mut Criterion) {
     let (db, _temp, branch_id) = setup_db();
     let state_cell = StateCell::new(db.clone());
 
@@ -194,7 +194,7 @@ fn bench_state_read(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
 
     group.bench_function("read", |b| {
-        b.iter(|| state_cell.read(&branch_id, "default", "read_cell").unwrap())
+        b.iter(|| state_cell.get(&branch_id, "default", "read_cell").unwrap())
     });
     group.finish();
 }
@@ -233,9 +233,9 @@ criterion_group!(
     bench_kv_get,
     bench_kv_list,
     bench_event_append,
-    bench_event_read,
+    bench_event_get,
     bench_state_cas,
-    bench_state_read,
+    bench_state_get,
     bench_cross_primitive_transaction,
 );
 criterion_main!(benches);

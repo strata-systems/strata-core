@@ -56,11 +56,11 @@ fn all_six_primitives_recover_together() {
 
     let events = p
         .event
-        .read_by_type(&branch_id, "default", "stream")
+        .get_by_type(&branch_id, "default", "stream")
         .unwrap();
     assert_eq!(events.len(), 1, "EventLog should recover");
 
-    let state_val = p.state.read(&branch_id, "default", "cell").unwrap();
+    let state_val = p.state.get(&branch_id, "default", "cell").unwrap();
     let state_val = state_val.expect("StateCell should recover");
     assert_eq!(state_val, Value::String("initial".into()));
 
@@ -97,7 +97,7 @@ fn interleaved_writes_recover_correctly() {
     }
 
     let events = event
-        .read_by_type(&branch_id, "default", "interleaved")
+        .get_by_type(&branch_id, "default", "interleaved")
         .unwrap();
     assert_eq!(events.len(), 50, "All 50 events should recover");
 }

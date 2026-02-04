@@ -332,11 +332,11 @@ fn concurrent_sessions_independent_transactions() {
 // ============================================================================
 
 #[test]
-fn state_read_nonexistent_returns_none() {
+fn state_get_nonexistent_returns_none() {
     let executor = create_executor();
 
     let result = executor
-        .execute(Command::StateRead {
+        .execute(Command::StateGet {
             branch: None,
             space: None,
             cell: "nonexistent".into(),

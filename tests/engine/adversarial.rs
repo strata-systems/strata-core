@@ -82,7 +82,7 @@ fn cross_primitive_rollback_leaves_no_trace() {
     // - existing_cell should be unchanged
     assert_eq!(
         state
-            .read(&branch_id, "default", "existing_cell")
+            .get(&branch_id, "default", "existing_cell")
             .unwrap()
             .unwrap(),
         Value::Int(200),
@@ -419,7 +419,7 @@ fn versions_monotonically_increase() {
 
     let mut last_version = 0u64;
     for i in 1..=10 {
-        let current = state.readv(&branch_id, "default", "key").unwrap().unwrap();
+        let current = state.getv(&branch_id, "default", "key").unwrap().unwrap();
         let current_version = current.version().as_u64();
         state
             .cas(
@@ -480,7 +480,7 @@ fn statecell_cas_version_ordering() {
 
     // Get initial version
     let v1 = state
-        .readv(&branch_id, "default", "cell")
+        .getv(&branch_id, "default", "cell")
         .unwrap()
         .unwrap()
         .version();
@@ -496,7 +496,7 @@ fn statecell_cas_version_ordering() {
 
     // Value should be 1 (from successful CAS), not 2
     assert_eq!(
-        state.read(&branch_id, "default", "cell").unwrap().unwrap(),
+        state.get(&branch_id, "default", "cell").unwrap().unwrap(),
         Value::Int(1)
     );
 }

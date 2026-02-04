@@ -73,10 +73,7 @@ fn kv_and_statecell_atomic() {
         Some(Value::Int(1234567890))
     );
 
-    let current = state
-        .read(&branch_id, "default", "status")
-        .unwrap()
-        .unwrap();
+    let current = state.get(&branch_id, "default", "status").unwrap().unwrap();
     assert_eq!(current, Value::String("completed".into()));
 }
 
@@ -116,7 +113,7 @@ fn three_primitives_atomic() {
     assert_eq!(event.len(&branch_id, "default").unwrap(), 1);
 
     let counter = state
-        .read(&branch_id, "default", "counter")
+        .get(&branch_id, "default", "counter")
         .unwrap()
         .unwrap();
     assert_eq!(counter, Value::Int(1));
@@ -234,10 +231,7 @@ fn read_from_one_write_to_another() {
         })
         .unwrap();
 
-    let copied = state
-        .read(&branch_id, "default", "copied")
-        .unwrap()
-        .unwrap();
+    let copied = state.get(&branch_id, "default", "copied").unwrap().unwrap();
     assert_eq!(copied, Value::Int(42));
 }
 
@@ -288,7 +282,7 @@ fn saga_pattern_all_steps_complete() {
     assert_eq!(event.len(&branch_id, "default").unwrap(), 1);
     assert_eq!(
         state
-            .read(&branch_id, "default", "order:1:status")
+            .get(&branch_id, "default", "order:1:status")
             .unwrap()
             .unwrap(),
         Value::String("processing".into())

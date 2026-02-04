@@ -63,7 +63,7 @@ fn eventlog_append_same_across_modes() {
             )
             .unwrap();
         let len = event.len(&branch_id, "default").unwrap();
-        let first = event.read(&branch_id, "default", 0).unwrap();
+        let first = event.get(&branch_id, "default", 0).unwrap();
 
         (len, first.map(|e| e.value.event_type.clone()))
     });
@@ -78,7 +78,7 @@ fn statecell_cas_same_across_modes() {
         state
             .init(&branch_id, "default", "cell", Value::Int(1))
             .unwrap();
-        let read = state.readv(&branch_id, "default", "cell").unwrap();
+        let read = state.getv(&branch_id, "default", "cell").unwrap();
         let version = read
             .as_ref()
             .map(|v| v.version())
@@ -88,7 +88,7 @@ fn statecell_cas_same_across_modes() {
 
         (
             cas_result.is_ok(),
-            state.read(&branch_id, "default", "cell").unwrap(),
+            state.get(&branch_id, "default", "cell").unwrap(),
         )
     });
 }

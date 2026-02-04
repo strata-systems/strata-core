@@ -110,7 +110,7 @@ mod state_single {
             .init(&branch_id, "default", "counter", Value::Int(0))
             .unwrap();
         let val = state
-            .read(&branch_id, "default", "counter")
+            .get(&branch_id, "default", "counter")
             .unwrap()
             .unwrap();
         assert_eq!(val, Value::Int(0));
@@ -133,7 +133,7 @@ mod state_single {
             .unwrap();
 
         let val = state
-            .read(&branch_id, "default", "counter")
+            .get(&branch_id, "default", "counter")
             .unwrap()
             .unwrap();
         assert_eq!(val, Value::Int(2));
@@ -149,7 +149,7 @@ mod state_single {
             .init(&branch_id, "default", "counter", Value::Int(0))
             .unwrap();
         let current = state
-            .readv(&branch_id, "default", "counter")
+            .getv(&branch_id, "default", "counter")
             .unwrap()
             .unwrap();
 
@@ -164,7 +164,7 @@ mod state_single {
             .unwrap();
 
         let updated = state
-            .read(&branch_id, "default", "counter")
+            .get(&branch_id, "default", "counter")
             .unwrap()
             .unwrap();
         assert_eq!(updated, Value::Int(1));
@@ -180,7 +180,7 @@ mod state_single {
             .init(&branch_id, "default", "counter", Value::Int(0))
             .unwrap();
         let current = state
-            .readv(&branch_id, "default", "counter")
+            .getv(&branch_id, "default", "counter")
             .unwrap()
             .unwrap();
         let stale_version = current.version();
@@ -202,7 +202,7 @@ mod state_single {
 
         // Value should remain at 1
         let final_val = state
-            .read(&branch_id, "default", "counter")
+            .get(&branch_id, "default", "counter")
             .unwrap()
             .unwrap();
         assert_eq!(final_val, Value::Int(1));
@@ -231,7 +231,7 @@ mod event_single {
         assert!(seq2 > seq1);
         assert!(seq3 > seq2);
 
-        let events = event.read_by_type(&branch_id, "default", "audit").unwrap();
+        let events = event.get_by_type(&branch_id, "default", "audit").unwrap();
         assert_eq!(events.len(), 3);
     }
 
@@ -253,14 +253,14 @@ mod event_single {
 
         assert_eq!(
             event
-                .read_by_type(&branch_id, "default", "stream_a")
+                .get_by_type(&branch_id, "default", "stream_a")
                 .unwrap()
                 .len(),
             2
         );
         assert_eq!(
             event
-                .read_by_type(&branch_id, "default", "stream_b")
+                .get_by_type(&branch_id, "default", "stream_b")
                 .unwrap()
                 .len(),
             1
@@ -279,7 +279,7 @@ mod event_single {
 
         // Events can only be appended, not modified or deleted
         // The API doesn't provide update/delete methods for events
-        let events = event.read_by_type(&branch_id, "default", "audit").unwrap();
+        let events = event.get_by_type(&branch_id, "default", "audit").unwrap();
         assert_eq!(events.len(), 1);
     }
 }
@@ -545,7 +545,7 @@ fn all_six_primitives_together() {
     );
     assert_eq!(
         p.state
-            .read(&branch_id, "default", "status")
+            .get(&branch_id, "default", "status")
             .unwrap()
             .unwrap(),
         Value::String("running".into())
@@ -671,21 +671,21 @@ fn cross_primitive_workflow_agent_memory() {
     // Verify final state
     let status = p
         .state
-        .read(&branch_id, "default", "agent:status")
+        .get(&branch_id, "default", "agent:status")
         .unwrap()
         .unwrap();
     assert_eq!(status, Value::String("completed".into()));
 
     assert_eq!(
         p.event
-            .read_by_type(&branch_id, "default", "agent:turns")
+            .get_by_type(&branch_id, "default", "agent:turns")
             .unwrap()
             .len(),
         3
     );
     assert_eq!(
         p.event
-            .read_by_type(&branch_id, "default", "agent:lifecycle")
+            .get_by_type(&branch_id, "default", "agent:lifecycle")
             .unwrap()
             .len(),
         2
@@ -735,7 +735,7 @@ fn delete_in_one_primitive_doesnt_affect_others() {
     assert!(p.kv.get(&branch_id, "default", "shared").unwrap().is_none());
     assert_eq!(
         p.state
-            .read(&branch_id, "default", "shared")
+            .get(&branch_id, "default", "shared")
             .unwrap()
             .unwrap(),
         Value::String("state".into())

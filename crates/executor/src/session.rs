@@ -154,12 +154,12 @@ impl Session {
             | Command::SpaceCreate { .. }
             | Command::SpaceDelete { .. }
             | Command::SpaceExists { .. }
-            // Version history commands (KvGetv, StateReadv, JsonGetv) require
+            // Version history commands (KvGetv, StateGetv, JsonGetv) require
             // storage-layer version chains which are not available through the
             // transaction context. These always read from the committed store,
             // even during an active transaction.
             | Command::KvGetv { .. }
-            | Command::StateReadv { .. }
+            | Command::StateGetv { .. }
             | Command::JsonGetv { .. }
             // JsonList enumerates keys via storage-layer scan. Making it
             // txn-aware would require merging the write-set with a committed
@@ -169,11 +169,11 @@ impl Session {
             // StateList enumerates keys via storage-layer scan. Like JsonList,
             // it reads from the committed store even during an active transaction.
             | Command::StateList { .. }
-            // EventReadByType filters events by type tag at the storage layer.
+            // EventGetByType filters events by type tag at the storage layer.
             // The transaction write-set does not maintain per-type indexes, so
             // this always reads from the committed store even during an active
             // transaction.
-            | Command::EventReadByType { .. } => self.executor.execute(cmd),
+            | Command::EventGetByType { .. } => self.executor.execute(cmd),
 
             // Data commands: route through txn if active, else delegate
             _ => {
@@ -285,15 +285,15 @@ impl Session {
             | Command::KvList { space, .. }
             | Command::KvGetv { space, .. }
             | Command::StateSet { space, .. }
-            | Command::StateRead { space, .. }
-            | Command::StateReadv { space, .. }
+            | Command::StateGet { space, .. }
+            | Command::StateGetv { space, .. }
             | Command::StateDelete { space, .. }
             | Command::StateInit { space, .. }
             | Command::StateCas { space, .. }
             | Command::StateList { space, .. }
             | Command::EventAppend { space, .. }
-            | Command::EventRead { space, .. }
-            | Command::EventReadByType { space, .. }
+            | Command::EventGet { space, .. }
+            | Command::EventGetByType { space, .. }
             | Command::EventLen { space, .. }
             | Command::JsonSet { space, .. }
             | Command::JsonGet { space, .. }
@@ -360,7 +360,7 @@ impl Session {
             }
 
             // === State reads — via ctx for snapshot fallback ===
-            Command::StateRead { cell, .. } => {
+            Command::StateGet { cell, .. } => {
                 let full_key = Key::new_state(ns, &cell);
                 let result = ctx.get(&full_key).map_err(Error::from)?;
                 match result {
@@ -450,9 +450,9 @@ impl Session {
                     .map_err(Error::from)?;
                 Ok(Output::Version(extract_version(&version)))
             }
-            Command::EventRead { sequence, .. } => {
+            Command::EventGet { sequence, .. } => {
                 let txn = Transaction::new(ctx, ns);
-                let result = txn.event_read(sequence).map_err(Error::from)?;
+                let result = txn.event_get(sequence).map_err(Error::from)?;
                 Ok(Output::MaybeVersioned(result.map(|v| {
                     to_versioned_value(strata_core::Versioned::new(
                         v.value.payload.clone(),

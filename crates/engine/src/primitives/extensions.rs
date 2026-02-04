@@ -65,7 +65,7 @@ pub trait EventLogExt {
     fn event_append(&mut self, event_type: &str, payload: Value) -> StrataResult<u64>;
 
     /// Read an event by sequence number
-    fn event_read(&mut self, sequence: u64) -> StrataResult<Option<Value>>;
+    fn event_get(&mut self, sequence: u64) -> StrataResult<Option<Value>>;
 }
 
 /// State cell operations within a transaction
@@ -73,7 +73,7 @@ pub trait EventLogExt {
 /// Implemented in `state_cell.rs`
 pub trait StateCellExt {
     /// Read current state
-    fn state_read(&mut self, name: &str) -> StrataResult<Option<Value>>;
+    fn state_get(&mut self, name: &str) -> StrataResult<Option<Value>>;
 
     /// Compare-and-swap update, returns new version
     fn state_cas(

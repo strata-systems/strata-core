@@ -221,7 +221,7 @@ mod invariant_2_versioned {
 
     // --- EventLog ---
     #[test]
-    fn event_read_returns_versioned() {
+    fn event_get_returns_versioned() {
         let (db, branch_id) = setup();
         let events = EventLog::new(db);
 
@@ -234,7 +234,7 @@ mod invariant_2_versioned {
             )
             .unwrap();
 
-        let versioned = events.read(&branch_id, "default", 0).unwrap().unwrap();
+        let versioned = events.get(&branch_id, "default", 0).unwrap().unwrap();
         assert_eq!(versioned.value.event_type, "test-event");
     }
 
@@ -257,7 +257,7 @@ mod invariant_2_versioned {
 
     // --- StateCell ---
     #[test]
-    fn state_read_returns_versioned() {
+    fn state_get_returns_versioned() {
         let (db, branch_id) = setup();
         let state = StateCell::new(db);
 
@@ -265,7 +265,7 @@ mod invariant_2_versioned {
             .init(&branch_id, "default", "cell", Value::Int(42))
             .unwrap();
 
-        let value = state.read(&branch_id, "default", "cell").unwrap().unwrap();
+        let value = state.get(&branch_id, "default", "cell").unwrap().unwrap();
         assert!(matches!(value, Value::Int(42)));
     }
 
@@ -277,8 +277,8 @@ mod invariant_2_versioned {
         let versioned = state
             .init(&branch_id, "default", "cell", Value::Int(0))
             .unwrap();
-        // init returns Versioned<Version> with initial version
-        assert_eq!(versioned.value, Version::counter(1));
+        // init returns Version with initial counter
+        assert_eq!(versioned, Version::counter(1));
     }
 
     #[test]
@@ -298,7 +298,7 @@ mod invariant_2_versioned {
             .unwrap();
 
         // Versions are monotonic
-        assert!(v2.value > v1.value);
+        assert!(v2 > v1);
     }
 
     // --- JsonStore ---
@@ -458,7 +458,7 @@ mod invariant_3_transactional {
         .unwrap();
 
         let events = EventLog::new(db);
-        assert!(events.read(&branch_id, "default", 0).unwrap().is_some());
+        assert!(events.get(&branch_id, "default", 0).unwrap().is_some());
     }
 
     #[test]
@@ -472,7 +472,7 @@ mod invariant_3_transactional {
         .unwrap();
 
         let state = StateCell::new(db);
-        assert!(state.read(&branch_id, "default", "cell").unwrap().is_some());
+        assert!(state.get(&branch_id, "default", "cell").unwrap().is_some());
     }
 
     #[test]
@@ -508,10 +508,10 @@ mod invariant_3_transactional {
         assert!(kv.get(&branch_id, "default", "key").unwrap().is_some());
 
         let events = EventLog::new(db.clone());
-        assert!(events.read(&branch_id, "default", 0).unwrap().is_some());
+        assert!(events.get(&branch_id, "default", 0).unwrap().is_some());
 
         let state = StateCell::new(db);
-        assert!(state.read(&branch_id, "default", "cell").unwrap().is_some());
+        assert!(state.get(&branch_id, "default", "cell").unwrap().is_some());
     }
 
     #[test]
@@ -533,7 +533,7 @@ mod invariant_3_transactional {
         assert!(kv.get(&branch_id, "default", "key").unwrap().is_none());
 
         let events = EventLog::new(db);
-        assert!(events.read(&branch_id, "default", 0).unwrap().is_none());
+        assert!(events.get(&branch_id, "default", 0).unwrap().is_none());
     }
 }
 
@@ -583,7 +583,7 @@ mod invariant_4_lifecycle {
             .unwrap();
 
         // Exist (read)
-        let e = events.read(&branch_id, "default", 0).unwrap();
+        let e = events.get(&branch_id, "default", 0).unwrap();
         assert!(e.is_some());
 
         // Events are immutable - no evolve, no destroy
@@ -593,8 +593,8 @@ mod invariant_4_lifecycle {
             .unwrap();
 
         // Both events exist
-        assert!(events.read(&branch_id, "default", 0).unwrap().is_some());
-        assert!(events.read(&branch_id, "default", 1).unwrap().is_some());
+        assert!(events.get(&branch_id, "default", 0).unwrap().is_some());
+        assert!(events.get(&branch_id, "default", 1).unwrap().is_some());
     }
 
     #[test]
@@ -608,13 +608,13 @@ mod invariant_4_lifecycle {
             .unwrap();
 
         // Exist - use read() to check existence
-        assert!(state.read(&branch_id, "default", "cell").unwrap().is_some());
+        assert!(state.get(&branch_id, "default", "cell").unwrap().is_some());
 
         // Evolve (set)
         state
             .set(&branch_id, "default", "cell", Value::Int(2))
             .unwrap();
-        let s = state.read(&branch_id, "default", "cell").unwrap().unwrap();
+        let s = state.get(&branch_id, "default", "cell").unwrap().unwrap();
         assert!(matches!(s, Value::Int(2)));
 
         // Note: delete() removed in MVP simplification - StateCell values persist
@@ -760,8 +760,8 @@ mod invariant_5_branch_scoped {
             .append(&branch2, "default", "event-branch2", int_payload(2))
             .unwrap();
 
-        let e1 = events.read(&branch1, "default", 0).unwrap().unwrap();
-        let e2 = events.read(&branch2, "default", 0).unwrap().unwrap();
+        let e1 = events.get(&branch1, "default", 0).unwrap().unwrap();
+        let e2 = events.get(&branch2, "default", 0).unwrap().unwrap();
 
         assert_eq!(e1.value.event_type, "event-branch1");
         assert_eq!(e2.value.event_type, "event-branch2");
@@ -780,8 +780,8 @@ mod invariant_5_branch_scoped {
             .init(&branch2, "default", "cell", Value::Int(2))
             .unwrap();
 
-        let s1 = state.read(&branch1, "default", "cell").unwrap().unwrap();
-        let s2 = state.read(&branch2, "default", "cell").unwrap().unwrap();
+        let s1 = state.get(&branch1, "default", "cell").unwrap().unwrap();
+        let s2 = state.get(&branch2, "default", "cell").unwrap().unwrap();
 
         assert!(matches!(s1, Value::Int(1)));
         assert!(matches!(s2, Value::Int(2)));
@@ -862,13 +862,13 @@ mod invariant_5_branch_scoped {
         events
             .append(&branch_id, "default", "e", empty_payload())
             .unwrap();
-        events.read(&branch_id, "default", 0).unwrap();
+        events.get(&branch_id, "default", 0).unwrap();
 
         let state = StateCell::new(db.clone());
         state
             .init(&branch_id, "default", "s", Value::Int(1))
             .unwrap();
-        state.read(&branch_id, "default", "s").unwrap();
+        state.get(&branch_id, "default", "s").unwrap();
 
         // There is NO global/ambient branch context - branch_id is always explicit
     }
@@ -901,14 +901,14 @@ mod invariant_6_introspectable {
         let events = EventLog::new(db);
 
         // No event at sequence 0 yet
-        assert!(events.read(&branch_id, "default", 0).unwrap().is_none());
+        assert!(events.get(&branch_id, "default", 0).unwrap().is_none());
 
         events
             .append(&branch_id, "default", "e", empty_payload())
             .unwrap();
 
         // Now exists
-        assert!(events.read(&branch_id, "default", 0).unwrap().is_some());
+        assert!(events.get(&branch_id, "default", 0).unwrap().is_some());
     }
 
     #[test]
@@ -917,13 +917,13 @@ mod invariant_6_introspectable {
         let state = StateCell::new(db);
 
         // Use read().is_some() to check existence (exists() removed in MVP)
-        assert!(state.read(&branch_id, "default", "cell").unwrap().is_none());
+        assert!(state.get(&branch_id, "default", "cell").unwrap().is_none());
 
         state
             .init(&branch_id, "default", "cell", Value::Int(1))
             .unwrap();
 
-        assert!(state.read(&branch_id, "default", "cell").unwrap().is_some());
+        assert!(state.get(&branch_id, "default", "cell").unwrap().is_some());
     }
 
     #[test]
@@ -1036,8 +1036,8 @@ mod invariant_7_read_write {
         assert!(v2 > v1); // Versions increase
 
         // read is read (doesn't modify)
-        let e1 = events.read(&branch_id, "default", 0).unwrap().unwrap();
-        let e1_again = events.read(&branch_id, "default", 0).unwrap().unwrap();
+        let e1 = events.get(&branch_id, "default", 0).unwrap().unwrap();
+        let e1_again = events.get(&branch_id, "default", 0).unwrap().unwrap();
 
         assert_eq!(e1.value.event_type, e1_again.value.event_type);
     }
@@ -1059,11 +1059,11 @@ mod invariant_7_read_write {
             .set(&branch_id, "default", "cell", Value::Int(2))
             .unwrap();
 
-        assert!(v2.value > v1.value); // Versions increase
+        assert!(v2 > v1); // Versions increase
 
         // read is read
-        let s1 = state.read(&branch_id, "default", "cell").unwrap().unwrap();
-        let s2 = state.read(&branch_id, "default", "cell").unwrap().unwrap();
+        let s1 = state.get(&branch_id, "default", "cell").unwrap().unwrap();
+        let s2 = state.get(&branch_id, "default", "cell").unwrap().unwrap();
 
         // Same value
         assert!(matches!(s1, Value::Int(2)));
@@ -1102,14 +1102,14 @@ mod invariant_7_read_write {
         let _ = events
             .append(&branch_id, "default", "e", empty_payload())
             .unwrap(); // write
-        let _ = events.read(&branch_id, "default", 0).unwrap(); // read
+        let _ = events.get(&branch_id, "default", 0).unwrap(); // read
 
         // State
         let state = StateCell::new(db.clone());
         let _ = state
             .init(&branch_id, "default", "s", Value::Int(1))
             .unwrap(); // write
-        let _ = state.read(&branch_id, "default", "s").unwrap(); // read
+        let _ = state.get(&branch_id, "default", "s").unwrap(); // read
 
         // Json
         let json = JsonStore::new(db.clone());
@@ -1189,8 +1189,8 @@ mod version_monotonicity {
             let versioned = state
                 .set(&branch_id, "default", "cell", Value::Int(i as i64))
                 .unwrap();
-            assert!(versioned.value.as_u64() > last_version.as_u64());
-            last_version = versioned.value;
+            assert!(versioned.as_u64() > last_version.as_u64());
+            last_version = versioned;
         }
     }
 

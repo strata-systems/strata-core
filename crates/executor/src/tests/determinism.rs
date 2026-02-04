@@ -133,7 +133,7 @@ fn test_state_write_read_determinism() {
     // Read it multiple times - should always get same result
     let results: Vec<_> = (0..5)
         .map(|_| {
-            executor.execute(Command::StateRead {
+            executor.execute(Command::StateGet {
                 branch: Some(BranchId::from("default")),
                 space: None,
                 cell: "counter".to_string(),
@@ -348,7 +348,7 @@ fn test_vector_search_determinism() {
 // =============================================================================
 
 #[test]
-fn test_event_read_by_type_determinism() {
+fn test_event_get_by_type_determinism() {
     let executor = create_test_executor();
 
     // Append some events
@@ -366,7 +366,7 @@ fn test_event_read_by_type_determinism() {
     // ReadByType query multiple times - should get same results
     let results: Vec<_> = (0..5)
         .map(|_| {
-            executor.execute(Command::EventReadByType {
+            executor.execute(Command::EventGetByType {
                 branch: Some(BranchId::from("default")),
                 space: None,
                 event_type: "events".to_string(),

@@ -212,7 +212,7 @@ fn test_json_set_get_parity() {
 // =============================================================================
 
 #[test]
-fn test_event_append_read_by_type_parity() {
+fn test_event_append_get_by_type_parity() {
     let (executor, p) = create_test_environment();
     let branch_id = strata_core::types::BranchId::from_bytes([0u8; 16]);
 
@@ -250,7 +250,7 @@ fn test_event_append_read_by_type_parity() {
         .unwrap();
 
     // ReadByType query via executor
-    let read_result = executor.execute(Command::EventReadByType {
+    let read_result = executor.execute(Command::EventGetByType {
         branch: None,
         space: None,
         event_type: "events".to_string(),
@@ -289,7 +289,7 @@ fn test_state_set_get_parity() {
     };
 
     // Get via direct primitive
-    let direct_get = p.state.read(&branch_id, "default", "cell1").unwrap();
+    let direct_get = p.state.get(&branch_id, "default", "cell1").unwrap();
     assert!(direct_get.is_some());
     assert_eq!(direct_get.unwrap(), Value::Int(100));
 
@@ -301,10 +301,10 @@ fn test_state_set_get_parity() {
 
     // Both should have counter 1 (first write to each cell)
     assert_eq!(counter1, 1);
-    assert_eq!(bridge::extract_version(&versioned2.version), 1);
+    assert_eq!(bridge::extract_version(&versioned2), 1);
 
     // Get cell2 via executor
-    let exec_get = executor.execute(Command::StateRead {
+    let exec_get = executor.execute(Command::StateGet {
         branch: None,
         space: None,
         cell: "cell2".to_string(),

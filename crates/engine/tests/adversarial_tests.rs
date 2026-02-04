@@ -605,7 +605,7 @@ fn test_statecell_transition_retries_under_contention() {
     }
 
     // All increments should have been applied
-    let final_state = state_cell.read(&branch_id, "default", "counter").unwrap().unwrap();
+    let final_state = state_cell.get(&branch_id, "default", "counter").unwrap().unwrap();
     let expected = (num_threads * increments_per_thread) as i64;
     assert_eq!(
         final_state.value.value,
@@ -1068,12 +1068,12 @@ fn test_branch_isolation_comprehensive() {
     );
 
     assert_eq!(
-        state_cell.read(&branch_a, "default", "cell").unwrap().unwrap().value,
+        state_cell.get(&branch_a, "default", "cell").unwrap().unwrap().value,
         Value::Int(100),
         "Branch A should see its own state"
     );
     assert_eq!(
-        state_cell.read(&branch_b, "default", "cell").unwrap().unwrap().value,
+        state_cell.get(&branch_b, "default", "cell").unwrap().unwrap().value,
         Value::Int(200),
         "Branch B should see its own state"
     );
@@ -1131,7 +1131,7 @@ fn test_persistence_across_reopen() {
         assert_eq!(event_count, 1, "Event should persist across reopen");
 
         // StateCell should persist
-        let state = state_cell.read(&branch_id, "default", "persistent_cell").unwrap().unwrap();
+        let state = state_cell.get(&branch_id, "default", "persistent_cell").unwrap().unwrap();
         assert_eq!(
             state.value.value,
             Value::Int(999),

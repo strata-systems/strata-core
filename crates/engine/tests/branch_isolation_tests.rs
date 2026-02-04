@@ -129,11 +129,11 @@ fn test_state_cell_isolation() {
 
     // Each branch sees its own value
     let state1 = state_cell
-        .read(&branch1, "default", "counter")
+        .get(&branch1, "default", "counter")
         .unwrap()
         .unwrap();
     let state2 = state_cell
-        .read(&branch2, "default", "counter")
+        .get(&branch2, "default", "counter")
         .unwrap()
         .unwrap();
 
@@ -152,11 +152,11 @@ fn test_state_cell_isolation() {
         .unwrap();
 
     let state1 = state_cell
-        .read(&branch1, "default", "counter")
+        .get(&branch1, "default", "counter")
         .unwrap()
         .unwrap();
     let state2 = state_cell
-        .read(&branch2, "default", "counter")
+        .get(&branch2, "default", "counter")
         .unwrap()
         .unwrap();
 
@@ -238,14 +238,14 @@ fn test_cross_branch_query_isolation() {
     // Actually both have overlapping key names, but different values
     assert_eq!(
         state_cell
-            .read(&branch1, "default", "state")
+            .get(&branch1, "default", "state")
             .unwrap()
             .unwrap(),
         Value::String("branch1".into())
     );
     assert_eq!(
         state_cell
-            .read(&branch2, "default", "state")
+            .get(&branch2, "default", "state")
             .unwrap()
             .unwrap(),
         Value::String("branch2".into())
@@ -298,7 +298,7 @@ fn test_branch_delete_isolation() {
     assert!(kv.get(&branch1, "default", "key").unwrap().is_none());
     assert_eq!(event_log.len(&branch1, "default").unwrap(), 0);
     assert!(state_cell
-        .read(&branch1, "default", "cell")
+        .get(&branch1, "default", "cell")
         .unwrap()
         .is_none());
 
@@ -309,7 +309,7 @@ fn test_branch_delete_isolation() {
     );
     assert_eq!(event_log.len(&branch2, "default").unwrap(), 1);
     assert!(state_cell
-        .read(&branch2, "default", "cell")
+        .get(&branch2, "default", "cell")
         .unwrap()
         .is_some());
 }
@@ -381,11 +381,11 @@ fn test_state_cell_cas_isolation() {
 
     // Both have been updated
     let s1 = state_cell
-        .read(&branch1, "default", "cell")
+        .get(&branch1, "default", "cell")
         .unwrap()
         .unwrap();
     let s2 = state_cell
-        .read(&branch2, "default", "cell")
+        .get(&branch2, "default", "cell")
         .unwrap()
         .unwrap();
 
@@ -422,14 +422,14 @@ fn test_event_log_chain_isolation() {
         .unwrap();
 
     // Read events to get hashes
-    let event1_0 = event_log.read(&branch1, "default", 0).unwrap().unwrap();
-    let event2_0 = event_log.read(&branch2, "default", 0).unwrap().unwrap();
+    let event1_0 = event_log.get(&branch1, "default", 0).unwrap().unwrap();
+    let event2_0 = event_log.get(&branch2, "default", 0).unwrap().unwrap();
 
     // Chains have different hashes (different content)
     assert_ne!(event1_0.value.hash, event2_0.value.hash);
 
     // Read event from branch1 - prev_hash links within branch1 only
-    let event1_1 = event_log.read(&branch1, "default", 1).unwrap().unwrap();
+    let event1_1 = event_log.get(&branch1, "default", 1).unwrap().unwrap();
     assert_eq!(event1_1.value.prev_hash, event1_0.value.hash);
 
     // Note: verify_chain() removed in MVP simplification

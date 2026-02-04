@@ -148,8 +148,8 @@ fn test_command_event_append() {
 }
 
 #[test]
-fn test_command_event_read() {
-    test_command_round_trip(Command::EventRead {
+fn test_command_event_get() {
+    test_command_round_trip(Command::EventGet {
         branch: Some(BranchId::from("default")),
         space: None,
         sequence: 42,
@@ -157,8 +157,8 @@ fn test_command_event_read() {
 }
 
 #[test]
-fn test_command_event_read_by_type() {
-    test_command_round_trip(Command::EventReadByType {
+fn test_command_event_get_by_type() {
+    test_command_round_trip(Command::EventGetByType {
         branch: Some(BranchId::from("default")),
         space: None,
         event_type: "events".to_string(),

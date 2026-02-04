@@ -26,8 +26,8 @@ impl Strata {
     }
 
     /// Read a state cell value.
-    pub fn state_read(&self, cell: &str) -> Result<Option<Value>> {
-        match self.executor.execute(Command::StateRead {
+    pub fn state_get(&self, cell: &str) -> Result<Option<Value>> {
+        match self.executor.execute(Command::StateGet {
             branch: self.branch_id(),
             space: self.space_id(),
             cell: cell.to_string(),
@@ -35,7 +35,7 @@ impl Strata {
             Output::MaybeVersioned(v) => Ok(v.map(|vv| vv.value)),
             Output::Maybe(v) => Ok(v),
             _ => Err(Error::Internal {
-                reason: "Unexpected output for StateRead".into(),
+                reason: "Unexpected output for StateGet".into(),
             }),
         }
     }
@@ -44,15 +44,15 @@ impl Strata {
     ///
     /// Returns all versions of the cell, newest first, or None if the cell
     /// doesn't exist.
-    pub fn state_readv(&self, cell: &str) -> Result<Option<Vec<crate::types::VersionedValue>>> {
-        match self.executor.execute(Command::StateReadv {
+    pub fn state_getv(&self, cell: &str) -> Result<Option<Vec<crate::types::VersionedValue>>> {
+        match self.executor.execute(Command::StateGetv {
             branch: self.branch_id(),
             space: self.space_id(),
             cell: cell.to_string(),
         })? {
             Output::VersionHistory(h) => Ok(h),
             _ => Err(Error::Internal {
-                reason: "Unexpected output for StateReadv".into(),
+                reason: "Unexpected output for StateGetv".into(),
             }),
         }
     }

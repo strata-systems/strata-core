@@ -270,7 +270,7 @@ impl Executor {
                     payload,
                 )
             }
-            Command::EventRead {
+            Command::EventGet {
                 branch,
                 space,
                 sequence,
@@ -279,9 +279,9 @@ impl Executor {
                     reason: "Branch must be specified or resolved to default".into(),
                 })?;
                 let space = space.unwrap_or_else(|| "default".to_string());
-                crate::handlers::event::event_read(&self.primitives, branch, space, sequence)
+                crate::handlers::event::event_get(&self.primitives, branch, space, sequence)
             }
-            Command::EventReadByType {
+            Command::EventGetByType {
                 branch,
                 space,
                 event_type,
@@ -292,7 +292,7 @@ impl Executor {
                     reason: "Branch must be specified or resolved to default".into(),
                 })?;
                 let space = space.unwrap_or_else(|| "default".to_string());
-                crate::handlers::event::event_read_by_type(
+                crate::handlers::event::event_get_by_type(
                     &self.primitives,
                     branch,
                     space,
@@ -323,7 +323,7 @@ impl Executor {
                 self.ensure_space_registered(&branch, &space)?;
                 crate::handlers::state::state_set(&self.primitives, branch, space, cell, value)
             }
-            Command::StateRead {
+            Command::StateGet {
                 branch,
                 space,
                 cell,
@@ -332,9 +332,9 @@ impl Executor {
                     reason: "Branch must be specified or resolved to default".into(),
                 })?;
                 let space = space.unwrap_or_else(|| "default".to_string());
-                crate::handlers::state::state_read(&self.primitives, branch, space, cell)
+                crate::handlers::state::state_get(&self.primitives, branch, space, cell)
             }
-            Command::StateReadv {
+            Command::StateGetv {
                 branch,
                 space,
                 cell,
@@ -343,7 +343,7 @@ impl Executor {
                     reason: "Branch must be specified or resolved to default".into(),
                 })?;
                 let space = space.unwrap_or_else(|| "default".to_string());
-                crate::handlers::state::state_readv(&self.primitives, branch, space, cell)
+                crate::handlers::state::state_getv(&self.primitives, branch, space, cell)
             }
             Command::StateCas {
                 branch,

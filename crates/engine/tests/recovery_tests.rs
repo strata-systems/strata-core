@@ -163,9 +163,9 @@ fn test_event_log_chain_survives_recovery() {
         .unwrap();
 
     // Read to get hashes before crash
-    let pre_event0 = event_log.read(&branch_id, "default", 0).unwrap().unwrap();
-    let pre_event1 = event_log.read(&branch_id, "default", 1).unwrap().unwrap();
-    let pre_event2 = event_log.read(&branch_id, "default", 2).unwrap().unwrap();
+    let pre_event0 = event_log.get(&branch_id, "default", 0).unwrap().unwrap();
+    let pre_event1 = event_log.get(&branch_id, "default", 1).unwrap().unwrap();
+    let pre_event2 = event_log.get(&branch_id, "default", 2).unwrap().unwrap();
 
     let hash0 = pre_event0.value.hash;
     let hash1 = pre_event1.value.hash;
@@ -186,16 +186,16 @@ fn test_event_log_chain_survives_recovery() {
     assert_eq!(event_log.len(&branch_id, "default").unwrap(), 3);
 
     // Events readable with correct hashes
-    let event0 = event_log.read(&branch_id, "default", 0).unwrap().unwrap();
+    let event0 = event_log.get(&branch_id, "default", 0).unwrap().unwrap();
     assert_eq!(event0.value.event_type, "event1");
     assert_eq!(event0.value.payload, string_payload("payload1"));
     assert_eq!(event0.value.hash, hash0);
 
-    let event2 = event_log.read(&branch_id, "default", 2).unwrap().unwrap();
+    let event2 = event_log.get(&branch_id, "default", 2).unwrap().unwrap();
     assert_eq!(event2.value.hash, hash2);
 
     // Hash chaining preserved - event1 prev_hash points to event0's hash
-    let event1 = event_log.read(&branch_id, "default", 1).unwrap().unwrap();
+    let event1 = event_log.get(&branch_id, "default", 1).unwrap().unwrap();
     assert_eq!(event1.value.prev_hash, hash0);
     assert_eq!(event1.value.hash, hash1);
 
@@ -236,7 +236,7 @@ fn test_event_log_multiple_events_survives_recovery() {
     assert_eq!(event_log.len(&branch_id, "default").unwrap(), 5);
     assert_eq!(
         event_log
-            .read(&branch_id, "default", 1)
+            .get(&branch_id, "default", 1)
             .unwrap()
             .unwrap()
             .value
@@ -245,7 +245,7 @@ fn test_event_log_multiple_events_survives_recovery() {
     );
     assert_eq!(
         event_log
-            .read(&branch_id, "default", 2)
+            .get(&branch_id, "default", 2)
             .unwrap()
             .unwrap()
             .value
@@ -254,7 +254,7 @@ fn test_event_log_multiple_events_survives_recovery() {
     );
     assert_eq!(
         event_log
-            .read(&branch_id, "default", 3)
+            .get(&branch_id, "default", 3)
             .unwrap()
             .unwrap()
             .value
@@ -307,7 +307,7 @@ fn test_state_cell_version_survives_recovery() {
 
     // Verify before crash
     let state = state_cell
-        .read(&branch_id, "default", "counter")
+        .get(&branch_id, "default", "counter")
         .unwrap()
         .unwrap();
     assert_eq!(state, Value::Int(30));
@@ -322,7 +322,7 @@ fn test_state_cell_version_survives_recovery() {
 
     // Value is correct
     let state = state_cell
-        .read(&branch_id, "default", "counter")
+        .get(&branch_id, "default", "counter")
         .unwrap()
         .unwrap();
     assert_eq!(state, Value::Int(30));
@@ -337,7 +337,7 @@ fn test_state_cell_version_survives_recovery() {
             Value::Int(40),
         )
         .unwrap();
-    assert_eq!(new_versioned.value, Version::counter(5));
+    assert_eq!(new_versioned, Version::counter(5));
 
     // CAS with old version fails
     let result = state_cell.cas(
@@ -386,7 +386,7 @@ fn test_state_cell_set_survives_recovery() {
 
     // Value preserved
     let state = state_cell
-        .read(&branch_id, "default", "status")
+        .get(&branch_id, "default", "status")
         .unwrap()
         .unwrap();
     assert_eq!(state, Value::String("updated".into()));
@@ -541,7 +541,7 @@ fn test_cross_primitive_transaction_survives_recovery() {
     );
     assert_eq!(event_log.len(&branch_id, "default").unwrap(), 1);
     let state = state_cell
-        .read(&branch_id, "default", "txn_state")
+        .get(&branch_id, "default", "txn_state")
         .unwrap()
         .unwrap();
     assert_eq!(state, Value::Int(42));
@@ -684,12 +684,12 @@ fn test_all_primitives_recover_together() {
 
         // EventLog
         assert_eq!(event_log.len(&branch_id, "default").unwrap(), 1);
-        let event = event_log.read(&branch_id, "default", 0).unwrap().unwrap();
+        let event = event_log.get(&branch_id, "default", 0).unwrap().unwrap();
         assert_eq!(event.value.payload, int_payload(999));
 
         // StateCell
         let state = state_cell
-            .read(&branch_id, "default", "full_state")
+            .get(&branch_id, "default", "full_state")
             .unwrap()
             .unwrap();
         assert_eq!(state, Value::Int(100));

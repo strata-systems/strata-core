@@ -612,11 +612,11 @@ impl TransactionContext {
         }
 
         // 3. Read from snapshot with version info
-        self.read_versioned_from_snapshot(key)
+        self.get_versioned_from_snapshot(key)
     }
 
     /// Read from snapshot preserving version metadata, and track in read_set
-    fn read_versioned_from_snapshot(&mut self, key: &Key) -> StrataResult<Option<VersionedValue>> {
+    fn get_versioned_from_snapshot(&mut self, key: &Key) -> StrataResult<Option<VersionedValue>> {
         let snapshot = self.snapshot.as_ref().ok_or_else(|| {
             StrataError::invalid_input("Transaction has no snapshot for reads".to_string())
         })?;

@@ -170,19 +170,19 @@ fn test_state_isolation_across_spaces() {
 
     // Switch to another space — cell should not be visible
     db.set_space("delta").unwrap();
-    let result = db.state_read("counter").unwrap();
+    let result = db.state_get("counter").unwrap();
     assert_eq!(result, None);
 
     // Set same cell with different value in delta
     db.state_set("counter", 20i64).unwrap();
 
     // Verify delta sees its own value
-    let v = db.state_read("counter").unwrap().unwrap();
+    let v = db.state_get("counter").unwrap().unwrap();
     assert_eq!(v, Value::Int(20));
 
     // Default still has its original value
     db.set_space("default").unwrap();
-    let v = db.state_read("counter").unwrap().unwrap();
+    let v = db.state_get("counter").unwrap().unwrap();
     assert_eq!(v, Value::Int(10));
 }
 

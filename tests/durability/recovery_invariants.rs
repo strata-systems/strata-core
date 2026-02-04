@@ -66,7 +66,7 @@ fn committed_event_data_survives_restart() {
 
     let event = test_db.event();
     let events = event
-        .read_by_type(&branch_id, "default", "test_stream")
+        .get_by_type(&branch_id, "default", "test_stream")
         .unwrap();
     assert_eq!(events.len(), 10, "All events should survive restart");
 }
@@ -81,13 +81,13 @@ fn committed_statecell_survives_restart() {
         .init(&branch_id, "default", "counter", Value::Int(0))
         .unwrap();
     state
-        .cas(&branch_id, "default", "counter", v.value, Value::Int(42))
+        .cas(&branch_id, "default", "counter", v, Value::Int(42))
         .unwrap();
 
     test_db.reopen();
 
     let state = test_db.state();
-    let val = state.read(&branch_id, "default", "counter").unwrap();
+    let val = state.get(&branch_id, "default", "counter").unwrap();
     assert!(val.is_some());
     assert_eq!(val.unwrap(), Value::Int(42));
 }

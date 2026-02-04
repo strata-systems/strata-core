@@ -80,7 +80,7 @@ fn test_kv_event_state_atomic() {
     assert_eq!(event_log.len(&branch_id, "default").unwrap(), 1);
 
     let state = state_cell
-        .read(&branch_id, "default", "workflow")
+        .get(&branch_id, "default", "workflow")
         .unwrap()
         .unwrap();
     assert_eq!(state, Value::String("step1".into()));
@@ -128,7 +128,7 @@ fn test_cross_primitive_rollback() {
 
     // Verify StateCell unchanged
     let state = state_cell
-        .read(&branch_id, "default", "cell")
+        .get(&branch_id, "default", "cell")
         .unwrap()
         .unwrap();
     assert_eq!(state, Value::Int(100));
@@ -170,7 +170,7 @@ fn test_all_extension_traits_compose() {
     assert!(kv.get(&branch_id, "default", "config").unwrap().is_some());
     assert_eq!(event_log.len(&branch_id, "default").unwrap(), 1);
     assert!(state_cell
-        .read(&branch_id, "default", "counter")
+        .get(&branch_id, "default", "counter")
         .unwrap()
         .is_some());
 }
@@ -214,7 +214,7 @@ fn test_partial_failure_full_rollback() {
     assert_eq!(event_log.len(&branch_id, "default").unwrap(), 0);
 
     let state = state_cell
-        .read(&branch_id, "default", "state")
+        .get(&branch_id, "default", "state")
         .unwrap()
         .unwrap();
     assert_eq!(state, Value::Int(0)); // Unchanged
@@ -259,13 +259,13 @@ fn test_nested_primitive_operations() {
 
     // Verify causal chain worked
     let event_log = EventLog::new(db.clone());
-    let event = event_log.read(&branch_id, "default", 0).unwrap().unwrap();
+    let event = event_log.get(&branch_id, "default", 0).unwrap().unwrap();
     // Payload is now wrapped: {"from_kv": 42}
     let expected_payload = Value::Object(HashMap::from([("from_kv".to_string(), Value::Int(42))]));
     assert_eq!(event.value.payload, expected_payload);
 
     let state = state_cell
-        .read(&branch_id, "default", "sequence_tracker")
+        .get(&branch_id, "default", "sequence_tracker")
         .unwrap()
         .unwrap();
     assert_eq!(state, Value::Int(0)); // Sequence number (starts at 0)
@@ -311,7 +311,7 @@ fn test_multiple_transactions_consistency() {
 
     // Counter at 10
     let state = state_cell
-        .read(&branch_id, "default", "counter")
+        .get(&branch_id, "default", "counter")
         .unwrap()
         .unwrap();
     assert_eq!(state, Value::Int(10));
@@ -364,7 +364,7 @@ fn test_read_only_transaction() {
         let kv_val = txn.kv_get("existing")?;
         assert_eq!(kv_val, Some(Value::Int(100)));
 
-        let state_val = txn.state_read("cell")?;
+        let state_val = txn.state_get("cell")?;
         assert!(state_val.is_some());
 
         Ok(())
@@ -378,7 +378,7 @@ fn test_read_only_transaction() {
         Some(Value::Int(100))
     );
     let state = state_cell
-        .read(&branch_id, "default", "cell")
+        .get(&branch_id, "default", "cell")
         .unwrap()
         .unwrap();
     assert_eq!(state, Value::Int(50));

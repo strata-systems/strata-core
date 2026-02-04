@@ -254,7 +254,7 @@ fn from_stored_value<T: for<'de> Deserialize<'de>>(
 /// let (seq, hash) = log.append(&branch_id, "tool_call", Value::String("search".into()))?;
 ///
 /// // Read events
-/// let event = log.read(&branch_id, seq)?;
+/// let event = log.get(&branch_id, seq)?;
 ///
 /// // Verify chain
 /// let verification = log.verify_chain(&branch_id)?;
@@ -364,7 +364,7 @@ impl EventLog {
                 let event_key = Key::new_event(ns.clone(), sequence);
                 txn.put(event_key, to_stored_value(&event)?)?;
 
-                // Write per-type index key for efficient read_by_type lookups (#972)
+                // Write per-type index key for efficient get_by_type lookups (#972)
                 let idx_key = Key::new_event_type_idx(ns.clone(), &event_type_owned, sequence);
                 txn.put(idx_key, Value::Null)?;
 
@@ -412,7 +412,7 @@ impl EventLog {
     /// Read a single event by sequence number.
     ///
     /// Returns Versioned<Event> if found.
-    pub fn read(
+    pub fn get(
         &self,
         branch_id: &BranchId,
         space: &str,
@@ -458,7 +458,7 @@ impl EventLog {
     ///
     /// Returns Vec<Versioned<Event>> for events matching the type.
     /// Uses per-type index keys for O(K) lookup where K = events of that type.
-    pub fn read_by_type(
+    pub fn get_by_type(
         &self,
         branch_id: &BranchId,
         space: &str,
@@ -579,7 +579,7 @@ impl EventLogExt for TransactionContext {
         let event_key = Key::new_event(ns.clone(), sequence);
         self.put(event_key, to_stored_value(&event)?)?;
 
-        // Write per-type index key for efficient read_by_type lookups (#972)
+        // Write per-type index key for efficient get_by_type lookups (#972)
         let idx_key = Key::new_event_type_idx(ns.clone(), event_type, sequence);
         self.put(idx_key, Value::Null)?;
 
@@ -601,7 +601,7 @@ impl EventLogExt for TransactionContext {
         Ok(sequence)
     }
 
-    fn event_read(&mut self, sequence: u64) -> StrataResult<Option<Value>> {
+    fn event_get(&mut self, sequence: u64) -> StrataResult<Option<Value>> {
         let ns = Namespace::for_branch(self.branch_id);
         let event_key = Key::new_event(ns, sequence);
         self.get(&event_key)
@@ -824,12 +824,12 @@ mod tests {
 
         log.append(&branch_id, "default", "test", empty_payload())
             .unwrap();
-        let event1 = log.read(&branch_id, "default", 0).unwrap().unwrap();
+        let event1 = log.get(&branch_id, "default", 0).unwrap().unwrap();
         log.append(&branch_id, "default", "test", empty_payload())
             .unwrap();
 
         // Verify chain through read
-        let event2 = log.read(&branch_id, "default", 1).unwrap().unwrap();
+        let event2 = log.get(&branch_id, "default", 1).unwrap().unwrap();
         assert_eq!(event2.value.prev_hash, event1.value.hash);
     }
 
@@ -850,7 +850,7 @@ mod tests {
             Version::Sequence(s) => s,
             _ => panic!("Expected sequence"),
         };
-        let event = log.read(&branch_id, "default", seq).unwrap().unwrap();
+        let event = log.get(&branch_id, "default", seq).unwrap().unwrap();
 
         assert_eq!(event.value.event_type, "tool_call");
         assert_eq!(event.value.payload, payload);
@@ -873,13 +873,13 @@ mod tests {
         assert_eq!(log.len(&branch2, "default").unwrap(), 1);
 
         // Check branch1 events
-        let event0 = log.read(&branch1, "default", 0).unwrap().unwrap();
-        let event1 = log.read(&branch1, "default", 1).unwrap().unwrap();
+        let event0 = log.get(&branch1, "default", 0).unwrap().unwrap();
+        let event1 = log.get(&branch1, "default", 1).unwrap().unwrap();
         assert_eq!(event0.value.event_type, "branch1_event");
         assert_eq!(event1.value.event_type, "branch1_event");
 
         // Check branch2 events
-        let event2 = log.read(&branch2, "default", 0).unwrap().unwrap();
+        let event2 = log.get(&branch2, "default", 0).unwrap().unwrap();
         assert_eq!(event2.value.event_type, "branch2_event");
     }
 
@@ -894,7 +894,7 @@ mod tests {
         log.append(&branch_id, "default", "test", payload.clone())
             .unwrap();
 
-        let versioned = log.read(&branch_id, "default", 0).unwrap().unwrap();
+        let versioned = log.get(&branch_id, "default", 0).unwrap().unwrap();
         assert_eq!(versioned.value.sequence, 0);
         assert_eq!(versioned.value.event_type, "test");
         assert_eq!(versioned.value.payload, payload);
@@ -906,7 +906,7 @@ mod tests {
         let (_temp, _db, log) = setup();
         let branch_id = BranchId::new();
 
-        let event = log.read(&branch_id, "default", 999).unwrap();
+        let event = log.get(&branch_id, "default", 999).unwrap();
         assert!(event.is_none());
     }
 
@@ -972,7 +972,7 @@ mod tests {
     // ========== Query by Type Tests ==========
 
     #[test]
-    fn test_read_by_type() {
+    fn test_get_by_type() {
         let (_temp, _db, log) = setup();
         let branch_id = BranchId::new();
 
@@ -987,19 +987,17 @@ mod tests {
         log.append(&branch_id, "default", "tool_call", int_payload(5))
             .unwrap();
 
-        let tool_calls = log
-            .read_by_type(&branch_id, "default", "tool_call")
-            .unwrap();
+        let tool_calls = log.get_by_type(&branch_id, "default", "tool_call").unwrap();
         assert_eq!(tool_calls.len(), 3);
         assert_eq!(tool_calls[0].value.payload, int_payload(1));
         assert_eq!(tool_calls[1].value.payload, int_payload(3));
         assert_eq!(tool_calls[2].value.payload, int_payload(5));
 
-        let thoughts = log.read_by_type(&branch_id, "default", "thought").unwrap();
+        let thoughts = log.get_by_type(&branch_id, "default", "thought").unwrap();
         assert_eq!(thoughts.len(), 1);
 
         let nonexistent = log
-            .read_by_type(&branch_id, "default", "nonexistent")
+            .get_by_type(&branch_id, "default", "nonexistent")
             .unwrap();
         assert!(nonexistent.is_empty());
     }
@@ -1025,7 +1023,7 @@ mod tests {
         .unwrap();
 
         // Verify via EventLog
-        let versioned = log.read(&branch_id, "default", 0).unwrap().unwrap();
+        let versioned = log.get(&branch_id, "default", 0).unwrap().unwrap();
         assert_eq!(versioned.value.event_type, "ext_event");
     }
 
@@ -1042,7 +1040,7 @@ mod tests {
 
         // Read via extension trait
         db.transaction(branch_id, |txn| {
-            let value = txn.event_read(0)?;
+            let value = txn.event_get(0)?;
             assert!(value.is_some());
             Ok(())
         })
@@ -1086,7 +1084,7 @@ mod tests {
             let kv_val = txn.kv_get("key")?;
             assert_eq!(kv_val, Some(Value::String("value".into())));
 
-            let event_val = txn.event_read(0)?;
+            let event_val = txn.event_get(0)?;
             assert!(event_val.is_some());
             Ok(())
         })
@@ -1104,7 +1102,7 @@ mod tests {
         log.append(&branch_id, "default", "test", payload.clone())
             .unwrap();
 
-        let versioned = log.read(&branch_id, "default", 0).unwrap().unwrap();
+        let versioned = log.get(&branch_id, "default", 0).unwrap().unwrap();
         assert_eq!(versioned.value.event_type, "test");
         assert_eq!(versioned.value.payload, payload);
     }
@@ -1114,7 +1112,7 @@ mod tests {
         let (_temp, _db, log) = setup();
         let branch_id = BranchId::new();
 
-        let event = log.read(&branch_id, "default", 999).unwrap();
+        let event = log.get(&branch_id, "default", 999).unwrap();
         assert!(event.is_none());
     }
 
@@ -1148,13 +1146,13 @@ mod tests {
             .unwrap();
 
         // Each branch sees only its own events
-        let event1 = log.read(&branch1, "default", 0).unwrap().unwrap();
-        let event2 = log.read(&branch2, "default", 0).unwrap().unwrap();
+        let event1 = log.get(&branch1, "default", 0).unwrap().unwrap();
+        let event2 = log.get(&branch2, "default", 0).unwrap().unwrap();
 
         assert_eq!(event1.value.event_type, "branch1");
         assert_eq!(event2.value.event_type, "branch2");
 
         // Cross-branch reads return None
-        assert!(log.read(&branch1, "default", 1).unwrap().is_none());
+        assert!(log.get(&branch1, "default", 1).unwrap().is_none());
     }
 }

@@ -269,7 +269,7 @@ fn atomicity_on_operation_failure() {
         .init(&branch_id, "default", "cell", Value::Int(200))
         .unwrap();
     let version = state
-        .readv(&branch_id, "default", "cell")
+        .getv(&branch_id, "default", "cell")
         .unwrap()
         .unwrap()
         .version();

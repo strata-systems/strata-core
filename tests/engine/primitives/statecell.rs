@@ -19,7 +19,7 @@ fn init_creates_new_cell() {
     let result = state
         .init(&test_db.branch_id, "default", "cell", Value::Int(42))
         .unwrap();
-    assert!(result.version.as_u64() > 0);
+    assert!(result.as_u64() > 0);
 }
 
 #[test]
@@ -34,10 +34,10 @@ fn init_is_idempotent() {
     let v2 = state
         .init(&test_db.branch_id, "default", "cell", Value::Int(2))
         .unwrap();
-    assert_eq!(v1.version, v2.version);
+    assert_eq!(v1, v2);
 
     // Original value should be preserved (not overwritten)
-    let val = state.read(&test_db.branch_id, "default", "cell").unwrap();
+    let val = state.get(&test_db.branch_id, "default", "cell").unwrap();
     assert_eq!(val, Some(Value::Int(1)));
 }
 
@@ -47,7 +47,7 @@ fn read_nonexistent_returns_none() {
     let state = test_db.state();
 
     let result = state
-        .read(&test_db.branch_id, "default", "nonexistent")
+        .get(&test_db.branch_id, "default", "nonexistent")
         .unwrap();
     assert!(result.is_none());
 }
@@ -61,7 +61,7 @@ fn read_returns_initialized_value() {
         .init(&test_db.branch_id, "default", "cell", Value::Int(42))
         .unwrap();
 
-    let result = state.read(&test_db.branch_id, "default", "cell").unwrap();
+    let result = state.get(&test_db.branch_id, "default", "cell").unwrap();
     assert!(result.is_some());
     assert_eq!(result.unwrap(), Value::Int(42));
 }
@@ -73,7 +73,7 @@ fn exists_returns_correct_status() {
 
     // exists rewritten using read().is_some()
     assert!(state
-        .read(&test_db.branch_id, "default", "cell")
+        .get(&test_db.branch_id, "default", "cell")
         .unwrap()
         .is_none());
 
@@ -81,7 +81,7 @@ fn exists_returns_correct_status() {
         .init(&test_db.branch_id, "default", "cell", Value::Int(1))
         .unwrap();
     assert!(state
-        .read(&test_db.branch_id, "default", "cell")
+        .get(&test_db.branch_id, "default", "cell")
         .unwrap()
         .is_some());
 }
@@ -114,7 +114,7 @@ fn cas_succeeds_with_correct_version() {
         .unwrap();
 
     let current = state
-        .readv(&test_db.branch_id, "default", "cell")
+        .getv(&test_db.branch_id, "default", "cell")
         .unwrap()
         .unwrap();
     let version = current.version();
@@ -129,7 +129,7 @@ fn cas_succeeds_with_correct_version() {
     assert!(result.is_ok());
 
     let updated = state
-        .read(&test_db.branch_id, "default", "cell")
+        .get(&test_db.branch_id, "default", "cell")
         .unwrap()
         .unwrap();
     assert_eq!(updated, Value::Int(2));
@@ -156,7 +156,7 @@ fn cas_fails_with_wrong_version() {
 
     // Value unchanged
     let current = state
-        .read(&test_db.branch_id, "default", "cell")
+        .get(&test_db.branch_id, "default", "cell")
         .unwrap()
         .unwrap();
     assert_eq!(current, Value::Int(1));
@@ -187,7 +187,7 @@ fn cas_version_increments() {
         .unwrap();
 
     let v1 = state
-        .readv(&test_db.branch_id, "default", "cell")
+        .getv(&test_db.branch_id, "default", "cell")
         .unwrap()
         .unwrap()
         .version();
@@ -196,7 +196,7 @@ fn cas_version_increments() {
         .cas(&test_db.branch_id, "default", "cell", v1, Value::Int(2))
         .unwrap();
     let v2 = state
-        .readv(&test_db.branch_id, "default", "cell")
+        .getv(&test_db.branch_id, "default", "cell")
         .unwrap()
         .unwrap()
         .version();
@@ -217,7 +217,7 @@ fn set_creates_if_not_exists() {
     assert!(result.is_ok());
 
     let current = state
-        .read(&test_db.branch_id, "default", "cell")
+        .get(&test_db.branch_id, "default", "cell")
         .unwrap()
         .unwrap();
     assert_eq!(current, Value::Int(42));
@@ -238,7 +238,7 @@ fn set_overwrites_without_version_check() {
         .unwrap();
 
     let current = state
-        .read(&test_db.branch_id, "default", "cell")
+        .get(&test_db.branch_id, "default", "cell")
         .unwrap()
         .unwrap();
     assert_eq!(current, Value::Int(100));
@@ -310,7 +310,7 @@ fn concurrent_cas_exactly_one_wins() {
 
                 // Read the current version
                 let current = state
-                    .readv(&branch_id, "default", "counter")
+                    .getv(&branch_id, "default", "counter")
                     .unwrap()
                     .unwrap();
                 let version = current.version();
@@ -355,7 +355,7 @@ fn empty_cell_name() {
     // exists rewritten using read().is_some()
     assert_eq!(
         state
-            .read(&test_db.branch_id, "default", "")
+            .get(&test_db.branch_id, "default", "")
             .unwrap()
             .unwrap(),
         Value::Int(1)
@@ -374,7 +374,7 @@ fn special_characters_in_name() {
     // exists rewritten using read().is_some()
     assert_eq!(
         state
-            .read(&test_db.branch_id, "default", name)
+            .get(&test_db.branch_id, "default", name)
             .unwrap()
             .unwrap(),
         Value::Int(1)

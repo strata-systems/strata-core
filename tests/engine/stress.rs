@@ -322,7 +322,7 @@ fn stress_eventlog_append() {
     // Verify all events are readable
     let verify_start = Instant::now();
     for i in 0..10_000u64 {
-        let ev = event.read(&branch_id, "default", i).unwrap();
+        let ev = event.get(&branch_id, "default", i).unwrap();
         assert!(ev.is_some(), "Event at sequence {} should exist", i);
     }
     let verify_time = verify_start.elapsed();

@@ -95,7 +95,7 @@ fn state_set_and_read() {
     let db = create_strata();
 
     db.state_set("cell", Value::String("state".into())).unwrap();
-    let value = db.state_read("cell").unwrap();
+    let value = db.state_get("cell").unwrap();
     assert!(value.is_some());
     assert_eq!(value.unwrap(), Value::String("state".into()));
 }
@@ -105,7 +105,7 @@ fn state_set_and_read() {
 // ============================================================================
 
 #[test]
-fn event_append_and_read_by_type() {
+fn event_append_and_get_by_type() {
     let db = create_strata();
 
     // Event payloads must be Objects
@@ -114,7 +114,7 @@ fn event_append_and_read_by_type() {
     db.event_append("stream", event_payload("value", Value::Int(2)))
         .unwrap();
 
-    let events = db.event_read_by_type("stream").unwrap();
+    let events = db.event_get_by_type("stream").unwrap();
     assert_eq!(events.len(), 2);
 }
 
@@ -330,7 +330,7 @@ fn use_all_primitives() {
         Some(Value::String("enabled".into()))
     );
     assert_eq!(
-        db.state_read("status").unwrap().unwrap(),
+        db.state_get("status").unwrap().unwrap(),
         Value::String("running".into())
     );
     assert_eq!(db.event_len().unwrap(), 1);

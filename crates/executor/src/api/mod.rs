@@ -599,7 +599,7 @@ mod tests {
 
         // Simplified API: just pass &str directly
         db.state_set("cell", "state").unwrap();
-        let value = db.state_read("cell").unwrap();
+        let value = db.state_get("cell").unwrap();
         assert!(value.is_some());
         assert_eq!(value.unwrap(), Value::String("state".into()));
     }
@@ -620,7 +620,7 @@ mod tests {
         )
         .unwrap();
 
-        let events = db.event_read_by_type("stream").unwrap();
+        let events = db.event_get_by_type("stream").unwrap();
         assert_eq!(events.len(), 2);
     }
 
@@ -797,7 +797,7 @@ mod tests {
 
         // None of the data should exist in this branch
         assert!(db.kv_get("kv-key").unwrap().is_none());
-        assert!(db.state_read("state-cell").unwrap().is_none());
+        assert!(db.state_get("state-cell").unwrap().is_none());
         assert_eq!(db.event_len().unwrap(), 0);
     }
 

@@ -215,12 +215,12 @@ fn test_read_only_allows_all_reads() {
             cursor: None,
             limit: 10,
         },
-        Command::EventRead {
+        Command::EventGet {
             branch: None,
             space: None,
             sequence: 0,
         },
-        Command::EventReadByType {
+        Command::EventGetByType {
             branch: None,
             space: None,
             event_type: "t".into(),
@@ -231,12 +231,12 @@ fn test_read_only_allows_all_reads() {
             branch: None,
             space: None,
         },
-        Command::StateRead {
+        Command::StateGet {
             branch: None,
             space: None,
             cell: "c".into(),
         },
-        Command::StateReadv {
+        Command::StateGetv {
             branch: None,
             space: None,
             cell: "c".into(),
@@ -497,12 +497,12 @@ fn test_is_write_classification() {
             cursor: None,
             limit: 10,
         },
-        Command::EventRead {
+        Command::EventGet {
             branch: None,
             space: None,
             sequence: 0,
         },
-        Command::EventReadByType {
+        Command::EventGetByType {
             branch: None,
             space: None,
             event_type: "".into(),
@@ -513,12 +513,12 @@ fn test_is_write_classification() {
             branch: None,
             space: None,
         },
-        Command::StateRead {
+        Command::StateGet {
             branch: None,
             space: None,
             cell: "".into(),
         },
-        Command::StateReadv {
+        Command::StateGetv {
             branch: None,
             space: None,
             cell: "".into(),

@@ -58,7 +58,7 @@ fn event_operations_equivalent_across_modes() {
             .append(&branch_id, "default", "stream", int_payload(3))
             .unwrap();
 
-        let events = event.read_by_type(&branch_id, "default", "stream").unwrap();
+        let events = event.get_by_type(&branch_id, "default", "stream").unwrap();
         events.len() as u64
     });
 }
@@ -73,10 +73,10 @@ fn statecell_cas_equivalent_across_modes() {
             .init(&branch_id, "default", "counter", Value::Int(0))
             .unwrap();
         state
-            .cas(&branch_id, "default", "counter", v.value, Value::Int(1))
+            .cas(&branch_id, "default", "counter", v, Value::Int(1))
             .unwrap();
 
-        let val = state.read(&branch_id, "default", "counter").unwrap();
+        let val = state.get(&branch_id, "default", "counter").unwrap();
         val.map(|v| format!("{:?}", v))
     });
 }

@@ -130,7 +130,7 @@ fn consistency_invariants_maintained() {
     // Increment counter using read + cas (ensures atomic read-modify-write)
     for _ in 0..10 {
         let current = state
-            .readv(&branch_id, "default", "counter")
+            .getv(&branch_id, "default", "counter")
             .unwrap()
             .unwrap();
         let version = current.version();
@@ -145,7 +145,7 @@ fn consistency_invariants_maintained() {
 
     // Counter should be exactly 10
     let result = state
-        .read(&branch_id, "default", "counter")
+        .get(&branch_id, "default", "counter")
         .unwrap()
         .unwrap();
     assert_eq!(result, Value::Int(10));
@@ -161,7 +161,7 @@ fn consistency_cas_prevents_invalid_state() {
         .init(&branch_id, "default", "balance", Value::Int(100))
         .unwrap();
     let version = state
-        .readv(&branch_id, "default", "balance")
+        .getv(&branch_id, "default", "balance")
         .unwrap()
         .unwrap()
         .version();
@@ -177,7 +177,7 @@ fn consistency_cas_prevents_invalid_state() {
 
     // Balance should be 90, not 80
     let balance = state
-        .read(&branch_id, "default", "balance")
+        .get(&branch_id, "default", "balance")
         .unwrap()
         .unwrap();
     assert_eq!(balance, Value::Int(90));
@@ -380,11 +380,11 @@ fn acid_transfer_between_accounts() {
 
     // Transfer 30 from A to B using readv + cas
     let a_val = state
-        .readv(&branch_id, "default", "account_a")
+        .getv(&branch_id, "default", "account_a")
         .unwrap()
         .unwrap();
     let b_val = state
-        .readv(&branch_id, "default", "account_b")
+        .getv(&branch_id, "default", "account_b")
         .unwrap()
         .unwrap();
 
@@ -399,7 +399,7 @@ fn acid_transfer_between_accounts() {
             )
             .unwrap();
         let b_val2 = state
-            .readv(&branch_id, "default", "account_b")
+            .getv(&branch_id, "default", "account_b")
             .unwrap()
             .unwrap();
         state
@@ -415,11 +415,11 @@ fn acid_transfer_between_accounts() {
 
     // Verify balances
     let a = state
-        .read(&branch_id, "default", "account_a")
+        .get(&branch_id, "default", "account_a")
         .unwrap()
         .unwrap();
     let b = state
-        .read(&branch_id, "default", "account_b")
+        .get(&branch_id, "default", "account_b")
         .unwrap()
         .unwrap();
 

@@ -179,7 +179,7 @@ pub enum Command {
     },
 
     // ==================== Event (4 MVP) ====================
-    // MVP: append, read, read_by_type, len
+    // MVP: append, read, get_by_type, len
     /// Append an event to the log.
     /// Returns: `Output::Version`
     EventAppend {
@@ -193,7 +193,7 @@ pub enum Command {
 
     /// Read a specific event by sequence number.
     /// Returns: `Output::MaybeVersioned`
-    EventRead {
+    EventGet {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         branch: Option<BranchId>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -203,7 +203,7 @@ pub enum Command {
 
     /// Read all events of a specific type.
     /// Returns: `Output::VersionedValues`
-    EventReadByType {
+    EventGetByType {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         branch: Option<BranchId>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -239,7 +239,7 @@ pub enum Command {
 
     /// Read a state cell value.
     /// Returns: `Output::MaybeVersioned`
-    StateRead {
+    StateGet {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         branch: Option<BranchId>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -261,7 +261,7 @@ pub enum Command {
 
     /// Get full version history for a state cell.
     /// Returns: `Output::VersionHistory`
-    StateReadv {
+    StateGetv {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         branch: Option<BranchId>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -610,13 +610,13 @@ impl Command {
             Command::JsonGetv { .. } => "JsonGetv",
             Command::JsonList { .. } => "JsonList",
             Command::EventAppend { .. } => "EventAppend",
-            Command::EventRead { .. } => "EventRead",
-            Command::EventReadByType { .. } => "EventReadByType",
+            Command::EventGet { .. } => "EventGet",
+            Command::EventGetByType { .. } => "EventGetByType",
             Command::EventLen { .. } => "EventLen",
             Command::StateSet { .. } => "StateSet",
-            Command::StateRead { .. } => "StateRead",
+            Command::StateGet { .. } => "StateGet",
             Command::StateCas { .. } => "StateCas",
-            Command::StateReadv { .. } => "StateReadv",
+            Command::StateGetv { .. } => "StateGetv",
             Command::StateInit { .. } => "StateInit",
             Command::StateDelete { .. } => "StateDelete",
             Command::StateList { .. } => "StateList",
@@ -692,13 +692,13 @@ impl Command {
             | Command::JsonList { branch, space, .. }
             // Event (4 MVP)
             | Command::EventAppend { branch, space, .. }
-            | Command::EventRead { branch, space, .. }
-            | Command::EventReadByType { branch, space, .. }
+            | Command::EventGet { branch, space, .. }
+            | Command::EventGetByType { branch, space, .. }
             | Command::EventLen { branch, space, .. }
             // State
             | Command::StateSet { branch, space, .. }
-            | Command::StateRead { branch, space, .. }
-            | Command::StateReadv { branch, space, .. }
+            | Command::StateGet { branch, space, .. }
+            | Command::StateGetv { branch, space, .. }
             | Command::StateCas { branch, space, .. }
             | Command::StateInit { branch, space, .. }
             | Command::StateDelete { branch, space, .. }

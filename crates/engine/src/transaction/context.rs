@@ -301,7 +301,7 @@ impl<'a> TransactionOps for Transaction<'a> {
         Ok(Version::seq(sequence))
     }
 
-    fn event_read(&self, sequence: u64) -> Result<Option<Versioned<Event>>, StrataError> {
+    fn event_get(&self, sequence: u64) -> Result<Option<Versioned<Event>>, StrataError> {
         // Check pending events first (read-your-writes)
         if sequence >= self.base_sequence {
             let index = (sequence - self.base_sequence) as usize;
@@ -329,7 +329,7 @@ impl<'a> TransactionOps for Transaction<'a> {
         let mut results = Vec::new();
 
         for seq in start..end {
-            if let Some(versioned) = self.event_read(seq)? {
+            if let Some(versioned) = self.event_get(seq)? {
                 results.push(versioned);
             }
         }
@@ -346,7 +346,7 @@ impl<'a> TransactionOps for Transaction<'a> {
     // State Operations (Phase 3)
     // =========================================================================
 
-    fn state_read(&self, name: &str) -> Result<Option<Versioned<State>>, StrataError> {
+    fn state_get(&self, name: &str) -> Result<Option<Versioned<State>>, StrataError> {
         let full_key = self.state_key(name);
 
         // Check write set first (read-your-writes)
@@ -803,7 +803,7 @@ mod tests {
     }
 
     #[test]
-    fn test_event_read() {
+    fn test_event_get() {
         let ns = create_test_namespace();
         let mut ctx = create_test_context(&ns);
         let mut txn = Transaction::new(&mut ctx, ns.clone());
@@ -813,7 +813,7 @@ mod tests {
             .unwrap();
 
         // Read it back
-        let result = txn.event_read(0).unwrap();
+        let result = txn.event_get(0).unwrap();
         assert!(result.is_some());
 
         let versioned = result.unwrap();
@@ -826,7 +826,7 @@ mod tests {
     }
 
     #[test]
-    fn test_event_read_your_writes() {
+    fn test_event_get_your_writes() {
         let ns = create_test_namespace();
         let mut ctx = create_test_context(&ns);
         let mut txn = Transaction::new(&mut ctx, ns.clone());
@@ -835,8 +835,8 @@ mod tests {
         txn.event_append("first", Value::Int(100)).unwrap();
         txn.event_append("second", Value::Int(200)).unwrap();
 
-        let first = txn.event_read(0).unwrap().unwrap();
-        let second = txn.event_read(1).unwrap().unwrap();
+        let first = txn.event_get(0).unwrap().unwrap();
+        let second = txn.event_get(1).unwrap().unwrap();
 
         assert_eq!(first.value.event_type, "first");
         assert_eq!(first.value.payload, Value::Int(100));
@@ -845,13 +845,13 @@ mod tests {
     }
 
     #[test]
-    fn test_event_read_not_found() {
+    fn test_event_get_not_found() {
         let ns = create_test_namespace();
         let mut ctx = create_test_context(&ns);
         let txn = Transaction::new(&mut ctx, ns.clone());
 
         // Reading non-existent event returns None
-        let result = txn.event_read(999).unwrap();
+        let result = txn.event_get(999).unwrap();
         assert!(result.is_none());
     }
 
@@ -885,8 +885,8 @@ mod tests {
         txn.event_append("first", Value::Int(1)).unwrap();
         txn.event_append("second", Value::Int(2)).unwrap();
 
-        let first = txn.event_read(0).unwrap().unwrap();
-        let second = txn.event_read(1).unwrap().unwrap();
+        let first = txn.event_get(0).unwrap().unwrap();
+        let second = txn.event_get(1).unwrap().unwrap();
 
         // First event's prev_hash should be zeros (genesis)
         assert_eq!(first.value.prev_hash, [0u8; 32]);
@@ -914,7 +914,7 @@ mod tests {
         assert_eq!(txn.event_len().unwrap(), 101);
 
         // The event should chain from the provided last_hash
-        let event = txn.event_read(100).unwrap().unwrap();
+        let event = txn.event_get(100).unwrap().unwrap();
         assert_eq!(event.value.prev_hash, last_hash);
     }
 
@@ -948,7 +948,7 @@ mod tests {
         assert_eq!(version, Version::counter(1)); // Version 1 for new state
 
         // Read it back (read-your-writes)
-        let result = txn.state_read("counter").unwrap();
+        let result = txn.state_get("counter").unwrap();
         assert!(result.is_some());
         let versioned = result.unwrap();
         assert_eq!(versioned.value.value, Value::Int(0));
@@ -969,7 +969,7 @@ mod tests {
         assert_eq!(new_version, Version::counter(2)); // Version incremented
 
         // Verify the value changed
-        let result = txn.state_read("counter").unwrap().unwrap();
+        let result = txn.state_get("counter").unwrap().unwrap();
         assert_eq!(result.value.value, Value::Int(1));
         assert_eq!(result.value.version, Version::counter(2));
     }

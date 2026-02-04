@@ -1,6 +1,6 @@
 //! Event log operations (4 MVP).
 //!
-//! MVP: append, read, read_by_type, len
+//! MVP: append, read, get_by_type, len
 
 use super::Strata;
 use crate::types::*;
@@ -27,22 +27,22 @@ impl Strata {
     }
 
     /// Read a specific event by sequence number.
-    pub fn event_read(&self, sequence: u64) -> Result<Option<VersionedValue>> {
-        match self.executor.execute(Command::EventRead {
+    pub fn event_get(&self, sequence: u64) -> Result<Option<VersionedValue>> {
+        match self.executor.execute(Command::EventGet {
             branch: self.branch_id(),
             space: self.space_id(),
             sequence,
         })? {
             Output::MaybeVersioned(v) => Ok(v),
             _ => Err(Error::Internal {
-                reason: "Unexpected output for EventRead".into(),
+                reason: "Unexpected output for EventGet".into(),
             }),
         }
     }
 
     /// Read all events of a specific type.
-    pub fn event_read_by_type(&self, event_type: &str) -> Result<Vec<VersionedValue>> {
-        match self.executor.execute(Command::EventReadByType {
+    pub fn event_get_by_type(&self, event_type: &str) -> Result<Vec<VersionedValue>> {
+        match self.executor.execute(Command::EventGetByType {
             branch: self.branch_id(),
             space: self.space_id(),
             event_type: event_type.to_string(),
@@ -51,7 +51,7 @@ impl Strata {
         })? {
             Output::VersionedValues(events) => Ok(events),
             _ => Err(Error::Internal {
-                reason: "Unexpected output for EventReadByType".into(),
+                reason: "Unexpected output for EventGetByType".into(),
             }),
         }
     }

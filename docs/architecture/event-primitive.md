@@ -200,7 +200,7 @@ Client               Handler             Engine (EventLog)    Transaction       
 
 **Steps:**
 
-1. **Handler**: Converts branch. Calls `primitives.event.read(&branch_id, sequence)`. Maps the returned `Versioned<Event>` to `VersionedValue { value: event.payload, version: sequence, timestamp }`.
+1. **Handler**: Converts branch. Calls `primitives.event.get(&branch_id, sequence)`. Maps the returned `Versioned<Event>` to `VersionedValue { value: event.payload, version: sequence, timestamp }`.
 2. **Engine (EventLog)**: Constructs `Key::new_event(ns, sequence)` (sequence as big-endian 8 bytes). Opens transaction. Calls `txn.get()`. Deserializes the JSON string back to `Event` struct. Wraps in `Versioned::with_timestamp(event, Version::Sequence(seq), Timestamp)`.
 3. **Transaction/Storage**: Standard read path through write set -> delete set -> snapshot.
 
@@ -245,7 +245,7 @@ Client               Handler             Engine (EventLog)    Transaction       
 
 **Steps:**
 
-1. **Handler**: Converts branch. Calls `primitives.event.read_by_type()`. Maps each `Versioned<Event>` to `VersionedValue { value: event.payload, version: sequence, timestamp }`.
+1. **Handler**: Converts branch. Calls `primitives.event.get_by_type()`. Maps each `Versioned<Event>` to `VersionedValue { value: event.payload, version: sequence, timestamp }`.
 2. **Engine (EventLog)**: Opens transaction. Reads `EventLogMeta` to get `next_sequence` (total event count). Iterates through ALL events from sequence 0 to N-1. For each event, deserializes and checks if `event.event_type == target_type`. Collects matching events.
 3. **Performance note**: This is an O(N) scan over all events in the branch. The `EventLogMeta.streams` map tracks per-type metadata but is not currently used to optimize the scan.
 

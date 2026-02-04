@@ -1,6 +1,6 @@
 //! Event command handlers (4 MVP).
 //!
-//! MVP: append, read, read_by_type, len
+//! MVP: append, read, get_by_type, len
 
 use std::sync::Arc;
 
@@ -48,15 +48,15 @@ pub fn event_append(
     Ok(Output::Version(bridge::extract_version(&version)))
 }
 
-/// Handle EventRead command.
-pub fn event_read(
+/// Handle EventGet command.
+pub fn event_get(
     p: &Arc<Primitives>,
     branch: BranchId,
     space: String,
     sequence: u64,
 ) -> Result<Output> {
     let core_branch_id = bridge::to_core_branch_id(&branch)?;
-    let event = convert_result(p.event.read(&core_branch_id, &space, sequence))?;
+    let event = convert_result(p.event.get(&core_branch_id, &space, sequence))?;
 
     let result = event.map(|e| VersionedValue {
         value: e.value.payload,
@@ -67,8 +67,8 @@ pub fn event_read(
     Ok(Output::MaybeVersioned(result))
 }
 
-/// Handle EventReadByType command.
-pub fn event_read_by_type(
+/// Handle EventGetByType command.
+pub fn event_get_by_type(
     p: &Arc<Primitives>,
     branch: BranchId,
     space: String,
@@ -77,7 +77,7 @@ pub fn event_read_by_type(
     after_sequence: Option<u64>,
 ) -> Result<Output> {
     let core_branch_id = bridge::to_core_branch_id(&branch)?;
-    let events = convert_result(p.event.read_by_type(&core_branch_id, &space, &event_type))?;
+    let events = convert_result(p.event.get_by_type(&core_branch_id, &space, &event_type))?;
 
     // Apply after_sequence filter
     let filtered: Vec<_> = if let Some(after_seq) = after_sequence {
