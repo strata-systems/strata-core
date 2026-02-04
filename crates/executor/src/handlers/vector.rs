@@ -34,7 +34,7 @@ fn to_versioned_vector_data(
         .clone()
         .map(serde_json_to_value_public)
         .transpose()
-        .map_err(|e| crate::Error::from(e))?;
+        .map_err(crate::Error::from)?;
     Ok(VersionedVectorData {
         key: entry.key.clone(),
         data: VectorData {
@@ -52,7 +52,7 @@ fn to_vector_match(m: strata_engine::VectorMatch) -> Result<VectorMatch> {
         .metadata
         .map(serde_json_to_value_public)
         .transpose()
-        .map_err(|e| crate::Error::from(e))?;
+        .map_err(crate::Error::from)?;
     Ok(VectorMatch {
         key: m.key,
         score: m.score,
@@ -81,7 +81,7 @@ pub fn vector_upsert(
     let json_metadata = metadata
         .map(value_to_serde_json_public)
         .transpose()
-        .map_err(|e| crate::Error::from(e))?;
+        .map_err(crate::Error::from)?;
     let version = convert_vector_result(p.vector.insert(
         branch_id,
         &space,
@@ -133,6 +133,7 @@ pub fn vector_delete(
 }
 
 /// Handle VectorSearch command.
+#[allow(clippy::too_many_arguments)]
 pub fn vector_search(
     p: &Arc<Primitives>,
     branch: BranchId,
@@ -287,7 +288,7 @@ pub fn vector_batch_upsert(
             .metadata
             .map(value_to_serde_json_public)
             .transpose()
-            .map_err(|e| crate::Error::from(e))?;
+            .map_err(crate::Error::from)?;
         engine_entries.push((entry.key, entry.vector, json_metadata));
     }
 
@@ -298,7 +299,7 @@ pub fn vector_batch_upsert(
         engine_entries,
     ))?;
 
-    let version_nums: Vec<u64> = versions.iter().map(|v| extract_version(v)).collect();
+    let version_nums: Vec<u64> = versions.iter().map(extract_version).collect();
     Ok(Output::Versions(version_nums))
 }
 

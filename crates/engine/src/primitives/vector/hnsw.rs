@@ -193,8 +193,7 @@ impl HnswBackend {
         let uniform = (hash as f64) / (u64::MAX as f64);
         // Clamp to avoid log(0)
         let uniform = uniform.max(1e-15);
-        let level = (-uniform.ln() * self.config.ml) as usize;
-        level
+        (-uniform.ln() * self.config.ml) as usize
     }
 
     /// SplitMix64 hash function for deterministic PRNG
@@ -822,7 +821,7 @@ impl VectorIndexBackend for HnswBackend {
 
     fn memory_usage(&self) -> usize {
         // Embedding storage
-        let embedding_bytes = self.heap.raw_data().len() * std::mem::size_of::<f32>();
+        let embedding_bytes = std::mem::size_of_val(self.heap.raw_data());
         // Graph structure: each node has neighbor lists
         let graph_bytes: usize = self
             .nodes
@@ -838,7 +837,7 @@ impl VectorIndexBackend for HnswBackend {
             .sum();
         let heap_overhead =
             self.heap.len() * (std::mem::size_of::<VectorId>() + std::mem::size_of::<usize>() + 64);
-        let free_slots_bytes = self.heap.free_slots().len() * std::mem::size_of::<usize>();
+        let free_slots_bytes = std::mem::size_of_val(self.heap.free_slots());
 
         embedding_bytes + graph_bytes + heap_overhead + free_slots_bytes
     }

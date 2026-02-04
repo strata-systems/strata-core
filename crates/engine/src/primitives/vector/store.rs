@@ -1166,6 +1166,7 @@ impl VectorStore {
     /// Note: `_key`, `_metadata`, and `_source_ref` parameters are not used here because
     /// they are stored in the KV layer (via VectorRecord), which has its own WAL entries.
     /// This method only replays the embedding into the VectorHeap backend.
+    #[allow(clippy::too_many_arguments)]
     pub fn replay_upsert(
         &self,
         branch_id: BranchId,
@@ -1223,6 +1224,7 @@ impl VectorStore {
     /// Create a system collection (internal use only, bypasses `_` prefix check)
     ///
     /// System collections must have names starting with `_system_`.
+    #[allow(dead_code)]
     pub(crate) fn create_system_collection(
         &self,
         branch_id: BranchId,
@@ -1276,6 +1278,7 @@ impl VectorStore {
     }
 
     /// Insert into a system collection (internal use only)
+    #[allow(dead_code)]
     pub(crate) fn system_insert(
         &self,
         branch_id: BranchId,
@@ -1291,6 +1294,7 @@ impl VectorStore {
     }
 
     /// Search a system collection (internal use only)
+    #[allow(dead_code)]
     pub(crate) fn system_search(
         &self,
         branch_id: BranchId,

@@ -71,9 +71,10 @@ fn global_namespace() -> Namespace {
 ///
 /// All branches are Active. Additional statuses will be added when
 /// lifecycle transitions are implemented.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum BranchStatus {
     /// Branch is currently active
+    #[default]
     Active,
 }
 
@@ -83,12 +84,6 @@ impl BranchStatus {
         match self {
             BranchStatus::Active => "Active",
         }
-    }
-}
-
-impl Default for BranchStatus {
-    fn default() -> Self {
-        BranchStatus::Active
     }
 }
 

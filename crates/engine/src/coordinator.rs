@@ -137,7 +137,7 @@ impl TransactionCoordinator {
     /// * `txn` - Transaction to commit (must be in Active state)
     /// * `store` - Storage to validate against and apply writes to
     /// * `wal` - Optional WAL for durability. Pass `None` for ephemeral databases
-    ///           or when durability is not required.
+    ///   or when durability is not required.
     ///
     /// # Returns
     /// * `Ok(commit_version)` - Transaction committed successfully

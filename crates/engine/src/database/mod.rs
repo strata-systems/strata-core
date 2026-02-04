@@ -69,7 +69,7 @@ use tracing::{info, warn};
 /// - **Disk + Cache**: Integration tests (fast, isolated, but files exist)
 /// - **Disk + Standard**: Production workloads
 /// - **Disk + Always**: Audit logs, critical data
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum PersistenceMode {
     /// No disk files at all - data exists only in memory
     ///
@@ -85,13 +85,8 @@ pub(crate) enum PersistenceMode {
     ///
     /// Creates directories and WAL file. Data can survive crashes
     /// depending on the `DurabilityMode`.
+    #[default]
     Disk,
-}
-
-impl Default for PersistenceMode {
-    fn default() -> Self {
-        PersistenceMode::Disk
-    }
 }
 
 // ============================================================================
