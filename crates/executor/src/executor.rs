@@ -707,7 +707,8 @@ impl Executor {
     }
 }
 
-// Executor is thread-safe
-// SAFETY: Executor only contains Arc<Primitives> which is Send + Sync
+// SAFETY: Executor is Send+Sync because:
+// - primitives: Arc<Primitives> is Send+Sync (all fields are Arc<Database>)
+// - access_mode: AccessMode is a Copy enum (trivially Send+Sync)
 unsafe impl Send for Executor {}
 unsafe impl Sync for Executor {}
