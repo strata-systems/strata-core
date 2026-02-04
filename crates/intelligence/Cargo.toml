@@ -12,6 +12,7 @@ strata-engine = { path = "../engine" }
 dashmap = "5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = { version = "3" }

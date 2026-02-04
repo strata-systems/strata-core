@@ -235,6 +235,7 @@ impl TransactionManager {
             txn.status = TransactionStatus::Committed;
         } else {
             txn.commit(store)?;
+            tracing::debug!(target: "strata::txn", txn_id = txn.txn_id, "Validation passed");
         }
 
         // At this point, transaction is in Committed state
@@ -265,6 +266,7 @@ impl TransactionManager {
 
                 // DURABILITY POINT: Transaction is now durable
                 // Even if we crash after this, recovery will replay from WAL
+                tracing::debug!(target: "strata::txn", txn_id = txn.txn_id, commit_version, "WAL durable");
             }
         }
 
@@ -275,6 +277,7 @@ impl TransactionManager {
                 // Log error but return success since WAL is authoritative
                 // Recovery will replay the transaction anyway
                 tracing::error!(
+                    target: "strata::txn",
                     txn_id = txn.txn_id,
                     commit_version = commit_version,
                     error = %e,

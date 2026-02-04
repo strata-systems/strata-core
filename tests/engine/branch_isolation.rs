@@ -28,8 +28,14 @@ fn kv_branches_are_isolated() {
     kv.put(&branch_b, "default", "key", Value::Int(2)).unwrap();
 
     // Each branch sees its own value
-    assert_eq!(kv.get(&branch_a, "default", "key").unwrap().unwrap(), Value::Int(1));
-    assert_eq!(kv.get(&branch_b, "default", "key").unwrap().unwrap(), Value::Int(2));
+    assert_eq!(
+        kv.get(&branch_a, "default", "key").unwrap().unwrap(),
+        Value::Int(1)
+    );
+    assert_eq!(
+        kv.get(&branch_b, "default", "key").unwrap().unwrap(),
+        Value::Int(2)
+    );
 }
 
 #[test]
@@ -49,7 +55,10 @@ fn kv_delete_doesnt_affect_other_branch() {
     assert!(kv.get(&branch_a, "default", "key").unwrap().is_none());
 
     // Branch B's key still exists
-    assert_eq!(kv.get(&branch_b, "default", "key").unwrap().unwrap(), Value::Int(2));
+    assert_eq!(
+        kv.get(&branch_b, "default", "key").unwrap().unwrap(),
+        Value::Int(2)
+    );
 }
 
 #[test]
@@ -89,21 +98,24 @@ fn eventlog_branches_are_isolated() {
 
     event
         .append(
-            &branch_a, "default",
+            &branch_a,
+            "default",
             "type",
             event_payload(Value::String("branch_a".into())),
         )
         .unwrap();
     event
         .append(
-            &branch_a, "default",
+            &branch_a,
+            "default",
             "type",
             event_payload(Value::String("branch_a_2".into())),
         )
         .unwrap();
     event
         .append(
-            &branch_b, "default",
+            &branch_b,
+            "default",
             "type",
             event_payload(Value::String("branch_b".into())),
         )
@@ -146,7 +158,12 @@ fn eventlog_independent_per_branch() {
             .append(&branch_a, "default", "type", event_payload(Value::Int(i)))
             .unwrap();
         event
-            .append(&branch_b, "default", "type", event_payload(Value::Int(i * 10)))
+            .append(
+                &branch_b,
+                "default",
+                "type",
+                event_payload(Value::Int(i * 10)),
+            )
             .unwrap();
     }
 
@@ -174,8 +191,12 @@ fn statecell_branches_are_isolated() {
     let branch_b = BranchId::new();
 
     // Same cell name, different branches
-    state.init(&branch_a, "default", "cell", Value::Int(1)).unwrap();
-    state.init(&branch_b, "default", "cell", Value::Int(2)).unwrap();
+    state
+        .init(&branch_a, "default", "cell", Value::Int(1))
+        .unwrap();
+    state
+        .init(&branch_b, "default", "cell", Value::Int(2))
+        .unwrap();
 
     assert_eq!(
         state.read(&branch_a, "default", "cell").unwrap().unwrap(),
@@ -195,11 +216,23 @@ fn statecell_cas_isolated() {
     let branch_a = BranchId::new();
     let branch_b = BranchId::new();
 
-    state.init(&branch_a, "default", "cell", Value::Int(0)).unwrap();
-    state.init(&branch_b, "default", "cell", Value::Int(0)).unwrap();
+    state
+        .init(&branch_a, "default", "cell", Value::Int(0))
+        .unwrap();
+    state
+        .init(&branch_b, "default", "cell", Value::Int(0))
+        .unwrap();
 
-    let version_a = state.readv(&branch_a, "default", "cell").unwrap().unwrap().version();
-    let version_b = state.readv(&branch_b, "default", "cell").unwrap().unwrap().version();
+    let version_a = state
+        .readv(&branch_a, "default", "cell")
+        .unwrap()
+        .unwrap()
+        .version();
+    let version_b = state
+        .readv(&branch_b, "default", "cell")
+        .unwrap()
+        .unwrap()
+        .version();
 
     // CAS on branch A
     state
@@ -240,10 +273,20 @@ fn jsonstore_branches_are_isolated() {
     let branch_a = BranchId::new();
     let branch_b = BranchId::new();
 
-    json.create(&branch_a, "default", "doc", serde_json::json!({"branch": "a"}).into())
-        .unwrap();
-    json.create(&branch_b, "default", "doc", serde_json::json!({"branch": "b"}).into())
-        .unwrap();
+    json.create(
+        &branch_a,
+        "default",
+        "doc",
+        serde_json::json!({"branch": "a"}).into(),
+    )
+    .unwrap();
+    json.create(
+        &branch_b,
+        "default",
+        "doc",
+        serde_json::json!({"branch": "b"}).into(),
+    )
+    .unwrap();
 
     let a_doc = json
         .get(&branch_a, "default", "doc", &JsonPath::root())
@@ -318,7 +361,9 @@ fn vectorstore_collections_per_branch() {
     assert!(b_colls.iter().any(|c| c.name == "coll"));
 
     // Delete from branch A doesn't affect branch B
-    vector.delete_collection(branch_a, "default", "coll").unwrap();
+    vector
+        .delete_collection(branch_a, "default", "coll")
+        .unwrap();
 
     let a_colls = vector.list_collections(branch_a, "default").unwrap();
     let b_colls = vector.list_collections(branch_b, "default").unwrap();
@@ -344,14 +389,34 @@ fn vectorstore_vectors_per_branch() {
 
     // Insert different vectors with same key
     vector
-        .insert(branch_a, "default", "coll", "vec", &[1.0f32, 0.0, 0.0], None)
+        .insert(
+            branch_a,
+            "default",
+            "coll",
+            "vec",
+            &[1.0f32, 0.0, 0.0],
+            None,
+        )
         .unwrap();
     vector
-        .insert(branch_b, "default", "coll", "vec", &[0.0f32, 1.0, 0.0], None)
+        .insert(
+            branch_b,
+            "default",
+            "coll",
+            "vec",
+            &[0.0f32, 1.0, 0.0],
+            None,
+        )
         .unwrap();
 
-    let a_vec = vector.get(branch_a, "default", "coll", "vec").unwrap().unwrap();
-    let b_vec = vector.get(branch_b, "default", "coll", "vec").unwrap().unwrap();
+    let a_vec = vector
+        .get(branch_a, "default", "coll", "vec")
+        .unwrap()
+        .unwrap();
+    let b_vec = vector
+        .get(branch_b, "default", "coll", "vec")
+        .unwrap()
+        .unwrap();
 
     assert_eq!(a_vec.value.embedding, vec![1.0f32, 0.0, 0.0]);
     assert_eq!(b_vec.value.embedding, vec![0.0f32, 1.0, 0.0]);
@@ -370,21 +435,36 @@ fn all_primitives_isolated_by_branch() {
     let branch_b = BranchId::new();
 
     // Write to all primitives in branch A
-    prims.kv.put(&branch_a, "default", "key", Value::Int(1)).unwrap();
+    prims
+        .kv
+        .put(&branch_a, "default", "key", Value::Int(1))
+        .unwrap();
     prims
         .event
         .append(&branch_a, "default", "type", event_payload(Value::Int(1)))
         .unwrap();
-    prims.state.init(&branch_a, "default", "cell", Value::Int(1)).unwrap();
+    prims
+        .state
+        .init(&branch_a, "default", "cell", Value::Int(1))
+        .unwrap();
     prims
         .json
-        .create(&branch_a, "default", "doc", serde_json::json!({"n": 1}).into())
+        .create(
+            &branch_a,
+            "default",
+            "doc",
+            serde_json::json!({"n": 1}).into(),
+        )
         .unwrap();
 
     // Branch B should see nothing
     assert!(prims.kv.get(&branch_b, "default", "key").unwrap().is_none());
     assert_eq!(prims.event.len(&branch_b, "default").unwrap(), 0);
-    assert!(prims.state.read(&branch_b, "default", "cell").unwrap().is_none());
+    assert!(prims
+        .state
+        .read(&branch_b, "default", "cell")
+        .unwrap()
+        .is_none());
     assert!(!prims.json.exists(&branch_b, "default", "doc").unwrap());
 }
 
@@ -397,7 +477,8 @@ fn many_branches_no_interference() {
     let branches: Vec<BranchId> = (0..10).map(|_| BranchId::new()).collect();
 
     for (i, branch_id) in branches.iter().enumerate() {
-        kv.put(branch_id, "default", "data", Value::Int(i as i64)).unwrap();
+        kv.put(branch_id, "default", "data", Value::Int(i as i64))
+            .unwrap();
     }
 
     // Each branch sees only its own data

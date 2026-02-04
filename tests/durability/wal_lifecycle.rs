@@ -11,7 +11,8 @@ fn wal_file_exists_after_write_in_strict_mode() {
     let branch_id = test_db.branch_id;
 
     let kv = test_db.kv();
-    kv.put(&branch_id, "default", "trigger", Value::Int(1)).unwrap();
+    kv.put(&branch_id, "default", "trigger", Value::Int(1))
+        .unwrap();
 
     let wal_dir = test_db.wal_dir();
     assert!(wal_dir.exists(), "WAL directory should exist after write");
@@ -69,8 +70,13 @@ fn data_written_to_wal_is_recoverable() {
     let branch_id = test_db.branch_id;
 
     let kv = test_db.kv();
-    kv.put(&branch_id, "default", "wal_key", Value::String("wal_value".into()))
-        .unwrap();
+    kv.put(
+        &branch_id,
+        "default",
+        "wal_key",
+        Value::String("wal_value".into()),
+    )
+    .unwrap();
 
     // Delete snapshots to force WAL-only recovery
     delete_snapshots(&test_db.snapshot_dir());
@@ -90,7 +96,8 @@ fn large_values_in_wal_survive_recovery() {
 
     let kv = test_db.kv();
     let large_value = Value::String("x".repeat(100_000)); // 100KB
-    kv.put(&branch_id, "default", "large", large_value.clone()).unwrap();
+    kv.put(&branch_id, "default", "large", large_value.clone())
+        .unwrap();
 
     test_db.reopen();
 
@@ -106,8 +113,13 @@ fn wal_handles_many_small_writes() {
 
     let kv = test_db.kv();
     for i in 0..2000 {
-        kv.put(&branch_id, "default", &format!("small_{}", i), Value::Int(i))
-            .unwrap();
+        kv.put(
+            &branch_id,
+            "default",
+            &format!("small_{}", i),
+            Value::Int(i),
+        )
+        .unwrap();
     }
 
     test_db.reopen();
@@ -115,7 +127,9 @@ fn wal_handles_many_small_writes() {
     let kv = test_db.kv();
     // Sample check — don't need to check all 2000
     for i in (0..2000).step_by(100) {
-        let val = kv.get(&branch_id, "default", &format!("small_{}", i)).unwrap();
+        let val = kv
+            .get(&branch_id, "default", &format!("small_{}", i))
+            .unwrap();
         assert_eq!(
             val,
             Some(Value::Int(i)),

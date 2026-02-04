@@ -42,15 +42,22 @@ mod kv_scale {
         // Write
         measure(&format!("Write {} KV entries", count), || {
             for i in 0..count {
-                kv.put(&branch_id, "default", &format!("key_{:08}", i), Value::Int(i as i64))
-                    .unwrap();
+                kv.put(
+                    &branch_id,
+                    "default",
+                    &format!("key_{:08}", i),
+                    Value::Int(i as i64),
+                )
+                .unwrap();
             }
         });
 
         // Read all
         measure(&format!("Read {} KV entries", count), || {
             for i in 0..count {
-                let val = kv.get(&branch_id, "default", &format!("key_{:08}", i)).unwrap();
+                let val = kv
+                    .get(&branch_id, "default", &format!("key_{:08}", i))
+                    .unwrap();
                 assert_eq!(val.unwrap(), Value::Int(i as i64));
             }
         });
@@ -64,7 +71,9 @@ mod kv_scale {
         // Random reads
         measure(&format!("Random read 1000 from {}", count), || {
             for i in (0..count).step_by(count / 1000) {
-                let _ = kv.get(&branch_id, "default", &format!("key_{:08}", i)).unwrap();
+                let _ = kv
+                    .get(&branch_id, "default", &format!("key_{:08}", i))
+                    .unwrap();
             }
         });
     }
@@ -109,13 +118,18 @@ mod event_scale {
 
         // Count
         measure(&format!("Count {} events", count), || {
-            let len = event.read_by_type(&branch_id, "default", "scale_test").unwrap().len() as u64;
+            let len = event
+                .read_by_type(&branch_id, "default", "scale_test")
+                .unwrap()
+                .len() as u64;
             assert_eq!(len, count as u64);
         });
 
         // Read all
         measure(&format!("Read {} events", count), || {
-            let events = event.read_by_type(&branch_id, "default", "scale_test").unwrap();
+            let events = event
+                .read_by_type(&branch_id, "default", "scale_test")
+                .unwrap();
             assert_eq!(events.len(), count);
         });
     }
@@ -152,8 +166,13 @@ mod json_scale {
         // Create documents
         measure(&format!("Create {} JSON documents", count), || {
             for i in 0..count {
-                json.create(&branch_id, "default", &format!("doc_{:08}", i), test_json_value(i))
-                    .unwrap();
+                json.create(
+                    &branch_id,
+                    "default",
+                    &format!("doc_{:08}", i),
+                    test_json_value(i),
+                )
+                .unwrap();
             }
         });
 
@@ -169,7 +188,9 @@ mod json_scale {
 
         // List
         measure(&format!("List {} JSON documents", count), || {
-            let list = json.list(&branch_id, "default", None, None, count + 1).unwrap();
+            let list = json
+                .list(&branch_id, "default", None, None, count + 1)
+                .unwrap();
             assert_eq!(list.doc_ids.len(), count);
         });
     }
@@ -214,7 +235,8 @@ mod vector_scale {
                 vector
                     .insert(
                         branch_id,
-                        "default", "scale_test",
+                        "default",
+                        "scale_test",
                         &format!("vec_{:08}", i),
                         &emb,
                         None,
@@ -280,8 +302,13 @@ fn cross_primitive_scale_1k() {
     measure(&format!("Cross-primitive {} records", count), || {
         for i in 0..count {
             // KV: config
-            p.kv.put(&branch_id, "default", &format!("item:{}", i), Value::Int(i as i64))
-                .unwrap();
+            p.kv.put(
+                &branch_id,
+                "default",
+                &format!("item:{}", i),
+                Value::Int(i as i64),
+            )
+            .unwrap();
 
             // Event: audit
             p.event
@@ -292,7 +319,8 @@ fn cross_primitive_scale_1k() {
             p.vector
                 .insert(
                     branch_id,
-                    "default", "embeddings",
+                    "default",
+                    "embeddings",
                     &format!("item_{}", i),
                     &seeded_vector(3, i as u64),
                     None,
@@ -302,9 +330,17 @@ fn cross_primitive_scale_1k() {
     });
 
     // Verify counts
-    assert_eq!(p.kv.list(&branch_id, "default", Some("item:")).unwrap().len(), count);
     assert_eq!(
-        p.event.read_by_type(&branch_id, "default", "items").unwrap().len() as u64,
+        p.kv.list(&branch_id, "default", Some("item:"))
+            .unwrap()
+            .len(),
+        count
+    );
+    assert_eq!(
+        p.event
+            .read_by_type(&branch_id, "default", "items")
+            .unwrap()
+            .len() as u64,
         count as u64
     );
     assert_eq!(
@@ -358,7 +394,10 @@ fn deep_json_nesting() {
     let deep = deep_json_value(50);
     json.create(&branch_id, "default", "deep", deep).unwrap();
 
-    let doc = json.get(&branch_id, "default", "deep", &root()).unwrap().unwrap();
+    let doc = json
+        .get(&branch_id, "default", "deep", &root())
+        .unwrap()
+        .unwrap();
 
     // Navigate down
     let mut current: serde_json::Value = doc.as_inner().clone();
@@ -391,7 +430,14 @@ fn high_dimension_vectors() {
     for i in 0..100 {
         let emb = seeded_vector(1536, i);
         vector
-            .insert(branch_id, "default", "high_dim", &format!("vec_{}", i), &emb, None)
+            .insert(
+                branch_id,
+                "default",
+                "high_dim",
+                &format!("vec_{}", i),
+                &emb,
+                None,
+            )
             .unwrap();
     }
 
@@ -430,8 +476,13 @@ fn concurrent_writers_scale() {
                 barrier.wait();
                 for i in 0..writes_per_thread {
                     let key = format!("t{}_{}", t, i);
-                    kv.put(&branch_id, "default", &key, Value::Int((t * 1000 + i) as i64))
-                        .unwrap();
+                    kv.put(
+                        &branch_id,
+                        "default",
+                        &key,
+                        Value::Int((t * 1000 + i) as i64),
+                    )
+                    .unwrap();
                 }
             })
         })

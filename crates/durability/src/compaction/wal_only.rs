@@ -26,7 +26,7 @@ use crate::format::{
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{info, warn};
 
 use super::{CompactInfo, CompactMode, CompactionError};
 
@@ -54,6 +54,7 @@ impl WalOnlyCompactor {
     /// - `NoSnapshot`: No snapshot exists to compact against
     /// - `Io`: File system errors during segment access/deletion
     pub fn compact(&self) -> Result<CompactInfo, CompactionError> {
+        info!(target: "strata::compaction", "WAL compaction started");
         let start_time = std::time::Instant::now();
         let mut info = CompactInfo::new(CompactMode::WALOnly);
 
@@ -94,6 +95,7 @@ impl WalOnlyCompactor {
                             if let Err(e) = std::fs::remove_file(&segment_path) {
                                 // Log but continue - partial compaction is acceptable
                                 warn!(
+                                    target: "strata::compaction",
                                     segment = segment_number,
                                     error = %e,
                                     "Failed to remove WAL segment"
@@ -107,6 +109,7 @@ impl WalOnlyCompactor {
                         Err(e) => {
                             // Segment might have been removed by another process
                             warn!(
+                                target: "strata::compaction",
                                 segment = segment_number,
                                 error = %e,
                                 "Failed to stat WAL segment"
@@ -120,6 +123,7 @@ impl WalOnlyCompactor {
                 Err(e) => {
                     // Error reading segment - skip it for safety
                     warn!(
+                        target: "strata::compaction",
                         segment = segment_number,
                         error = %e,
                         "Failed to check WAL segment coverage"
@@ -134,6 +138,7 @@ impl WalOnlyCompactor {
             .map(|d| d.as_micros() as u64)
             .unwrap_or(0);
 
+        info!(target: "strata::compaction", "WAL compaction completed");
         Ok(info)
     }
 

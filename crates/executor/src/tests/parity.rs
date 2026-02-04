@@ -29,8 +29,13 @@ fn test_kv_put_get_parity() {
 
     // Direct primitive call to write key1
     let _direct_version =
-        p.kv.put(&branch_id, "default", "key1", Value::String("direct".into()))
-            .unwrap();
+        p.kv.put(
+            &branch_id,
+            "default",
+            "key1",
+            Value::String("direct".into()),
+        )
+        .unwrap();
 
     // Executor call to write key2
     let exec_result = executor.execute(Command::KvPut {
@@ -89,7 +94,8 @@ fn test_kv_delete_parity() {
     let branch_id = strata_core::types::BranchId::from_bytes([0u8; 16]);
 
     // Set up data via primitive
-    p.kv.put(&branch_id, "default", "to-delete", Value::Int(42)).unwrap();
+    p.kv.put(&branch_id, "default", "to-delete", Value::Int(42))
+        .unwrap();
 
     // Delete via executor
     let result = executor.execute(Command::KvDelete {
@@ -115,9 +121,12 @@ fn test_kv_list_parity() {
     let branch_id = strata_core::types::BranchId::from_bytes([0u8; 16]);
 
     // Create keys via primitive
-    p.kv.put(&branch_id, "default", "user:1", Value::Int(1)).unwrap();
-    p.kv.put(&branch_id, "default", "user:2", Value::Int(2)).unwrap();
-    p.kv.put(&branch_id, "default", "task:1", Value::Int(3)).unwrap();
+    p.kv.put(&branch_id, "default", "user:1", Value::Int(1))
+        .unwrap();
+    p.kv.put(&branch_id, "default", "user:2", Value::Int(2))
+        .unwrap();
+    p.kv.put(&branch_id, "default", "task:1", Value::Int(3))
+        .unwrap();
 
     // List via executor with prefix filter
     let result = executor.execute(Command::KvList {
@@ -285,7 +294,10 @@ fn test_state_set_get_parity() {
     assert_eq!(direct_get.unwrap(), Value::Int(100));
 
     // Set via direct primitive
-    let versioned2 = p.state.set(&branch_id, "default", "cell2", Value::Int(200)).unwrap();
+    let versioned2 = p
+        .state
+        .set(&branch_id, "default", "cell2", Value::Int(200))
+        .unwrap();
 
     // Both should have counter 1 (first write to each cell)
     assert_eq!(counter1, 1);
@@ -364,7 +376,14 @@ fn test_vector_upsert_search_parity() {
 
     // Upsert via direct primitive
     p.vector
-        .insert(branch_id, "default", "vecs", "v2", &[0.0, 1.0, 0.0, 0.0], None)
+        .insert(
+            branch_id,
+            "default",
+            "vecs",
+            "v2",
+            &[0.0, 1.0, 0.0, 0.0],
+            None,
+        )
         .unwrap();
 
     // Search via executor

@@ -60,7 +60,8 @@ mod invariant_1_addressable {
         let (db, branch_id) = setup();
         let kv = KVStore::new(db);
 
-        kv.put(&branch_id, "default", "my-key", Value::Int(42)).unwrap();
+        kv.put(&branch_id, "default", "my-key", Value::Int(42))
+            .unwrap();
 
         // Build EntityRef for KV entry
         let entity_ref = EntityRef::kv(branch_id, "my-key");
@@ -78,7 +79,12 @@ mod invariant_1_addressable {
         let events = EventLog::new(db);
 
         let version = events
-            .append(&branch_id, "default", "test-event", string_payload("payload"))
+            .append(
+                &branch_id,
+                "default",
+                "test-event",
+                string_payload("payload"),
+            )
             .unwrap();
 
         // Events are addressed by sequence number
@@ -100,7 +106,9 @@ mod invariant_1_addressable {
         let (db, branch_id) = setup();
         let state = StateCell::new(db);
 
-        state.init(&branch_id, "default", "my-cell", Value::Int(0)).unwrap();
+        state
+            .init(&branch_id, "default", "my-cell", Value::Int(0))
+            .unwrap();
 
         let entity_ref = EntityRef::state(branch_id, "my-cell");
 
@@ -116,8 +124,13 @@ mod invariant_1_addressable {
         let json = JsonStore::new(db);
         let doc_id = "test-doc";
 
-        json.create(&branch_id, "default", &doc_id, serde_json::json!({"data": 1}).into())
-            .unwrap();
+        json.create(
+            &branch_id,
+            "default",
+            &doc_id,
+            serde_json::json!({"data": 1}).into(),
+        )
+        .unwrap();
 
         let entity_ref = EntityRef::json(branch_id, doc_id);
 
@@ -137,7 +150,14 @@ mod invariant_1_addressable {
             .create_collection(branch_id, "default", "test-col", config)
             .unwrap();
         vectors
-            .insert(branch_id, "default", "test-col", "vec-1", &[1.0, 2.0, 3.0], None)
+            .insert(
+                branch_id,
+                "default",
+                "test-col",
+                "vec-1",
+                &[1.0, 2.0, 3.0],
+                None,
+            )
             .unwrap();
 
         let entity_ref = EntityRef::vector(branch_id, "test-col", "vec-1");
@@ -178,7 +198,8 @@ mod invariant_2_versioned {
         let (db, branch_id) = setup();
         let kv = KVStore::new(db);
 
-        kv.put(&branch_id, "default", "key", Value::Int(42)).unwrap();
+        kv.put(&branch_id, "default", "key", Value::Int(42))
+            .unwrap();
 
         let value = kv.get(&branch_id, "default", "key").unwrap().unwrap();
         // Has value (MVP API returns Value directly, not Versioned<Value>)
@@ -190,7 +211,9 @@ mod invariant_2_versioned {
         let (db, branch_id) = setup();
         let kv = KVStore::new(db);
 
-        let version = kv.put(&branch_id, "default", "key", Value::Int(42)).unwrap();
+        let version = kv
+            .put(&branch_id, "default", "key", Value::Int(42))
+            .unwrap();
 
         // put() returns Version
         assert!(matches!(version, Version::Txn(_)));
@@ -203,7 +226,12 @@ mod invariant_2_versioned {
         let events = EventLog::new(db);
 
         events
-            .append(&branch_id, "default", "test-event", string_payload("payload"))
+            .append(
+                &branch_id,
+                "default",
+                "test-event",
+                string_payload("payload"),
+            )
             .unwrap();
 
         let versioned = events.read(&branch_id, "default", 0).unwrap().unwrap();
@@ -233,7 +261,9 @@ mod invariant_2_versioned {
         let (db, branch_id) = setup();
         let state = StateCell::new(db);
 
-        state.init(&branch_id, "default", "cell", Value::Int(42)).unwrap();
+        state
+            .init(&branch_id, "default", "cell", Value::Int(42))
+            .unwrap();
 
         let value = state.read(&branch_id, "default", "cell").unwrap().unwrap();
         assert!(matches!(value, Value::Int(42)));
@@ -244,7 +274,9 @@ mod invariant_2_versioned {
         let (db, branch_id) = setup();
         let state = StateCell::new(db);
 
-        let versioned = state.init(&branch_id, "default", "cell", Value::Int(0)).unwrap();
+        let versioned = state
+            .init(&branch_id, "default", "cell", Value::Int(0))
+            .unwrap();
         // init returns Versioned<Version> with initial version
         assert_eq!(versioned.value, Version::counter(1));
     }
@@ -254,10 +286,16 @@ mod invariant_2_versioned {
         let (db, branch_id) = setup();
         let state = StateCell::new(db);
 
-        state.init(&branch_id, "default", "cell", Value::Int(0)).unwrap();
+        state
+            .init(&branch_id, "default", "cell", Value::Int(0))
+            .unwrap();
 
-        let v1 = state.set(&branch_id, "default", "cell", Value::Int(1)).unwrap();
-        let v2 = state.set(&branch_id, "default", "cell", Value::Int(2)).unwrap();
+        let v1 = state
+            .set(&branch_id, "default", "cell", Value::Int(1))
+            .unwrap();
+        let v2 = state
+            .set(&branch_id, "default", "cell", Value::Int(2))
+            .unwrap();
 
         // Versions are monotonic
         assert!(v2.value > v1.value);
@@ -304,7 +342,8 @@ mod invariant_2_versioned {
 
         let version = json
             .set(
-                &branch_id, "default",
+                &branch_id,
+                "default",
                 &doc_id,
                 &JsonPath::root(),
                 serde_json::json!(100).into(),
@@ -328,7 +367,10 @@ mod invariant_2_versioned {
             .insert(branch_id, "default", "test", "v1", &[1.0, 2.0, 3.0], None)
             .unwrap();
 
-        let versioned = vectors.get(branch_id, "default", "test", "v1").unwrap().unwrap();
+        let versioned = vectors
+            .get(branch_id, "default", "test", "v1")
+            .unwrap()
+            .unwrap();
         assert_eq!(versioned.value.key, "v1");
     }
 
@@ -536,7 +578,9 @@ mod invariant_4_lifecycle {
         let events = EventLog::new(db);
 
         // Create (append)
-        events.append(&branch_id, "default", "e1", int_payload(1)).unwrap();
+        events
+            .append(&branch_id, "default", "e1", int_payload(1))
+            .unwrap();
 
         // Exist (read)
         let e = events.read(&branch_id, "default", 0).unwrap();
@@ -544,7 +588,9 @@ mod invariant_4_lifecycle {
 
         // Events are immutable - no evolve, no destroy
         // Can only append more
-        events.append(&branch_id, "default", "e2", int_payload(2)).unwrap();
+        events
+            .append(&branch_id, "default", "e2", int_payload(2))
+            .unwrap();
 
         // Both events exist
         assert!(events.read(&branch_id, "default", 0).unwrap().is_some());
@@ -557,13 +603,17 @@ mod invariant_4_lifecycle {
         let state = StateCell::new(db);
 
         // Create (init)
-        state.init(&branch_id, "default", "cell", Value::Int(1)).unwrap();
+        state
+            .init(&branch_id, "default", "cell", Value::Int(1))
+            .unwrap();
 
         // Exist - use read() to check existence
         assert!(state.read(&branch_id, "default", "cell").unwrap().is_some());
 
         // Evolve (set)
-        state.set(&branch_id, "default", "cell", Value::Int(2)).unwrap();
+        state
+            .set(&branch_id, "default", "cell", Value::Int(2))
+            .unwrap();
         let s = state.read(&branch_id, "default", "cell").unwrap().unwrap();
         assert!(matches!(s, Value::Int(2)));
 
@@ -577,15 +627,21 @@ mod invariant_4_lifecycle {
         let doc_id = "test-doc";
 
         // Create
-        json.create(&branch_id, "default", &doc_id, serde_json::json!({"v": 1}).into())
-            .unwrap();
+        json.create(
+            &branch_id,
+            "default",
+            &doc_id,
+            serde_json::json!({"v": 1}).into(),
+        )
+        .unwrap();
 
         // Exist
         assert!(json.exists(&branch_id, "default", &doc_id).unwrap());
 
         // Evolve (set)
         json.set(
-            &branch_id, "default",
+            &branch_id,
+            "default",
             &doc_id,
             &JsonPath::root(),
             serde_json::json!({"v": 2}).into(),
@@ -607,7 +663,9 @@ mod invariant_4_lifecycle {
         let vectors = VectorStore::new(db);
         let config = VectorConfig::new(3, DistanceMetric::Cosine).unwrap();
 
-        vectors.create_collection(branch_id, "default", "col", config).unwrap();
+        vectors
+            .create_collection(branch_id, "default", "col", config)
+            .unwrap();
 
         // Create (insert)
         vectors
@@ -615,18 +673,27 @@ mod invariant_4_lifecycle {
             .unwrap();
 
         // Exist
-        assert!(vectors.get(branch_id, "default", "col", "v1").unwrap().is_some());
+        assert!(vectors
+            .get(branch_id, "default", "col", "v1")
+            .unwrap()
+            .is_some());
 
         // Evolve (upsert/update)
         vectors
             .insert(branch_id, "default", "col", "v1", &[4.0, 5.0, 6.0], None)
             .unwrap();
-        let _v = vectors.get(branch_id, "default", "col", "v1").unwrap().unwrap();
+        let _v = vectors
+            .get(branch_id, "default", "col", "v1")
+            .unwrap()
+            .unwrap();
         // Vector was updated (same key, new embedding)
 
         // Destroy
         vectors.delete(branch_id, "default", "col", "v1").unwrap();
-        assert!(vectors.get(branch_id, "default", "col", "v1").unwrap().is_none());
+        assert!(vectors
+            .get(branch_id, "default", "col", "v1")
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -706,8 +773,12 @@ mod invariant_5_branch_scoped {
         let branch2 = BranchId::new();
         let state = StateCell::new(db);
 
-        state.init(&branch1, "default", "cell", Value::Int(1)).unwrap();
-        state.init(&branch2, "default", "cell", Value::Int(2)).unwrap();
+        state
+            .init(&branch1, "default", "cell", Value::Int(1))
+            .unwrap();
+        state
+            .init(&branch2, "default", "cell", Value::Int(2))
+            .unwrap();
 
         let s1 = state.read(&branch1, "default", "cell").unwrap().unwrap();
         let s2 = state.read(&branch2, "default", "cell").unwrap().unwrap();
@@ -723,10 +794,20 @@ mod invariant_5_branch_scoped {
         let json = JsonStore::new(db);
         let doc_id = "test-doc";
 
-        json.create(&branch1, "default", &doc_id, serde_json::json!({"branch": 1}).into())
-            .unwrap();
-        json.create(&branch2, "default", &doc_id, serde_json::json!({"branch": 2}).into())
-            .unwrap();
+        json.create(
+            &branch1,
+            "default",
+            &doc_id,
+            serde_json::json!({"branch": 1}).into(),
+        )
+        .unwrap();
+        json.create(
+            &branch2,
+            "default",
+            &doc_id,
+            serde_json::json!({"branch": 2}).into(),
+        )
+        .unwrap();
 
         let j1 = json
             .get(&branch1, "default", &doc_id, &JsonPath::root())
@@ -751,14 +832,19 @@ mod invariant_5_branch_scoped {
         vectors
             .create_collection(branch1, "default", "col", config.clone())
             .unwrap();
-        vectors.create_collection(branch2, "default", "col", config).unwrap();
+        vectors
+            .create_collection(branch2, "default", "col", config)
+            .unwrap();
 
         vectors
             .insert(branch1, "default", "col", "v", &[1.0, 2.0, 3.0], None)
             .unwrap();
 
         // branch2's collection is separate - should not find branch1's vector
-        assert!(vectors.get(branch2, "default", "col", "v").unwrap().is_none());
+        assert!(vectors
+            .get(branch2, "default", "col", "v")
+            .unwrap()
+            .is_none());
     }
 
     #[test]
@@ -773,11 +859,15 @@ mod invariant_5_branch_scoped {
         kv.get(&branch_id, "default", "k").unwrap();
 
         let events = EventLog::new(db.clone());
-        events.append(&branch_id, "default", "e", empty_payload()).unwrap();
+        events
+            .append(&branch_id, "default", "e", empty_payload())
+            .unwrap();
         events.read(&branch_id, "default", 0).unwrap();
 
         let state = StateCell::new(db.clone());
-        state.init(&branch_id, "default", "s", Value::Int(1)).unwrap();
+        state
+            .init(&branch_id, "default", "s", Value::Int(1))
+            .unwrap();
         state.read(&branch_id, "default", "s").unwrap();
 
         // There is NO global/ambient branch context - branch_id is always explicit
@@ -813,7 +903,9 @@ mod invariant_6_introspectable {
         // No event at sequence 0 yet
         assert!(events.read(&branch_id, "default", 0).unwrap().is_none());
 
-        events.append(&branch_id, "default", "e", empty_payload()).unwrap();
+        events
+            .append(&branch_id, "default", "e", empty_payload())
+            .unwrap();
 
         // Now exists
         assert!(events.read(&branch_id, "default", 0).unwrap().is_some());
@@ -827,7 +919,9 @@ mod invariant_6_introspectable {
         // Use read().is_some() to check existence (exists() removed in MVP)
         assert!(state.read(&branch_id, "default", "cell").unwrap().is_none());
 
-        state.init(&branch_id, "default", "cell", Value::Int(1)).unwrap();
+        state
+            .init(&branch_id, "default", "cell", Value::Int(1))
+            .unwrap();
 
         assert!(state.read(&branch_id, "default", "cell").unwrap().is_some());
     }
@@ -852,17 +946,25 @@ mod invariant_6_introspectable {
         let vectors = VectorStore::new(db);
         let config = VectorConfig::new(3, DistanceMetric::Cosine).unwrap();
 
-        vectors.create_collection(branch_id, "default", "col", config).unwrap();
+        vectors
+            .create_collection(branch_id, "default", "col", config)
+            .unwrap();
 
         // Vector doesn't exist yet
-        assert!(vectors.get(branch_id, "default", "col", "v1").unwrap().is_none());
+        assert!(vectors
+            .get(branch_id, "default", "col", "v1")
+            .unwrap()
+            .is_none());
 
         vectors
             .insert(branch_id, "default", "col", "v1", &[1.0, 2.0, 3.0], None)
             .unwrap();
 
         // Now exists
-        assert!(vectors.get(branch_id, "default", "col", "v1").unwrap().is_some());
+        assert!(vectors
+            .get(branch_id, "default", "col", "v1")
+            .unwrap()
+            .is_some());
     }
 
     #[test]
@@ -891,7 +993,8 @@ mod invariant_7_read_write {
         let (db, branch_id) = setup();
         let kv = KVStore::new(db);
 
-        kv.put(&branch_id, "default", "key", Value::Int(42)).unwrap();
+        kv.put(&branch_id, "default", "key", Value::Int(42))
+            .unwrap();
 
         // Read multiple times
         let v1 = kv.get(&branch_id, "default", "key").unwrap().unwrap();
@@ -923,8 +1026,12 @@ mod invariant_7_read_write {
         let events = EventLog::new(db);
 
         // append is write (returns version)
-        let v1 = events.append(&branch_id, "default", "e1", int_payload(1)).unwrap();
-        let v2 = events.append(&branch_id, "default", "e2", int_payload(2)).unwrap();
+        let v1 = events
+            .append(&branch_id, "default", "e1", int_payload(1))
+            .unwrap();
+        let v2 = events
+            .append(&branch_id, "default", "e2", int_payload(2))
+            .unwrap();
 
         assert!(v2 > v1); // Versions increase
 
@@ -940,11 +1047,17 @@ mod invariant_7_read_write {
         let (db, branch_id) = setup();
         let state = StateCell::new(db);
 
-        state.init(&branch_id, "default", "cell", Value::Int(0)).unwrap();
+        state
+            .init(&branch_id, "default", "cell", Value::Int(0))
+            .unwrap();
 
         // set is write
-        let v1 = state.set(&branch_id, "default", "cell", Value::Int(1)).unwrap();
-        let v2 = state.set(&branch_id, "default", "cell", Value::Int(2)).unwrap();
+        let v1 = state
+            .set(&branch_id, "default", "cell", Value::Int(1))
+            .unwrap();
+        let v2 = state
+            .set(&branch_id, "default", "cell", Value::Int(2))
+            .unwrap();
 
         assert!(v2.value > v1.value); // Versions increase
 
@@ -986,12 +1099,16 @@ mod invariant_7_read_write {
 
         // Event
         let events = EventLog::new(db.clone());
-        let _ = events.append(&branch_id, "default", "e", empty_payload()).unwrap(); // write
+        let _ = events
+            .append(&branch_id, "default", "e", empty_payload())
+            .unwrap(); // write
         let _ = events.read(&branch_id, "default", 0).unwrap(); // read
 
         // State
         let state = StateCell::new(db.clone());
-        let _ = state.init(&branch_id, "default", "s", Value::Int(1)).unwrap(); // write
+        let _ = state
+            .init(&branch_id, "default", "s", Value::Int(1))
+            .unwrap(); // write
         let _ = state.read(&branch_id, "default", "s").unwrap(); // read
 
         // Json
@@ -1000,12 +1117,16 @@ mod invariant_7_read_write {
         let _ = json
             .create(&branch_id, "default", &doc_id, serde_json::json!({}).into())
             .unwrap(); // write
-        let _ = json.get(&branch_id, "default", &doc_id, &JsonPath::root()).unwrap(); // read
+        let _ = json
+            .get(&branch_id, "default", &doc_id, &JsonPath::root())
+            .unwrap(); // read
 
         // Vector
         let vectors = VectorStore::new(db.clone());
         let config = VectorConfig::new(3, DistanceMetric::Cosine).unwrap();
-        vectors.create_collection(branch_id, "default", "c", config).unwrap();
+        vectors
+            .create_collection(branch_id, "default", "c", config)
+            .unwrap();
         let _ = vectors
             .insert(branch_id, "default", "c", "v", &[1.0, 2.0, 3.0], None)
             .unwrap(); // write
@@ -1034,7 +1155,12 @@ mod version_monotonicity {
         let mut last_seq = None;
         for i in 0..10 {
             let version = events
-                .append(&branch_id, "default", &format!("event-{}", i), int_payload(i as i64))
+                .append(
+                    &branch_id,
+                    "default",
+                    &format!("event-{}", i),
+                    int_payload(i as i64),
+                )
                 .unwrap();
 
             let current_seq = match version {
@@ -1054,11 +1180,15 @@ mod version_monotonicity {
         let (db, branch_id) = setup();
         let state = StateCell::new(db);
 
-        state.init(&branch_id, "default", "cell", Value::Int(0)).unwrap();
+        state
+            .init(&branch_id, "default", "cell", Value::Int(0))
+            .unwrap();
 
         let mut last_version = Version::counter(1);
         for i in 1..10 {
-            let versioned = state.set(&branch_id, "default", "cell", Value::Int(i as i64)).unwrap();
+            let versioned = state
+                .set(&branch_id, "default", "cell", Value::Int(i as i64))
+                .unwrap();
             assert!(versioned.value.as_u64() > last_version.as_u64());
             last_version = versioned.value;
         }
@@ -1077,7 +1207,8 @@ mod version_monotonicity {
         for i in 1..10 {
             let version = json
                 .set(
-                    &branch_id, "default",
+                    &branch_id,
+                    "default",
                     &doc_id,
                     &JsonPath::root(),
                     serde_json::json!(i).into(),

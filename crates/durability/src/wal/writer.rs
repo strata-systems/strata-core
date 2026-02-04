@@ -9,6 +9,7 @@ use crate::format::{WalRecord, WalSegment, SEGMENT_HEADER_SIZE_V2};
 use crate::wal::config::WalConfig;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
+use tracing::{debug, info};
 
 /// Cumulative WAL operation counters.
 ///
@@ -199,6 +200,8 @@ impl WalWriter {
         self.total_wal_appends += 1;
         self.total_bytes_written += encoded.len() as u64;
 
+        debug!(target: "strata::wal", txn_id = record.txn_id, record_bytes = encoded.len(), segment = self.current_segment_number, "WAL record appended");
+
         self.bytes_since_sync += encoded.len() as u64;
         self.writes_since_sync += 1;
         self.has_unsynced_data = true;
@@ -248,6 +251,8 @@ impl WalWriter {
     ///
     /// Closes the current segment (making it immutable) and creates a new one.
     fn rotate_segment(&mut self) -> std::io::Result<()> {
+        let old_segment = self.current_segment_number;
+
         // Close current segment
         if let Some(ref mut segment) = self.segment {
             segment.close()?;
@@ -263,6 +268,8 @@ impl WalWriter {
 
         self.segment = Some(new_segment);
         self.reset_sync_counters();
+
+        info!(target: "strata::wal", old_segment, new_segment = self.current_segment_number, "WAL segment rotated");
 
         Ok(())
     }
@@ -280,6 +287,7 @@ impl WalWriter {
             self.total_sync_nanos += elapsed.as_nanos() as u64;
         }
         self.reset_sync_counters();
+        debug!(target: "strata::wal", segment = self.current_segment_number, "WAL flushed");
         Ok(())
     }
 
@@ -303,6 +311,7 @@ impl WalWriter {
                     self.total_sync_nanos += elapsed.as_nanos() as u64;
                 }
                 self.reset_sync_counters();
+                debug!(target: "strata::wal", segment = self.current_segment_number, "WAL periodic sync");
                 return Ok(true);
             }
         }

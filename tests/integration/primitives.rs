@@ -43,8 +43,13 @@ mod kv_single {
         for i in 0..20 {
             kv.put(&branch_id, "default", &format!("user:{}", i), Value::Int(i))
                 .unwrap();
-            kv.put(&branch_id, "default", &format!("config:{}", i), Value::Int(i * 10))
-                .unwrap();
+            kv.put(
+                &branch_id,
+                "default",
+                &format!("config:{}", i),
+                Value::Int(i * 10),
+            )
+            .unwrap();
         }
 
         // List all
@@ -65,11 +70,19 @@ mod kv_single {
         let branch_id = BranchId::new();
         let kv = KVStore::new(db);
 
-        kv.put(&branch_id, "default", "int", Value::Int(42)).unwrap();
-        kv.put(&branch_id, "default", "float", Value::Float(3.14)).unwrap();
-        kv.put(&branch_id, "default", "string", Value::String("hello".into()))
+        kv.put(&branch_id, "default", "int", Value::Int(42))
             .unwrap();
-        kv.put(&branch_id, "default", "bool", Value::Bool(true)).unwrap();
+        kv.put(&branch_id, "default", "float", Value::Float(3.14))
+            .unwrap();
+        kv.put(
+            &branch_id,
+            "default",
+            "string",
+            Value::String("hello".into()),
+        )
+        .unwrap();
+        kv.put(&branch_id, "default", "bool", Value::Bool(true))
+            .unwrap();
         kv.put(&branch_id, "default", "bytes", Value::Bytes(vec![1, 2, 3]))
             .unwrap();
 
@@ -93,8 +106,13 @@ mod state_single {
         let branch_id = BranchId::new();
         let state = StateCell::new(db);
 
-        state.init(&branch_id, "default", "counter", Value::Int(0)).unwrap();
-        let val = state.read(&branch_id, "default", "counter").unwrap().unwrap();
+        state
+            .init(&branch_id, "default", "counter", Value::Int(0))
+            .unwrap();
+        let val = state
+            .read(&branch_id, "default", "counter")
+            .unwrap()
+            .unwrap();
         assert_eq!(val, Value::Int(0));
     }
 
@@ -104,11 +122,20 @@ mod state_single {
         let branch_id = BranchId::new();
         let state = StateCell::new(db);
 
-        state.init(&branch_id, "default", "counter", Value::Int(0)).unwrap();
-        state.set(&branch_id, "default", "counter", Value::Int(1)).unwrap();
-        state.set(&branch_id, "default", "counter", Value::Int(2)).unwrap();
+        state
+            .init(&branch_id, "default", "counter", Value::Int(0))
+            .unwrap();
+        state
+            .set(&branch_id, "default", "counter", Value::Int(1))
+            .unwrap();
+        state
+            .set(&branch_id, "default", "counter", Value::Int(2))
+            .unwrap();
 
-        let val = state.read(&branch_id, "default", "counter").unwrap().unwrap();
+        let val = state
+            .read(&branch_id, "default", "counter")
+            .unwrap()
+            .unwrap();
         assert_eq!(val, Value::Int(2));
     }
 
@@ -118,14 +145,28 @@ mod state_single {
         let branch_id = BranchId::new();
         let state = StateCell::new(db);
 
-        state.init(&branch_id, "default", "counter", Value::Int(0)).unwrap();
-        let current = state.readv(&branch_id, "default", "counter").unwrap().unwrap();
-
         state
-            .cas(&branch_id, "default", "counter", current.version(), Value::Int(1))
+            .init(&branch_id, "default", "counter", Value::Int(0))
+            .unwrap();
+        let current = state
+            .readv(&branch_id, "default", "counter")
+            .unwrap()
             .unwrap();
 
-        let updated = state.read(&branch_id, "default", "counter").unwrap().unwrap();
+        state
+            .cas(
+                &branch_id,
+                "default",
+                "counter",
+                current.version(),
+                Value::Int(1),
+            )
+            .unwrap();
+
+        let updated = state
+            .read(&branch_id, "default", "counter")
+            .unwrap()
+            .unwrap();
         assert_eq!(updated, Value::Int(1));
     }
 
@@ -135,19 +176,35 @@ mod state_single {
         let branch_id = BranchId::new();
         let state = StateCell::new(db);
 
-        state.init(&branch_id, "default", "counter", Value::Int(0)).unwrap();
-        let current = state.readv(&branch_id, "default", "counter").unwrap().unwrap();
+        state
+            .init(&branch_id, "default", "counter", Value::Int(0))
+            .unwrap();
+        let current = state
+            .readv(&branch_id, "default", "counter")
+            .unwrap()
+            .unwrap();
         let stale_version = current.version();
 
         // Update through another path
-        state.set(&branch_id, "default", "counter", Value::Int(1)).unwrap();
+        state
+            .set(&branch_id, "default", "counter", Value::Int(1))
+            .unwrap();
 
         // CAS with stale version should fail
-        let result = state.cas(&branch_id, "default", "counter", stale_version, Value::Int(99));
+        let result = state.cas(
+            &branch_id,
+            "default",
+            "counter",
+            stale_version,
+            Value::Int(99),
+        );
         assert!(result.is_err());
 
         // Value should remain at 1
-        let final_val = state.read(&branch_id, "default", "counter").unwrap().unwrap();
+        let final_val = state
+            .read(&branch_id, "default", "counter")
+            .unwrap()
+            .unwrap();
         assert_eq!(final_val, Value::Int(1));
     }
 }
@@ -161,9 +218,15 @@ mod event_single {
         let branch_id = BranchId::new();
         let event = EventLog::new(db);
 
-        let seq1 = event.append(&branch_id, "default", "audit", int_payload(1)).unwrap();
-        let seq2 = event.append(&branch_id, "default", "audit", int_payload(2)).unwrap();
-        let seq3 = event.append(&branch_id, "default", "audit", int_payload(3)).unwrap();
+        let seq1 = event
+            .append(&branch_id, "default", "audit", int_payload(1))
+            .unwrap();
+        let seq2 = event
+            .append(&branch_id, "default", "audit", int_payload(2))
+            .unwrap();
+        let seq3 = event
+            .append(&branch_id, "default", "audit", int_payload(3))
+            .unwrap();
 
         assert!(seq2 > seq1);
         assert!(seq3 > seq2);
@@ -188,8 +251,20 @@ mod event_single {
             .append(&branch_id, "default", "stream_b", int_payload(10))
             .unwrap();
 
-        assert_eq!(event.read_by_type(&branch_id, "default", "stream_a").unwrap().len(), 2);
-        assert_eq!(event.read_by_type(&branch_id, "default", "stream_b").unwrap().len(), 1);
+        assert_eq!(
+            event
+                .read_by_type(&branch_id, "default", "stream_a")
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            event
+                .read_by_type(&branch_id, "default", "stream_b")
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -198,7 +273,9 @@ mod event_single {
         let branch_id = BranchId::new();
         let event = EventLog::new(db);
 
-        event.append(&branch_id, "default", "audit", int_payload(42)).unwrap();
+        event
+            .append(&branch_id, "default", "audit", int_payload(42))
+            .unwrap();
 
         // Events can only be appended, not modified or deleted
         // The API doesn't provide update/delete methods for events
@@ -218,12 +295,16 @@ mod json_single {
 
         json.create(
             &branch_id,
-            "default", "doc",
+            "default",
+            "doc",
             json_value(serde_json::json!({"name": "test"})),
         )
         .unwrap();
 
-        let doc = json.get(&branch_id, "default", "doc", &root()).unwrap().unwrap();
+        let doc = json
+            .get(&branch_id, "default", "doc", &root())
+            .unwrap()
+            .unwrap();
         assert_eq!(doc.as_inner()["name"], "test");
     }
 
@@ -235,7 +316,8 @@ mod json_single {
 
         json.create(
             &branch_id,
-            "default", "doc",
+            "default",
+            "doc",
             json_value(serde_json::json!({
                 "user": {"name": "Alice", "age": 30}
             })),
@@ -244,7 +326,8 @@ mod json_single {
 
         json.set(
             &branch_id,
-            "default", "doc",
+            "default",
+            "doc",
             &path(".user.age"),
             json_value(serde_json::json!(31)),
         )
@@ -264,8 +347,13 @@ mod json_single {
         let json = JsonStore::new(db);
 
         for i in 0..10 {
-            json.create(&branch_id, "default", &format!("doc_{}", i), test_json_value(i))
-                .unwrap();
+            json.create(
+                &branch_id,
+                "default",
+                &format!("doc_{}", i),
+                test_json_value(i),
+            )
+            .unwrap();
         }
 
         let list = json.list(&branch_id, "default", None, None, 100).unwrap();
@@ -286,7 +374,14 @@ mod vector_single {
             .create_collection(branch_id, "default", "embeddings", config_small())
             .unwrap();
         vector
-            .insert(branch_id, "default", "embeddings", "vec_1", &[1.0, 0.0, 0.0], None)
+            .insert(
+                branch_id,
+                "default",
+                "embeddings",
+                "vec_1",
+                &[1.0, 0.0, 0.0],
+                None,
+            )
             .unwrap();
 
         let entry = vector
@@ -308,10 +403,24 @@ mod vector_single {
 
         // Insert vectors at cardinal directions
         vector
-            .insert(branch_id, "default", "test", "north", &[0.0, 1.0, 0.0], None)
+            .insert(
+                branch_id,
+                "default",
+                "test",
+                "north",
+                &[0.0, 1.0, 0.0],
+                None,
+            )
             .unwrap();
         vector
-            .insert(branch_id, "default", "test", "south", &[0.0, -1.0, 0.0], None)
+            .insert(
+                branch_id,
+                "default",
+                "test",
+                "south",
+                &[0.0, -1.0, 0.0],
+                None,
+            )
             .unwrap();
         vector
             .insert(branch_id, "default", "test", "east", &[1.0, 0.0, 0.0], None)
@@ -319,7 +428,9 @@ mod vector_single {
 
         // Search for vector close to north
         let query = vec![0.0, 0.99, 0.0];
-        let results = vector.search(branch_id, "default", "test", &query, 1, None).unwrap();
+        let results = vector
+            .search(branch_id, "default", "test", &query, 1, None)
+            .unwrap();
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].key, "north");
@@ -335,7 +446,14 @@ mod vector_single {
             .create_collection(branch_id, "default", "test", config_small())
             .unwrap();
         vector
-            .insert(branch_id, "default", "test", "to_delete", &[1.0, 0.0, 0.0], None)
+            .insert(
+                branch_id,
+                "default",
+                "test",
+                "to_delete",
+                &[1.0, 0.0, 0.0],
+                None,
+            )
             .unwrap();
 
         assert_eq!(
@@ -348,7 +466,9 @@ mod vector_single {
             vec![1.0f32, 0.0, 0.0]
         );
 
-        vector.delete(branch_id, "default", "test", "to_delete").unwrap();
+        vector
+            .delete(branch_id, "default", "test", "to_delete")
+            .unwrap();
 
         assert!(vector
             .get(branch_id, "default", "test", "to_delete")
@@ -368,24 +488,40 @@ fn all_six_primitives_together() {
     let p = test_db.all_primitives();
 
     // KV
-    p.kv.put(&branch_id, "default", "config", Value::String("enabled".into()))
-        .unwrap();
+    p.kv.put(
+        &branch_id,
+        "default",
+        "config",
+        Value::String("enabled".into()),
+    )
+    .unwrap();
 
     // State
     p.state
-        .init(&branch_id, "default", "status", Value::String("running".into()))
+        .init(
+            &branch_id,
+            "default",
+            "status",
+            Value::String("running".into()),
+        )
         .unwrap();
 
     // Event
     p.event
-        .append(&branch_id, "default", "lifecycle", string_payload("started"))
+        .append(
+            &branch_id,
+            "default",
+            "lifecycle",
+            string_payload("started"),
+        )
         .unwrap();
 
     // JSON
     p.json
         .create(
             &branch_id,
-            "default", "context",
+            "default",
+            "context",
             json_value(serde_json::json!({"task": "test"})),
         )
         .unwrap();
@@ -408,7 +544,10 @@ fn all_six_primitives_together() {
         Some(Value::String("enabled".into()))
     );
     assert_eq!(
-        p.state.read(&branch_id, "default", "status").unwrap().unwrap(),
+        p.state
+            .read(&branch_id, "default", "status")
+            .unwrap()
+            .unwrap(),
         Value::String("running".into())
     );
     assert!(p.event.len(&branch_id, "default").unwrap() > 0);
@@ -438,19 +577,26 @@ fn cross_primitive_workflow_agent_memory() {
     let p = test_db.all_primitives();
 
     // Agent initialization
-    p.kv.put(&branch_id, "default", "agent:name", Value::String("assistant".into()))
-        .unwrap();
+    p.kv.put(
+        &branch_id,
+        "default",
+        "agent:name",
+        Value::String("assistant".into()),
+    )
+    .unwrap();
     p.state
         .init(
             &branch_id,
-            "default", "agent:status",
+            "default",
+            "agent:status",
             Value::String("initializing".into()),
         )
         .unwrap();
     p.event
         .append(
             &branch_id,
-            "default", "agent:lifecycle",
+            "default",
+            "agent:lifecycle",
             string_payload("Agent started"),
         )
         .unwrap();
@@ -459,7 +605,8 @@ fn cross_primitive_workflow_agent_memory() {
     p.json
         .create(
             &branch_id,
-            "default", "agent:context",
+            "default",
+            "agent:context",
             json_value(serde_json::json!({
                 "task": "help_user",
                 "turn": 0
@@ -478,7 +625,8 @@ fn cross_primitive_workflow_agent_memory() {
         p.json
             .set(
                 &branch_id,
-                "default", "agent:context",
+                "default",
+                "agent:context",
                 &path(".turn"),
                 json_value(serde_json::json!(turn)),
             )
@@ -488,7 +636,8 @@ fn cross_primitive_workflow_agent_memory() {
         p.vector
             .insert(
                 branch_id,
-                "default", "agent:memories",
+                "default",
+                "agent:memories",
                 &format!("turn_{}", turn),
                 &seeded_vector(3, turn as u64),
                 Some(serde_json::json!({"turn": turn})),
@@ -505,20 +654,26 @@ fn cross_primitive_workflow_agent_memory() {
     p.state
         .set(
             &branch_id,
-            "default", "agent:status",
+            "default",
+            "agent:status",
             Value::String("completed".into()),
         )
         .unwrap();
     p.event
         .append(
             &branch_id,
-            "default", "agent:lifecycle",
+            "default",
+            "agent:lifecycle",
             string_payload("Agent completed"),
         )
         .unwrap();
 
     // Verify final state
-    let status = p.state.read(&branch_id, "default", "agent:status").unwrap().unwrap();
+    let status = p
+        .state
+        .read(&branch_id, "default", "agent:status")
+        .unwrap()
+        .unwrap();
     assert_eq!(status, Value::String("completed".into()));
 
     assert_eq!(
@@ -557,12 +712,18 @@ fn delete_in_one_primitive_doesnt_affect_others() {
     p.kv.put(&branch_id, "default", "shared", Value::String("kv".into()))
         .unwrap();
     p.state
-        .init(&branch_id, "default", "shared", Value::String("state".into()))
+        .init(
+            &branch_id,
+            "default",
+            "shared",
+            Value::String("state".into()),
+        )
         .unwrap();
     p.json
         .create(
             &branch_id,
-            "default", "shared",
+            "default",
+            "shared",
             json_value(serde_json::json!({"type": "json"})),
         )
         .unwrap();
@@ -573,7 +734,10 @@ fn delete_in_one_primitive_doesnt_affect_others() {
     // Verify KV deleted but others remain
     assert!(p.kv.get(&branch_id, "default", "shared").unwrap().is_none());
     assert_eq!(
-        p.state.read(&branch_id, "default", "shared").unwrap().unwrap(),
+        p.state
+            .read(&branch_id, "default", "shared")
+            .unwrap()
+            .unwrap(),
         Value::String("state".into())
     );
     assert_eq!(

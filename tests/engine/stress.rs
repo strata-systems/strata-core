@@ -64,7 +64,8 @@ fn stress_transaction_throughput() {
     let branch_id = test_db.branch_id;
     let kv = test_db.kv();
 
-    kv.put(&branch_id, "default", "counter", Value::Int(0)).unwrap();
+    kv.put(&branch_id, "default", "counter", Value::Int(0))
+        .unwrap();
 
     let duration = Duration::from_secs(5);
     let start = Instant::now();
@@ -157,7 +158,9 @@ fn stress_many_concurrent_branches() {
 
                 // Verify
                 for i in 0..100 {
-                    let val = kv.get(&branch_id, "default", &format!("key_{}", i)).unwrap();
+                    let val = kv
+                        .get(&branch_id, "default", &format!("key_{}", i))
+                        .unwrap();
                     if val.is_some() && val.unwrap() == Value::Int(i) {
                         success.fetch_add(1, Ordering::Relaxed);
                     }
@@ -253,7 +256,14 @@ fn stress_vector_search() {
     for i in 0..1000 {
         let v = seeded_vector(384, i as u64);
         vector
-            .insert(branch_id, "default", "stress_coll", &format!("vec_{}", i), &v, None)
+            .insert(
+                branch_id,
+                "default",
+                "stress_coll",
+                &format!("vec_{}", i),
+                &v,
+                None,
+            )
             .unwrap();
     }
     let insert_time = insert_start.elapsed();
@@ -290,7 +300,12 @@ fn stress_eventlog_append() {
     // Append 10K events
     for i in 0..10_000 {
         event
-            .append(&branch_id, "default", "stress_event", event_payload(Value::Int(i)))
+            .append(
+                &branch_id,
+                "default",
+                "stress_event",
+                event_payload(Value::Int(i)),
+            )
             .unwrap();
     }
 

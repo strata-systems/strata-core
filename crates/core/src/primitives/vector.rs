@@ -554,11 +554,7 @@ impl MetadataFilter {
     }
 
     /// Add an "in" condition (value must match one of the provided scalars)
-    pub fn in_values(
-        mut self,
-        field: impl Into<String>,
-        values: Vec<JsonScalar>,
-    ) -> Self {
+    pub fn in_values(mut self, field: impl Into<String>, values: Vec<JsonScalar>) -> Self {
         let field_name: String = field.into();
         for val in values {
             self.conditions.push(FilterCondition {
@@ -657,10 +653,18 @@ fn eval_condition(op: &FilterOp, expected: &JsonScalar, actual: &serde_json::Val
     match op {
         FilterOp::Eq => expected.matches_json(actual),
         FilterOp::Ne => !expected.matches_json(actual),
-        FilterOp::Gt => numeric_cmp(expected, actual).is_some_and(|ord| ord == std::cmp::Ordering::Less),
-        FilterOp::Gte => numeric_cmp(expected, actual).is_some_and(|ord| ord != std::cmp::Ordering::Greater),
-        FilterOp::Lt => numeric_cmp(expected, actual).is_some_and(|ord| ord == std::cmp::Ordering::Greater),
-        FilterOp::Lte => numeric_cmp(expected, actual).is_some_and(|ord| ord != std::cmp::Ordering::Less),
+        FilterOp::Gt => {
+            numeric_cmp(expected, actual).is_some_and(|ord| ord == std::cmp::Ordering::Less)
+        }
+        FilterOp::Gte => {
+            numeric_cmp(expected, actual).is_some_and(|ord| ord != std::cmp::Ordering::Greater)
+        }
+        FilterOp::Lt => {
+            numeric_cmp(expected, actual).is_some_and(|ord| ord == std::cmp::Ordering::Greater)
+        }
+        FilterOp::Lte => {
+            numeric_cmp(expected, actual).is_some_and(|ord| ord != std::cmp::Ordering::Less)
+        }
         FilterOp::In => {
             // Single value check (grouped evaluation is done in matches())
             expected.matches_json(actual)

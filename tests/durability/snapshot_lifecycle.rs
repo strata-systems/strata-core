@@ -11,7 +11,8 @@ fn snapshot_directory_exists_for_persistent_db() {
     let branch_id = test_db.branch_id;
 
     let kv = test_db.kv();
-    kv.put(&branch_id, "default", "trigger", Value::Int(1)).unwrap();
+    kv.put(&branch_id, "default", "trigger", Value::Int(1))
+        .unwrap();
 
     // Snapshot dir should exist (may or may not contain files yet)
     let snap_dir = test_db.snapshot_dir();
@@ -32,14 +33,24 @@ fn recovery_works_with_snapshot_plus_wal() {
 
     // Phase 1: Write data (may get snapshotted)
     for i in 0..100 {
-        kv.put(&branch_id, "default", &format!("phase1_{}", i), Value::Int(i))
-            .unwrap();
+        kv.put(
+            &branch_id,
+            "default",
+            &format!("phase1_{}", i),
+            Value::Int(i),
+        )
+        .unwrap();
     }
 
     // Phase 2: More writes (likely in WAL after snapshot)
     for i in 0..50 {
-        kv.put(&branch_id, "default", &format!("phase2_{}", i), Value::Int(i + 100))
-            .unwrap();
+        kv.put(
+            &branch_id,
+            "default",
+            &format!("phase2_{}", i),
+            Value::Int(i + 100),
+        )
+        .unwrap();
     }
 
     let state_before = CapturedState::capture(&test_db.db, &branch_id);
@@ -115,7 +126,8 @@ fn recovery_handles_empty_snapshot_directory() {
     let branch_id = test_db.branch_id;
 
     let kv = test_db.kv();
-    kv.put(&branch_id, "default", "test", Value::Int(1)).unwrap();
+    kv.put(&branch_id, "default", "test", Value::Int(1))
+        .unwrap();
 
     // Ensure snapshot dir exists but is empty
     let snap_dir = test_db.snapshot_dir();
@@ -142,8 +154,13 @@ fn data_written_after_snapshot_recovers() {
 
     // Write more after potential snapshot
     for i in 0..50 {
-        kv.put(&branch_id, "default", &format!("post_{}", i), Value::Int(i + 1000))
-            .unwrap();
+        kv.put(
+            &branch_id,
+            "default",
+            &format!("post_{}", i),
+            Value::Int(i + 1000),
+        )
+        .unwrap();
     }
 
     test_db.reopen();

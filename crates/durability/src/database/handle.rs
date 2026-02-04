@@ -298,6 +298,7 @@ impl Drop for DatabaseHandle {
         let mut wal = self.wal_writer.lock();
         if let Err(e) = wal.flush() {
             warn!(
+                target: "strata::wal",
                 error = %e,
                 path = %self.paths.wal_dir().display(),
                 "DatabaseHandle WAL flush on drop failed - data may not be durable"

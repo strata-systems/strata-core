@@ -93,6 +93,7 @@ impl WalReader {
                             && remaining.len() >= 4 + record_len
                         {
                             tracing::warn!(
+                                target: "strata::recovery",
                                 offset = offset,
                                 "Skipping corrupted WAL record (checksum mismatch)"
                             );

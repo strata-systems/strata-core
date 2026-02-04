@@ -25,6 +25,7 @@ use strata_core::types::{BranchId, Key, Namespace, TypeTag};
 use strata_core::value::Value;
 use strata_core::StrataError;
 use strata_core::StrataResult;
+use tracing::info;
 use uuid::Uuid;
 
 /// Namespace UUID for generating deterministic branch IDs from names.
@@ -250,6 +251,7 @@ impl BranchIndex {
             let branch_meta = BranchMetadata::new(branch_id);
             txn.put(key, to_stored_value(&branch_meta)?)?;
 
+            info!(target: "strata::branch", %branch_id, "Branch created");
             Ok(branch_meta.into_versioned())
         })
     }
@@ -339,6 +341,8 @@ impl BranchIndex {
 
             // Delete the branch metadata entry
             txn.delete(meta_key.clone())?;
+
+            info!(target: "strata::branch", %branch_id, "Branch deleted");
             Ok(())
         })
     }

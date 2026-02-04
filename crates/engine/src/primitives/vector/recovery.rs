@@ -58,6 +58,7 @@ fn recover_from_db(db: &Database) -> StrataResult<()> {
             Ok(entries) => entries,
             Err(e) => {
                 tracing::warn!(
+                    target: "strata::vector",
                     branch_id = ?branch_id,
                     error = %e,
                     "Failed to scan vector configs during recovery"
@@ -78,6 +79,7 @@ fn recover_from_db(db: &Database) -> StrataResult<()> {
                 Ok(r) => r,
                 Err(e) => {
                     tracing::warn!(
+                        target: "strata::vector",
                         key = ?key,
                         error = %e,
                         "Failed to decode collection record during recovery, skipping"
@@ -96,6 +98,7 @@ fn recover_from_db(db: &Database) -> StrataResult<()> {
                 Ok(c) => c,
                 Err(e) => {
                     tracing::warn!(
+                        target: "strata::vector",
                         collection = %collection_name,
                         error = %e,
                         "Failed to convert collection config during recovery, skipping"
@@ -119,6 +122,7 @@ fn recover_from_db(db: &Database) -> StrataResult<()> {
                 Ok(entries) => entries,
                 Err(e) => {
                     tracing::warn!(
+                        target: "strata::vector",
                         collection = %collection_name,
                         error = %e,
                         "Failed to scan vectors during recovery"
@@ -138,6 +142,7 @@ fn recover_from_db(db: &Database) -> StrataResult<()> {
                     Ok(r) => r,
                     Err(e) => {
                         tracing::warn!(
+                            target: "strata::vector",
                             error = %e,
                             "Failed to decode vector record during recovery, skipping"
                         );
@@ -158,6 +163,7 @@ fn recover_from_db(db: &Database) -> StrataResult<()> {
 
     if stats.collections_created > 0 || stats.vectors_upserted > 0 {
         info!(
+            target: "strata::vector",
             collections_created = stats.collections_created,
             vectors_upserted = stats.vectors_upserted,
             "Vector recovery complete (KV-based)"

@@ -131,7 +131,13 @@ impl KVStore {
     /// ```ignore
     /// let version = kv.put(&branch_id, "default", "user:123", Value::String("Alice".into()))?;
     /// ```
-    pub fn put(&self, branch_id: &BranchId, space: &str, key: &str, value: Value) -> StrataResult<Version> {
+    pub fn put(
+        &self,
+        branch_id: &BranchId,
+        space: &str,
+        key: &str,
+        value: Value,
+    ) -> StrataResult<Version> {
         let ((), commit_version) = self.db.transaction_with_version(*branch_id, |txn| {
             let storage_key = self.key_for(branch_id, space, key);
             txn.put(storage_key, value)
@@ -173,7 +179,12 @@ impl KVStore {
     /// // List all keys
     /// let all_keys = kv.list(&branch_id, "default", None)?;
     /// ```
-    pub fn list(&self, branch_id: &BranchId, space: &str, prefix: Option<&str>) -> StrataResult<Vec<String>> {
+    pub fn list(
+        &self,
+        branch_id: &BranchId,
+        space: &str,
+        prefix: Option<&str>,
+    ) -> StrataResult<Vec<String>> {
         self.db.transaction(*branch_id, |txn| {
             let ns = self.namespace_for(branch_id, space);
             let scan_prefix = Key::new_kv(ns, prefix.unwrap_or(""));
@@ -273,8 +284,13 @@ mod tests {
         let (_temp, _db, kv) = setup();
         let branch_id = BranchId::new();
 
-        kv.put(&branch_id, "default", "key1", Value::String("value1".into()))
-            .unwrap();
+        kv.put(
+            &branch_id,
+            "default",
+            "key1",
+            Value::String("value1".into()),
+        )
+        .unwrap();
         let result = kv.get(&branch_id, "default", "key1").unwrap();
         assert_eq!(result, Some(Value::String("value1".into())));
     }
@@ -293,10 +309,20 @@ mod tests {
         let (_temp, _db, kv) = setup();
         let branch_id = BranchId::new();
 
-        kv.put(&branch_id, "default", "key1", Value::String("value1".into()))
-            .unwrap();
-        kv.put(&branch_id, "default", "key1", Value::String("value2".into()))
-            .unwrap();
+        kv.put(
+            &branch_id,
+            "default",
+            "key1",
+            Value::String("value1".into()),
+        )
+        .unwrap();
+        kv.put(
+            &branch_id,
+            "default",
+            "key1",
+            Value::String("value2".into()),
+        )
+        .unwrap();
 
         let result = kv.get(&branch_id, "default", "key1").unwrap();
         assert_eq!(result, Some(Value::String("value2".into())));
@@ -307,8 +333,13 @@ mod tests {
         let (_temp, _db, kv) = setup();
         let branch_id = BranchId::new();
 
-        kv.put(&branch_id, "default", "key1", Value::String("value1".into()))
-            .unwrap();
+        kv.put(
+            &branch_id,
+            "default",
+            "key1",
+            Value::String("value1".into()),
+        )
+        .unwrap();
         assert!(kv.get(&branch_id, "default", "key1").unwrap().is_some());
 
         let deleted = kv.delete(&branch_id, "default", "key1").unwrap();
@@ -332,13 +363,15 @@ mod tests {
         let branch2 = BranchId::new();
 
         kv.put(
-            &branch1, "default",
+            &branch1,
+            "default",
             "shared-key",
             Value::String("branch1-value".into()),
         )
         .unwrap();
         kv.put(
-            &branch2, "default",
+            &branch2,
+            "default",
             "shared-key",
             Value::String("branch2-value".into()),
         )
@@ -376,9 +409,12 @@ mod tests {
         let (_temp, _db, kv) = setup();
         let branch_id = BranchId::new();
 
-        kv.put(&branch_id, "default", "user:1", Value::Int(1)).unwrap();
-        kv.put(&branch_id, "default", "user:2", Value::Int(2)).unwrap();
-        kv.put(&branch_id, "default", "task:1", Value::Int(3)).unwrap();
+        kv.put(&branch_id, "default", "user:1", Value::Int(1))
+            .unwrap();
+        kv.put(&branch_id, "default", "user:2", Value::Int(2))
+            .unwrap();
+        kv.put(&branch_id, "default", "task:1", Value::Int(3))
+            .unwrap();
 
         let user_keys = kv.list(&branch_id, "default", Some("user:")).unwrap();
         assert_eq!(user_keys.len(), 2);
@@ -395,10 +431,14 @@ mod tests {
         let (_temp, _db, kv) = setup();
         let branch_id = BranchId::new();
 
-        kv.put(&branch_id, "default", "key1", Value::Int(1)).unwrap();
-        kv.put(&branch_id, "default", "key2", Value::Int(2)).unwrap();
+        kv.put(&branch_id, "default", "key1", Value::Int(1))
+            .unwrap();
+        kv.put(&branch_id, "default", "key2", Value::Int(2))
+            .unwrap();
 
-        let keys = kv.list(&branch_id, "default", Some("nonexistent:")).unwrap();
+        let keys = kv
+            .list(&branch_id, "default", Some("nonexistent:"))
+            .unwrap();
         assert!(keys.is_empty());
     }
 
@@ -408,8 +448,10 @@ mod tests {
         let branch1 = BranchId::new();
         let branch2 = BranchId::new();
 
-        kv.put(&branch1, "default", "branch1-key", Value::Int(1)).unwrap();
-        kv.put(&branch2, "default", "branch2-key", Value::Int(2)).unwrap();
+        kv.put(&branch1, "default", "branch1-key", Value::Int(1))
+            .unwrap();
+        kv.put(&branch2, "default", "branch2-key", Value::Int(2))
+            .unwrap();
 
         // Each branch only sees its own keys
         let branch1_keys = kv.list(&branch1, "default", None).unwrap();
@@ -427,27 +469,41 @@ mod tests {
         let branch_id = BranchId::new();
 
         // String
-        kv.put(&branch_id, "default", "string", Value::String("hello".into()))
-            .unwrap();
+        kv.put(
+            &branch_id,
+            "default",
+            "string",
+            Value::String("hello".into()),
+        )
+        .unwrap();
         assert_eq!(
             kv.get(&branch_id, "default", "string").unwrap(),
             Some(Value::String("hello".into()))
         );
 
         // Integer
-        kv.put(&branch_id, "default", "int", Value::Int(42)).unwrap();
-        assert_eq!(kv.get(&branch_id, "default", "int").unwrap(), Some(Value::Int(42)));
+        kv.put(&branch_id, "default", "int", Value::Int(42))
+            .unwrap();
+        assert_eq!(
+            kv.get(&branch_id, "default", "int").unwrap(),
+            Some(Value::Int(42))
+        );
 
         // Float
-        kv.put(&branch_id, "default", "float", Value::Float(3.14)).unwrap();
+        kv.put(&branch_id, "default", "float", Value::Float(3.14))
+            .unwrap();
         assert_eq!(
             kv.get(&branch_id, "default", "float").unwrap(),
             Some(Value::Float(3.14))
         );
 
         // Boolean
-        kv.put(&branch_id, "default", "bool", Value::Bool(true)).unwrap();
-        assert_eq!(kv.get(&branch_id, "default", "bool").unwrap(), Some(Value::Bool(true)));
+        kv.put(&branch_id, "default", "bool", Value::Bool(true))
+            .unwrap();
+        assert_eq!(
+            kv.get(&branch_id, "default", "bool").unwrap(),
+            Some(Value::Bool(true))
+        );
 
         // Null - Value::Null should be storable and round-trip correctly
         kv.put(&branch_id, "default", "null", Value::Null).unwrap();
@@ -501,7 +557,8 @@ mod tests {
         let branch_id = BranchId::new();
 
         // Setup
-        kv.put(&branch_id, "default", "key", Value::Int(42)).unwrap();
+        kv.put(&branch_id, "default", "key", Value::Int(42))
+            .unwrap();
 
         // Delete via extension trait
         db.transaction(branch_id, |txn| {
@@ -518,8 +575,13 @@ mod tests {
         let (_temp, _db, kv) = setup();
         let branch_id = BranchId::new();
 
-        let version = kv.put(&branch_id, "default", "vkey", Value::Int(99)).unwrap();
-        let vv = kv.get_versioned(&branch_id, "default", "vkey").unwrap().unwrap();
+        let version = kv
+            .put(&branch_id, "default", "vkey", Value::Int(99))
+            .unwrap();
+        let vv = kv
+            .get_versioned(&branch_id, "default", "vkey")
+            .unwrap()
+            .unwrap();
         assert_eq!(vv.value, Value::Int(99));
         assert_eq!(vv.version, version);
     }
@@ -529,7 +591,8 @@ mod tests {
         let (_temp, db, kv) = setup();
         let branch_id = BranchId::new();
 
-        kv.put(&branch_id, "default", "iso_key", Value::Int(1)).unwrap();
+        kv.put(&branch_id, "default", "iso_key", Value::Int(1))
+            .unwrap();
 
         // Start a manual transaction, read, then check the versioned read
         // is consistent even if a concurrent write happens
@@ -540,7 +603,8 @@ mod tests {
         assert_eq!(vv.value, Value::Int(1));
 
         // Concurrent write after our snapshot
-        kv.put(&branch_id, "default", "iso_key", Value::Int(2)).unwrap();
+        kv.put(&branch_id, "default", "iso_key", Value::Int(2))
+            .unwrap();
 
         // Re-read within same transaction should still see old value
         let vv2 = txn.get_versioned(&storage_key).unwrap().unwrap();

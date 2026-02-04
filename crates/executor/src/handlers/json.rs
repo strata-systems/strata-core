@@ -33,7 +33,12 @@ fn require_branch_exists(p: &Arc<Primitives>, branch: &BranchId) -> Result<()> {
 }
 
 /// Handle JsonGetv command — get full version history for a JSON document.
-pub fn json_getv(p: &Arc<Primitives>, branch: BranchId, space: String, key: String) -> Result<Output> {
+pub fn json_getv(
+    p: &Arc<Primitives>,
+    branch: BranchId,
+    space: String,
+    key: String,
+) -> Result<Output> {
     let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_key(&key))?;
     let result = convert_result(p.json.getv(&branch_id, &space, &key))?;
@@ -82,7 +87,10 @@ pub fn json_set(
 
     // Single atomic transaction: checks existence, creates if needed, sets at path.
     // Produces exactly 1 WAL append (fixes #973).
-    let version = convert_result(p.json.set_or_create(&branch_id, &space, &key, &json_path, json_value))?;
+    let version = convert_result(
+        p.json
+            .set_or_create(&branch_id, &space, &key, &json_path, json_value),
+    )?;
 
     Ok(Output::Version(extract_version(&version)))
 }

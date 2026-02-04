@@ -46,7 +46,10 @@ pub fn space_delete(
         let empty = convert_result(p.space.is_empty(core_branch_id, &space))?;
         if !empty {
             return Err(Error::ConstraintViolation {
-                reason: format!("Space '{}' is not empty. Use force=true to delete anyway.", space),
+                reason: format!(
+                    "Space '{}' is not empty. Use force=true to delete anyway.",
+                    space
+                ),
             });
         }
     }

@@ -42,14 +42,19 @@ fn delete_in_one_branch_doesnt_affect_other() {
     let branch_b = BranchId::new();
 
     // Write same key to both branches
-    kv.put(&branch_a, "default", "shared_key", Value::Int(1)).unwrap();
-    kv.put(&branch_b, "default", "shared_key", Value::Int(2)).unwrap();
+    kv.put(&branch_a, "default", "shared_key", Value::Int(1))
+        .unwrap();
+    kv.put(&branch_b, "default", "shared_key", Value::Int(2))
+        .unwrap();
 
     // Delete from branch A
     kv.delete(&branch_a, "default", "shared_key").unwrap();
 
     // Branch A should be empty, branch B should have data
-    assert!(kv.get(&branch_a, "default", "shared_key").unwrap().is_none());
+    assert!(kv
+        .get(&branch_a, "default", "shared_key")
+        .unwrap()
+        .is_none());
     assert_eq!(
         kv.get(&branch_b, "default", "shared_key").unwrap(),
         Some(Value::Int(2))
@@ -66,10 +71,19 @@ fn all_primitives_isolated_between_branches() {
 
     // Write to branch A
     p.kv.put(&branch_a, "default", "k", Value::Int(1)).unwrap();
-    p.state.init(&branch_a, "default", "s", Value::Int(1)).unwrap();
-    p.event.append(&branch_a, "default", "e", int_payload(1)).unwrap();
+    p.state
+        .init(&branch_a, "default", "s", Value::Int(1))
+        .unwrap();
+    p.event
+        .append(&branch_a, "default", "e", int_payload(1))
+        .unwrap();
     p.json
-        .create(&branch_a, "default", "j", json_value(serde_json::json!({"a": 1})))
+        .create(
+            &branch_a,
+            "default",
+            "j",
+            json_value(serde_json::json!({"a": 1})),
+        )
         .unwrap();
     p.vector
         .create_collection(branch_a, "default", "v", config_small())
@@ -80,10 +94,19 @@ fn all_primitives_isolated_between_branches() {
 
     // Write different values to branch B
     p.kv.put(&branch_b, "default", "k", Value::Int(2)).unwrap();
-    p.state.init(&branch_b, "default", "s", Value::Int(2)).unwrap();
-    p.event.append(&branch_b, "default", "e", int_payload(2)).unwrap();
+    p.state
+        .init(&branch_b, "default", "s", Value::Int(2))
+        .unwrap();
+    p.event
+        .append(&branch_b, "default", "e", int_payload(2))
+        .unwrap();
     p.json
-        .create(&branch_b, "default", "j", json_value(serde_json::json!({"b": 2})))
+        .create(
+            &branch_b,
+            "default",
+            "j",
+            json_value(serde_json::json!({"b": 2})),
+        )
         .unwrap();
     p.vector
         .create_collection(branch_b, "default", "v", config_small())
@@ -93,8 +116,14 @@ fn all_primitives_isolated_between_branches() {
         .unwrap();
 
     // Verify isolation
-    assert_eq!(p.kv.get(&branch_a, "default", "k").unwrap().unwrap(), Value::Int(1));
-    assert_eq!(p.kv.get(&branch_b, "default", "k").unwrap().unwrap(), Value::Int(2));
+    assert_eq!(
+        p.kv.get(&branch_a, "default", "k").unwrap().unwrap(),
+        Value::Int(1)
+    );
+    assert_eq!(
+        p.kv.get(&branch_b, "default", "k").unwrap().unwrap(),
+        Value::Int(2)
+    );
 
     assert_eq!(
         p.state.read(&branch_a, "default", "s").unwrap().unwrap(),
@@ -110,13 +139,29 @@ fn all_primitives_isolated_between_branches() {
     assert_eq!(events_a.len(), 1);
     assert_eq!(events_b.len(), 1);
 
-    let json_a = p.json.get(&branch_a, "default", "j", &root()).unwrap().unwrap();
-    let json_b = p.json.get(&branch_b, "default", "j", &root()).unwrap().unwrap();
+    let json_a = p
+        .json
+        .get(&branch_a, "default", "j", &root())
+        .unwrap()
+        .unwrap();
+    let json_b = p
+        .json
+        .get(&branch_b, "default", "j", &root())
+        .unwrap()
+        .unwrap();
     assert_eq!(json_a.as_inner().get("a"), Some(&serde_json::json!(1)));
     assert_eq!(json_b.as_inner().get("b"), Some(&serde_json::json!(2)));
 
-    let vec_a = p.vector.get(branch_a, "default", "v", "vec").unwrap().unwrap();
-    let vec_b = p.vector.get(branch_b, "default", "v", "vec").unwrap().unwrap();
+    let vec_a = p
+        .vector
+        .get(branch_a, "default", "v", "vec")
+        .unwrap()
+        .unwrap();
+    let vec_b = p
+        .vector
+        .get(branch_b, "default", "v", "vec")
+        .unwrap()
+        .unwrap();
     assert_eq!(vec_a.value.embedding[0], 1.0);
     assert_eq!(vec_b.value.embedding[1], 1.0);
 }
@@ -130,7 +175,8 @@ fn many_concurrent_branches() {
     let branch_ids: Vec<BranchId> = (0..100).map(|_| BranchId::new()).collect();
 
     for (i, branch_id) in branch_ids.iter().enumerate() {
-        kv.put(branch_id, "default", "index", Value::Int(i as i64)).unwrap();
+        kv.put(branch_id, "default", "index", Value::Int(i as i64))
+            .unwrap();
     }
 
     // Verify each branch has correct isolated data
@@ -198,15 +244,35 @@ fn vector_collections_isolated_per_branch() {
         .unwrap();
 
     vector
-        .insert(branch_a, "default", "embeddings", "vec", &[1.0, 0.0, 0.0], None)
+        .insert(
+            branch_a,
+            "default",
+            "embeddings",
+            "vec",
+            &[1.0, 0.0, 0.0],
+            None,
+        )
         .unwrap();
     vector
-        .insert(branch_b, "default", "embeddings", "vec", &[0.0, 1.0, 0.0], None)
+        .insert(
+            branch_b,
+            "default",
+            "embeddings",
+            "vec",
+            &[0.0, 1.0, 0.0],
+            None,
+        )
         .unwrap();
 
     // Verify isolation
-    let vec_a = vector.get(branch_a, "default", "embeddings", "vec").unwrap().unwrap();
-    let vec_b = vector.get(branch_b, "default", "embeddings", "vec").unwrap().unwrap();
+    let vec_a = vector
+        .get(branch_a, "default", "embeddings", "vec")
+        .unwrap()
+        .unwrap();
+    let vec_b = vector
+        .get(branch_b, "default", "embeddings", "vec")
+        .unwrap()
+        .unwrap();
 
     assert_eq!(vec_a.value.embedding[0], 1.0);
     assert_eq!(vec_b.value.embedding[1], 1.0);
@@ -221,12 +287,30 @@ fn event_streams_isolated_per_branch() {
     let branch_b = BranchId::new();
 
     // Same stream name, different branches
-    event.append(&branch_a, "default", "audit", int_payload(100)).unwrap();
-    event.append(&branch_a, "default", "audit", int_payload(101)).unwrap();
-    event.append(&branch_b, "default", "audit", int_payload(200)).unwrap();
+    event
+        .append(&branch_a, "default", "audit", int_payload(100))
+        .unwrap();
+    event
+        .append(&branch_a, "default", "audit", int_payload(101))
+        .unwrap();
+    event
+        .append(&branch_b, "default", "audit", int_payload(200))
+        .unwrap();
 
-    assert_eq!(event.read_by_type(&branch_a, "default", "audit").unwrap().len(), 2);
-    assert_eq!(event.read_by_type(&branch_b, "default", "audit").unwrap().len(), 1);
+    assert_eq!(
+        event
+            .read_by_type(&branch_a, "default", "audit")
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        event
+            .read_by_type(&branch_b, "default", "audit")
+            .unwrap()
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -240,13 +324,15 @@ fn json_documents_isolated_per_branch() {
     // Same doc ID, different branches
     json.create(
         &branch_a,
-        "default", "config",
+        "default",
+        "config",
         json_value(serde_json::json!({"version": 1})),
     )
     .unwrap();
     json.create(
         &branch_b,
-        "default", "config",
+        "default",
+        "config",
         json_value(serde_json::json!({"version": 2})),
     )
     .unwrap();
@@ -282,7 +368,8 @@ fn child_branch_does_not_inherit_parent_data_currently() {
 
     kv.put(
         &parent_branch_id,
-        "default", "parent_key",
+        "default",
+        "parent_key",
         Value::String("parent_value".into()),
     )
     .unwrap();
@@ -339,18 +426,27 @@ fn concurrent_operations_across_branches() {
                 for i in 0..ops_per_branch {
                     kv.put(
                         &branch_id,
-                        "default", &format!("key_{}", i),
+                        "default",
+                        &format!("key_{}", i),
                         Value::Int((r * 1000 + i) as i64),
                     )
                     .unwrap();
                     event
-                        .append(&branch_id, "default", "ops", int_payload((r * 1000 + i) as i64))
+                        .append(
+                            &branch_id,
+                            "default",
+                            "ops",
+                            int_payload((r * 1000 + i) as i64),
+                        )
                         .unwrap();
                 }
 
                 // Verify own data
                 for i in 0..ops_per_branch {
-                    let val = kv.get(&branch_id, "default", &format!("key_{}", i)).unwrap().unwrap();
+                    let val = kv
+                        .get(&branch_id, "default", &format!("key_{}", i))
+                        .unwrap()
+                        .unwrap();
                     assert_eq!(val, Value::Int((r * 1000 + i) as i64));
                 }
 
@@ -368,7 +464,10 @@ fn concurrent_operations_across_branches() {
         assert_eq!(keys.len(), ops_per_branch);
 
         for i in 0..ops_per_branch {
-            let val = kv.get(branch_id, "default", &format!("key_{}", i)).unwrap().unwrap();
+            let val = kv
+                .get(branch_id, "default", &format!("key_{}", i))
+                .unwrap()
+                .unwrap();
             assert_eq!(val, Value::Int((r * 1000 + i) as i64));
         }
     }

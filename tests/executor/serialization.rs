@@ -184,7 +184,12 @@ fn deserialize_kv_put_minimal() {
     let cmd: Command = serde_json::from_str(json).unwrap();
 
     match cmd {
-        Command::KvPut { branch, space: _, key, value } => {
+        Command::KvPut {
+            branch,
+            space: _,
+            key,
+            value,
+        } => {
             assert!(branch.is_none());
             assert_eq!(key, "k");
             assert_eq!(value, Value::Int(42));
@@ -201,7 +206,12 @@ fn deserialize_kv_put_with_branch() {
     let cmd: Command = serde_json::from_str(json).unwrap();
 
     match cmd {
-        Command::KvPut { branch, space: _, key, value } => {
+        Command::KvPut {
+            branch,
+            space: _,
+            key,
+            value,
+        } => {
             assert_eq!(
                 branch.unwrap().as_str(),
                 "550e8400-e29b-41d4-a716-446655440401"
@@ -224,7 +234,8 @@ fn deserialize_event_append() {
     match cmd {
         Command::EventAppend {
             branch,
-            space: _, event_type,
+            space: _,
+            event_type,
             payload,
         } => {
             assert!(branch.is_none());

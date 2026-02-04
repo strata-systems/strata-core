@@ -88,7 +88,7 @@ pub fn register_recovery_participant(participant: RecoveryParticipant) {
     let mut registry = RECOVERY_REGISTRY.write();
     // Avoid duplicate registration
     if !registry.iter().any(|p| p.name == participant.name) {
-        info!(name = participant.name, "Registered recovery participant");
+        info!(target: "strata::recovery", name = participant.name, "Registered recovery participant");
         registry.push(participant);
     }
 }
@@ -106,9 +106,9 @@ pub fn recover_all_participants(db: &crate::database::Database) -> StrataResult<
     let registry = RECOVERY_REGISTRY.read();
 
     for participant in registry.iter() {
-        info!(name = participant.name, "Running primitive recovery");
+        info!(target: "strata::recovery", name = participant.name, "Running primitive recovery");
         (participant.recover)(db)?;
-        info!(name = participant.name, "Primitive recovery complete");
+        info!(target: "strata::recovery", name = participant.name, "Primitive recovery complete");
     }
 
     Ok(())

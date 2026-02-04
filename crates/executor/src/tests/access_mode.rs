@@ -227,7 +227,10 @@ fn test_read_only_allows_all_reads() {
             limit: None,
             after_sequence: None,
         },
-        Command::EventLen { branch: None, space: None },
+        Command::EventLen {
+            branch: None,
+            space: None,
+        },
         Command::StateRead {
             branch: None,
             space: None,
@@ -243,7 +246,10 @@ fn test_read_only_allows_all_reads() {
             space: None,
             prefix: None,
         },
-        Command::VectorListCollections { branch: None, space: None },
+        Command::VectorListCollections {
+            branch: None,
+            space: None,
+        },
         Command::BranchGet {
             branch: crate::types::BranchId::default(),
         },
@@ -503,7 +509,10 @@ fn test_is_write_classification() {
             limit: None,
             after_sequence: None,
         },
-        Command::EventLen { branch: None, space: None },
+        Command::EventLen {
+            branch: None,
+            space: None,
+        },
         Command::StateRead {
             branch: None,
             space: None,
@@ -534,7 +543,10 @@ fn test_is_write_classification() {
             filter: None,
             metric: None,
         },
-        Command::VectorListCollections { branch: None, space: None },
+        Command::VectorListCollections {
+            branch: None,
+            space: None,
+        },
         Command::BranchGet {
             branch: crate::types::BranchId::default(),
         },

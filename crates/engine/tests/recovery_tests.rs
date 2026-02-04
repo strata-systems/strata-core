@@ -49,9 +49,15 @@ fn test_kv_survives_recovery() {
 
     // Write KV data
     let kv = KVStore::new(db.clone());
-    kv.put(&branch_id, "default", "key1", Value::String("value1".into()))
+    kv.put(
+        &branch_id,
+        "default",
+        "key1",
+        Value::String("value1".into()),
+    )
+    .unwrap();
+    kv.put(&branch_id, "default", "key2", Value::Int(42))
         .unwrap();
-    kv.put(&branch_id, "default", "key2", Value::Int(42)).unwrap();
     kv.put(&branch_id, "default", "nested/path/key", Value::Bool(true))
         .unwrap();
 
@@ -74,15 +80,23 @@ fn test_kv_survives_recovery() {
         kv.get(&branch_id, "default", "key1").unwrap(),
         Some(Value::String("value1".into()))
     );
-    assert_eq!(kv.get(&branch_id, "default", "key2").unwrap(), Some(Value::Int(42)));
+    assert_eq!(
+        kv.get(&branch_id, "default", "key2").unwrap(),
+        Some(Value::Int(42))
+    );
     assert_eq!(
         kv.get(&branch_id, "default", "nested/path/key").unwrap(),
         Some(Value::Bool(true))
     );
 
     // Can still write after recovery
-    kv.put(&branch_id, "default", "key3", Value::String("after_recovery".into()))
-        .unwrap();
+    kv.put(
+        &branch_id,
+        "default",
+        "key3",
+        Value::String("after_recovery".into()),
+    )
+    .unwrap();
     assert_eq!(
         kv.get(&branch_id, "default", "key3").unwrap(),
         Some(Value::String("after_recovery".into()))
@@ -98,10 +112,14 @@ fn test_kv_list_survives_recovery() {
     let kv = KVStore::new(db.clone());
 
     // Create multiple keys with prefix
-    kv.put(&branch_id, "default", "config/a", Value::Int(1)).unwrap();
-    kv.put(&branch_id, "default", "config/b", Value::Int(2)).unwrap();
-    kv.put(&branch_id, "default", "config/c", Value::Int(3)).unwrap();
-    kv.put(&branch_id, "default", "other/x", Value::Int(99)).unwrap();
+    kv.put(&branch_id, "default", "config/a", Value::Int(1))
+        .unwrap();
+    kv.put(&branch_id, "default", "config/b", Value::Int(2))
+        .unwrap();
+    kv.put(&branch_id, "default", "config/c", Value::Int(3))
+        .unwrap();
+    kv.put(&branch_id, "default", "other/x", Value::Int(99))
+        .unwrap();
 
     // Verify list before crash
     let config_keys = kv.list(&branch_id, "default", Some("config/")).unwrap();
@@ -260,17 +278,38 @@ fn test_state_cell_version_survives_recovery() {
 
     // CAS increments version
     state_cell
-        .cas(&branch_id, "default", "counter", Version::counter(1), Value::Int(10))
+        .cas(
+            &branch_id,
+            "default",
+            "counter",
+            Version::counter(1),
+            Value::Int(10),
+        )
         .unwrap(); // -> v2
     state_cell
-        .cas(&branch_id, "default", "counter", Version::counter(2), Value::Int(20))
+        .cas(
+            &branch_id,
+            "default",
+            "counter",
+            Version::counter(2),
+            Value::Int(20),
+        )
         .unwrap(); // -> v3
     state_cell
-        .cas(&branch_id, "default", "counter", Version::counter(3), Value::Int(30))
+        .cas(
+            &branch_id,
+            "default",
+            "counter",
+            Version::counter(3),
+            Value::Int(30),
+        )
         .unwrap(); // -> v4
 
     // Verify before crash
-    let state = state_cell.read(&branch_id, "default", "counter").unwrap().unwrap();
+    let state = state_cell
+        .read(&branch_id, "default", "counter")
+        .unwrap()
+        .unwrap();
     assert_eq!(state, Value::Int(30));
 
     // Simulate crash
@@ -282,17 +321,32 @@ fn test_state_cell_version_survives_recovery() {
     let state_cell = StateCell::new(db.clone());
 
     // Value is correct
-    let state = state_cell.read(&branch_id, "default", "counter").unwrap().unwrap();
+    let state = state_cell
+        .read(&branch_id, "default", "counter")
+        .unwrap()
+        .unwrap();
     assert_eq!(state, Value::Int(30));
 
     // CAS works with correct version
     let new_versioned = state_cell
-        .cas(&branch_id, "default", "counter", Version::counter(4), Value::Int(40))
+        .cas(
+            &branch_id,
+            "default",
+            "counter",
+            Version::counter(4),
+            Value::Int(40),
+        )
         .unwrap();
     assert_eq!(new_versioned.value, Version::counter(5));
 
     // CAS with old version fails
-    let result = state_cell.cas(&branch_id, "default", "counter", Version::counter(4), Value::Int(999));
+    let result = state_cell.cas(
+        &branch_id,
+        "default",
+        "counter",
+        Version::counter(4),
+        Value::Int(999),
+    );
     assert!(result.is_err());
 }
 
@@ -306,10 +360,20 @@ fn test_state_cell_set_survives_recovery() {
 
     // Init and set
     state_cell
-        .init(&branch_id, "default", "status", Value::String("initial".into()))
+        .init(
+            &branch_id,
+            "default",
+            "status",
+            Value::String("initial".into()),
+        )
         .unwrap();
     state_cell
-        .set(&branch_id, "default", "status", Value::String("updated".into()))
+        .set(
+            &branch_id,
+            "default",
+            "status",
+            Value::String("updated".into()),
+        )
         .unwrap();
 
     // Simulate crash
@@ -321,7 +385,10 @@ fn test_state_cell_set_survives_recovery() {
     let state_cell = StateCell::new(db.clone());
 
     // Value preserved
-    let state = state_cell.read(&branch_id, "default", "status").unwrap().unwrap();
+    let state = state_cell
+        .read(&branch_id, "default", "status")
+        .unwrap()
+        .unwrap();
     assert_eq!(state, Value::String("updated".into()));
 }
 
@@ -428,7 +495,10 @@ fn test_branch_delete_survives_recovery() {
 
     // branch2 data preserved
     assert!(branch_index.get_branch("branch2").unwrap().is_some());
-    assert_eq!(kv.get(&branch2, "default", "key").unwrap(), Some(Value::Int(2)));
+    assert_eq!(
+        kv.get(&branch2, "default", "key").unwrap(),
+        Some(Value::Int(2))
+    );
 }
 
 /// Test cross-primitive transaction survives recovery
@@ -470,7 +540,10 @@ fn test_cross_primitive_transaction_survives_recovery() {
         Some(Value::String("txn_value".into()))
     );
     assert_eq!(event_log.len(&branch_id, "default").unwrap(), 1);
-    let state = state_cell.read(&branch_id, "default", "txn_state").unwrap().unwrap();
+    let state = state_cell
+        .read(&branch_id, "default", "txn_state")
+        .unwrap()
+        .unwrap();
     assert_eq!(state, Value::Int(42));
 }
 
@@ -485,7 +558,8 @@ fn test_multiple_recovery_cycles() {
     {
         let db = Database::open(&path).unwrap();
         let kv = KVStore::new(db.clone());
-        kv.put(&branch_id, "default", "cycle1", Value::Int(1)).unwrap();
+        kv.put(&branch_id, "default", "cycle1", Value::Int(1))
+            .unwrap();
     }
 
     // Cycle 2: Add more data
@@ -494,10 +568,14 @@ fn test_multiple_recovery_cycles() {
         let kv = KVStore::new(db.clone());
 
         // Verify cycle 1 data
-        assert_eq!(kv.get(&branch_id, "default", "cycle1").unwrap(), Some(Value::Int(1)));
+        assert_eq!(
+            kv.get(&branch_id, "default", "cycle1").unwrap(),
+            Some(Value::Int(1))
+        );
 
         // Add cycle 2 data
-        kv.put(&branch_id, "default", "cycle2", Value::Int(2)).unwrap();
+        kv.put(&branch_id, "default", "cycle2", Value::Int(2))
+            .unwrap();
     }
 
     // Cycle 3: Add more data
@@ -506,11 +584,18 @@ fn test_multiple_recovery_cycles() {
         let kv = KVStore::new(db.clone());
 
         // Verify all previous data
-        assert_eq!(kv.get(&branch_id, "default", "cycle1").unwrap(), Some(Value::Int(1)));
-        assert_eq!(kv.get(&branch_id, "default", "cycle2").unwrap(), Some(Value::Int(2)));
+        assert_eq!(
+            kv.get(&branch_id, "default", "cycle1").unwrap(),
+            Some(Value::Int(1))
+        );
+        assert_eq!(
+            kv.get(&branch_id, "default", "cycle2").unwrap(),
+            Some(Value::Int(2))
+        );
 
         // Add cycle 3 data
-        kv.put(&branch_id, "default", "cycle3", Value::Int(3)).unwrap();
+        kv.put(&branch_id, "default", "cycle3", Value::Int(3))
+            .unwrap();
     }
 
     // Final verification
@@ -518,9 +603,18 @@ fn test_multiple_recovery_cycles() {
         let db = Database::open(&path).unwrap();
         let kv = KVStore::new(db.clone());
 
-        assert_eq!(kv.get(&branch_id, "default", "cycle1").unwrap(), Some(Value::Int(1)));
-        assert_eq!(kv.get(&branch_id, "default", "cycle2").unwrap(), Some(Value::Int(2)));
-        assert_eq!(kv.get(&branch_id, "default", "cycle3").unwrap(), Some(Value::Int(3)));
+        assert_eq!(
+            kv.get(&branch_id, "default", "cycle1").unwrap(),
+            Some(Value::Int(1))
+        );
+        assert_eq!(
+            kv.get(&branch_id, "default", "cycle2").unwrap(),
+            Some(Value::Int(2))
+        );
+        assert_eq!(
+            kv.get(&branch_id, "default", "cycle3").unwrap(),
+            Some(Value::Int(3))
+        );
     }
 }
 
@@ -544,8 +638,13 @@ fn test_all_primitives_recover_together() {
         branch_id = BranchId::from_string(&branch_meta.value.branch_id).unwrap();
 
         // Populate all primitives
-        kv.put(&branch_id, "default", "full_key", Value::String("full_value".into()))
-            .unwrap();
+        kv.put(
+            &branch_id,
+            "default",
+            "full_key",
+            Value::String("full_value".into()),
+        )
+        .unwrap();
 
         event_log
             .append(&branch_id, "default", "full_event", int_payload(999))
@@ -589,7 +688,10 @@ fn test_all_primitives_recover_together() {
         assert_eq!(event.value.payload, int_payload(999));
 
         // StateCell
-        let state = state_cell.read(&branch_id, "default", "full_state").unwrap().unwrap();
+        let state = state_cell
+            .read(&branch_id, "default", "full_state")
+            .unwrap()
+            .unwrap();
         assert_eq!(state, Value::Int(100));
     }
 }

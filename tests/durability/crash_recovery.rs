@@ -29,7 +29,11 @@ fn truncated_wal_recovers_prefix() {
     let kv = test_db.kv();
     // Early keys are more likely to survive truncation
     let recovered = (0..100)
-        .filter(|i| kv.get(&branch_id, "default", &format!("k{}", i)).unwrap().is_some())
+        .filter(|i| {
+            kv.get(&branch_id, "default", &format!("k{}", i))
+                .unwrap()
+                .is_some()
+        })
         .count();
 
     // At minimum, some prefix should survive
@@ -106,7 +110,8 @@ fn missing_wal_file_starts_fresh() {
     let branch_id = test_db.branch_id;
 
     let kv = test_db.kv();
-    kv.put(&branch_id, "default", "will_be_lost", Value::Int(1)).unwrap();
+    kv.put(&branch_id, "default", "will_be_lost", Value::Int(1))
+        .unwrap();
 
     // Delete WAL and snapshots
     let wal_path = test_db.wal_path();
@@ -142,7 +147,8 @@ fn rapid_reopen_cycles_are_stable() {
         let kv = test_db.kv();
         kv.put(
             &branch_id,
-            "default", &format!("cycle_{}", cycle),
+            "default",
+            &format!("cycle_{}", cycle),
             Value::Int(cycle as i64),
         )
         .unwrap();
@@ -152,7 +158,9 @@ fn rapid_reopen_cycles_are_stable() {
     // All cycle keys should exist
     let kv = test_db.kv();
     for cycle in 0..5 {
-        let val = kv.get(&branch_id, "default", &format!("cycle_{}", cycle)).unwrap();
+        let val = kv
+            .get(&branch_id, "default", &format!("cycle_{}", cycle))
+            .unwrap();
         assert_eq!(
             val,
             Some(Value::Int(cycle as i64)),
@@ -173,7 +181,8 @@ fn recovery_after_high_churn_on_same_keys() {
         for key_idx in 0..10 {
             kv.put(
                 &branch_id,
-                "default", &format!("churn_{}", key_idx),
+                "default",
+                &format!("churn_{}", key_idx),
                 Value::Int(round * 10 + key_idx),
             )
             .unwrap();

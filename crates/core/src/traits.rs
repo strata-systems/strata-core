@@ -407,7 +407,13 @@ mod tests {
     }
 
     fn test_ns() -> Namespace {
-        Namespace::new("test".into(), "app".into(), "agent".into(), BranchId::new(), "default".into())
+        Namespace::new(
+            "test".into(),
+            "app".into(),
+            "agent".into(),
+            BranchId::new(),
+            "default".into(),
+        )
     }
 
     fn test_key(ns: &Namespace, name: &str) -> Key {
@@ -633,8 +639,20 @@ mod tests {
         let store = MockStorage::new();
         let branch1 = BranchId::new();
         let branch2 = BranchId::new();
-        let ns1 = Namespace::new("t".into(), "a".into(), "g".into(), branch1, "default".into());
-        let ns2 = Namespace::new("t".into(), "a".into(), "g".into(), branch2, "default".into());
+        let ns1 = Namespace::new(
+            "t".into(),
+            "a".into(),
+            "g".into(),
+            branch1,
+            "default".into(),
+        );
+        let ns2 = Namespace::new(
+            "t".into(),
+            "a".into(),
+            "g".into(),
+            branch2,
+            "default".into(),
+        );
 
         store
             .put(Key::new_kv(ns1.clone(), "k1"), Value::Int(1), None)

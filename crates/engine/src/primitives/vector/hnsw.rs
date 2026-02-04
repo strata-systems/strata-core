@@ -276,8 +276,7 @@ impl HnswBackend {
                         visited.insert(neighbor_id);
 
                         if let Some(neighbor_embedding) = self.heap.get(neighbor_id) {
-                            let score =
-                                compute_similarity(query, neighbor_embedding, metric);
+                            let score = compute_similarity(query, neighbor_embedding, metric);
 
                             let worst_result_score = results
                                 .peek()
@@ -359,8 +358,7 @@ impl HnswBackend {
                     if layer < node.neighbors.len() {
                         for &neighbor_id in &node.neighbors[layer] {
                             if let Some(neighbor_embedding) = self.heap.get(neighbor_id) {
-                                let score =
-                                    compute_similarity(query, neighbor_embedding, metric);
+                                let score = compute_similarity(query, neighbor_embedding, metric);
                                 if score > best_score
                                     || (score == best_score && neighbor_id < best_id)
                                 {
@@ -383,11 +381,7 @@ impl HnswBackend {
     }
 
     /// Select neighbors using the simple heuristic (select closest)
-    fn select_neighbors(
-        &self,
-        candidates: &[ScoredId],
-        max_connections: usize,
-    ) -> Vec<VectorId> {
+    fn select_neighbors(&self, candidates: &[ScoredId], max_connections: usize) -> Vec<VectorId> {
         // Already sorted by score desc, just take top max_connections
         candidates
             .iter()
@@ -435,11 +429,7 @@ impl HnswBackend {
         });
 
         // Keep top max_connections
-        let keep: BTreeSet<VectorId> = scored
-            .iter()
-            .take(max_connections)
-            .map(|s| s.id)
-            .collect();
+        let keep: BTreeSet<VectorId> = scored.iter().take(max_connections).map(|s| s.id).collect();
 
         if let Some(node) = self.nodes.get_mut(&id) {
             if layer < node.neighbors.len() {
@@ -532,8 +522,7 @@ impl HnswBackend {
             };
 
             for &neighbor_id in &selected {
-                let needs_prune = if let Some(neighbor_node) = self.nodes.get_mut(&neighbor_id)
-                {
+                let needs_prune = if let Some(neighbor_node) = self.nodes.get_mut(&neighbor_id) {
                     if layer < neighbor_node.neighbors.len() {
                         neighbor_node.neighbors[layer].insert(id);
                         neighbor_node.neighbors[layer].len() > max_conn
@@ -630,9 +619,9 @@ impl HnswBackend {
             if *pos + 8 > data.len() {
                 return Err(VectorError::Serialization("unexpected end of data".into()));
             }
-            let bytes: [u8; 8] = data[*pos..*pos + 8].try_into().map_err(|_| {
-                VectorError::Serialization("failed to read u64".into())
-            })?;
+            let bytes: [u8; 8] = data[*pos..*pos + 8]
+                .try_into()
+                .map_err(|_| VectorError::Serialization("failed to read u64".into()))?;
             *pos += 8;
             Ok(u64::from_le_bytes(bytes))
         };
@@ -716,12 +705,7 @@ impl VectorIndexBackend for HnswBackend {
                 // Update entry point if needed
                 if self.entry_point == Some(id) {
                     self.entry_point = self.nodes.keys().next().copied();
-                    self.max_level = self
-                        .nodes
-                        .values()
-                        .map(|n| n.max_layer)
-                        .max()
-                        .unwrap_or(0);
+                    self.max_level = self.nodes.values().map(|n| n.max_layer).max().unwrap_or(0);
                 }
             }
         }
@@ -786,8 +770,7 @@ impl VectorIndexBackend for HnswBackend {
         // Greedy search from top layer to layer 1
         let mut current_entry = entry_id;
         if self.max_level > 0 {
-            current_entry =
-                self.greedy_search_to_layer(query, entry_id, self.max_level, 1);
+            current_entry = self.greedy_search_to_layer(query, entry_id, self.max_level, 1);
         }
 
         // ef-search at layer 0
@@ -797,12 +780,7 @@ impl VectorIndexBackend for HnswBackend {
         // Filter out deleted nodes and take top-k
         let results: Vec<(VectorId, f32)> = candidates
             .into_iter()
-            .filter(|s| {
-                self.nodes
-                    .get(&s.id)
-                    .map(|n| !n.deleted)
-                    .unwrap_or(false)
-            })
+            .filter(|s| self.nodes.get(&s.id).map(|n| !n.deleted).unwrap_or(false))
             .take(k)
             .map(|s| (s.id, s.score))
             .collect();
@@ -851,7 +829,10 @@ impl VectorIndexBackend for HnswBackend {
             .values()
             .map(|node| {
                 // BTreeSet overhead per neighbor
-                node.neighbors.iter().map(|ns| ns.len() * 16 + 64).sum::<usize>()
+                node.neighbors
+                    .iter()
+                    .map(|ns| ns.len() * 16 + 64)
+                    .sum::<usize>()
                     + 64 // node overhead
             })
             .sum();
@@ -1072,9 +1053,18 @@ mod tests {
         let mut restored = HnswBackend::new(&config, HnswConfig::default());
 
         // Re-insert embeddings into heap (simulating snapshot restore)
-        restored.heap_mut().insert_with_id(VectorId::new(1), &[1.0, 0.0, 0.0]).unwrap();
-        restored.heap_mut().insert_with_id(VectorId::new(2), &[0.0, 1.0, 0.0]).unwrap();
-        restored.heap_mut().insert_with_id(VectorId::new(3), &[0.0, 0.0, 1.0]).unwrap();
+        restored
+            .heap_mut()
+            .insert_with_id(VectorId::new(1), &[1.0, 0.0, 0.0])
+            .unwrap();
+        restored
+            .heap_mut()
+            .insert_with_id(VectorId::new(2), &[0.0, 1.0, 0.0])
+            .unwrap();
+        restored
+            .heap_mut()
+            .insert_with_id(VectorId::new(3), &[0.0, 0.0, 1.0])
+            .unwrap();
 
         restored.deserialize_graph_state(&graph_data).unwrap();
 
@@ -1094,9 +1084,18 @@ mod tests {
         let mut backend = HnswBackend::new(&config, HnswConfig::default());
 
         // Insert using insert_with_id (simulating recovery)
-        backend.heap_mut().insert_with_id(VectorId::new(1), &[1.0, 0.0, 0.0]).unwrap();
-        backend.heap_mut().insert_with_id(VectorId::new(2), &[0.0, 1.0, 0.0]).unwrap();
-        backend.heap_mut().insert_with_id(VectorId::new(3), &[0.0, 0.0, 1.0]).unwrap();
+        backend
+            .heap_mut()
+            .insert_with_id(VectorId::new(1), &[1.0, 0.0, 0.0])
+            .unwrap();
+        backend
+            .heap_mut()
+            .insert_with_id(VectorId::new(2), &[0.0, 1.0, 0.0])
+            .unwrap();
+        backend
+            .heap_mut()
+            .insert_with_id(VectorId::new(3), &[0.0, 0.0, 1.0])
+            .unwrap();
 
         // Graph is empty at this point
         assert!(backend.entry_point.is_none());
@@ -1225,10 +1224,8 @@ mod tests {
             let hnsw_results = hnsw.search(&query, k);
             let brute_results = brute.search(&query, k);
 
-            let brute_ids: BTreeSet<VectorId> =
-                brute_results.iter().map(|(id, _)| *id).collect();
-            let hnsw_ids: BTreeSet<VectorId> =
-                hnsw_results.iter().map(|(id, _)| *id).collect();
+            let brute_ids: BTreeSet<VectorId> = brute_results.iter().map(|(id, _)| *id).collect();
+            let hnsw_ids: BTreeSet<VectorId> = hnsw_results.iter().map(|(id, _)| *id).collect();
 
             let overlap = brute_ids.intersection(&hnsw_ids).count();
             total_recall += overlap as f64 / k as f64;

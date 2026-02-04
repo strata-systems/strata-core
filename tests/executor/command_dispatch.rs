@@ -199,7 +199,10 @@ fn event_len_returns_count() {
     }
 
     let output = executor
-        .execute(Command::EventLen { branch: None , space: None })
+        .execute(Command::EventLen {
+            branch: None,
+            space: None,
+        })
         .unwrap();
 
     match output {
@@ -362,7 +365,10 @@ fn vector_list_collections() {
         .unwrap();
 
     let output = executor
-        .execute(Command::VectorListCollections { branch: None , space: None })
+        .execute(Command::VectorListCollections {
+            branch: None,
+            space: None,
+        })
         .unwrap();
 
     match output {

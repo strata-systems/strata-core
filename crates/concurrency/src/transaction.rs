@@ -13,9 +13,9 @@ use strata_core::primitives::json::{get_at_path, JsonPatch, JsonPath, JsonValue}
 use strata_core::traits::{SnapshotView, Storage};
 use strata_core::types::{BranchId, Key};
 use strata_core::value::Value;
-use strata_core::{Version, Versioned, VersionedValue};
 use strata_core::StrataError;
 use strata_core::StrataResult;
+use strata_core::{Version, Versioned, VersionedValue};
 
 /// Error type for commit failures
 ///
@@ -616,10 +616,7 @@ impl TransactionContext {
     }
 
     /// Read from snapshot preserving version metadata, and track in read_set
-    fn read_versioned_from_snapshot(
-        &mut self,
-        key: &Key,
-    ) -> StrataResult<Option<VersionedValue>> {
+    fn read_versioned_from_snapshot(&mut self, key: &Key) -> StrataResult<Option<VersionedValue>> {
         let snapshot = self.snapshot.as_ref().ok_or_else(|| {
             StrataError::invalid_input("Transaction has no snapshot for reads".to_string())
         })?;

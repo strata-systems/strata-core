@@ -27,7 +27,9 @@ fn stress_large_wal_recovery() {
 
     let kv = test_db.kv();
     for i in (0..10_000).step_by(100) {
-        let val = kv.get(&branch_id, "default", &format!("key_{}", i)).unwrap();
+        let val = kv
+            .get(&branch_id, "default", &format!("key_{}", i))
+            .unwrap();
         assert_eq!(
             val,
             Some(Value::Int(i)),
@@ -52,8 +54,13 @@ fn stress_concurrent_writes() {
                 let branch_id = BranchId::new();
                 let kv = KVStore::new(db);
                 for i in 0..1000 {
-                    kv.put(&branch_id, "default", &format!("t{}_k{}", thread_id, i), Value::Int(i))
-                        .unwrap();
+                    kv.put(
+                        &branch_id,
+                        "default",
+                        &format!("t{}_k{}", thread_id, i),
+                        Value::Int(i),
+                    )
+                    .unwrap();
                 }
             })
         })
@@ -151,12 +158,19 @@ fn stress_large_values() {
     let large = Value::String("x".repeat(1_000_000)); // 1MB
 
     for i in 0..50 {
-        kv.put(&branch_id, "default", &format!("large_{}", i), large.clone())
-            .unwrap();
+        kv.put(
+            &branch_id,
+            "default",
+            &format!("large_{}", i),
+            large.clone(),
+        )
+        .unwrap();
     }
 
     for i in 0..50 {
-        let val = kv.get(&branch_id, "default", &format!("large_{}", i)).unwrap();
+        let val = kv
+            .get(&branch_id, "default", &format!("large_{}", i))
+            .unwrap();
         assert_eq!(
             val,
             Some(large.clone()),
@@ -177,14 +191,20 @@ fn stress_mixed_operations() {
     for i in 0..10_000 {
         match i % 4 {
             0 => {
-                kv.put(&branch_id, "default", &format!("k{}", i % 500), Value::Int(i))
-                    .unwrap();
+                kv.put(
+                    &branch_id,
+                    "default",
+                    &format!("k{}", i % 500),
+                    Value::Int(i),
+                )
+                .unwrap();
             }
             1 => {
                 let _ = kv.get(&branch_id, "default", &format!("k{}", i % 500));
             }
             2 => {
-                kv.delete(&branch_id, "default", &format!("k{}", (i + 250) % 500)).ok();
+                kv.delete(&branch_id, "default", &format!("k{}", (i + 250) % 500))
+                    .ok();
             }
             3 => {
                 let _ = kv.list(&branch_id, "default", None);
@@ -203,8 +223,13 @@ fn stress_recovery_after_churn() {
 
     let kv = test_db.kv();
     for i in 0..10_000 {
-        kv.put(&branch_id, "default", &format!("churn_{}", i % 100), Value::Int(i))
-            .unwrap();
+        kv.put(
+            &branch_id,
+            "default",
+            &format!("churn_{}", i % 100),
+            Value::Int(i),
+        )
+        .unwrap();
     }
 
     let state_before = CapturedState::capture(&test_db.db, &branch_id);
@@ -227,7 +252,8 @@ fn stress_repeated_reopen() {
         for i in 0..100 {
             kv.put(
                 &branch_id,
-                "default", &format!("c{}_k{}", cycle, i),
+                "default",
+                &format!("c{}_k{}", cycle, i),
                 Value::Int((cycle * 100 + i) as i64),
             )
             .unwrap();
@@ -238,7 +264,9 @@ fn stress_repeated_reopen() {
     // Verify data from all cycles
     let kv = test_db.kv();
     for cycle in 0..20 {
-        let val = kv.get(&branch_id, "default", &format!("c{}_k0", cycle)).unwrap();
+        let val = kv
+            .get(&branch_id, "default", &format!("c{}_k0", cycle))
+            .unwrap();
         assert_eq!(
             val,
             Some(Value::Int((cycle * 100) as i64)),
@@ -262,11 +290,17 @@ fn stress_all_primitives_sustained() {
 
     while start.elapsed() < duration {
         let key = format!("k{}", ops);
-        p.kv.put(&branch_id, "default", &key, Value::Int(ops as i64)).unwrap();
+        p.kv.put(&branch_id, "default", &key, Value::Int(ops as i64))
+            .unwrap();
 
         if ops % 10 == 0 {
             p.event
-                .append(&branch_id, "default", "load_stream", int_payload(ops as i64))
+                .append(
+                    &branch_id,
+                    "default",
+                    "load_stream",
+                    int_payload(ops as i64),
+                )
                 .unwrap();
         }
         if ops % 50 == 0 {

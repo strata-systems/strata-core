@@ -79,7 +79,10 @@ fn test_kv_event_state_atomic() {
     );
     assert_eq!(event_log.len(&branch_id, "default").unwrap(), 1);
 
-    let state = state_cell.read(&branch_id, "default", "workflow").unwrap().unwrap();
+    let state = state_cell
+        .read(&branch_id, "default", "workflow")
+        .unwrap()
+        .unwrap();
     assert_eq!(state, Value::String("step1".into()));
 }
 
@@ -114,14 +117,20 @@ fn test_cross_primitive_rollback() {
 
     // Verify KV was NOT written (rollback affected all)
     let kv = KVStore::new(db.clone());
-    assert!(kv.get(&branch_id, "default", "key_to_rollback").unwrap().is_none());
+    assert!(kv
+        .get(&branch_id, "default", "key_to_rollback")
+        .unwrap()
+        .is_none());
 
     // Verify Event was NOT written
     let event_log = EventLog::new(db.clone());
     assert_eq!(event_log.len(&branch_id, "default").unwrap(), 0);
 
     // Verify StateCell unchanged
-    let state = state_cell.read(&branch_id, "default", "cell").unwrap().unwrap();
+    let state = state_cell
+        .read(&branch_id, "default", "cell")
+        .unwrap()
+        .unwrap();
     assert_eq!(state, Value::Int(100));
 }
 
@@ -160,7 +169,10 @@ fn test_all_extension_traits_compose() {
 
     assert!(kv.get(&branch_id, "default", "config").unwrap().is_some());
     assert_eq!(event_log.len(&branch_id, "default").unwrap(), 1);
-    assert!(state_cell.read(&branch_id, "default", "counter").unwrap().is_some());
+    assert!(state_cell
+        .read(&branch_id, "default", "counter")
+        .unwrap()
+        .is_some());
 }
 
 /// Test that partial failure in any primitive causes full rollback
@@ -170,7 +182,9 @@ fn test_partial_failure_full_rollback() {
 
     // Initialize state cell
     let state_cell = StateCell::new(db.clone());
-    state_cell.init(&branch_id, "default", "state", Value::Int(0)).unwrap();
+    state_cell
+        .init(&branch_id, "default", "state", Value::Int(0))
+        .unwrap();
 
     // Write successfully to 2 primitives, then fail on 3rd
     let result = db.transaction(branch_id, |txn| {
@@ -193,10 +207,16 @@ fn test_partial_failure_full_rollback() {
     let kv = KVStore::new(db.clone());
     let event_log = EventLog::new(db.clone());
 
-    assert!(kv.get(&branch_id, "default", "partial_key").unwrap().is_none());
+    assert!(kv
+        .get(&branch_id, "default", "partial_key")
+        .unwrap()
+        .is_none());
     assert_eq!(event_log.len(&branch_id, "default").unwrap(), 0);
 
-    let state = state_cell.read(&branch_id, "default", "state").unwrap().unwrap();
+    let state = state_cell
+        .read(&branch_id, "default", "state")
+        .unwrap()
+        .unwrap();
     assert_eq!(state, Value::Int(0)); // Unchanged
 }
 
@@ -207,7 +227,8 @@ fn test_nested_primitive_operations() {
 
     // Pre-populate some KV data
     let kv = KVStore::new(db.clone());
-    kv.put(&branch_id, "default", "initial_value", Value::Int(42)).unwrap();
+    kv.put(&branch_id, "default", "initial_value", Value::Int(42))
+        .unwrap();
 
     // Initialize state
     let state_cell = StateCell::new(db.clone());
@@ -279,7 +300,8 @@ fn test_multiple_transactions_consistency() {
     // All 10 KV entries exist
     for i in 1..=10 {
         assert_eq!(
-            kv.get(&branch_id, "default", &format!("key_{}", i)).unwrap(),
+            kv.get(&branch_id, "default", &format!("key_{}", i))
+                .unwrap(),
             Some(Value::Int(i))
         );
     }
@@ -288,7 +310,10 @@ fn test_multiple_transactions_consistency() {
     assert_eq!(event_log.len(&branch_id, "default").unwrap(), 10);
 
     // Counter at 10
-    let state = state_cell.read(&branch_id, "default", "counter").unwrap().unwrap();
+    let state = state_cell
+        .read(&branch_id, "default", "counter")
+        .unwrap()
+        .unwrap();
     assert_eq!(state, Value::Int(10));
 }
 
@@ -326,10 +351,13 @@ fn test_read_only_transaction() {
 
     // Pre-populate data
     let kv = KVStore::new(db.clone());
-    kv.put(&branch_id, "default", "existing", Value::Int(100)).unwrap();
+    kv.put(&branch_id, "default", "existing", Value::Int(100))
+        .unwrap();
 
     let state_cell = StateCell::new(db.clone());
-    state_cell.init(&branch_id, "default", "cell", Value::Int(50)).unwrap();
+    state_cell
+        .init(&branch_id, "default", "cell", Value::Int(50))
+        .unwrap();
 
     // Read-only transaction
     let result = db.transaction(branch_id, |txn| {
@@ -349,6 +377,9 @@ fn test_read_only_transaction() {
         kv.get(&branch_id, "default", "existing").unwrap(),
         Some(Value::Int(100))
     );
-    let state = state_cell.read(&branch_id, "default", "cell").unwrap().unwrap();
+    let state = state_cell
+        .read(&branch_id, "default", "cell")
+        .unwrap()
+        .unwrap();
     assert_eq!(state, Value::Int(50));
 }

@@ -42,7 +42,7 @@ use strata_core::{StrataResult, VersionedValue};
 use strata_durability::codec::IdentityCodec;
 use strata_durability::wal::{DurabilityMode, WalConfig, WalWriter};
 use strata_storage::ShardedStore;
-use tracing::info;
+use tracing::{info, warn};
 
 // ============================================================================
 // Persistence Mode (Storage/Durability Split)
@@ -270,7 +270,7 @@ impl Database {
         // Check registry for existing instance
         if let Some(weak) = registry.get(&canonical_path) {
             if let Some(db) = weak.upgrade() {
-                info!(path = ?canonical_path, "Returning existing database instance");
+                info!(target: "strata::db", path = ?canonical_path, "Returning existing database instance");
                 return Ok(db);
             }
         }
@@ -286,7 +286,8 @@ impl Database {
         let result = match recovery.recover() {
             Ok(result) => result,
             Err(e) => {
-                tracing::warn!(
+                warn!(
+                    target: "strata::db",
                     error = %e,
                     "Recovery failed — starting with empty state. Data from WAL may be lost."
                 );
@@ -295,6 +296,7 @@ impl Database {
         };
 
         info!(
+            target: "strata::db",
             txns_replayed = result.stats.txns_replayed,
             writes_applied = result.stats.writes_applied,
             deletes_applied = result.stats.deletes_applied,
@@ -873,8 +875,8 @@ impl Database {
         txn: &mut TransactionContext,
         durability: DurabilityMode,
     ) -> StrataResult<u64> {
-        let needs_wal = durability.requires_wal()
-            && (!txn.is_read_only() || !txn.json_writes().is_empty());
+        let needs_wal =
+            durability.requires_wal() && (!txn.is_read_only() || !txn.json_writes().is_empty());
 
         let mut wal_guard = if needs_wal {
             self.wal_writer.as_ref().map(|w| w.lock())
@@ -1534,11 +1536,7 @@ mod tests {
 
         // Create directory and write always config before opening
         std::fs::create_dir_all(&db_path).unwrap();
-        std::fs::write(
-            db_path.join("strata.toml"),
-            "durability = \"always\"\n",
-        )
-        .unwrap();
+        std::fs::write(db_path.join("strata.toml"), "durability = \"always\"\n").unwrap();
 
         let db = Database::open(&db_path).unwrap();
         assert!(!db.is_cache());
@@ -1550,11 +1548,7 @@ mod tests {
         let db_path = temp_dir.path().join("bad_config");
 
         std::fs::create_dir_all(&db_path).unwrap();
-        std::fs::write(
-            db_path.join("strata.toml"),
-            "durability = \"turbo\"\n",
-        )
-        .unwrap();
+        std::fs::write(db_path.join("strata.toml"), "durability = \"turbo\"\n").unwrap();
 
         let result = Database::open(&db_path);
         assert!(result.is_err());

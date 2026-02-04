@@ -31,7 +31,8 @@ fn lost_update_prevented() {
     let db = test_db.db.clone();
 
     let kv = KVStore::new(db.clone());
-    kv.put(&branch_id, "default", "counter", Value::Int(0)).unwrap();
+    kv.put(&branch_id, "default", "counter", Value::Int(0))
+        .unwrap();
 
     let iterations = 100;
     let success_count = Arc::new(AtomicU64::new(0));
@@ -168,8 +169,14 @@ fn write_skew_behavior() {
     }
 
     // Check final state
-    let a_final = kv.get(&branch_id, "default", "doctor_a_oncall").unwrap().unwrap();
-    let b_final = kv.get(&branch_id, "default", "doctor_b_oncall").unwrap().unwrap();
+    let a_final = kv
+        .get(&branch_id, "default", "doctor_a_oncall")
+        .unwrap()
+        .unwrap();
+    let b_final = kv
+        .get(&branch_id, "default", "doctor_b_oncall")
+        .unwrap()
+        .unwrap();
 
     let a_oncall = a_final == Value::Bool(true);
     let b_oncall = b_final == Value::Bool(true);
@@ -213,8 +220,10 @@ fn phantom_read_within_transaction() {
     let kv = test_db.kv();
 
     // Pre-populate some keys
-    kv.put(&branch_id, "default", "key_1", Value::Int(1)).unwrap();
-    kv.put(&branch_id, "default", "key_2", Value::Int(2)).unwrap();
+    kv.put(&branch_id, "default", "key_1", Value::Int(1))
+        .unwrap();
+    kv.put(&branch_id, "default", "key_2", Value::Int(2))
+        .unwrap();
 
     // Transaction reads, does work, reads again - should see same data
     let result = test_db.db.transaction(branch_id, |txn| {
@@ -254,9 +263,16 @@ fn atomicity_on_operation_failure() {
     let state = test_db.state();
 
     // Setup: existing key and cell
-    kv.put(&branch_id, "default", "existing", Value::Int(100)).unwrap();
-    state.init(&branch_id, "default", "cell", Value::Int(200)).unwrap();
-    let version = state.readv(&branch_id, "default", "cell").unwrap().unwrap().version();
+    kv.put(&branch_id, "default", "existing", Value::Int(100))
+        .unwrap();
+    state
+        .init(&branch_id, "default", "cell", Value::Int(200))
+        .unwrap();
+    let version = state
+        .readv(&branch_id, "default", "cell")
+        .unwrap()
+        .unwrap()
+        .version();
 
     // First, modify cell outside transaction to make CAS fail
     state
@@ -343,7 +359,8 @@ fn stale_read_write_conflict() {
 
         // Modify the key (commits before A tries to write)
         let kv_b = KVStore::new(db2);
-        kv_b.put(&branch_id, "default", "key", Value::Int(50)).unwrap();
+        kv_b.put(&branch_id, "default", "key", Value::Int(50))
+            .unwrap();
 
         b2.wait(); // Let A proceed
     });
@@ -421,7 +438,10 @@ fn rapid_transaction_cycling() {
 
     // Verify state: only even keys should exist
     for i in 0..500 {
-        let exists = kv.get(&branch_id, "default", &format!("key_{}", i)).unwrap().is_some();
+        let exists = kv
+            .get(&branch_id, "default", &format!("key_{}", i))
+            .unwrap()
+            .is_some();
         if i % 2 == 0 {
             assert!(exists, "key_{} should exist (committed)", i);
         } else {
@@ -445,7 +465,8 @@ fn cross_primitive_atomic_failure() {
     let event = test_db.event();
 
     // Setup baseline
-    kv.put(&branch_id, "default", "balance", Value::Int(1000)).unwrap();
+    kv.put(&branch_id, "default", "balance", Value::Int(1000))
+        .unwrap();
 
     // Attempt a "transfer" that fails partway through
     let result: Result<(), _> = test_db.db.transaction(branch_id, |txn| {

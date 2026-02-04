@@ -18,7 +18,8 @@ fn transaction_commit_makes_data_visible() {
     let branch_id = test_db.branch_id;
 
     // Transaction commits
-    kv.put(&branch_id, "default", "key", Value::Int(42)).unwrap();
+    kv.put(&branch_id, "default", "key", Value::Int(42))
+        .unwrap();
 
     // Data visible after commit
     let result = kv.get(&branch_id, "default", "key").unwrap();
@@ -51,7 +52,8 @@ fn transaction_returns_value() {
     let branch_id = test_db.branch_id;
     let kv = test_db.kv();
 
-    kv.put(&branch_id, "default", "counter", Value::Int(10)).unwrap();
+    kv.put(&branch_id, "default", "counter", Value::Int(10))
+        .unwrap();
 
     // Transaction can return a value
     let result: i64 = test_db
@@ -82,7 +84,8 @@ fn transaction_error_aborts() {
     let kv = test_db.kv();
 
     // Put initial value
-    kv.put(&branch_id, "default", "abort_test", Value::Int(1)).unwrap();
+    kv.put(&branch_id, "default", "abort_test", Value::Int(1))
+        .unwrap();
 
     // Transaction that errors
     let result: Result<(), _> = test_db.db.transaction(branch_id, |txn| {
@@ -109,7 +112,8 @@ fn read_only_transaction_sees_committed_data() {
     let branch_id = test_db.branch_id;
 
     // Write data
-    kv.put(&branch_id, "default", "ro_key", Value::Int(42)).unwrap();
+    kv.put(&branch_id, "default", "ro_key", Value::Int(42))
+        .unwrap();
 
     // Read in transaction
     let result: Option<Value> = test_db
@@ -129,7 +133,8 @@ fn read_only_transaction_never_conflicts() {
     let kv = test_db.kv();
     let branch_id = test_db.branch_id;
 
-    kv.put(&branch_id, "default", "ro_key", Value::Int(1)).unwrap();
+    kv.put(&branch_id, "default", "ro_key", Value::Int(1))
+        .unwrap();
 
     // Multiple read-only transactions should all succeed
     for _ in 0..10 {
@@ -155,7 +160,8 @@ fn transaction_retries_on_conflict() {
     let branch_id = test_db.branch_id;
     let kv = test_db.kv();
 
-    kv.put(&branch_id, "default", "retry_key", Value::Int(0)).unwrap();
+    kv.put(&branch_id, "default", "retry_key", Value::Int(0))
+        .unwrap();
 
     let attempt_count = Arc::new(AtomicU64::new(0));
     let attempt_count_clone = attempt_count.clone();
@@ -256,7 +262,9 @@ fn transaction_multiple_puts() {
     // All visible
     let kv = test_db.kv();
     for i in 0..10 {
-        let val = kv.get(&branch_id, "default", &format!("multi_{}", i)).unwrap();
+        let val = kv
+            .get(&branch_id, "default", &format!("multi_{}", i))
+            .unwrap();
         assert_eq!(val.unwrap(), Value::Int(i));
     }
 }
@@ -268,7 +276,8 @@ fn transaction_put_and_delete() {
     let kv = test_db.kv();
 
     // Pre-existing key
-    kv.put(&branch_id, "default", "to_delete", Value::Int(1)).unwrap();
+    kv.put(&branch_id, "default", "to_delete", Value::Int(1))
+        .unwrap();
 
     test_db
         .db
@@ -280,7 +289,13 @@ fn transaction_put_and_delete() {
         .unwrap();
 
     // New key exists
-    assert_eq!(kv.get(&branch_id, "default", "new_key").unwrap(), Some(Value::Int(42)));
+    assert_eq!(
+        kv.get(&branch_id, "default", "new_key").unwrap(),
+        Some(Value::Int(42))
+    );
     // Old key gone
-    assert!(kv.get(&branch_id, "default", "to_delete").unwrap().is_none());
+    assert!(kv
+        .get(&branch_id, "default", "to_delete")
+        .unwrap()
+        .is_none());
 }

@@ -25,9 +25,7 @@
 use std::sync::Arc;
 
 use strata_core::types::{Key, Namespace, TypeTag};
-use strata_engine::{
-    Database, Transaction, TransactionContext, TransactionOps,
-};
+use strata_engine::{Database, Transaction, TransactionContext, TransactionOps};
 use strata_security::AccessMode;
 
 use crate::bridge::{

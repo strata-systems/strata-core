@@ -33,7 +33,12 @@ fn require_branch_exists(p: &Arc<Primitives>, branch: &BranchId) -> Result<()> {
 }
 
 /// Handle KvGetv command — get full version history for a key.
-pub fn kv_getv(p: &Arc<Primitives>, branch: BranchId, space: String, key: String) -> Result<Output> {
+pub fn kv_getv(
+    p: &Arc<Primitives>,
+    branch: BranchId,
+    space: String,
+    key: String,
+) -> Result<Output> {
     let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_key(&key))?;
     let result = convert_result(p.kv.getv(&branch_id, &space, &key))?;
@@ -52,7 +57,13 @@ pub fn kv_getv(p: &Arc<Primitives>, branch: BranchId, space: String, key: String
 // =============================================================================
 
 /// Handle KvPut command.
-pub fn kv_put(p: &Arc<Primitives>, branch: BranchId, space: String, key: String, value: Value) -> Result<Output> {
+pub fn kv_put(
+    p: &Arc<Primitives>,
+    branch: BranchId,
+    space: String,
+    key: String,
+    value: Value,
+) -> Result<Output> {
     require_branch_exists(p, &branch)?;
     let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_key(&key))?;
@@ -71,7 +82,12 @@ pub fn kv_get(p: &Arc<Primitives>, branch: BranchId, space: String, key: String)
 }
 
 /// Handle KvDelete command.
-pub fn kv_delete(p: &Arc<Primitives>, branch: BranchId, space: String, key: String) -> Result<Output> {
+pub fn kv_delete(
+    p: &Arc<Primitives>,
+    branch: BranchId,
+    space: String,
+    key: String,
+) -> Result<Output> {
     require_branch_exists(p, &branch)?;
     let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_key(&key))?;

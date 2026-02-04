@@ -50,7 +50,12 @@ fn kv_and_statecell_atomic() {
 
     // Init state first
     state
-        .init(&branch_id, "default", "status", Value::String("pending".into()))
+        .init(
+            &branch_id,
+            "default",
+            "status",
+            Value::String("pending".into()),
+        )
         .unwrap();
 
     test_db
@@ -68,7 +73,10 @@ fn kv_and_statecell_atomic() {
         Some(Value::Int(1234567890))
     );
 
-    let current = state.read(&branch_id, "default", "status").unwrap().unwrap();
+    let current = state
+        .read(&branch_id, "default", "status")
+        .unwrap()
+        .unwrap();
     assert_eq!(current, Value::String("completed".into()));
 }
 
@@ -78,7 +86,9 @@ fn three_primitives_atomic() {
     let branch_id = test_db.branch_id;
     let state = test_db.state();
 
-    state.init(&branch_id, "default", "counter", Value::Int(0)).unwrap();
+    state
+        .init(&branch_id, "default", "counter", Value::Int(0))
+        .unwrap();
 
     test_db
         .db
@@ -105,7 +115,10 @@ fn three_primitives_atomic() {
     );
     assert_eq!(event.len(&branch_id, "default").unwrap(), 1);
 
-    let counter = state.read(&branch_id, "default", "counter").unwrap().unwrap();
+    let counter = state
+        .read(&branch_id, "default", "counter")
+        .unwrap()
+        .unwrap();
     assert_eq!(counter, Value::Int(1));
 }
 
@@ -132,7 +145,10 @@ fn cross_primitive_failure_rolls_back_all() {
     let kv = test_db.kv();
     let event = test_db.event();
 
-    assert!(kv.get(&branch_id, "default", "rollback_key").unwrap().is_none());
+    assert!(kv
+        .get(&branch_id, "default", "rollback_key")
+        .unwrap()
+        .is_none());
     assert_eq!(event.len(&branch_id, "default").unwrap(), 0);
 }
 
@@ -143,7 +159,8 @@ fn partial_writes_not_visible() {
     let kv = test_db.kv();
 
     // Pre-existing data
-    kv.put(&branch_id, "default", "existing", Value::Int(100)).unwrap();
+    kv.put(&branch_id, "default", "existing", Value::Int(100))
+        .unwrap();
 
     let result: Result<(), _> = test_db.db.transaction(branch_id, |txn| {
         // Multiple writes
@@ -178,7 +195,8 @@ fn read_modify_write_single_primitive() {
     let branch_id = test_db.branch_id;
     let kv = test_db.kv();
 
-    kv.put(&branch_id, "default", "counter", Value::Int(10)).unwrap();
+    kv.put(&branch_id, "default", "counter", Value::Int(10))
+        .unwrap();
 
     test_db
         .db
@@ -203,7 +221,8 @@ fn read_from_one_write_to_another() {
     let state = test_db.state();
 
     // Source data
-    kv.put(&branch_id, "default", "source", Value::Int(42)).unwrap();
+    kv.put(&branch_id, "default", "source", Value::Int(42))
+        .unwrap();
 
     // Copy to state cell using transaction
     test_db
@@ -215,7 +234,10 @@ fn read_from_one_write_to_another() {
         })
         .unwrap();
 
-    let copied = state.read(&branch_id, "default", "copied").unwrap().unwrap();
+    let copied = state
+        .read(&branch_id, "default", "copied")
+        .unwrap()
+        .unwrap();
     assert_eq!(copied, Value::Int(42));
 }
 
@@ -265,7 +287,10 @@ fn saga_pattern_all_steps_complete() {
     );
     assert_eq!(event.len(&branch_id, "default").unwrap(), 1);
     assert_eq!(
-        state.read(&branch_id, "default", "order:1:status").unwrap().unwrap(),
+        state
+            .read(&branch_id, "default", "order:1:status")
+            .unwrap()
+            .unwrap(),
         Value::String("processing".into())
     );
 }

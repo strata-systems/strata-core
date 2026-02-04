@@ -120,7 +120,12 @@ fn read_returns_appended_event() {
     let event = test_db.event();
 
     event
-        .append(&test_db.branch_id, "default", "my_type", payload_str("hello"))
+        .append(
+            &test_db.branch_id,
+            "default",
+            "my_type",
+            payload_str("hello"),
+        )
         .unwrap();
 
     let read = event.read(&test_db.branch_id, "default", 0).unwrap();
@@ -157,7 +162,10 @@ fn head_returns_last_event() {
 
     // head rewritten using len() + read(len-1)
     let len = event.len(&test_db.branch_id, "default").unwrap();
-    let head = event.read(&test_db.branch_id, "default", len - 1).unwrap().unwrap();
+    let head = event
+        .read(&test_db.branch_id, "default", len - 1)
+        .unwrap()
+        .unwrap();
     assert_eq!(head.value.payload, payload_int(3));
 }
 
@@ -236,7 +244,10 @@ fn events_have_hash_field() {
         .append(&test_db.branch_id, "default", "type", payload_int(1))
         .unwrap();
 
-    let e = event.read(&test_db.branch_id, "default", 0).unwrap().unwrap();
+    let e = event
+        .read(&test_db.branch_id, "default", 0)
+        .unwrap()
+        .unwrap();
     // Hash should be non-empty
     assert!(!e.value.hash.is_empty());
 }
@@ -253,8 +264,14 @@ fn events_have_prev_hash_field() {
         .append(&test_db.branch_id, "default", "type", payload_int(2))
         .unwrap();
 
-    let e0 = event.read(&test_db.branch_id, "default", 0).unwrap().unwrap();
-    let e1 = event.read(&test_db.branch_id, "default", 1).unwrap().unwrap();
+    let e0 = event
+        .read(&test_db.branch_id, "default", 0)
+        .unwrap()
+        .unwrap();
+    let e1 = event
+        .read(&test_db.branch_id, "default", 1)
+        .unwrap()
+        .unwrap();
 
     // Second event's prev_hash should equal first event's hash
     assert_eq!(e1.value.prev_hash, e0.value.hash);
@@ -280,8 +297,12 @@ fn multiple_event_types() {
         .unwrap();
 
     // Verify both types exist by reading by type
-    let type_a = event.read_by_type(&test_db.branch_id, "default", "type_a").unwrap();
-    let type_b = event.read_by_type(&test_db.branch_id, "default", "type_b").unwrap();
+    let type_a = event
+        .read_by_type(&test_db.branch_id, "default", "type_a")
+        .unwrap();
+    let type_b = event
+        .read_by_type(&test_db.branch_id, "default", "type_b")
+        .unwrap();
     assert_eq!(type_a.len(), 2);
     assert_eq!(type_b.len(), 1);
 }
@@ -343,7 +364,9 @@ fn read_by_type() {
         .append(&test_db.branch_id, "default", "orders", payload_int(200))
         .unwrap();
 
-    let orders = event.read_by_type(&test_db.branch_id, "default", "orders").unwrap();
+    let orders = event
+        .read_by_type(&test_db.branch_id, "default", "orders")
+        .unwrap();
     assert_eq!(orders.len(), 2);
     assert_eq!(orders[0].value.payload, payload_int(100));
     assert_eq!(orders[1].value.payload, payload_int(200));
@@ -383,10 +406,18 @@ fn large_payload() {
 
     let large_string = "x".repeat(10000);
     event
-        .append(&test_db.branch_id, "default", "type", payload_str(&large_string))
+        .append(
+            &test_db.branch_id,
+            "default",
+            "type",
+            payload_str(&large_string),
+        )
         .unwrap();
 
-    let read = event.read(&test_db.branch_id, "default", 0).unwrap().unwrap();
+    let read = event
+        .read(&test_db.branch_id, "default", 0)
+        .unwrap()
+        .unwrap();
     assert_eq!(read.value.payload, payload_str(&large_string));
 }
 
@@ -399,7 +430,12 @@ fn payload_must_be_object() {
     let result = event.append(&test_db.branch_id, "default", "type", Value::Int(42));
     assert!(result.is_err());
 
-    let result = event.append(&test_db.branch_id, "default", "type", Value::String("hello".into()));
+    let result = event.append(
+        &test_db.branch_id,
+        "default",
+        "type",
+        Value::String("hello".into()),
+    );
     assert!(result.is_err());
 
     let result = event.append(&test_db.branch_id, "default", "type", Value::Array(vec![]));

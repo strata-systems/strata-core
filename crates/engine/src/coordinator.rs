@@ -18,6 +18,7 @@ use strata_core::StrataError;
 use strata_core::StrataResult;
 use strata_durability::wal::WalWriter;
 use strata_storage::ShardedStore;
+use tracing::{debug, info, warn};
 
 /// Transaction coordinator for the database
 ///
@@ -106,6 +107,8 @@ impl TransactionCoordinator {
         self.active_count.fetch_add(1, Ordering::Relaxed);
         self.total_started.fetch_add(1, Ordering::Relaxed);
 
+        debug!(target: "strata::txn", branch_id = %branch_id, "Transaction started");
+
         TransactionContext::with_snapshot(txn_id, branch_id, Box::new(snapshot))
     }
 
@@ -148,10 +151,12 @@ impl TransactionCoordinator {
         match self.manager.commit(txn, store, wal) {
             Ok(version) => {
                 self.record_commit();
+                info!(target: "strata::txn", "Transaction committed");
                 Ok(version)
             }
             Err(e) => {
                 self.record_abort();
+                warn!(target: "strata::txn", error = %e, "Transaction aborted");
                 Err(StrataError::from(e))
             }
         }

@@ -22,6 +22,7 @@ use std::sync::Arc;
 use strata_core::types::{BranchId, Key, Namespace, TypeTag};
 use strata_core::value::Value;
 use strata_core::StrataResult;
+use tracing::info;
 
 /// Space lifecycle management primitive.
 ///
@@ -48,6 +49,7 @@ impl SpaceIndex {
             let key = Key::new_space(branch_id, space);
             if txn.get(&key)?.is_none() {
                 txn.put(key, Value::String("{}".to_string()))?;
+                info!(target: "strata::space", space, branch_id = %branch_id, "Space registered");
             }
             Ok(())
         })
@@ -96,6 +98,7 @@ impl SpaceIndex {
         self.db.transaction(branch_id, |txn| {
             let key = Key::new_space(branch_id, space);
             txn.delete(key)?;
+            info!(target: "strata::space", space, branch_id = %branch_id, "Space deleted");
             Ok(())
         })
     }

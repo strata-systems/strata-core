@@ -130,7 +130,7 @@ impl SnapshotWriter {
         sections: &[PrimitiveSection],
         path: &Path,
     ) -> Result<SnapshotInfo, SnapshotError> {
-        debug!(path = %path.display(), "Writing snapshot");
+        debug!(target: "strata::snapshot", path = %path.display(), "Writing snapshot");
 
         // Create parent directory if needed
         if let Some(parent) = path.parent() {
@@ -178,6 +178,7 @@ impl SnapshotWriter {
         let size_bytes = std::fs::metadata(path)?.len();
 
         info!(
+            target: "strata::snapshot",
             path = %path.display(),
             wal_offset = header.wal_offset,
             tx_count = header.transaction_count,
@@ -211,6 +212,7 @@ impl SnapshotWriter {
         let temp_path = path.with_extension("snap.tmp");
 
         debug!(
+            target: "strata::snapshot",
             final_path = %path.display(),
             temp_path = %temp_path.display(),
             "Starting atomic snapshot write"
@@ -218,7 +220,7 @@ impl SnapshotWriter {
 
         // Clean up stale temp file if exists (from previous failed attempt)
         if temp_path.exists() {
-            warn!(path = %temp_path.display(), "Removing stale temp file");
+            warn!(target: "strata::snapshot", path = %temp_path.display(), "Removing stale temp file");
             let _ = std::fs::remove_file(&temp_path);
         }
 
@@ -230,7 +232,7 @@ impl SnapshotWriter {
                 // Atomic rename
                 match std::fs::rename(&temp_path, path) {
                     Ok(()) => {
-                        debug!(path = %path.display(), "Atomic rename completed");
+                        debug!(target: "strata::snapshot", path = %path.display(), "Atomic rename completed");
                         Ok(SnapshotInfo {
                             path: path.to_path_buf(),
                             ..info
@@ -238,6 +240,7 @@ impl SnapshotWriter {
                     }
                     Err(e) => {
                         warn!(
+                            target: "strata::snapshot",
                             temp_path = %temp_path.display(),
                             error = %e,
                             "Rename failed, cleaning up temp file"
@@ -249,6 +252,7 @@ impl SnapshotWriter {
             }
             Err(e) => {
                 warn!(
+                    target: "strata::snapshot",
                     temp_path = %temp_path.display(),
                     error = %e,
                     "Write failed, cleaning up temp file"
@@ -381,6 +385,7 @@ impl SnapshotReader {
             });
 
             debug!(
+                target: "strata::snapshot",
                 section = i,
                 primitive_type, length, "Parsed snapshot section"
             );
@@ -488,6 +493,7 @@ where
                 // Unknown primitive - log warning but continue
                 // This allows forward compatibility with newer snapshots
                 warn!(
+                    target: "strata::snapshot",
                     primitive_type = section.primitive_type,
                     "Unknown primitive type in snapshot, skipping"
                 );

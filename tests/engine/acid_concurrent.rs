@@ -31,8 +31,10 @@ fn concurrent_transfers_conserve_total() {
     let db = test_db.db.clone();
 
     let kv = KVStore::new(db.clone());
-    kv.put(&branch_id, "default", "account_a", Value::Int(1000)).unwrap();
-    kv.put(&branch_id, "default", "account_b", Value::Int(1000)).unwrap();
+    kv.put(&branch_id, "default", "account_a", Value::Int(1000))
+        .unwrap();
+    kv.put(&branch_id, "default", "account_b", Value::Int(1000))
+        .unwrap();
 
     let num_threads = 4;
     let transfers_per_thread = 25;
@@ -149,7 +151,8 @@ fn concurrent_cross_primitive_transactions() {
     let db = test_db.db.clone();
 
     let kv = KVStore::new(db.clone());
-    kv.put(&branch_id, "default", "counter", Value::Int(0)).unwrap();
+    kv.put(&branch_id, "default", "counter", Value::Int(0))
+        .unwrap();
 
     let num_threads = 4;
     let ops_per_thread = 25;
@@ -245,7 +248,8 @@ fn concurrent_cross_primitive_conflict_atomicity() {
     let db = test_db.db.clone();
 
     let kv = KVStore::new(db.clone());
-    kv.put(&branch_id, "default", "shared", Value::Int(0)).unwrap();
+    kv.put(&branch_id, "default", "shared", Value::Int(0))
+        .unwrap();
 
     let barrier = Arc::new(Barrier::new(2));
 
@@ -333,8 +337,13 @@ fn durability_under_concurrent_load() {
                 let kv = KVStore::new(db);
                 for i in 0..writes_per_thread {
                     let key = format!("t{}_{}", t, i);
-                    kv.put(&branch_id, "default", &key, Value::Int((t * 1000 + i) as i64))
-                        .unwrap();
+                    kv.put(
+                        &branch_id,
+                        "default",
+                        &key,
+                        Value::Int((t * 1000 + i) as i64),
+                    )
+                    .unwrap();
                 }
             })
         })
@@ -381,7 +390,8 @@ fn durability_concurrent_transactions_survive_restart() {
 
     {
         let kv = KVStore::new(test_db.db.clone());
-        kv.put(&branch_id, "default", "counter", Value::Int(0)).unwrap();
+        kv.put(&branch_id, "default", "counter", Value::Int(0))
+            .unwrap();
     }
 
     let num_threads = 4;

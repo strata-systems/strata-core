@@ -41,7 +41,12 @@ fn create_collection_duplicate_fails() {
 
     let config = config_small();
     vector
-        .create_collection(test_db.branch_id, "default", "test_collection", config.clone())
+        .create_collection(
+            test_db.branch_id,
+            "default",
+            "test_collection",
+            config.clone(),
+        )
         .unwrap();
 
     let result = vector.create_collection(test_db.branch_id, "default", "test_collection", config);
@@ -61,7 +66,9 @@ fn list_collections() {
         .create_collection(test_db.branch_id, "default", "coll_b", config.clone())
         .unwrap();
 
-    let collections = vector.list_collections(test_db.branch_id, "default").unwrap();
+    let collections = vector
+        .list_collections(test_db.branch_id, "default")
+        .unwrap();
     assert_eq!(collections.len(), 2);
 
     let names: Vec<_> = collections.iter().map(|c| c.name.as_str()).collect();
@@ -80,7 +87,9 @@ fn get_collection_info() {
         .unwrap();
 
     // Verify via list_collections since get_collection is pub(crate)
-    let collections = vector.list_collections(test_db.branch_id, "default").unwrap();
+    let collections = vector
+        .list_collections(test_db.branch_id, "default")
+        .unwrap();
     let info = collections.iter().find(|c| c.name == "test_coll").unwrap();
     assert_eq!(info.name, "test_coll");
     assert_eq!(info.config.dimension, 128);
@@ -121,7 +130,9 @@ fn delete_collection_removes_vectors() {
         .unwrap();
 
     // Delete collection
-    vector.delete_collection(test_db.branch_id, "default", "coll").unwrap();
+    vector
+        .delete_collection(test_db.branch_id, "default", "coll")
+        .unwrap();
 
     // Recreate collection
     let config = config_small();
@@ -130,7 +141,9 @@ fn delete_collection_removes_vectors() {
         .unwrap();
 
     // Vector should not exist
-    let result = vector.get(test_db.branch_id, "default", "coll", "key1").unwrap();
+    let result = vector
+        .get(test_db.branch_id, "default", "coll", "key1")
+        .unwrap();
     assert!(result.is_none());
 }
 
@@ -153,7 +166,9 @@ fn insert_and_get() {
         .insert(test_db.branch_id, "default", "coll", "vec1", &v, None)
         .unwrap();
 
-    let result = vector.get(test_db.branch_id, "default", "coll", "vec1").unwrap();
+    let result = vector
+        .get(test_db.branch_id, "default", "coll", "vec1")
+        .unwrap();
     assert!(result.is_some());
 
     let entry = result.unwrap();
@@ -174,7 +189,8 @@ fn insert_with_metadata() {
     let metadata = serde_json::json!({"category": "test", "score": 42});
     vector
         .insert(
-            test_db.branch_id, "default",
+            test_db.branch_id,
+            "default",
             "coll",
             "vec1",
             &v,
@@ -200,7 +216,14 @@ fn insert_dimension_mismatch_fails() {
         .unwrap();
 
     let wrong_dim = [1.0f32, 2.0]; // Only 2 dimensions
-    let result = vector.insert(test_db.branch_id, "default", "coll", "vec1", &wrong_dim, None);
+    let result = vector.insert(
+        test_db.branch_id,
+        "default",
+        "coll",
+        "vec1",
+        &wrong_dim,
+        None,
+    );
     assert!(result.is_err());
 }
 
@@ -210,7 +233,14 @@ fn insert_to_nonexistent_collection_fails() {
     let vector = test_db.vector();
 
     let v = [1.0f32, 2.0, 3.0];
-    let result = vector.insert(test_db.branch_id, "default", "nonexistent", "vec1", &v, None);
+    let result = vector.insert(
+        test_db.branch_id,
+        "default",
+        "nonexistent",
+        "vec1",
+        &v,
+        None,
+    );
     assert!(result.is_err());
 }
 
@@ -229,10 +259,14 @@ fn delete_vector() {
         .insert(test_db.branch_id, "default", "coll", "vec1", &v, None)
         .unwrap();
 
-    let deleted = vector.delete(test_db.branch_id, "default", "coll", "vec1").unwrap();
+    let deleted = vector
+        .delete(test_db.branch_id, "default", "coll", "vec1")
+        .unwrap();
     assert!(deleted);
 
-    let result = vector.get(test_db.branch_id, "default", "coll", "vec1").unwrap();
+    let result = vector
+        .get(test_db.branch_id, "default", "coll", "vec1")
+        .unwrap();
     assert!(result.is_none());
 }
 
@@ -276,10 +310,24 @@ fn count_vectors() {
     assert_eq!(get_count(), 0);
 
     vector
-        .insert(test_db.branch_id, "default", "coll", "v1", &[1.0f32, 0.0, 0.0], None)
+        .insert(
+            test_db.branch_id,
+            "default",
+            "coll",
+            "v1",
+            &[1.0f32, 0.0, 0.0],
+            None,
+        )
         .unwrap();
     vector
-        .insert(test_db.branch_id, "default", "coll", "v2", &[0.0f32, 1.0, 0.0], None)
+        .insert(
+            test_db.branch_id,
+            "default",
+            "coll",
+            "v2",
+            &[0.0f32, 1.0, 0.0],
+            None,
+        )
         .unwrap();
 
     assert_eq!(get_count(), 2);
@@ -302,7 +350,8 @@ fn search_returns_similar_vectors() {
     // Insert vectors
     vector
         .insert(
-            test_db.branch_id, "default",
+            test_db.branch_id,
+            "default",
             "coll",
             "x_axis",
             &[1.0f32, 0.0, 0.0],
@@ -311,7 +360,8 @@ fn search_returns_similar_vectors() {
         .unwrap();
     vector
         .insert(
-            test_db.branch_id, "default",
+            test_db.branch_id,
+            "default",
             "coll",
             "y_axis",
             &[0.0f32, 1.0, 0.0],
@@ -320,7 +370,8 @@ fn search_returns_similar_vectors() {
         .unwrap();
     vector
         .insert(
-            test_db.branch_id, "default",
+            test_db.branch_id,
+            "default",
             "coll",
             "z_axis",
             &[0.0f32, 0.0, 1.0],
@@ -353,7 +404,14 @@ fn search_respects_k_limit() {
     for i in 0..10 {
         let v = [i as f32, 0.0f32, 0.0];
         vector
-            .insert(test_db.branch_id, "default", "coll", &format!("v{}", i), &v, None)
+            .insert(
+                test_db.branch_id,
+                "default",
+                "coll",
+                &format!("v{}", i),
+                &v,
+                None,
+            )
             .unwrap();
     }
 
@@ -400,7 +458,8 @@ fn euclidean_distance() {
 
     vector
         .insert(
-            test_db.branch_id, "default",
+            test_db.branch_id,
+            "default",
             "coll",
             "origin",
             &[0.0f32, 0.0, 0.0],
@@ -408,7 +467,14 @@ fn euclidean_distance() {
         )
         .unwrap();
     vector
-        .insert(test_db.branch_id, "default", "coll", "unit", &[1.0f32, 0.0, 0.0], None)
+        .insert(
+            test_db.branch_id,
+            "default",
+            "coll",
+            "unit",
+            &[1.0f32, 0.0, 0.0],
+            None,
+        )
         .unwrap();
 
     let query = [2.0f32, 0.0, 0.0];
@@ -433,11 +499,19 @@ fn cosine_distance() {
 
     // Same direction but different magnitude should be similar in cosine
     vector
-        .insert(test_db.branch_id, "default", "coll", "unit", &[1.0f32, 0.0, 0.0], None)
+        .insert(
+            test_db.branch_id,
+            "default",
+            "coll",
+            "unit",
+            &[1.0f32, 0.0, 0.0],
+            None,
+        )
         .unwrap();
     vector
         .insert(
-            test_db.branch_id, "default",
+            test_db.branch_id,
+            "default",
             "coll",
             "scaled",
             &[10.0f32, 0.0, 0.0],
@@ -446,7 +520,8 @@ fn cosine_distance() {
         .unwrap();
     vector
         .insert(
-            test_db.branch_id, "default",
+            test_db.branch_id,
+            "default",
             "coll",
             "perpendicular",
             &[0.0f32, 1.0, 0.0],
@@ -497,6 +572,8 @@ fn special_characters_in_key() {
         .insert(test_db.branch_id, "default", "coll", key, &v, None)
         .unwrap();
 
-    let result = vector.get(test_db.branch_id, "default", "coll", key).unwrap();
+    let result = vector
+        .get(test_db.branch_id, "default", "coll", key)
+        .unwrap();
     assert_eq!(result.unwrap().value.embedding, vec![1.0f32, 2.0, 3.0]);
 }

@@ -38,9 +38,18 @@ fn atomicity_success_all_visible() {
         .unwrap();
 
     let kv = test_db.kv();
-    assert_eq!(kv.get(&branch_id, "default", "key1").unwrap(), Some(Value::Int(1)));
-    assert_eq!(kv.get(&branch_id, "default", "key2").unwrap(), Some(Value::Int(2)));
-    assert_eq!(kv.get(&branch_id, "default", "key3").unwrap(), Some(Value::Int(3)));
+    assert_eq!(
+        kv.get(&branch_id, "default", "key1").unwrap(),
+        Some(Value::Int(1))
+    );
+    assert_eq!(
+        kv.get(&branch_id, "default", "key2").unwrap(),
+        Some(Value::Int(2))
+    );
+    assert_eq!(
+        kv.get(&branch_id, "default", "key3").unwrap(),
+        Some(Value::Int(3))
+    );
 }
 
 #[test]
@@ -50,7 +59,8 @@ fn atomicity_failure_none_visible() {
     let kv = test_db.kv();
 
     // Pre-existing key
-    kv.put(&branch_id, "default", "existing", Value::Int(0)).unwrap();
+    kv.put(&branch_id, "default", "existing", Value::Int(0))
+        .unwrap();
 
     // Transaction that fails partway through
     let result: Result<(), _> = test_db.db.transaction(branch_id, |txn| {
@@ -113,11 +123,16 @@ fn consistency_invariants_maintained() {
     let branch_id = test_db.branch_id;
 
     // Initialize counter to 0
-    state.init(&branch_id, "default", "counter", Value::Int(0)).unwrap();
+    state
+        .init(&branch_id, "default", "counter", Value::Int(0))
+        .unwrap();
 
     // Increment counter using read + cas (ensures atomic read-modify-write)
     for _ in 0..10 {
-        let current = state.readv(&branch_id, "default", "counter").unwrap().unwrap();
+        let current = state
+            .readv(&branch_id, "default", "counter")
+            .unwrap()
+            .unwrap();
         let version = current.version();
         if let Value::Int(n) = current.value() {
             state
@@ -129,7 +144,10 @@ fn consistency_invariants_maintained() {
     }
 
     // Counter should be exactly 10
-    let result = state.read(&branch_id, "default", "counter").unwrap().unwrap();
+    let result = state
+        .read(&branch_id, "default", "counter")
+        .unwrap()
+        .unwrap();
     assert_eq!(result, Value::Int(10));
 }
 
@@ -139,7 +157,9 @@ fn consistency_cas_prevents_invalid_state() {
     let state = test_db.state();
     let branch_id = test_db.branch_id;
 
-    state.init(&branch_id, "default", "balance", Value::Int(100)).unwrap();
+    state
+        .init(&branch_id, "default", "balance", Value::Int(100))
+        .unwrap();
     let version = state
         .readv(&branch_id, "default", "balance")
         .unwrap()
@@ -156,7 +176,10 @@ fn consistency_cas_prevents_invalid_state() {
     assert!(result.is_err());
 
     // Balance should be 90, not 80
-    let balance = state.read(&branch_id, "default", "balance").unwrap().unwrap();
+    let balance = state
+        .read(&branch_id, "default", "balance")
+        .unwrap()
+        .unwrap();
     assert_eq!(balance, Value::Int(90));
 }
 
@@ -170,7 +193,8 @@ fn isolation_read_committed() {
     let branch_id = test_db.branch_id;
     let kv = test_db.kv();
 
-    kv.put(&branch_id, "default", "isolated", Value::Int(0)).unwrap();
+    kv.put(&branch_id, "default", "isolated", Value::Int(0))
+        .unwrap();
 
     // Each transaction should see committed state
     let db = test_db.db.clone();
@@ -206,8 +230,13 @@ fn isolation_concurrent_counters() {
 
     // Each thread has its own counter
     for i in 0..4 {
-        kv.put(&branch_id, "default", &format!("counter_{}", i), Value::Int(0))
-            .unwrap();
+        kv.put(
+            &branch_id,
+            "default",
+            &format!("counter_{}", i),
+            Value::Int(0),
+        )
+        .unwrap();
     }
 
     let db = test_db.db.clone();
@@ -307,8 +336,13 @@ fn durability_multiple_commits_persist() {
     // Multiple commits
     for i in 0..10 {
         let kv = test_db.kv();
-        kv.put(&branch_id, "default", &format!("durable_{}", i), Value::Int(i))
-            .unwrap();
+        kv.put(
+            &branch_id,
+            "default",
+            &format!("durable_{}", i),
+            Value::Int(i),
+        )
+        .unwrap();
     }
 
     // Restart
@@ -318,7 +352,9 @@ fn durability_multiple_commits_persist() {
     // All data should persist
     let kv = test_db.kv();
     for i in 0..10 {
-        let result = kv.get(&branch_id, "default", &format!("durable_{}", i)).unwrap();
+        let result = kv
+            .get(&branch_id, "default", &format!("durable_{}", i))
+            .unwrap();
         assert!(result.is_some(), "durable_{} should exist", i);
         assert_eq!(result.unwrap(), Value::Int(i));
     }
@@ -343,17 +379,33 @@ fn acid_transfer_between_accounts() {
         .unwrap();
 
     // Transfer 30 from A to B using readv + cas
-    let a_val = state.readv(&branch_id, "default", "account_a").unwrap().unwrap();
-    let b_val = state.readv(&branch_id, "default", "account_b").unwrap().unwrap();
+    let a_val = state
+        .readv(&branch_id, "default", "account_a")
+        .unwrap()
+        .unwrap();
+    let b_val = state
+        .readv(&branch_id, "default", "account_b")
+        .unwrap()
+        .unwrap();
 
     if let (Value::Int(a), Value::Int(b)) = (a_val.value(), b_val.value()) {
         state
-            .cas(&branch_id, "default", "account_a", a_val.version(), Value::Int(a - 30))
+            .cas(
+                &branch_id,
+                "default",
+                "account_a",
+                a_val.version(),
+                Value::Int(a - 30),
+            )
             .unwrap();
-        let b_val2 = state.readv(&branch_id, "default", "account_b").unwrap().unwrap();
+        let b_val2 = state
+            .readv(&branch_id, "default", "account_b")
+            .unwrap()
+            .unwrap();
         state
             .cas(
-                &branch_id, "default",
+                &branch_id,
+                "default",
                 "account_b",
                 b_val2.version(),
                 Value::Int(b + 30),
@@ -362,8 +414,14 @@ fn acid_transfer_between_accounts() {
     }
 
     // Verify balances
-    let a = state.read(&branch_id, "default", "account_a").unwrap().unwrap();
-    let b = state.read(&branch_id, "default", "account_b").unwrap().unwrap();
+    let a = state
+        .read(&branch_id, "default", "account_a")
+        .unwrap()
+        .unwrap();
+    let b = state
+        .read(&branch_id, "default", "account_b")
+        .unwrap()
+        .unwrap();
 
     assert_eq!(a, Value::Int(70));
     assert_eq!(b, Value::Int(130));

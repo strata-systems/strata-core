@@ -120,6 +120,7 @@ impl WalReplayer {
 
         if stats.records_skipped_corrupted > 0 {
             tracing::warn!(
+                target: "strata::recovery",
                 skipped = stats.records_skipped_corrupted,
                 "Skipped corrupted WAL records during recovery"
             );

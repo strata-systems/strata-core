@@ -4,9 +4,11 @@
 //! appropriate primitive operations and converts results to outputs.
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use strata_engine::Database;
 use strata_security::AccessMode;
+use tracing::{debug, warn};
 
 use crate::bridge::{to_core_branch_id, Primitives};
 use crate::convert::convert_result;
@@ -91,6 +93,7 @@ impl Executor {
     /// Returns the command result or an error.
     pub fn execute(&self, mut cmd: Command) -> Result<Output> {
         if self.access_mode == AccessMode::ReadOnly && cmd.is_write() {
+            warn!(target: "strata::command", command = %cmd.name(), "Write rejected in read-only mode");
             return Err(Error::AccessDenied {
                 command: cmd.name().to_string(),
             });
@@ -98,7 +101,10 @@ impl Executor {
 
         cmd.resolve_defaults();
 
-        match cmd {
+        let cmd_name = cmd.name();
+        let start = Instant::now();
+
+        let result = match cmd {
             // Database commands
             Command::Ping => Ok(Output::Pong {
                 version: env!("CARGO_PKG_VERSION").to_string(),
@@ -127,7 +133,12 @@ impl Executor {
             }
 
             // KV commands (MVP: 4 commands)
-            Command::KvPut { branch, space, key, value } => {
+            Command::KvPut {
+                branch,
+                space,
+                key,
+                value,
+            } => {
                 let branch = branch.ok_or(Error::InvalidInput {
                     reason: "Branch must be specified or resolved to default".into(),
                 })?;
@@ -186,7 +197,12 @@ impl Executor {
                 self.ensure_space_registered(&branch, &space)?;
                 crate::handlers::json::json_set(&self.primitives, branch, space, key, path, value)
             }
-            Command::JsonGet { branch, space, key, path } => {
+            Command::JsonGet {
+                branch,
+                space,
+                key,
+                path,
+            } => {
                 let branch = branch.ok_or(Error::InvalidInput {
                     reason: "Branch must be specified or resolved to default".into(),
                 })?;
@@ -200,7 +216,12 @@ impl Executor {
                 let space = space.unwrap_or_else(|| "default".to_string());
                 crate::handlers::json::json_getv(&self.primitives, branch, space, key)
             }
-            Command::JsonDelete { branch, space, key, path } => {
+            Command::JsonDelete {
+                branch,
+                space,
+                key,
+                path,
+            } => {
                 let branch = branch.ok_or(Error::InvalidInput {
                     reason: "Branch must be specified or resolved to default".into(),
                 })?;
@@ -219,7 +240,14 @@ impl Executor {
                     reason: "Branch must be specified or resolved to default".into(),
                 })?;
                 let space = space.unwrap_or_else(|| "default".to_string());
-                crate::handlers::json::json_list(&self.primitives, branch, space, prefix, cursor, limit)
+                crate::handlers::json::json_list(
+                    &self.primitives,
+                    branch,
+                    space,
+                    prefix,
+                    cursor,
+                    limit,
+                )
             }
 
             // Event commands (4 MVP)
@@ -234,9 +262,19 @@ impl Executor {
                 })?;
                 let space = space.unwrap_or_else(|| "default".to_string());
                 self.ensure_space_registered(&branch, &space)?;
-                crate::handlers::event::event_append(&self.primitives, branch, space, event_type, payload)
+                crate::handlers::event::event_append(
+                    &self.primitives,
+                    branch,
+                    space,
+                    event_type,
+                    payload,
+                )
             }
-            Command::EventRead { branch, space, sequence } => {
+            Command::EventRead {
+                branch,
+                space,
+                sequence,
+            } => {
                 let branch = branch.ok_or(Error::InvalidInput {
                     reason: "Branch must be specified or resolved to default".into(),
                 })?;
@@ -285,14 +323,22 @@ impl Executor {
                 self.ensure_space_registered(&branch, &space)?;
                 crate::handlers::state::state_set(&self.primitives, branch, space, cell, value)
             }
-            Command::StateRead { branch, space, cell } => {
+            Command::StateRead {
+                branch,
+                space,
+                cell,
+            } => {
                 let branch = branch.ok_or(Error::InvalidInput {
                     reason: "Branch must be specified or resolved to default".into(),
                 })?;
                 let space = space.unwrap_or_else(|| "default".to_string());
                 crate::handlers::state::state_read(&self.primitives, branch, space, cell)
             }
-            Command::StateReadv { branch, space, cell } => {
+            Command::StateReadv {
+                branch,
+                space,
+                cell,
+            } => {
                 let branch = branch.ok_or(Error::InvalidInput {
                     reason: "Branch must be specified or resolved to default".into(),
                 })?;
@@ -333,7 +379,11 @@ impl Executor {
                 self.ensure_space_registered(&branch, &space)?;
                 crate::handlers::state::state_init(&self.primitives, branch, space, cell, value)
             }
-            Command::StateDelete { branch, space, cell } => {
+            Command::StateDelete {
+                branch,
+                space,
+                cell,
+            } => {
                 let branch = branch.ok_or(Error::InvalidInput {
                     reason: "Branch must be specified or resolved to default".into(),
                 })?;
@@ -341,7 +391,11 @@ impl Executor {
                 self.ensure_space_registered(&branch, &space)?;
                 crate::handlers::state::state_delete(&self.primitives, branch, space, cell)
             }
-            Command::StateList { branch, space, prefix } => {
+            Command::StateList {
+                branch,
+                space,
+                prefix,
+            } => {
                 let branch = branch.ok_or(Error::InvalidInput {
                     reason: "Branch must be specified or resolved to default".into(),
                 })?;
@@ -383,7 +437,13 @@ impl Executor {
                     reason: "Branch must be specified or resolved to default".into(),
                 })?;
                 let space = space.unwrap_or_else(|| "default".to_string());
-                crate::handlers::vector::vector_get(&self.primitives, branch, space, collection, key)
+                crate::handlers::vector::vector_get(
+                    &self.primitives,
+                    branch,
+                    space,
+                    collection,
+                    key,
+                )
             }
             Command::VectorDelete {
                 branch,
@@ -396,7 +456,13 @@ impl Executor {
                 })?;
                 let space = space.unwrap_or_else(|| "default".to_string());
                 self.ensure_space_registered(&branch, &space)?;
-                crate::handlers::vector::vector_delete(&self.primitives, branch, space, collection, key)
+                crate::handlers::vector::vector_delete(
+                    &self.primitives,
+                    branch,
+                    space,
+                    collection,
+                    key,
+                )
             }
             Command::VectorSearch {
                 branch,
@@ -443,7 +509,11 @@ impl Executor {
                     metric,
                 )
             }
-            Command::VectorDeleteCollection { branch, space, collection } => {
+            Command::VectorDeleteCollection {
+                branch,
+                space,
+                collection,
+            } => {
                 let branch = branch.ok_or(Error::InvalidInput {
                     reason: "Branch must be specified or resolved to default".into(),
                 })?;
@@ -463,7 +533,11 @@ impl Executor {
                 let space = space.unwrap_or_else(|| "default".to_string());
                 crate::handlers::vector::vector_list_collections(&self.primitives, branch, space)
             }
-            Command::VectorCollectionStats { branch, space, collection } => {
+            Command::VectorCollectionStats {
+                branch,
+                space,
+                collection,
+            } => {
                 let branch = branch.ok_or(Error::InvalidInput {
                     reason: "Branch must be specified or resolved to default".into(),
                 })?;
@@ -566,7 +640,14 @@ impl Executor {
                     reason: "Branch must be specified or resolved to default".into(),
                 })?;
                 let space = space.unwrap_or_else(|| "default".to_string());
-                crate::handlers::search::search(&self.primitives, branch, space, query, k, primitives)
+                crate::handlers::search::search(
+                    &self.primitives,
+                    branch,
+                    space,
+                    query,
+                    k,
+                    primitives,
+                )
             }
 
             // Space commands
@@ -582,7 +663,11 @@ impl Executor {
                 })?;
                 crate::handlers::space::space_create(&self.primitives, branch, space)
             }
-            Command::SpaceDelete { branch, space, force } => {
+            Command::SpaceDelete {
+                branch,
+                space,
+                force,
+            } => {
                 let branch = branch.ok_or(Error::InvalidInput {
                     reason: "Branch must be specified or resolved to default".into(),
                 })?;
@@ -594,7 +679,18 @@ impl Executor {
                 })?;
                 crate::handlers::space::space_exists(&self.primitives, branch, space)
             }
+        };
+
+        match &result {
+            Ok(_) => {
+                debug!(target: "strata::command", command = %cmd_name, duration_us = start.elapsed().as_micros() as u64, "Command executed");
+            }
+            Err(e) => {
+                warn!(target: "strata::command", command = %cmd_name, duration_us = start.elapsed().as_micros() as u64, error = %e, "Command failed");
+            }
         }
+
+        result
     }
 
     /// Execute multiple commands sequentially.

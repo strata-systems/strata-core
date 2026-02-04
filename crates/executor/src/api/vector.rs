@@ -119,11 +119,9 @@ impl Strata {
             space: self.space_id(),
             collection: collection.to_string(),
         })? {
-            Output::VectorCollectionList(mut infos) => {
-                infos.pop().ok_or(Error::Internal {
-                    reason: "Empty response for VectorCollectionStats".into(),
-                })
-            }
+            Output::VectorCollectionList(mut infos) => infos.pop().ok_or(Error::Internal {
+                reason: "Empty response for VectorCollectionStats".into(),
+            }),
             _ => Err(Error::Internal {
                 reason: "Unexpected output for VectorCollectionStats".into(),
             }),

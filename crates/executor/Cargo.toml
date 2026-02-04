@@ -30,5 +30,8 @@ base64 = { workspace = true }
 # UUIDs for RunId
 uuid = { workspace = true }
 
+# Logging
+tracing = { workspace = true }
+
 [dev-dependencies]
 tempfile = { workspace = true }

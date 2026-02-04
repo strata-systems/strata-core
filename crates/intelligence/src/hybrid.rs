@@ -297,10 +297,20 @@ mod tests {
         let branch_id = BranchId::new();
 
         // Add test data
-        kv.put(&branch_id, "default", "hello", Value::String("world test data".into()))
-            .unwrap();
-        kv.put(&branch_id, "default", "test", Value::String("this is a test".into()))
-            .unwrap();
+        kv.put(
+            &branch_id,
+            "default",
+            "hello",
+            Value::String("world test data".into()),
+        )
+        .unwrap();
+        kv.put(
+            &branch_id,
+            "default",
+            "test",
+            Value::String("this is a test".into()),
+        )
+        .unwrap();
 
         let hybrid = HybridSearch::new(db);
         let req =
@@ -386,7 +396,8 @@ mod tests {
 
         // Add data to KV primitive
         kv.put(
-            &branch_id, "default",
+            &branch_id,
+            "default",
             "hello",
             Value::String("hello world data".into()),
         )

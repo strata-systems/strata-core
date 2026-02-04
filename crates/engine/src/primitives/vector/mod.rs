@@ -35,11 +35,13 @@ pub mod wal;
 
 pub use backend::{IndexBackendFactory, VectorIndexBackend};
 pub use brute_force::BruteForceBackend;
-pub use hnsw::{HnswBackend, HnswConfig};
-pub use collection::{validate_collection_name, validate_system_collection_name, validate_vector_key};
+pub use collection::{
+    validate_collection_name, validate_system_collection_name, validate_vector_key,
+};
 pub use error::{VectorError, VectorResult};
 pub use filter::{FilterCondition, FilterOp, JsonScalar, MetadataFilter};
 pub use heap::VectorHeap;
+pub use hnsw::{HnswBackend, HnswConfig};
 pub use recovery::register_vector_recovery;
 pub use snapshot::{CollectionSnapshotHeader, VECTOR_SNAPSHOT_VERSION};
 pub use store::{RecoveryStats, VectorBackendState, VectorStore};

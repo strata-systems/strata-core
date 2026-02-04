@@ -169,7 +169,9 @@ pub fn branch_delete(p: &Arc<Primitives>, branch: BranchId) -> Result<Output> {
         // branch metadata is already deleted and data will be orphaned but harmless.
         if let Ok(collections) = p.vector.list_collections(core_branch_id, "default") {
             for collection in collections {
-                let _ = p.vector.delete_collection(core_branch_id, "default", &collection.name);
+                let _ = p
+                    .vector
+                    .delete_collection(core_branch_id, "default", &collection.name);
             }
         }
     }

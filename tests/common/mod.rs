@@ -39,11 +39,8 @@ fn ensure_recovery_registered() {
 /// Used by test helpers that need to open databases in Always mode.
 pub fn write_always_config(path: &Path) {
     std::fs::create_dir_all(path).expect("create dir for config");
-    std::fs::write(
-        path.join("strata.toml"),
-        "durability = \"always\"\n",
-    )
-    .expect("write always config");
+    std::fs::write(path.join("strata.toml"), "durability = \"always\"\n")
+        .expect("write always config");
 }
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -872,7 +869,12 @@ pub fn assert_all_primitives_healthy(test_db: &TestDb) {
     // State
     let state_key = unique_key();
     p.state
-        .init(&branch_id, "default", &state_key, Value::String("initial".into()))
+        .init(
+            &branch_id,
+            "default",
+            &state_key,
+            Value::String("initial".into()),
+        )
         .expect("State should init");
 
     // Vector
@@ -882,7 +884,14 @@ pub fn assert_all_primitives_healthy(test_db: &TestDb) {
         .expect("Vector should create collection");
     let vec_key = unique_key();
     p.vector
-        .insert(branch_id, "default", &collection, &vec_key, &[1.0, 0.0, 0.0], None)
+        .insert(
+            branch_id,
+            "default",
+            &collection,
+            &vec_key,
+            &[1.0, 0.0, 0.0],
+            None,
+        )
         .expect("Vector should insert");
 }
 
@@ -950,7 +959,14 @@ pub fn assert_vector_collection_healthy(
     let test_embedding = random_vector(dimension);
 
     vector_store
-        .insert(branch_id, "default", collection, &test_key, &test_embedding, None)
+        .insert(
+            branch_id,
+            "default",
+            collection,
+            &test_key,
+            &test_embedding,
+            None,
+        )
         .expect("Vector store should be able to insert");
 
     let entry = vector_store
@@ -1267,7 +1283,8 @@ pub fn populate_vector_collection_with_metadata(
         });
         vector_store
             .insert(
-                branch_id, "default",
+                branch_id,
+                "default",
                 collection,
                 &key,
                 &embedding,
@@ -1297,7 +1314,9 @@ pub fn populate_test_data(db: &Arc<Database>, branch_id: &BranchId, count: usize
 pub fn verify_keys_exist(db: &Arc<Database>, branch_id: &BranchId, keys: &[&str]) {
     let kv = KVStore::new(db.clone());
     for key in keys {
-        let value = kv.get(branch_id, "default", key).expect("Failed to read key");
+        let value = kv
+            .get(branch_id, "default", key)
+            .expect("Failed to read key");
         assert!(value.is_some(), "Key {} should exist", key);
     }
 }
@@ -1306,7 +1325,9 @@ pub fn verify_keys_exist(db: &Arc<Database>, branch_id: &BranchId, keys: &[&str]
 pub fn verify_keys_absent(db: &Arc<Database>, branch_id: &BranchId, keys: &[&str]) {
     let kv = KVStore::new(db.clone());
     for key in keys {
-        let value = kv.get(branch_id, "default", key).expect("Failed to read key");
+        let value = kv
+            .get(branch_id, "default", key)
+            .expect("Failed to read key");
         assert!(value.is_none(), "Key {} should NOT exist", key);
     }
 }

@@ -222,7 +222,12 @@ fn read_your_writes_event() {
         .unwrap();
 
     // EventLen counts events in the log
-    let output = session.execute(Command::EventLen { branch: None , space: None }).unwrap();
+    let output = session
+        .execute(Command::EventLen {
+            branch: None,
+            space: None,
+        })
+        .unwrap();
 
     match output {
         Output::Uint(len) => assert_eq!(len, 1, "Expected exactly 1 event, got {}", len),
@@ -472,7 +477,10 @@ fn vector_write_blocked_inside_transaction() {
 
     // After rollback, collection should not exist (was blocked)
     let output = session
-        .execute(Command::VectorListCollections { branch: None , space: None })
+        .execute(Command::VectorListCollections {
+            branch: None,
+            space: None,
+        })
         .unwrap();
 
     match output {
@@ -646,7 +654,10 @@ fn cross_primitive_transaction() {
     ));
 
     let event_out = executor
-        .execute(Command::EventLen { branch: None , space: None })
+        .execute(Command::EventLen {
+            branch: None,
+            space: None,
+        })
         .unwrap();
     match event_out {
         Output::Uint(len) => assert_eq!(len, 1, "Expected exactly 1 event, got {}", len),

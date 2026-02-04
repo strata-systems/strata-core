@@ -411,8 +411,9 @@ impl JsonStore {
                         value
                     } else {
                         let mut obj = JsonValue::object();
-                        set_at_path(&mut obj, path, value)
-                            .map_err(|e| StrataError::invalid_input(format!("Path error: {}", e)))?;
+                        set_at_path(&mut obj, path, value).map_err(|e| {
+                            StrataError::invalid_input(format!("Path error: {}", e))
+                        })?;
                         obj
                     };
                     let doc = JsonDoc::new(doc_id, initial);
@@ -1114,7 +1115,9 @@ mod tests {
             .create(&branch_id, "default", &doc_id, JsonValue::from(42i64))
             .unwrap();
 
-        let value = store.get(&branch_id, "default", &doc_id, &JsonPath::root()).unwrap();
+        let value = store
+            .get(&branch_id, "default", &doc_id, &JsonPath::root())
+            .unwrap();
         assert_eq!(value.and_then(|v| v.as_i64()), Some(42));
     }
 
@@ -1166,7 +1169,12 @@ mod tests {
         store.create(&branch_id, "default", &doc_id, value).unwrap();
 
         let name = store
-            .get(&branch_id, "default", &doc_id, &"user.profile.name".parse().unwrap())
+            .get(
+                &branch_id,
+                "default",
+                &doc_id,
+                &"user.profile.name".parse().unwrap(),
+            )
             .unwrap();
         assert_eq!(
             name.and_then(|v| v.as_str().map(String::from)),
@@ -1204,7 +1212,9 @@ mod tests {
         let branch_id = BranchId::new();
         let doc_id = "test-doc";
 
-        let result = store.get(&branch_id, "default", &doc_id, &JsonPath::root()).unwrap();
+        let result = store
+            .get(&branch_id, "default", &doc_id, &JsonPath::root())
+            .unwrap();
         assert!(result.is_none());
     }
 
@@ -1220,7 +1230,12 @@ mod tests {
             .unwrap();
 
         let result = store
-            .get(&branch_id, "default", &doc_id, &"nonexistent".parse().unwrap())
+            .get(
+                &branch_id,
+                "default",
+                &doc_id,
+                &"nonexistent".parse().unwrap(),
+            )
             .unwrap();
         assert!(result.is_none());
     }
@@ -1285,7 +1300,9 @@ mod tests {
             .unwrap();
         assert_eq!(v2, Version::counter(2));
 
-        let value = store.get(&branch_id, "default", &doc_id, &JsonPath::root()).unwrap();
+        let value = store
+            .get(&branch_id, "default", &doc_id, &JsonPath::root())
+            .unwrap();
         assert_eq!(value.and_then(|v| v.as_i64()), Some(100));
     }
 
@@ -1344,7 +1361,12 @@ mod tests {
         assert_eq!(v2, Version::counter(2));
 
         let name = store
-            .get(&branch_id, "default", &doc_id, &"user.profile.name".parse().unwrap())
+            .get(
+                &branch_id,
+                "default",
+                &doc_id,
+                &"user.profile.name".parse().unwrap(),
+            )
             .unwrap();
         assert_eq!(
             name.and_then(|v| v.as_str().map(String::from)),
@@ -1517,20 +1539,35 @@ mod tests {
 
         // Delete nested field
         let v2 = store
-            .delete_at_path(&branch_id, "default", &doc_id, &"user.profile.temp".parse().unwrap())
+            .delete_at_path(
+                &branch_id,
+                "default",
+                &doc_id,
+                &"user.profile.temp".parse().unwrap(),
+            )
             .unwrap();
         assert_eq!(v2, Version::counter(2));
 
         // Verify "temp" is gone
         assert!(store
-            .get(&branch_id, "default", &doc_id, &"user.profile.temp".parse().unwrap())
+            .get(
+                &branch_id,
+                "default",
+                &doc_id,
+                &"user.profile.temp".parse().unwrap()
+            )
             .unwrap()
             .is_none());
 
         // Verify "name" remains
         assert_eq!(
             store
-                .get(&branch_id, "default", &doc_id, &"user.profile.name".parse().unwrap())
+                .get(
+                    &branch_id,
+                    "default",
+                    &doc_id,
+                    &"user.profile.name".parse().unwrap()
+                )
                 .unwrap()
                 .and_then(|v| v.as_str().map(String::from)),
             Some("Bob".to_string())
@@ -1601,7 +1638,8 @@ mod tests {
         let branch_id = BranchId::new();
         let doc_id = "test-doc";
 
-        let result = store.delete_at_path(&branch_id, "default", &doc_id, &"field".parse().unwrap());
+        let result =
+            store.delete_at_path(&branch_id, "default", &doc_id, &"field".parse().unwrap());
         assert!(result.is_err());
     }
 
@@ -1618,7 +1656,12 @@ mod tests {
 
         // Deleting a nonexistent path is idempotent (succeeds, increments version)
         let v2 = store
-            .delete_at_path(&branch_id, "default", &doc_id, &"nonexistent".parse().unwrap())
+            .delete_at_path(
+                &branch_id,
+                "default",
+                &doc_id,
+                &"nonexistent".parse().unwrap(),
+            )
             .unwrap();
         assert_eq!(v2, Version::counter(2)); // Version still increments even though nothing was removed
     }
@@ -1699,7 +1742,9 @@ mod tests {
             .unwrap();
         assert_eq!(version, Version::counter(1)); // Fresh document starts at version 1
 
-        let value = store.get(&branch_id, "default", &doc_id, &JsonPath::root()).unwrap();
+        let value = store
+            .get(&branch_id, "default", &doc_id, &JsonPath::root())
+            .unwrap();
         assert_eq!(value.and_then(|v| v.as_i64()), Some(2));
     }
 

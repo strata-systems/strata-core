@@ -460,7 +460,9 @@ fn test_command_with_branch_none_round_trip() {
     );
     let restored: Command = serde_json::from_str(&json).unwrap();
     match restored {
-        Command::KvPut { branch, key, value, .. } => {
+        Command::KvPut {
+            branch, key, value, ..
+        } => {
             assert!(
                 branch.is_none(),
                 "branch should deserialize as None when omitted"
@@ -501,7 +503,9 @@ fn test_command_json_omitted_branch_deserializes() {
     let json = r#"{"KvPut":{"key":"foo","value":{"Int":42}}}"#;
     let cmd: Command = serde_json::from_str(json).unwrap();
     match cmd {
-        Command::KvPut { branch, key, value, .. } => {
+        Command::KvPut {
+            branch, key, value, ..
+        } => {
             assert!(branch.is_none());
             assert_eq!(key, "foo");
             assert_eq!(value, Value::Int(42));
@@ -516,7 +520,9 @@ fn test_command_json_explicit_branch_deserializes() {
     let json = r#"{"KvPut":{"branch":"default","key":"foo","value":{"Int":42}}}"#;
     let cmd: Command = serde_json::from_str(json).unwrap();
     match cmd {
-        Command::KvPut { branch, key, value, .. } => {
+        Command::KvPut {
+            branch, key, value, ..
+        } => {
             assert_eq!(branch, Some(BranchId::from("default")));
             assert_eq!(key, "foo");
             assert_eq!(value, Value::Int(42));

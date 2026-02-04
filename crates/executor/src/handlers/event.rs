@@ -41,12 +41,20 @@ pub fn event_append(
 ) -> Result<Output> {
     require_branch_exists(p, &branch)?;
     let core_branch_id = bridge::to_core_branch_id(&branch)?;
-    let version = convert_result(p.event.append(&core_branch_id, &space, &event_type, payload))?;
+    let version = convert_result(
+        p.event
+            .append(&core_branch_id, &space, &event_type, payload),
+    )?;
     Ok(Output::Version(bridge::extract_version(&version)))
 }
 
 /// Handle EventRead command.
-pub fn event_read(p: &Arc<Primitives>, branch: BranchId, space: String, sequence: u64) -> Result<Output> {
+pub fn event_read(
+    p: &Arc<Primitives>,
+    branch: BranchId,
+    space: String,
+    sequence: u64,
+) -> Result<Output> {
     let core_branch_id = bridge::to_core_branch_id(&branch)?;
     let event = convert_result(p.event.read(&core_branch_id, &space, sequence))?;
 

@@ -13,7 +13,9 @@ fn get_nonexistent_returns_none() {
     let test_db = TestDb::new();
     let kv = test_db.kv();
 
-    let result = kv.get(&test_db.branch_id, "default", "nonexistent").unwrap();
+    let result = kv
+        .get(&test_db.branch_id, "default", "nonexistent")
+        .unwrap();
     assert!(result.is_none());
 }
 
@@ -22,7 +24,8 @@ fn put_and_get() {
     let test_db = TestDb::new();
     let kv = test_db.kv();
 
-    kv.put(&test_db.branch_id, "default", "key", Value::Int(42)).unwrap();
+    kv.put(&test_db.branch_id, "default", "key", Value::Int(42))
+        .unwrap();
 
     let result = kv.get(&test_db.branch_id, "default", "key").unwrap();
     assert!(result.is_some());
@@ -34,7 +37,9 @@ fn put_returns_version() {
     let test_db = TestDb::new();
     let kv = test_db.kv();
 
-    let version = kv.put(&test_db.branch_id, "default", "key", Value::Int(1)).unwrap();
+    let version = kv
+        .put(&test_db.branch_id, "default", "key", Value::Int(1))
+        .unwrap();
     assert!(version.as_u64() > 0);
 }
 
@@ -43,8 +48,10 @@ fn put_overwrites_value() {
     let test_db = TestDb::new();
     let kv = test_db.kv();
 
-    kv.put(&test_db.branch_id, "default", "key", Value::Int(1)).unwrap();
-    kv.put(&test_db.branch_id, "default", "key", Value::Int(2)).unwrap();
+    kv.put(&test_db.branch_id, "default", "key", Value::Int(1))
+        .unwrap();
+    kv.put(&test_db.branch_id, "default", "key", Value::Int(2))
+        .unwrap();
 
     let result = kv.get(&test_db.branch_id, "default", "key").unwrap();
     assert_eq!(result.unwrap(), Value::Int(2));
@@ -55,8 +62,12 @@ fn put_increments_version() {
     let test_db = TestDb::new();
     let kv = test_db.kv();
 
-    let v1 = kv.put(&test_db.branch_id, "default", "key", Value::Int(1)).unwrap();
-    let v2 = kv.put(&test_db.branch_id, "default", "key", Value::Int(2)).unwrap();
+    let v1 = kv
+        .put(&test_db.branch_id, "default", "key", Value::Int(1))
+        .unwrap();
+    let v2 = kv
+        .put(&test_db.branch_id, "default", "key", Value::Int(2))
+        .unwrap();
 
     assert!(v2.as_u64() > v1.as_u64());
 }
@@ -66,7 +77,8 @@ fn delete_existing_returns_true() {
     let test_db = TestDb::new();
     let kv = test_db.kv();
 
-    kv.put(&test_db.branch_id, "default", "key", Value::Int(42)).unwrap();
+    kv.put(&test_db.branch_id, "default", "key", Value::Int(42))
+        .unwrap();
 
     let deleted = kv.delete(&test_db.branch_id, "default", "key").unwrap();
     assert!(deleted);
@@ -80,7 +92,9 @@ fn delete_nonexistent_returns_false() {
     let test_db = TestDb::new();
     let kv = test_db.kv();
 
-    let deleted = kv.delete(&test_db.branch_id, "default", "nonexistent").unwrap();
+    let deleted = kv
+        .delete(&test_db.branch_id, "default", "nonexistent")
+        .unwrap();
     assert!(!deleted);
 }
 
@@ -90,13 +104,23 @@ fn exists_returns_correct_status() {
     let kv = test_db.kv();
 
     // exists via get().is_some()
-    assert!(kv.get(&test_db.branch_id, "default", "key").unwrap().is_none());
+    assert!(kv
+        .get(&test_db.branch_id, "default", "key")
+        .unwrap()
+        .is_none());
 
-    kv.put(&test_db.branch_id, "default", "key", Value::Int(1)).unwrap();
-    assert!(kv.get(&test_db.branch_id, "default", "key").unwrap().is_some());
+    kv.put(&test_db.branch_id, "default", "key", Value::Int(1))
+        .unwrap();
+    assert!(kv
+        .get(&test_db.branch_id, "default", "key")
+        .unwrap()
+        .is_some());
 
     kv.delete(&test_db.branch_id, "default", "key").unwrap();
-    assert!(kv.get(&test_db.branch_id, "default", "key").unwrap().is_none());
+    assert!(kv
+        .get(&test_db.branch_id, "default", "key")
+        .unwrap()
+        .is_none());
 }
 
 // ============================================================================
@@ -117,9 +141,12 @@ fn list_returns_all_keys() {
     let test_db = TestDb::new();
     let kv = test_db.kv();
 
-    kv.put(&test_db.branch_id, "default", "a", Value::Int(1)).unwrap();
-    kv.put(&test_db.branch_id, "default", "b", Value::Int(2)).unwrap();
-    kv.put(&test_db.branch_id, "default", "c", Value::Int(3)).unwrap();
+    kv.put(&test_db.branch_id, "default", "a", Value::Int(1))
+        .unwrap();
+    kv.put(&test_db.branch_id, "default", "b", Value::Int(2))
+        .unwrap();
+    kv.put(&test_db.branch_id, "default", "c", Value::Int(3))
+        .unwrap();
 
     let keys = kv.list(&test_db.branch_id, "default", None).unwrap();
     assert_eq!(keys.len(), 3);
@@ -133,17 +160,26 @@ fn list_with_prefix_filters() {
     let test_db = TestDb::new();
     let kv = test_db.kv();
 
-    kv.put(&test_db.branch_id, "default", "user:1", Value::Int(1)).unwrap();
-    kv.put(&test_db.branch_id, "default", "user:2", Value::Int(2)).unwrap();
-    kv.put(&test_db.branch_id, "default", "item:1", Value::Int(3)).unwrap();
+    kv.put(&test_db.branch_id, "default", "user:1", Value::Int(1))
+        .unwrap();
+    kv.put(&test_db.branch_id, "default", "user:2", Value::Int(2))
+        .unwrap();
+    kv.put(&test_db.branch_id, "default", "item:1", Value::Int(3))
+        .unwrap();
 
-    let user_keys = kv.list(&test_db.branch_id, "default", Some("user:")).unwrap();
+    let user_keys = kv
+        .list(&test_db.branch_id, "default", Some("user:"))
+        .unwrap();
     assert_eq!(user_keys.len(), 2);
 
-    let item_keys = kv.list(&test_db.branch_id, "default", Some("item:")).unwrap();
+    let item_keys = kv
+        .list(&test_db.branch_id, "default", Some("item:"))
+        .unwrap();
     assert_eq!(item_keys.len(), 1);
 
-    let no_match = kv.list(&test_db.branch_id, "default", Some("other:")).unwrap();
+    let no_match = kv
+        .list(&test_db.branch_id, "default", Some("other:"))
+        .unwrap();
     assert!(no_match.is_empty());
 }
 
@@ -156,7 +192,8 @@ fn supports_int_values() {
     let test_db = TestDb::new();
     let kv = test_db.kv();
 
-    kv.put(&test_db.branch_id, "default", "int", Value::Int(42)).unwrap();
+    kv.put(&test_db.branch_id, "default", "int", Value::Int(42))
+        .unwrap();
     let result = kv.get(&test_db.branch_id, "default", "int").unwrap();
     assert_eq!(result.unwrap(), Value::Int(42));
 }
@@ -166,8 +203,13 @@ fn supports_string_values() {
     let test_db = TestDb::new();
     let kv = test_db.kv();
 
-    kv.put(&test_db.branch_id, "default", "str", Value::String("hello".into()))
-        .unwrap();
+    kv.put(
+        &test_db.branch_id,
+        "default",
+        "str",
+        Value::String("hello".into()),
+    )
+    .unwrap();
     let result = kv.get(&test_db.branch_id, "default", "str").unwrap();
     assert_eq!(result.unwrap(), Value::String("hello".into()));
 }
@@ -188,8 +230,13 @@ fn supports_float_values() {
     let test_db = TestDb::new();
     let kv = test_db.kv();
 
-    kv.put(&test_db.branch_id, "default", "float", Value::Float(3.14.into()))
-        .unwrap();
+    kv.put(
+        &test_db.branch_id,
+        "default",
+        "float",
+        Value::Float(3.14.into()),
+    )
+    .unwrap();
     let result = kv.get(&test_db.branch_id, "default", "float").unwrap();
 
     match result.unwrap() {
@@ -203,8 +250,13 @@ fn supports_bytes_values() {
     let test_db = TestDb::new();
     let kv = test_db.kv();
 
-    kv.put(&test_db.branch_id, "default", "bytes", Value::Bytes(vec![1, 2, 3]))
-        .unwrap();
+    kv.put(
+        &test_db.branch_id,
+        "default",
+        "bytes",
+        Value::Bytes(vec![1, 2, 3]),
+    )
+    .unwrap();
     let result = kv.get(&test_db.branch_id, "default", "bytes").unwrap();
     assert_eq!(result.unwrap(), Value::Bytes(vec![1, 2, 3]));
 }
@@ -218,7 +270,8 @@ fn empty_string_key_works() {
     let test_db = TestDb::new();
     let kv = test_db.kv();
 
-    kv.put(&test_db.branch_id, "default", "", Value::Int(1)).unwrap();
+    kv.put(&test_db.branch_id, "default", "", Value::Int(1))
+        .unwrap();
     let result = kv.get(&test_db.branch_id, "default", "").unwrap();
     assert_eq!(result, Some(Value::Int(1)));
 }

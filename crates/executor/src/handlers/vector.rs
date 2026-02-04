@@ -177,7 +177,10 @@ pub fn vector_create_collection(
         to_engine_metric(metric),
     ))?;
     let versioned =
-        convert_vector_result(p.vector.create_collection(branch_id, &space, &collection, config))?;
+        convert_vector_result(
+            p.vector
+                .create_collection(branch_id, &space, &collection, config),
+        )?;
     Ok(Output::Version(extract_version(&versioned.version)))
 }
 
@@ -200,7 +203,11 @@ pub fn vector_delete_collection(
 }
 
 /// Handle VectorListCollections command.
-pub fn vector_list_collections(p: &Arc<Primitives>, branch: BranchId, space: String) -> Result<Output> {
+pub fn vector_list_collections(
+    p: &Arc<Primitives>,
+    branch: BranchId,
+    space: String,
+) -> Result<Output> {
     let branch_id = to_core_branch_id(&branch)?;
     let collections = convert_vector_result(p.vector.list_collections(branch_id, &space))?;
 
@@ -284,8 +291,12 @@ pub fn vector_batch_upsert(
         engine_entries.push((entry.key, entry.vector, json_metadata));
     }
 
-    let versions =
-        convert_vector_result(p.vector.batch_insert(branch_id, &space, &collection, engine_entries))?;
+    let versions = convert_vector_result(p.vector.batch_insert(
+        branch_id,
+        &space,
+        &collection,
+        engine_entries,
+    ))?;
 
     let version_nums: Vec<u64> = versions.iter().map(|v| extract_version(v)).collect();
     Ok(Output::Versions(version_nums))

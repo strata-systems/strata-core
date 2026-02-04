@@ -13,7 +13,8 @@ fn all_six_primitives_recover_together() {
     let p = test_db.all_primitives();
 
     // Write to all 6 primitives
-    p.kv.put(&branch_id, "default", "k1", Value::Int(1)).unwrap();
+    p.kv.put(&branch_id, "default", "k1", Value::Int(1))
+        .unwrap();
 
     let doc_id = new_doc_id();
     p.json
@@ -25,7 +26,12 @@ fn all_six_primitives_recover_together() {
         .unwrap();
 
     p.state
-        .init(&branch_id, "default", "cell", Value::String("initial".into()))
+        .init(
+            &branch_id,
+            "default",
+            "cell",
+            Value::String("initial".into()),
+        )
         .unwrap();
 
     p.vector
@@ -48,7 +54,10 @@ fn all_six_primitives_recover_together() {
     let json_val = json_val.expect("JSON should recover");
     assert_eq!(json_val, test_json_value(1));
 
-    let events = p.event.read_by_type(&branch_id, "default", "stream").unwrap();
+    let events = p
+        .event
+        .read_by_type(&branch_id, "default", "stream")
+        .unwrap();
     assert_eq!(events.len(), 1, "EventLog should recover");
 
     let state_val = p.state.read(&branch_id, "default", "cell").unwrap();
@@ -87,7 +96,9 @@ fn interleaved_writes_recover_correctly() {
         assert_eq!(val, Some(Value::Int(i)), "KV key k{} should be {}", i, i);
     }
 
-    let events = event.read_by_type(&branch_id, "default", "interleaved").unwrap();
+    let events = event
+        .read_by_type(&branch_id, "default", "interleaved")
+        .unwrap();
     assert_eq!(events.len(), 50, "All 50 events should recover");
 }
 
@@ -98,10 +109,20 @@ fn multiple_runs_recover_independently() {
     let run2 = BranchId::new();
 
     let kv = test_db.kv();
-    kv.put(&run1, "default", "run1_key", Value::String("from_run1".into()))
-        .unwrap();
-    kv.put(&run2, "default", "run2_key", Value::String("from_run2".into()))
-        .unwrap();
+    kv.put(
+        &run1,
+        "default",
+        "run1_key",
+        Value::String("from_run1".into()),
+    )
+    .unwrap();
+    kv.put(
+        &run2,
+        "default",
+        "run2_key",
+        Value::String("from_run2".into()),
+    )
+    .unwrap();
 
     test_db.reopen();
 
@@ -139,12 +160,20 @@ fn vector_collection_config_recovers() {
 
     // Insert into both
     vector
-        .insert(branch_id, "default", "cosine_col", "v1", &[1.0, 0.0, 0.0], None)
+        .insert(
+            branch_id,
+            "default",
+            "cosine_col",
+            "v1",
+            &[1.0, 0.0, 0.0],
+            None,
+        )
         .unwrap();
     vector
         .insert(
             branch_id,
-            "default", "euclidean_col",
+            "default",
+            "euclidean_col",
             "v1",
             &seeded_vector(384, 1),
             None,
@@ -155,7 +184,10 @@ fn vector_collection_config_recovers() {
 
     let vector = test_db.vector();
     assert!(
-        vector.get(branch_id, "default", "cosine_col", "v1").unwrap().is_some(),
+        vector
+            .get(branch_id, "default", "cosine_col", "v1")
+            .unwrap()
+            .is_some(),
         "Cosine collection should recover"
     );
     assert!(
@@ -176,7 +208,8 @@ fn json_mutations_survive_recovery() {
     let doc_id = new_doc_id();
     json.create(
         &branch_id,
-        "default", &doc_id,
+        "default",
+        &doc_id,
         json_value(serde_json::json!({"count": 0, "items": []})),
     )
     .unwrap();
@@ -184,7 +217,8 @@ fn json_mutations_survive_recovery() {
     // Mutate the document
     json.set(
         &branch_id,
-        "default", &doc_id,
+        "default",
+        &doc_id,
         &path("count"),
         json_value(serde_json::json!(42)),
     )
@@ -193,7 +227,10 @@ fn json_mutations_survive_recovery() {
     test_db.reopen();
 
     let json = test_db.json();
-    let doc = json.get(&branch_id, "default", &doc_id, &root()).unwrap().unwrap();
+    let doc = json
+        .get(&branch_id, "default", &doc_id, &root())
+        .unwrap()
+        .unwrap();
     let inner = doc.as_inner();
     assert_eq!(inner["count"], 42, "JSON mutation should survive recovery");
 }

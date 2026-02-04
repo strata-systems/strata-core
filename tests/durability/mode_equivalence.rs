@@ -29,8 +29,13 @@ fn json_operations_equivalent_across_modes() {
         let json = JsonStore::new(db);
         let doc_id = "mode_test_doc";
 
-        json.create(&branch_id, "default", doc_id, json_value(serde_json::json!({"x": 1})))
-            .unwrap();
+        json.create(
+            &branch_id,
+            "default",
+            doc_id,
+            json_value(serde_json::json!({"x": 1})),
+        )
+        .unwrap();
 
         let doc = json.get(&branch_id, "default", doc_id, &root()).unwrap();
         doc.map(|v| v.as_inner().clone())
@@ -43,9 +48,15 @@ fn event_operations_equivalent_across_modes() {
         let branch_id = BranchId::new();
         let event = EventLog::new(db);
 
-        event.append(&branch_id, "default", "stream", int_payload(1)).unwrap();
-        event.append(&branch_id, "default", "stream", int_payload(2)).unwrap();
-        event.append(&branch_id, "default", "stream", int_payload(3)).unwrap();
+        event
+            .append(&branch_id, "default", "stream", int_payload(1))
+            .unwrap();
+        event
+            .append(&branch_id, "default", "stream", int_payload(2))
+            .unwrap();
+        event
+            .append(&branch_id, "default", "stream", int_payload(3))
+            .unwrap();
 
         let events = event.read_by_type(&branch_id, "default", "stream").unwrap();
         events.len() as u64
@@ -58,7 +69,9 @@ fn statecell_cas_equivalent_across_modes() {
         let branch_id = BranchId::new();
         let state = StateCell::new(db);
 
-        let v = state.init(&branch_id, "default", "counter", Value::Int(0)).unwrap();
+        let v = state
+            .init(&branch_id, "default", "counter", Value::Int(0))
+            .unwrap();
         state
             .cas(&branch_id, "default", "counter", v.value, Value::Int(1))
             .unwrap();
@@ -88,10 +101,13 @@ fn delete_semantics_equivalent_across_modes() {
         let branch_id = BranchId::new();
         let kv = KVStore::new(db);
 
-        kv.put(&branch_id, "default", "ephemeral", Value::Int(1)).unwrap();
+        kv.put(&branch_id, "default", "ephemeral", Value::Int(1))
+            .unwrap();
         kv.delete(&branch_id, "default", "ephemeral").unwrap();
 
-        kv.get(&branch_id, "default", "ephemeral").unwrap().is_none()
+        kv.get(&branch_id, "default", "ephemeral")
+            .unwrap()
+            .is_none()
     });
 }
 
@@ -126,8 +142,13 @@ fn always_mode_recovers_after_restart() {
 
     let kv = test_db.kv();
     for i in 0..20 {
-        kv.put(&branch_id, "default", &format!("strict_{}", i), Value::Int(i))
-            .unwrap();
+        kv.put(
+            &branch_id,
+            "default",
+            &format!("strict_{}", i),
+            Value::Int(i),
+        )
+        .unwrap();
     }
 
     let state_before = CapturedState::capture(&test_db.db, &branch_id);

@@ -15,7 +15,8 @@ fn cache_database_is_functional() {
     let branch_id = BranchId::new();
     let kv = KVStore::new(db);
 
-    kv.put(&branch_id, "default", "key", Value::Int(42)).unwrap();
+    kv.put(&branch_id, "default", "key", Value::Int(42))
+        .unwrap();
     let result = kv.get(&branch_id, "default", "key").unwrap();
 
     assert!(result.is_some());
@@ -101,7 +102,9 @@ fn persistent_database_multiple_reopens() {
     // Verify all data present
     let kv = test_db.kv();
     for i in 0..5 {
-        let result = kv.get(&branch_id, "default", &format!("key_{}", i)).unwrap();
+        let result = kv
+            .get(&branch_id, "default", &format!("key_{}", i))
+            .unwrap();
         assert!(result.is_some(), "key_{} should exist", i);
         assert_eq!(result.unwrap(), Value::Int(i));
     }
@@ -138,7 +141,10 @@ fn open_with_always_config() {
     let branch_id = BranchId::new();
     let kv = KVStore::new(db);
     kv.put(&branch_id, "default", "key", Value::Int(1)).unwrap();
-    assert_eq!(kv.get(&branch_id, "default", "key").unwrap(), Some(Value::Int(1)));
+    assert_eq!(
+        kv.get(&branch_id, "default", "key").unwrap(),
+        Some(Value::Int(1))
+    );
 }
 
 #[test]
@@ -151,7 +157,10 @@ fn open_with_standard_config() {
     let branch_id = BranchId::new();
     let kv = KVStore::new(db);
     kv.put(&branch_id, "default", "key", Value::Int(1)).unwrap();
-    assert_eq!(kv.get(&branch_id, "default", "key").unwrap(), Some(Value::Int(1)));
+    assert_eq!(
+        kv.get(&branch_id, "default", "key").unwrap(),
+        Some(Value::Int(1))
+    );
 }
 
 // ============================================================================

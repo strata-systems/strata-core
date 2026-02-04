@@ -3146,7 +3146,10 @@ mod tests {
 
         // Every key in ordered_keys must exist in data
         for k in shard.ordered_keys.iter() {
-            assert!(shard.data.contains_key(k), "ordered_keys has key not in data");
+            assert!(
+                shard.data.contains_key(k),
+                "ordered_keys has key not in data"
+            );
         }
         // Every key in data must exist in ordered_keys
         for k in shard.data.keys() {
@@ -3168,7 +3171,13 @@ mod tests {
         let ns = Namespace::for_branch(branch_id);
 
         // Insert keys in reverse order
-        let names = vec!["user:zara", "user:mike", "user:alice", "user:bob", "user:charlie"];
+        let names = vec![
+            "user:zara",
+            "user:mike",
+            "user:alice",
+            "user:bob",
+            "user:charlie",
+        ];
         for name in &names {
             Storage::put(&store, Key::new_kv(ns.clone(), name), Value::Int(1), None).unwrap();
         }
@@ -3199,9 +3208,27 @@ mod tests {
         let ns = Namespace::for_branch(branch_id);
 
         // Insert 3 keys at version 1, 2, 3
-        Storage::put(&*store, Key::new_kv(ns.clone(), "item:a"), Value::Int(1), None).unwrap();
-        Storage::put(&*store, Key::new_kv(ns.clone(), "item:b"), Value::Int(2), None).unwrap();
-        Storage::put(&*store, Key::new_kv(ns.clone(), "item:c"), Value::Int(3), None).unwrap();
+        Storage::put(
+            &*store,
+            Key::new_kv(ns.clone(), "item:a"),
+            Value::Int(1),
+            None,
+        )
+        .unwrap();
+        Storage::put(
+            &*store,
+            Key::new_kv(ns.clone(), "item:b"),
+            Value::Int(2),
+            None,
+        )
+        .unwrap();
+        Storage::put(
+            &*store,
+            Key::new_kv(ns.clone(), "item:c"),
+            Value::Int(3),
+            None,
+        )
+        .unwrap();
 
         // Take snapshot before delete (version = 3)
         let snap_before = store.snapshot();
@@ -3216,7 +3243,11 @@ mod tests {
 
         // Snapshot before delete should see all 3
         let results_before = SnapshotView::scan_prefix(&snap_before, &prefix).unwrap();
-        assert_eq!(results_before.len(), 3, "Pre-delete snapshot sees all 3 items");
+        assert_eq!(
+            results_before.len(),
+            3,
+            "Pre-delete snapshot sees all 3 items"
+        );
 
         // Snapshot after delete should see 2 (item:b is tombstoned)
         let results_after = SnapshotView::scan_prefix(&snap_after, &prefix).unwrap();
@@ -3260,7 +3291,11 @@ mod tests {
         // Scan "alpha:" should return exactly 5000
         let prefix_a = Key::new_kv(ns.clone(), "alpha:");
         let results_a = Storage::scan_prefix(&store, &prefix_a, u64::MAX).unwrap();
-        assert_eq!(results_a.len(), 5000, "alpha: prefix should match 5000 keys");
+        assert_eq!(
+            results_a.len(),
+            5000,
+            "alpha: prefix should match 5000 keys"
+        );
 
         // Scan "beta:" should return exactly 5000
         let prefix_b = Key::new_kv(ns.clone(), "beta:");

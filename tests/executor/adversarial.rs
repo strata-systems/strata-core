@@ -840,7 +840,11 @@ fn concurrent_writes_different_keys() {
         for i in 0..writes_per_thread {
             let key = format!("thread_{}_key_{}", thread_id, i);
             let output = executor
-                .execute(Command::KvGet { branch: None, space: None, key })
+                .execute(Command::KvGet {
+                    branch: None,
+                    space: None,
+                    key,
+                })
                 .unwrap();
 
             match output {

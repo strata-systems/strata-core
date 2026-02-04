@@ -55,7 +55,12 @@ fn get_nonexistent_returns_none() {
     let json = test_db.json();
 
     let result = json
-        .get(&test_db.branch_id, "default", "nonexistent", &JsonPath::root())
+        .get(
+            &test_db.branch_id,
+            "default",
+            "nonexistent",
+            &JsonPath::root(),
+        )
         .unwrap();
     assert!(result.is_none());
 }
@@ -67,8 +72,13 @@ fn exists_returns_correct_status() {
 
     assert!(!json.exists(&test_db.branch_id, "default", "doc1").unwrap());
 
-    json.create(&test_db.branch_id, "default", "doc1", serde_json::json!({}).into())
-        .unwrap();
+    json.create(
+        &test_db.branch_id,
+        "default",
+        "doc1",
+        serde_json::json!({}).into(),
+    )
+    .unwrap();
     assert!(json.exists(&test_db.branch_id, "default", "doc1").unwrap());
 }
 
@@ -77,8 +87,13 @@ fn destroy_removes_document() {
     let test_db = TestDb::new();
     let json = test_db.json();
 
-    json.create(&test_db.branch_id, "default", "doc1", serde_json::json!({}).into())
-        .unwrap();
+    json.create(
+        &test_db.branch_id,
+        "default",
+        "doc1",
+        serde_json::json!({}).into(),
+    )
+    .unwrap();
     assert!(json.exists(&test_db.branch_id, "default", "doc1").unwrap());
 
     let destroyed = json.destroy(&test_db.branch_id, "default", "doc1").unwrap();
@@ -92,7 +107,9 @@ fn destroy_nonexistent_returns_false() {
     let test_db = TestDb::new();
     let json = test_db.json();
 
-    let destroyed = json.destroy(&test_db.branch_id, "default", "nonexistent").unwrap();
+    let destroyed = json
+        .destroy(&test_db.branch_id, "default", "nonexistent")
+        .unwrap();
     assert!(!destroyed);
 }
 
@@ -111,7 +128,8 @@ fn get_at_path() {
             "age": 30
         }
     });
-    json.create(&test_db.branch_id, "default", "doc1", doc.into()).unwrap();
+    json.create(&test_db.branch_id, "default", "doc1", doc.into())
+        .unwrap();
 
     let name = json
         .get(&test_db.branch_id, "default", "doc1", &jpath("user.name"))
@@ -134,10 +152,12 @@ fn set_at_path() {
     let json = test_db.json();
 
     let doc = serde_json::json!({"x": 1});
-    json.create(&test_db.branch_id, "default", "doc1", doc.into()).unwrap();
+    json.create(&test_db.branch_id, "default", "doc1", doc.into())
+        .unwrap();
 
     json.set(
-        &test_db.branch_id, "default",
+        &test_db.branch_id,
+        "default",
         "doc1",
         &jpath("y"),
         serde_json::json!(2).into(),
@@ -159,10 +179,12 @@ fn set_nested_path() {
     let json = test_db.json();
 
     let doc = serde_json::json!({"a": {"b": 1}});
-    json.create(&test_db.branch_id, "default", "doc1", doc.into()).unwrap();
+    json.create(&test_db.branch_id, "default", "doc1", doc.into())
+        .unwrap();
 
     json.set(
-        &test_db.branch_id, "default",
+        &test_db.branch_id,
+        "default",
         "doc1",
         &jpath("a.c"),
         serde_json::json!(2).into(),
@@ -184,7 +206,8 @@ fn delete_at_path() {
     let json = test_db.json();
 
     let doc = serde_json::json!({"x": 1, "y": 2});
-    json.create(&test_db.branch_id, "default", "doc1", doc.into()).unwrap();
+    json.create(&test_db.branch_id, "default", "doc1", doc.into())
+        .unwrap();
 
     json.delete_at_path(&test_db.branch_id, "default", "doc1", &jpath("y"))
         .unwrap();
@@ -254,14 +277,31 @@ fn list_returns_all_documents() {
     let test_db = TestDb::new();
     let json = test_db.json();
 
-    json.create(&test_db.branch_id, "default", "doc1", serde_json::json!({}).into())
-        .unwrap();
-    json.create(&test_db.branch_id, "default", "doc2", serde_json::json!({}).into())
-        .unwrap();
-    json.create(&test_db.branch_id, "default", "doc3", serde_json::json!({}).into())
-        .unwrap();
+    json.create(
+        &test_db.branch_id,
+        "default",
+        "doc1",
+        serde_json::json!({}).into(),
+    )
+    .unwrap();
+    json.create(
+        &test_db.branch_id,
+        "default",
+        "doc2",
+        serde_json::json!({}).into(),
+    )
+    .unwrap();
+    json.create(
+        &test_db.branch_id,
+        "default",
+        "doc3",
+        serde_json::json!({}).into(),
+    )
+    .unwrap();
 
-    let docs = json.list(&test_db.branch_id, "default", None, None, 100).unwrap();
+    let docs = json
+        .list(&test_db.branch_id, "default", None, None, 100)
+        .unwrap();
     assert_eq!(docs.doc_ids.len(), 3);
 }
 
@@ -279,10 +319,20 @@ fn count_returns_document_count() {
         0
     );
 
-    json.create(&test_db.branch_id, "default", "doc1", serde_json::json!({}).into())
-        .unwrap();
-    json.create(&test_db.branch_id, "default", "doc2", serde_json::json!({}).into())
-        .unwrap();
+    json.create(
+        &test_db.branch_id,
+        "default",
+        "doc1",
+        serde_json::json!({}).into(),
+    )
+    .unwrap();
+    json.create(
+        &test_db.branch_id,
+        "default",
+        "doc2",
+        serde_json::json!({}).into(),
+    )
+    .unwrap();
 
     assert_eq!(
         json.list(&test_db.branch_id, "default", None, None, 1000)
@@ -302,8 +352,13 @@ fn empty_document() {
     let test_db = TestDb::new();
     let json = test_db.json();
 
-    json.create(&test_db.branch_id, "default", "doc1", serde_json::json!({}).into())
-        .unwrap();
+    json.create(
+        &test_db.branch_id,
+        "default",
+        "doc1",
+        serde_json::json!({}).into(),
+    )
+    .unwrap();
 
     let result = json
         .get(&test_db.branch_id, "default", "doc1", &JsonPath::root())
@@ -321,7 +376,8 @@ fn deeply_nested_document() {
     let doc = serde_json::json!({
         "a": {"b": {"c": {"d": {"e": 42}}}}
     });
-    json.create(&test_db.branch_id, "default", "doc1", doc.into()).unwrap();
+    json.create(&test_db.branch_id, "default", "doc1", doc.into())
+        .unwrap();
 
     let result = json
         .get(&test_db.branch_id, "default", "doc1", &jpath("a.b.c.d.e"))

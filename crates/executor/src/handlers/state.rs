@@ -34,7 +34,12 @@ fn require_branch_exists(p: &Arc<Primitives>, branch: &BranchId) -> Result<()> {
 }
 
 /// Handle StateReadv command — get full version history for a state cell.
-pub fn state_readv(p: &Arc<Primitives>, branch: BranchId, space: String, cell: String) -> Result<Output> {
+pub fn state_readv(
+    p: &Arc<Primitives>,
+    branch: BranchId,
+    space: String,
+    cell: String,
+) -> Result<Output> {
     let branch_id = bridge::to_core_branch_id(&branch)?;
     convert_result(bridge::validate_key(&cell))?;
     let result = convert_result(p.state.readv(&branch_id, &space, &cell))?;
@@ -70,7 +75,12 @@ pub fn state_set(
 /// Handle StateRead command.
 ///
 /// Returns `MaybeVersioned` with value, version, and timestamp metadata.
-pub fn state_read(p: &Arc<Primitives>, branch: BranchId, space: String, cell: String) -> Result<Output> {
+pub fn state_read(
+    p: &Arc<Primitives>,
+    branch: BranchId,
+    space: String,
+    cell: String,
+) -> Result<Output> {
     let branch_id = bridge::to_core_branch_id(&branch)?;
     convert_result(bridge::validate_key(&cell))?;
     let result = convert_result(p.state.read_versioned(&branch_id, &space, &cell))?;
@@ -151,7 +161,12 @@ pub fn state_init(
 }
 
 /// Handle StateDelete command.
-pub fn state_delete(p: &Arc<Primitives>, branch: BranchId, space: String, cell: String) -> Result<Output> {
+pub fn state_delete(
+    p: &Arc<Primitives>,
+    branch: BranchId,
+    space: String,
+    cell: String,
+) -> Result<Output> {
     require_branch_exists(p, &branch)?;
     let branch_id = bridge::to_core_branch_id(&branch)?;
     convert_result(bridge::validate_key(&cell))?;
@@ -160,7 +175,12 @@ pub fn state_delete(p: &Arc<Primitives>, branch: BranchId, space: String, cell: 
 }
 
 /// Handle StateList command.
-pub fn state_list(p: &Arc<Primitives>, branch: BranchId, space: String, prefix: Option<String>) -> Result<Output> {
+pub fn state_list(
+    p: &Arc<Primitives>,
+    branch: BranchId,
+    space: String,
+    prefix: Option<String>,
+) -> Result<Output> {
     let branch_id = bridge::to_core_branch_id(&branch)?;
     if let Some(ref pfx) = prefix {
         if !pfx.is_empty() {

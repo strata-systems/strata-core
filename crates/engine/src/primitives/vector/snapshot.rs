@@ -344,7 +344,8 @@ impl VectorStore {
 
                 // Store VectorRecord in KV (includes embedding for history support)
                 let record = VectorRecord::new(vector_id, embedding.clone(), metadata);
-                let kv_key = self.vector_key_internal(header.branch_id, "default", &header.name, &key);
+                let kv_key =
+                    self.vector_key_internal(header.branch_id, "default", &header.name, &key);
                 let record_bytes = record.to_bytes()?;
                 self.db()
                     .transaction(header.branch_id, |txn| {
@@ -449,11 +450,19 @@ mod tests {
         assert_eq!(collections[0].count, 3);
 
         // Verify vectors
-        let v1 = store2.get(branch_id, "default", "test", "v1").unwrap().unwrap().value;
+        let v1 = store2
+            .get(branch_id, "default", "test", "v1")
+            .unwrap()
+            .unwrap()
+            .value;
         assert_eq!(v1.key, "v1");
         assert_eq!(v1.embedding, vec![1.0, 0.0, 0.0]);
 
-        let v2 = store2.get(branch_id, "default", "test", "v2").unwrap().unwrap().value;
+        let v2 = store2
+            .get(branch_id, "default", "test", "v2")
+            .unwrap()
+            .unwrap()
+            .value;
         assert_eq!(v2.metadata, Some(serde_json::json!({"type": "doc"})));
     }
 
@@ -463,7 +472,9 @@ mod tests {
         let branch_id = BranchId::new();
 
         let config = VectorConfig::new(3, DistanceMetric::Cosine).unwrap();
-        store.create_collection(branch_id, "default", "test", config).unwrap();
+        store
+            .create_collection(branch_id, "default", "test", config)
+            .unwrap();
 
         // Insert and delete to advance next_id
         store
@@ -489,9 +500,18 @@ mod tests {
             .unwrap();
 
         // Verify we have v2 and v3 (v1 was deleted)
-        assert!(store2.get(branch_id, "default", "test", "v1").unwrap().is_none());
-        assert!(store2.get(branch_id, "default", "test", "v2").unwrap().is_some());
-        assert!(store2.get(branch_id, "default", "test", "v3").unwrap().is_some());
+        assert!(store2
+            .get(branch_id, "default", "test", "v1")
+            .unwrap()
+            .is_none());
+        assert!(store2
+            .get(branch_id, "default", "test", "v2")
+            .unwrap()
+            .is_some());
+        assert!(store2
+            .get(branch_id, "default", "test", "v3")
+            .unwrap()
+            .is_some());
     }
 
     #[test]
@@ -514,7 +534,14 @@ mod tests {
             .insert(branch_id, "default", "col_a", "v1", &[1.0, 0.0, 0.0], None)
             .unwrap();
         store
-            .insert(branch_id, "default", "col_b", "v1", &[1.0, 0.0, 0.0, 0.0, 0.0], None)
+            .insert(
+                branch_id,
+                "default",
+                "col_b",
+                "v1",
+                &[1.0, 0.0, 0.0, 0.0, 0.0],
+                None,
+            )
             .unwrap();
 
         // Serialize
@@ -537,7 +564,9 @@ mod tests {
         let branch_id = BranchId::new();
 
         let config = VectorConfig::new(3, DistanceMetric::Cosine).unwrap();
-        store.create_collection(branch_id, "default", "test", config).unwrap();
+        store
+            .create_collection(branch_id, "default", "test", config)
+            .unwrap();
 
         store
             .insert(branch_id, "default", "test", "b", &[0.0, 1.0, 0.0], None)

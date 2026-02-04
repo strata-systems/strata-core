@@ -24,7 +24,8 @@ fn kv_put_get_same_across_modes() {
         let branch_id = BranchId::new();
         let kv = KVStore::new(db);
 
-        kv.put(&branch_id, "default", "key", Value::Int(42)).unwrap();
+        kv.put(&branch_id, "default", "key", Value::Int(42))
+            .unwrap();
         let result = kv.get(&branch_id, "default", "key").unwrap();
 
         result
@@ -40,7 +41,10 @@ fn kv_delete_same_across_modes() {
         kv.put(&branch_id, "default", "key", Value::Int(1)).unwrap();
         let deleted = kv.delete(&branch_id, "default", "key").unwrap();
 
-        (deleted, kv.get(&branch_id, "default", "key").unwrap().is_none())
+        (
+            deleted,
+            kv.get(&branch_id, "default", "key").unwrap().is_none(),
+        )
     });
 }
 
@@ -52,7 +56,8 @@ fn eventlog_append_same_across_modes() {
 
         event
             .append(
-                &branch_id, "default",
+                &branch_id,
+                "default",
                 "test_type",
                 event_payload(Value::String("payload".into())),
             )
@@ -70,7 +75,9 @@ fn statecell_cas_same_across_modes() {
         let branch_id = BranchId::new();
         let state = StateCell::new(db);
 
-        state.init(&branch_id, "default", "cell", Value::Int(1)).unwrap();
+        state
+            .init(&branch_id, "default", "cell", Value::Int(1))
+            .unwrap();
         let read = state.readv(&branch_id, "default", "cell").unwrap();
         let version = read
             .as_ref()
@@ -79,7 +86,10 @@ fn statecell_cas_same_across_modes() {
 
         let cas_result = state.cas(&branch_id, "default", "cell", version, Value::Int(2));
 
-        (cas_result.is_ok(), state.read(&branch_id, "default", "cell").unwrap())
+        (
+            cas_result.is_ok(),
+            state.read(&branch_id, "default", "cell").unwrap(),
+        )
     });
 }
 
@@ -93,7 +103,9 @@ fn json_create_get_same_across_modes() {
         json.create(&branch_id, "default", "doc1", doc_value.clone().into())
             .unwrap();
 
-        let result = json.get(&branch_id, "default", "doc1", &JsonPath::root()).unwrap();
+        let result = json
+            .get(&branch_id, "default", "doc1", &JsonPath::root())
+            .unwrap();
 
         // Return serialized JSON for comparison
         result.map(|v| serde_json::to_string(&v).unwrap_or_default())
@@ -156,8 +168,14 @@ fn transaction_atomicity_in_memory() {
         .unwrap();
 
     let kv = test_db.kv();
-    assert_eq!(kv.get(&branch_id, "default", "a").unwrap(), Some(Value::Int(1)));
-    assert_eq!(kv.get(&branch_id, "default", "b").unwrap(), Some(Value::Int(2)));
+    assert_eq!(
+        kv.get(&branch_id, "default", "a").unwrap(),
+        Some(Value::Int(1))
+    );
+    assert_eq!(
+        kv.get(&branch_id, "default", "b").unwrap(),
+        Some(Value::Int(2))
+    );
 }
 
 #[test]
@@ -175,8 +193,14 @@ fn transaction_atomicity_standard() {
         .unwrap();
 
     let kv = test_db.kv();
-    assert_eq!(kv.get(&branch_id, "default", "a").unwrap(), Some(Value::Int(1)));
-    assert_eq!(kv.get(&branch_id, "default", "b").unwrap(), Some(Value::Int(2)));
+    assert_eq!(
+        kv.get(&branch_id, "default", "a").unwrap(),
+        Some(Value::Int(1))
+    );
+    assert_eq!(
+        kv.get(&branch_id, "default", "b").unwrap(),
+        Some(Value::Int(2))
+    );
 }
 
 #[test]
@@ -194,8 +218,14 @@ fn transaction_atomicity_always() {
     .unwrap();
 
     let kv = KVStore::new(db);
-    assert_eq!(kv.get(&branch_id, "default", "a").unwrap(), Some(Value::Int(1)));
-    assert_eq!(kv.get(&branch_id, "default", "b").unwrap(), Some(Value::Int(2)));
+    assert_eq!(
+        kv.get(&branch_id, "default", "a").unwrap(),
+        Some(Value::Int(1))
+    );
+    assert_eq!(
+        kv.get(&branch_id, "default", "b").unwrap(),
+        Some(Value::Int(2))
+    );
 }
 
 // ============================================================================
@@ -222,11 +252,18 @@ fn all_primitives_work_in_all_modes() {
             .unwrap();
 
         // State
-        state.init(&branch_id, "default", "s", Value::Int(3)).unwrap();
+        state
+            .init(&branch_id, "default", "s", Value::Int(3))
+            .unwrap();
 
         // JSON
-        json.create(&branch_id, "default", "j", serde_json::json!({"x": 4}).into())
-            .unwrap();
+        json.create(
+            &branch_id,
+            "default",
+            "j",
+            serde_json::json!({"x": 4}).into(),
+        )
+        .unwrap();
 
         // BranchIndex
         branch_idx.create_branch("test_branch").unwrap();
