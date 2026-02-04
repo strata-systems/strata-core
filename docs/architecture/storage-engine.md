@@ -44,7 +44,7 @@ Values in the store are wrapped in `StoredValue`, which includes:
 
 ## MVCC (Multi-Version Concurrency Control)
 
-StrataDB supports versioned reads via `getv()` / `readv()` operations. The storage layer retains version history for keys, allowing you to read the value at a specific version.
+StrataDB supports versioned reads via `getv()` / `getv()` operations. The storage layer retains version history for keys, allowing you to read the value at a specific version.
 
 Version history is subject to the retention policy — old versions may be trimmed.
 

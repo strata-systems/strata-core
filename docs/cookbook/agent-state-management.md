@@ -55,9 +55,9 @@ fn run_agent_session(db: &mut Strata, session_id: &str) -> stratadb::Result<()> 
     db.state_set("status", "completed")?;
 
     // Review the session
-    let status = db.state_read("status")?;
+    let status = db.state_get("status")?;
     let events = db.event_len()?;
-    let steps = db.state_read("step_count")?;
+    let steps = db.state_get("step_count")?;
     println!("Session {}: status={:?}, events={}, steps={:?}",
         session_id, status, events, steps);
 
@@ -77,7 +77,7 @@ fn review_session(db: &mut Strata, session_id: &str) -> stratadb::Result<()> {
     db.set_branch(session_id)?;
 
     // Read all tool calls
-    let tool_calls = db.event_read_by_type("tool_call")?;
+    let tool_calls = db.event_get_by_type("tool_call")?;
     for tc in &tool_calls {
         println!("Tool call: {:?}", tc.value);
     }
@@ -87,7 +87,7 @@ fn review_session(db: &mut Strata, session_id: &str) -> stratadb::Result<()> {
     println!("Model used: {:?}", model);
 
     // Read final status
-    let status = db.state_read("status")?;
+    let status = db.state_get("status")?;
     println!("Final status: {:?}", status);
 
     db.set_branch("default")?;

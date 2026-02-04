@@ -243,6 +243,4 @@ pub enum Error {
 
 **Fields:** `feature: String`, `reason: String`
 
-**When:** A feature is not yet available. Currently applies to:
-- `fork_branch` — branch forking
-- `diff_branches` — branch diffing
+**When:** A feature is recognized but not yet available. Fork, diff, and merge are now implemented — see the [Branch Management Guide](../guides/branch-management.md).

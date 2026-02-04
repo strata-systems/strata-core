@@ -96,8 +96,8 @@ These commands route through the transaction when one is active:
 | Primitive | Commands |
 |-----------|----------|
 | **KV** | KvGet, KvPut, KvDelete, KvList |
-| **Event** | EventAppend, EventRead, EventLen |
-| **State** | StateRead, StateInit, StateCas |
+| **Event** | EventAppend, EventGet, EventLen |
+| **State** | StateGet, StateInit, StateCas |
 | **JSON** | JsonSet, JsonGet, JsonDelete |
 
 ### Non-Transactional Commands

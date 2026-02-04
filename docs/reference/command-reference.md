@@ -46,8 +46,8 @@ This reference is primarily for SDK builders and contributors. Most users should
 | Command | Fields | Output |
 |---------|--------|--------|
 | `EventAppend` | `branch?`, `space?`, `event_type`, `payload` | `Version(u64)` |
-| `EventRead` | `branch?`, `space?`, `sequence` | `MaybeVersioned(Option<VersionedValue>)` |
-| `EventReadByType` | `branch?`, `space?`, `event_type` | `VersionedValues(Vec<VersionedValue>)` |
+| `EventGet` | `branch?`, `space?`, `sequence` | `MaybeVersioned(Option<VersionedValue>)` |
+| `EventGetByType` | `branch?`, `space?`, `event_type` | `VersionedValues(Vec<VersionedValue>)` |
 | `EventLen` | `branch?`, `space?` | `Uint(count)` |
 
 ## State Commands
@@ -55,10 +55,10 @@ This reference is primarily for SDK builders and contributors. Most users should
 | Command | Fields | Output |
 |---------|--------|--------|
 | `StateSet` | `branch?`, `space?`, `cell`, `value` | `Version(u64)` |
-| `StateRead` | `branch?`, `space?`, `cell` | `Maybe(Option<Value>)` |
+| `StateGet` | `branch?`, `space?`, `cell` | `Maybe(Option<Value>)` |
 | `StateCas` | `branch?`, `space?`, `cell`, `expected_counter?`, `value` | `MaybeVersion(Option<u64>)` |
 | `StateInit` | `branch?`, `space?`, `cell`, `value` | `Version(u64)` |
-| `StateReadv` | `branch?`, `space?`, `cell` | `VersionHistory(Option<Vec<VersionedValue>>)` |
+| `StateGetv` | `branch?`, `space?`, `cell` | `VersionHistory(Option<Vec<VersionedValue>>)` |
 
 ## Vector Commands
 

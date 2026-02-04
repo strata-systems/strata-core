@@ -7,7 +7,7 @@ State cells provide mutable, named values with **compare-and-swap (CAS)** for sa
 | Method | Signature | Returns |
 |--------|-----------|---------|
 | `state_set` | `(cell: &str, value: impl Into<Value>) -> Result<u64>` | Version number |
-| `state_read` | `(cell: &str) -> Result<Option<Value>>` | Current value, or None |
+| `state_get` | `(cell: &str) -> Result<Option<Value>>` | Current value, or None |
 | `state_init` | `(cell: &str, value: impl Into<Value>) -> Result<u64>` | Version number |
 | `state_cas` | `(cell: &str, expected_counter: Option<u64>, value: impl Into<Value>) -> Result<Option<u64>>` | New version, or None on mismatch |
 
@@ -21,21 +21,21 @@ let db = Strata::cache()?;
 db.state_set("status", "active")?;
 db.state_set("counter", 0i64)?;
 
-let status = db.state_read("status")?;
+let status = db.state_get("status")?;
 assert_eq!(status, Some(Value::String("active".into())));
 ```
 
 ## Read
 
-`state_read` returns the current value, or `None` if the cell doesn't exist:
+`state_get` returns the current value, or `None` if the cell doesn't exist:
 
 ```rust
 let db = Strata::cache()?;
 
-assert_eq!(db.state_read("missing")?, None);
+assert_eq!(db.state_get("missing")?, None);
 
 db.state_set("cell", 42i64)?;
-assert_eq!(db.state_read("cell")?, Some(Value::Int(42)));
+assert_eq!(db.state_get("cell")?, Some(Value::Int(42)));
 ```
 
 ## Init (Create If Absent)
@@ -47,11 +47,11 @@ let db = Strata::cache()?;
 
 // First init creates the cell
 db.state_init("status", "idle")?;
-assert_eq!(db.state_read("status")?, Some(Value::String("idle".into())));
+assert_eq!(db.state_get("status")?, Some(Value::String("idle".into())));
 
 // Second init is a no-op — value unchanged
 db.state_init("status", "should-not-overwrite")?;
-assert_eq!(db.state_read("status")?, Some(Value::String("idle".into())));
+assert_eq!(db.state_get("status")?, Some(Value::String("idle".into())));
 ```
 
 ## Compare-and-Swap (CAS)
@@ -127,7 +127,7 @@ let db = Strata::cache()?;
 db.state_set("counter", 0i64)?;
 
 // Increment with CAS loop
-let current = db.state_read("counter")?.unwrap();
+let current = db.state_get("counter")?.unwrap();
 let count = current.as_int().unwrap();
 // In a real application, you'd retry on CAS failure
 ```
@@ -146,7 +146,7 @@ let mut db = Strata::cache()?;
 db.state_set("status", "active")?;
 
 db.set_space("other")?;
-assert_eq!(db.state_read("status")?, None); // separate state per space
+assert_eq!(db.state_get("status")?, None); // separate state per space
 ```
 
 See [Spaces](spaces.md) for the full guide.

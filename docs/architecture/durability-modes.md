@@ -93,7 +93,7 @@ The dropped combination (disk + no WAL) was considered but intentionally exclude
 Read operations must never touch the durability layer. All reads are served from the in-memory store regardless of which mode is active. The durability mode only affects the write path.
 
 This means:
-- `kv_get`, `state_read`, `json_get`, `vector_get`, `vector_search`, `event_read` should all have identical latency across Cache, Standard, and Always.
+- `kv_get`, `state_get`, `json_get`, `vector_get`, `vector_search`, `event_get` should all have identical latency across Cache, Standard, and Always.
 - The only performance difference between modes is on write operations.
 
 ### Standard should be fast

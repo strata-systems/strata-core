@@ -161,12 +161,12 @@ SHA256(
 
 ---
 
-### EventRead
+### EventGet
 
 ```
 Client               Handler             Engine (EventLog)    Transaction          Storage
   |                    |                   |                    |                   |
-  |-- EventRead ------>|                   |                    |                   |
+  |-- EventGet ------>|                   |                    |                   |
   | {branch, sequence} |                   |                    |                   |
   |                    |                   |                    |                   |
   |                    |-- branch->UUID -->|                    |                   |
@@ -208,7 +208,7 @@ Client               Handler             Engine (EventLog)    Transaction       
 
 ---
 
-### EventReadByType
+### EventGetByType
 
 ```
 Client               Handler             Engine (EventLog)    Transaction          Storage
@@ -343,7 +343,7 @@ StreamMeta {
 - Event uses `Version::Sequence(u64)` unlike KV's `Version::Txn(u64)` - the sequence number is application-meaningful (position in log), not a global transaction ID
 - Events are the only primitive with **hash chaining** - provides tamper-evidence for the append-only log
 - Events are the only primitive with **aggressive retry** (200 attempts) - necessary because all appends contend on the shared `__meta__` key
-- `EventReadByType` does a full O(N) scan despite `StreamMeta` tracking per-type ranges - optimization opportunity
+- `EventGetByType` does a full O(N) scan despite `StreamMeta` tracking per-type ranges - optimization opportunity
 - The `payload` must be `Value::Object` (validated in engine), unlike KV which accepts any `Value` type
 - Events are immutable once written - there is no update or delete for individual events
 - The Session transaction path for `EventAppend` uses a `Transaction` wrapper which has its own hash computation, using the canonical `compute_event_hash()` function from `primitives/event.rs`

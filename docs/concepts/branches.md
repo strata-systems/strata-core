@@ -68,7 +68,7 @@ db.set_branch("isolated")?;
 
 // Nothing from default is visible
 assert!(db.kv_get("kv-key")?.is_none());
-assert!(db.state_read("cell")?.is_none());
+assert!(db.state_get("cell")?.is_none());
 assert_eq!(db.event_len()?, 0);
 ```
 
@@ -122,7 +122,7 @@ Under the hood, every key in storage is prefixed with its branch ID. When you ca
 This also means:
 - Deleting a branch is O(branch size), scanning only that branch's keys
 - Branches share no state, so they cannot conflict with each other
-- Cross-branch operations (like fork and diff) are planned but not yet implemented
+- Cross-branch operations (fork, diff, merge) are available via `db.branches()` — see the [Branch Management Guide](../guides/branch-management.md)
 
 ## Next
 

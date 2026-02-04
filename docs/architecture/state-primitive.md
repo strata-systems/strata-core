@@ -66,7 +66,7 @@ The State primitive provides named cells with compare-and-swap (CAS) semantics. 
 |  STORAGE (storage/sharded.rs)                                    |
 |  DashMap<Key, VersionChain>                                      |
 |  State is a single versioned value per cell key                  |
-|  Multiple versions retained for history (readv)                  |
+|  Multiple versions retained for history (getv)                  |
 +------------------------------------------------------------------+
 ```
 
@@ -121,12 +121,12 @@ Client               Handler             Engine (StateCell)   Transaction       
 
 ---
 
-### StateRead
+### StateGet
 
 ```
 Client               Handler             Engine (StateCell)   Transaction          Storage
   |                    |                   |                    |                   |
-  |-- StateRead ------>|                   |                    |                   |
+  |-- StateGet ------>|                   |                    |                   |
   | {branch, cell}     |                   |                    |                   |
   |                    |-- validate ------>|                    |                   |
   |                    |                   |                    |                   |
@@ -151,9 +151,9 @@ Client               Handler             Engine (StateCell)   Transaction       
 
 1. **Handler**: Converts branch, validates cell name, calls `primitives.state.read()`.
 2. **Engine (StateCell)**: Constructs key. Opens transaction. Calls `txn.get()`. If found, deserializes `State` from JSON string, returns `Some(state.value)`. If not found, returns `None`.
-3. **Note**: Only the `.value` field is returned to the caller. The version counter and timestamp are discarded. Use `StateReadv` to get version information.
+3. **Note**: Only the `.value` field is returned to the caller. The version counter and timestamp are discarded. Use `StateGetv` to get version information.
 
-**Session-transaction path**: When a Session transaction is active, `StateRead` is handled in `execute_in_txn()` via `ctx.get(&full_key)`. The result is deserialized from `Value::String` to get the `State` struct, then `state.value` is returned. This provides read-your-writes for state cells within the transaction.
+**Session-transaction path**: When a Session transaction is active, `StateGet` is handled in `execute_in_txn()` via `ctx.get(&full_key)`. The result is deserialized from `Value::String` to get the `State` struct, then `state.value` is returned. This provides read-your-writes for state cells within the transaction.
 
 ---
 
@@ -303,4 +303,4 @@ State {
 - `StateInit` is **idempotent** - calling it on an existing cell returns the existing version without modifying the cell
 - `StateCas` with `expected_counter = None` in the handler layer acts as init-if-not-exists, checking existence before calling `state.init()`
 - The handler converts CAS failures to `Output::MaybeVersion(None)` rather than returning an error, making it safe to use in optimistic loops
-- State has a `readv` operation for version history (not documented above as it's not one of the main 4, but it uses `db.get_history()` to retrieve all versions from the `VersionChain`)
+- State has a `getv` operation for version history (not documented above as it's not one of the main 4, but it uses `db.get_history()` to retrieve all versions from the `VersionChain`)

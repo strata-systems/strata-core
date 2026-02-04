@@ -12,7 +12,7 @@ use stratadb::{Strata, Value};
 fn agent_worker(db: &Strata, agent_id: &str) -> stratadb::Result<()> {
     // Try to claim the next task using CAS
     loop {
-        let current = db.state_read("task:next")?;
+        let current = db.state_get("task:next")?;
         let task_id = match current {
             Some(v) => v.as_int().unwrap_or(0),
             None => {
@@ -99,7 +99,7 @@ fn try_become_leader(db: &Strata, agent_id: &str) -> stratadb::Result<bool> {
             Ok(true)
         }
         None => {
-            let current = db.state_read("leader")?;
+            let current = db.state_get("leader")?;
             println!("{} is not the leader (current: {:?})", agent_id, current);
             Ok(false)
         }

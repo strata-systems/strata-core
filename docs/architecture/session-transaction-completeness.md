@@ -47,14 +47,14 @@ These commands use the transaction's write-set and snapshot for read-your-writes
 | `KvList` | `ctx.scan_prefix()` → merged view | Yes |
 | `KvPut` | `Transaction::kv_put()` → ctx.put() | Yes |
 | `KvDelete` | `ctx.exists()` + `ctx.delete()` | Yes |
-| `StateRead` | `ctx.get()` + JSON deserialize | Yes |
+| `StateGet` | `ctx.get()` + JSON deserialize | Yes |
 | `StateInit` | `Transaction::state_init()` | Yes |
 | `StateCas` | `Transaction::state_cas()` | Yes |
 | `JsonGet` | Root: `ctx.get()` + JSON deserialize. Path: `Transaction::json_get_path()` | Yes |
 | `JsonSet` | `Transaction::json_set()` | Yes |
 | `JsonDelete` | `Transaction::json_delete()` | Yes |
 | `EventAppend` | `Transaction::event_append()` (hash chaining) | Yes |
-| `EventRead` | `Transaction::event_read()` | Yes |
+| `EventGet` | `Transaction::event_get()` | Yes |
 | `EventLen` | `Transaction::event_len()` | Yes |
 
 **Location**: `crates/executor/src/session.rs:214-361`
@@ -85,10 +85,10 @@ These commands go to `executor.execute()` regardless of whether a transaction is
 | `RetentionStats` | Returns error ("not yet implemented") | N/A |
 | `RetentionPreview` | Returns error ("not yet implemented") | N/A |
 | `KvGetv` | Read (version history) | No |
-| `StateReadv` | Read (version history) | No |
+| `StateGetv` | Read (version history) | No |
 | `JsonGetv` | Read (version history) | No |
 | `JsonList` | Read (document listing) | No |
-| `EventReadByType` | Read (type-filtered events) | No |
+| `EventGetByType` | Read (type-filtered events) | No |
 
 **Location**: `crates/executor/src/session.rs:81-108`
 
@@ -170,7 +170,7 @@ TxnBegin
   JsonList()                        ← reads from committed store
                                       "doc" NOT in results
   EventAppend("type1", payload)    ← buffered in transaction
-  EventReadByType("type1")         ← reads from committed store
+  EventGetByType("type1")         ← reads from committed store
                                       event NOT in results
 TxnCommit
 ```
@@ -180,12 +180,12 @@ Five read commands for transactional primitives bypass the transaction context:
 | Command | Transactional equivalent exists? | Why bypassed |
 |---------|--------------------------------|--------------|
 | `JsonList` | No `ctx.scan_prefix` equivalent for JSON | No JSON-specific list in TransactionContext |
-| `EventReadByType` | No type-filtered read in TransactionContext | Requires scan across all events |
+| `EventGetByType` | No type-filtered read in TransactionContext | Requires scan across all events |
 | `KvGetv` | No version history in TransactionContext | Requires storage-layer version chains |
-| `StateReadv` | No version history in TransactionContext | Requires storage-layer version chains |
+| `StateGetv` | No version history in TransactionContext | Requires storage-layer version chains |
 | `JsonGetv` | No version history in TransactionContext | Requires storage-layer version chains |
 
-The version history commands (Getv) are inherently non-transactional — they read the committed version chain, which is a reasonable design. But `JsonList` and `EventReadByType` are regular read commands whose transactional counterparts (JsonGet, EventRead) DO use the transaction context. The inconsistency is confusing.
+The version history commands (Getv) are inherently non-transactional — they read the committed version chain, which is a reasonable design. But `JsonList` and `EventGetByType` are regular read commands whose transactional counterparts (JsonGet, EventGet) DO use the transaction context. The inconsistency is confusing.
 
 ### Problem 5: BranchImport bypasses transaction via catch-all
 
@@ -213,9 +213,9 @@ This works correctly (the executor handles it fine), but the routing is inconsis
 | Primitive | Read commands | In dispatch_in_txn? | Consistent? |
 |-----------|-------------|---------------------|-------------|
 | KV | KvGet, KvList, **KvGetv** | Yes, Yes, **No** | Partial — Getv intentionally excluded |
-| State | StateRead, **StateReadv** | Yes, **No** | Partial — Readv intentionally excluded |
+| State | StateGet, **StateGetv** | Yes, **No** | Partial — Readv intentionally excluded |
 | JSON | JsonGet, **JsonList**, JsonDelete, **JsonGetv** | Yes, **No**, Yes, **No** | **No** — JsonList should be transactional |
-| Event | EventRead, EventLen, **EventReadByType** | Yes, Yes, **No** | **No** — ReadByType should be transactional |
+| Event | EventGet, EventLen, **EventGetByType** | Yes, Yes, **No** | **No** — ReadByType should be transactional |
 | Vector | VectorGet, VectorSearch, ListCollections | No (all 3) | Yes (consistently non-transactional) |
 | Branch | BranchGet, BranchList, BranchExists | No (all 3) | Yes (consistently non-transactional) |
 
@@ -231,10 +231,10 @@ The `Transaction` wrapper (engine's `TransactionOps` trait) supports these opera
 | `kv_exists` | Yes | Yes (via ctx.exists) |
 | `kv_list` | Yes | Yes (via ctx.scan_prefix) |
 | `event_append` | Yes | Yes |
-| `event_read` | Yes | Yes |
+| `event_get` | Yes | Yes |
 | `event_range` | Yes | Not used |
 | `event_len` | Yes | Yes |
-| `state_read` | Yes | Yes (via ctx.get) |
+| `state_get` | Yes | Yes (via ctx.get) |
 | `state_init` | Yes | Yes |
 | `state_cas` | Yes | Yes |
 | `json_create` | Yes | Not used directly |
@@ -257,7 +257,7 @@ The `Transaction` wrapper (engine's `TransactionOps` trait) supports these opera
 Notable gaps:
 - No `state_set` (unconditional write) — only init and CAS
 - No `json_list` (document enumeration)
-- No `event_read_by_type` (type-filtered scan)
+- No `event_get_by_type` (type-filtered scan)
 - No version history methods (getv) — by design, these read committed chains
 
 ## 6. Summary
@@ -268,5 +268,5 @@ Notable gaps:
 | 2 | Vector writes silently bypass transaction — no error | Medium | Silent non-transactional writes |
 | 3 | Branch writes silently bypass transaction — no error | Medium | Silent non-transactional writes |
 | 4 | JsonList doesn't see uncommitted JSON documents in transaction | Medium | Inconsistent read visibility |
-| 5 | EventReadByType doesn't see uncommitted events in transaction | Medium | Inconsistent read visibility |
+| 5 | EventGetByType doesn't see uncommitted events in transaction | Medium | Inconsistent read visibility |
 | 6 | BranchExport/Import/Validate route inconsistently (catch-all vs explicit) | Low | Inconsistent routing |

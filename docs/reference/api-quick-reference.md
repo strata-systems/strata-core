@@ -23,7 +23,7 @@ Every method on the `Strata` struct, grouped by category.
 | `create_branch` | `(name: &str) -> Result<()>` | Creates empty branch |
 | `list_branches` | `() -> Result<Vec<String>>` | All branch names |
 | `delete_branch` | `(name: &str) -> Result<()>` | Deletes branch + data |
-| `fork_branch` | `(dest: &str) -> Result<()>` | **Not yet implemented** |
+| `fork_branch` | `(dest: &str) -> Result<()>` | Copies current branch to dest |
 | `branches` | `() -> Branches<'_>` | Power API handle |
 
 ## Space Context
@@ -52,8 +52,8 @@ Every method on the `Strata` struct, grouped by category.
 | Method | Signature | Returns | Notes |
 |--------|-----------|---------|-------|
 | `event_append` | `(event_type: &str, payload: Value) -> Result<u64>` | Sequence number | Payload must be Object |
-| `event_read` | `(sequence: u64) -> Result<Option<VersionedValue>>` | Event or None | |
-| `event_read_by_type` | `(event_type: &str) -> Result<Vec<VersionedValue>>` | All events of type | |
+| `event_get` | `(sequence: u64) -> Result<Option<VersionedValue>>` | Event or None | |
+| `event_get_by_type` | `(event_type: &str) -> Result<Vec<VersionedValue>>` | All events of type | |
 | `event_len` | `() -> Result<u64>` | Total event count | |
 
 ## State Cell
@@ -61,7 +61,7 @@ Every method on the `Strata` struct, grouped by category.
 | Method | Signature | Returns | Notes |
 |--------|-----------|---------|-------|
 | `state_set` | `(cell: &str, value: impl Into<Value>) -> Result<u64>` | Version | Unconditional write |
-| `state_read` | `(cell: &str) -> Result<Option<Value>>` | Value or None | |
+| `state_get` | `(cell: &str) -> Result<Option<Value>>` | Value or None | |
 | `state_init` | `(cell: &str, value: impl Into<Value>) -> Result<u64>` | Version | Only if absent |
 | `state_cas` | `(cell: &str, expected: Option<u64>, value: impl Into<Value>) -> Result<Option<u64>>` | New version or None | CAS |
 
@@ -116,8 +116,9 @@ Methods on the `Branches` handle returned by `db.branches()`:
 | `exists` | `(name: &str) -> Result<bool>` | Whether branch exists |
 | `create` | `(name: &str) -> Result<()>` | Creates empty branch |
 | `delete` | `(name: &str) -> Result<()>` | Deletes branch |
-| `fork` | `(dest: &str) -> Result<()>` | **Not yet implemented** |
-| `diff` | `(branch1: &str, branch2: &str) -> Result<BranchDiff>` | **Not yet implemented** |
+| `fork` | `(source: &str, dest: &str) -> Result<ForkInfo>` | Copies branch data |
+| `diff` | `(branch1: &str, branch2: &str) -> Result<BranchDiff>` | Compares two branches |
+| `merge` | `(source: &str, target: &str, strategy: MergeStrategy) -> Result<MergeInfo>` | Merges source into target |
 
 ## Session
 
