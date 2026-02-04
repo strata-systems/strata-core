@@ -16,11 +16,13 @@ use strata_core::Value;
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct BranchId(pub String);
 
-impl BranchId {
-    /// Create a BranchId for the default branch.
-    pub fn default() -> Self {
+impl Default for BranchId {
+    fn default() -> Self {
         BranchId("default".to_string())
     }
+}
+
+impl BranchId {
 
     /// Check if this is the default branch.
     pub fn is_default(&self) -> bool {
@@ -30,12 +32,6 @@ impl BranchId {
     /// Get the string value.
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-impl Default for BranchId {
-    fn default() -> Self {
-        Self::default()
     }
 }
 
@@ -99,18 +95,13 @@ pub struct VersionedValue {
 // =============================================================================
 
 /// Distance metric for vector similarity search
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DistanceMetric {
+    #[default]
     Cosine,
     Euclidean,
     DotProduct,
-}
-
-impl Default for DistanceMetric {
-    fn default() -> Self {
-        DistanceMetric::Cosine
-    }
 }
 
 /// Metadata filter for vector search

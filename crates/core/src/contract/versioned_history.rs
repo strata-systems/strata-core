@@ -50,6 +50,11 @@ impl<T> VersionedHistory<T> {
         self.versions.len()
     }
 
+    /// Returns `false` — a `VersionedHistory` is always non-empty.
+    pub fn is_empty(&self) -> bool {
+        false
+    }
+
     /// Get the version identifier of the latest entry.
     pub fn version(&self) -> Version {
         self.versions[0].version

@@ -414,8 +414,8 @@ impl ShardedStore {
         self.shards
             .get(&branch_id)
             .map(|shard| {
-                shard.data.get(key).map_or(false, |chain| {
-                    chain.latest().map_or(false, |sv| !sv.is_tombstone())
+                shard.data.get(key).is_some_and(|chain| {
+                    chain.latest().is_some_and(|sv| !sv.is_tombstone())
                 })
             })
             .unwrap_or(false)
@@ -439,6 +439,7 @@ impl ShardedStore {
     ///
     /// Captures timestamp once per batch instead of per-write to avoid
     /// repeated syscalls. All writes in a transaction share the same timestamp.
+    #[allow(clippy::type_complexity)]
     pub fn apply_batch(
         &self,
         writes: &[(Key, strata_core::value::Value)],
@@ -558,7 +559,7 @@ impl ShardedStore {
                             .data
                             .get(*k)
                             .and_then(|chain| chain.latest())
-                            .map_or(false, |sv| !sv.is_tombstone())
+                            .is_some_and(|sv| !sv.is_tombstone())
                     })
                     .cloned()
                     .collect()
@@ -615,7 +616,7 @@ impl ShardedStore {
                             .data
                             .get(*k)
                             .and_then(|chain| chain.latest())
-                            .map_or(false, |sv| !sv.is_tombstone())
+                            .is_some_and(|sv| !sv.is_tombstone())
                     })
                     .cloned()
                     .collect()
@@ -673,7 +674,7 @@ impl ShardedStore {
                             .data
                             .get(*k)
                             .and_then(|chain| chain.latest())
-                            .map_or(false, |sv| !sv.is_tombstone())
+                            .is_some_and(|sv| !sv.is_tombstone())
                     })
                     .cloned()
                     .collect()
@@ -718,7 +719,7 @@ impl ShardedStore {
                                 .data
                                 .get(*k)
                                 .and_then(|chain| chain.latest())
-                                .map_or(false, |sv| !sv.is_tombstone())
+                                .is_some_and(|sv| !sv.is_tombstone())
                     })
                     .count()
             })

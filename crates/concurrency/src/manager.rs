@@ -162,7 +162,7 @@ impl TransactionManager {
     /// * `txn` - Transaction to commit (must be in Active state)
     /// * `store` - Storage to validate against and apply writes to
     /// * `wal` - Optional WAL for durability. Pass `None` for ephemeral databases
-    ///           or when durability is not required (DurabilityMode::Cache).
+    ///   or when durability is not required (DurabilityMode::Cache).
     ///
     /// # Returns
     /// - Ok(commit_version) on success

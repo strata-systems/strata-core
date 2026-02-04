@@ -6,16 +6,11 @@
 use serde::{Deserialize, Serialize};
 
 /// Controls whether the database allows writes or is read-only.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum AccessMode {
+    #[default]
     ReadWrite,
     ReadOnly,
-}
-
-impl Default for AccessMode {
-    fn default() -> Self {
-        AccessMode::ReadWrite
-    }
 }
 
 /// Options for opening a database.

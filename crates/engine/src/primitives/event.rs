@@ -133,18 +133,18 @@ pub fn compute_event_hash(
     let mut hasher = Sha256::new();
 
     // Sequence (8 bytes, little-endian)
-    hasher.update(&sequence.to_le_bytes());
+    hasher.update(sequence.to_le_bytes());
 
     // Event type with length prefix (4 bytes length + content)
-    hasher.update(&(event_type.len() as u32).to_le_bytes());
+    hasher.update((event_type.len() as u32).to_le_bytes());
     hasher.update(event_type.as_bytes());
 
     // Timestamp (8 bytes, little-endian)
-    hasher.update(&timestamp.to_le_bytes());
+    hasher.update(timestamp.to_le_bytes());
 
     // Payload as canonical JSON with length prefix
     let payload_bytes = serde_json::to_vec(payload).unwrap_or_default();
-    hasher.update(&(payload_bytes.len() as u32).to_le_bytes());
+    hasher.update((payload_bytes.len() as u32).to_le_bytes());
     hasher.update(&payload_bytes);
 
     // Previous hash (32 bytes)

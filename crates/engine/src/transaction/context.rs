@@ -181,7 +181,7 @@ impl<'a> TransactionOps for Transaction<'a> {
         let full_key = self.kv_key(key);
 
         // Use the ctx.put() method which handles all the bookkeeping
-        self.ctx.put(full_key, value).map_err(StrataError::from)?;
+        self.ctx.put(full_key, value)?;
 
         Ok(Version::txn(self.ctx.txn_id))
     }
@@ -193,7 +193,7 @@ impl<'a> TransactionOps for Transaction<'a> {
         let existed = self.kv_exists(key)?;
 
         // Use the ctx.delete() method
-        self.ctx.delete(full_key).map_err(StrataError::from)?;
+        self.ctx.delete(full_key)?;
 
         Ok(existed)
     }
@@ -276,7 +276,7 @@ impl<'a> TransactionOps for Transaction<'a> {
         })?;
         self.ctx
             .put(event_key, Value::String(event_json))
-            .map_err(StrataError::from)?;
+            ?;
 
         // Write EventLogMeta so EventLog::len() and other readers see the update after commit
         let meta_key = Key::new_event_meta(self.namespace.clone());
@@ -291,7 +291,7 @@ impl<'a> TransactionOps for Transaction<'a> {
         })?;
         self.ctx
             .put(meta_key, Value::String(meta_json))
-            .map_err(StrataError::from)?;
+            ?;
 
         // Update TransactionContext event state for cross-Transaction continuity
         self.ctx.set_event_state(
@@ -394,7 +394,7 @@ impl<'a> TransactionOps for Transaction<'a> {
 
         self.ctx
             .put(full_key, Value::String(state_json))
-            .map_err(StrataError::from)?;
+            ?;
 
         Ok(version)
     }
@@ -442,7 +442,7 @@ impl<'a> TransactionOps for Transaction<'a> {
 
         self.ctx
             .put(full_key, Value::String(state_json))
-            .map_err(StrataError::from)?;
+            ?;
 
         Ok(new_version)
     }
@@ -472,7 +472,7 @@ impl<'a> TransactionOps for Transaction<'a> {
         // Create the document by setting at root path
         self.ctx
             .json_set(&full_key, &JsonPath::root(), value)
-            .map_err(StrataError::from)?;
+            ?;
 
         Ok(Version::txn(self.ctx.txn_id))
     }
@@ -560,7 +560,7 @@ impl<'a> TransactionOps for Transaction<'a> {
         // Call ctx.json_set (same pattern as kv_put calling ctx.put)
         self.ctx
             .json_set(&full_key, path, value)
-            .map_err(StrataError::from)?;
+            ?;
 
         Ok(Version::txn(self.ctx.txn_id))
     }
@@ -574,7 +574,7 @@ impl<'a> TransactionOps for Transaction<'a> {
         // Delete the entire document by deleting at root path
         self.ctx
             .json_delete(&full_key, &JsonPath::root())
-            .map_err(StrataError::from)?;
+            ?;
 
         Ok(existed)
     }
