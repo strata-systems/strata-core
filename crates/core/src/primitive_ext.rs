@@ -16,7 +16,7 @@
 //!
 //! ## Example: Vector Primitive
 //!
-//! ```rust,ignore
+//! ```text
 //! impl PrimitiveStorageExt for VectorStore {
 //!     fn primitive_type_id(&self) -> u8 { 7 }
 //!

@@ -8,7 +8,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust,ignore
+//! ```text
 //! use strata_primitives::extensions::*;
 //!
 //! db.transaction(branch_id, |txn| {

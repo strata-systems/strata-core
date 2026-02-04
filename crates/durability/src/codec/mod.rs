@@ -15,7 +15,7 @@
 //!
 //! # Usage
 //!
-//! ```ignore
+//! ```text
 //! use strata_durability::codec::{StorageCodec, IdentityCodec};
 //!
 //! let codec = IdentityCodec;

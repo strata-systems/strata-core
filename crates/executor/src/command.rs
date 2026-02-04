@@ -44,7 +44,7 @@ use crate::types::*;
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// use strata_executor::{Command, BranchId};
 /// use strata_core::Value;
 ///

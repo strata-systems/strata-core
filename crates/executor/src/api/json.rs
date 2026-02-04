@@ -4,7 +4,7 @@
 //!
 //! # Example
 //!
-//! ```ignore
+//! ```text
 //! use strata_executor::Strata;
 //!
 //! let db = Strata::open("/path/to/data")?;
@@ -47,7 +47,7 @@ impl Strata {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// // Create a new document
     /// db.json_set("config", "$", json!({"debug": true}))?;
     ///
@@ -82,7 +82,7 @@ impl Strata {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// // Get the whole document
     /// let doc = db.json_get("config", "$")?;
     ///
@@ -136,7 +136,7 @@ impl Strata {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// // Delete a nested value
     /// db.json_delete("config", "$.deprecated_field")?;
     ///
@@ -171,7 +171,7 @@ impl Strata {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// // List all documents with prefix
     /// let (keys, cursor) = db.json_list(Some("user:".into()), None, 100)?;
     ///

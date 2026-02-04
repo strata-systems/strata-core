@@ -26,7 +26,7 @@ use crate::{Command, Error, Output, Result};
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// use strata_executor::{Command, Executor, BranchId};
 /// use strata_core::Value;
 ///

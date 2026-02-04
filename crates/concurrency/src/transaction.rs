@@ -243,17 +243,24 @@ impl JsonPatchEntry {
 ///
 /// # Usage
 ///
-/// ```ignore
-/// db.transaction(branch_id, |txn| {
-///     // JSON operation
-///     let value = txn.json_get(&key, &path)?;
-///     txn.json_set(&key, &path, json!({"updated": true}))?;
+/// ```no_run
+/// # use strata_concurrency::{TransactionContext, JsonStoreExt};
+/// # use strata_core::types::{BranchId, Key, Namespace, TypeTag};
+/// # use strata_core::value::Value;
+/// # use strata_core::primitives::json::JsonPath;
+/// # fn example(txn: &mut TransactionContext) -> strata_core::StrataResult<()> {
+/// # let ns = Namespace::for_branch(BranchId::default());
+/// # let key = Key::new(ns.clone(), TypeTag::Json, b"doc".to_vec());
+/// # let path = JsonPath::root();
+/// # let other_key = Key::new_kv(ns, "other");
+/// // JSON operation
+/// let value = txn.json_get(&key, &path)?;
+/// txn.json_set(&key, &path, serde_json::json!({"updated": true}).into())?;
 ///
-///     // KV operation in same transaction
-///     txn.put(other_key, Value::Bytes(b"done".to_vec()))?;
-///
-///     Ok(())
-/// })?;
+/// // KV operation in same transaction
+/// txn.put(other_key, Value::Bytes(b"done".to_vec()))?;
+/// # Ok(())
+/// # }
 /// ```
 ///
 /// # Read-Your-Writes
@@ -535,11 +542,17 @@ impl TransactionContext {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_concurrency::TransactionContext;
+    /// # use strata_core::types::{BranchId, Key, Namespace};
+    /// # fn example(txn: &mut TransactionContext) -> strata_core::StrataResult<()> {
+    /// # let key = Key::new_kv(Namespace::for_branch(BranchId::default()), "key");
     /// let value = txn.get(&key)?;
     /// if let Some(v) = value {
     ///     // Process value
     /// }
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn get(&mut self, key: &Key) -> StrataResult<Option<Value>> {
         self.ensure_active()?;
@@ -658,12 +671,18 @@ impl TransactionContext {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_concurrency::TransactionContext;
+    /// # use strata_core::types::{BranchId, Key, Namespace};
+    /// # fn example(txn: &mut TransactionContext) -> strata_core::StrataResult<()> {
+    /// let namespace = Namespace::for_branch(BranchId::default());
     /// let prefix = Key::new_kv(namespace, "user:");
     /// let users = txn.scan_prefix(&prefix)?;
     /// for (key, value) in users {
     ///     // Process each user
     /// }
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn scan_prefix(&mut self, prefix: &Key) -> StrataResult<Vec<(Key, Value)>> {
         self.ensure_active()?;
@@ -729,10 +748,17 @@ impl TransactionContext {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_concurrency::TransactionContext;
+    /// # use strata_core::types::{BranchId, Key, Namespace};
+    /// # use strata_core::value::Value;
+    /// # fn example(txn: &mut TransactionContext) -> strata_core::StrataResult<()> {
+    /// # let key = Key::new_kv(Namespace::for_branch(BranchId::default()), "key");
     /// txn.put(key, Value::Bytes(b"value".to_vec()))?;
     /// // Value is NOT visible to other transactions yet
     /// // Will be visible after successful commit
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn put(&mut self, key: Key, value: Value) -> StrataResult<()> {
         self.ensure_active()?;
@@ -760,11 +786,17 @@ impl TransactionContext {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_concurrency::TransactionContext;
+    /// # use strata_core::types::{BranchId, Key, Namespace};
+    /// # fn example(txn: &mut TransactionContext) -> strata_core::StrataResult<()> {
+    /// # let key = Key::new_kv(Namespace::for_branch(BranchId::default()), "key");
     /// txn.delete(key)?;
     /// // Key is NOT deleted from storage yet
     /// // Will be deleted after successful commit
     /// // Reading this key within this txn returns None (read-your-deletes)
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn delete(&mut self, key: Key) -> StrataResult<()> {
         self.ensure_active()?;
@@ -794,12 +826,21 @@ impl TransactionContext {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_concurrency::TransactionContext;
+    /// # use strata_core::types::{BranchId, Key, Namespace};
+    /// # use strata_core::value::Value;
+    /// # fn example(txn: &mut TransactionContext) -> strata_core::StrataResult<()> {
+    /// # let ns = Namespace::for_branch(BranchId::default());
+    /// # let key = Key::new_kv(ns.clone(), "key");
+    /// # let other_key = Key::new_kv(ns, "other");
     /// // Create key only if it doesn't exist (expected_version = 0)
     /// txn.cas(key, 0, Value::Bytes(b"initial".to_vec()))?;
     ///
     /// // Update key only if at version 5
     /// txn.cas(other_key, 5, Value::Bytes(b"updated".to_vec()))?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn cas(&mut self, key: Key, expected_version: u64, new_value: Value) -> StrataResult<()> {
         self.ensure_active()?;
@@ -1325,12 +1366,17 @@ impl TransactionContext {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_concurrency::{TransactionContext, ClonedSnapshotView};
+    /// # use strata_core::types::BranchId;
+    /// let branch_id = BranchId::default();
     /// let mut ctx = TransactionContext::new(1, branch_id, 100);
     /// // ... use the context ...
     ///
     /// // Reset for reuse - capacity is preserved!
-    /// ctx.reset(2, new_branch_id, Some(new_snapshot));
+    /// let new_branch_id = BranchId::default();
+    /// let new_snapshot = ClonedSnapshotView::empty(200);
+    /// ctx.reset(2, new_branch_id, Some(Box::new(new_snapshot)));
     /// ```
     pub fn reset(
         &mut self,
@@ -1375,7 +1421,10 @@ impl TransactionContext {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_concurrency::TransactionContext;
+    /// # use strata_core::types::BranchId;
+    /// let branch_id = BranchId::default();
     /// let ctx = TransactionContext::new(1, branch_id, 100);
     /// let (read_cap, write_cap, delete_cap, cas_cap) = ctx.capacity();
     /// ```

@@ -28,7 +28,7 @@
 //!
 //! Primitives can be combined within a single transaction using extension traits:
 //!
-//! ```rust,ignore
+//! ```text
 //! use strata_engine::primitives::extensions::*;
 //!
 //! db.transaction(branch_id, |txn| {

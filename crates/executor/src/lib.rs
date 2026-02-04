@@ -9,7 +9,7 @@
 //!
 //! ## Quick Start
 //!
-//! ```ignore
+//! ```text
 //! use strata_executor::{Strata, Value};
 //!
 //! // Open a database
@@ -37,7 +37,7 @@
 //!
 //! Data is isolated by "branches" (like git branches). Use `create_branch()` and `set_branch()`:
 //!
-//! ```ignore
+//! ```text
 //! db.create_branch("experiment-1")?;    // Create a new blank branch
 //! db.set_branch("experiment-1")?;       // Switch to it
 //! db.kv_put("key", Value::Int(42))?; // Data goes to experiment-1

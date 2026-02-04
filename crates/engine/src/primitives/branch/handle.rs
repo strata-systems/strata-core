@@ -10,7 +10,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust,ignore
+//! ```text
 //! let branch = db.branch("my-branch");
 //!
 //! // Access primitives directly
@@ -57,7 +57,7 @@ use strata_core::StrataResult;
 ///
 /// ## Example
 ///
-/// ```rust,ignore
+/// ```text
 /// let branch = db.branch(branch_id);
 ///
 /// // Access primitives
@@ -129,7 +129,7 @@ impl BranchHandle {
     ///
     /// ## Example
     ///
-    /// ```rust,ignore
+    /// ```text
     /// branch.transaction(|txn| {
     ///     let value = txn.kv_get("counter")?;
     ///     txn.kv_put("counter", Value::from(value.unwrap_or(0) + 1))?;

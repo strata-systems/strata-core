@@ -88,7 +88,7 @@ impl Default for VectorBackendState {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// use strata_primitives::VectorStore;
 /// use crate::database::Database;
 /// use strata_core::types::BranchId;

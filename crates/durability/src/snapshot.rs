@@ -12,7 +12,7 @@
 //!
 //! ## Usage
 //!
-//! ```ignore
+//! ```text
 //! let header = SnapshotHeader::new(wal_offset, tx_count);
 //! let sections = vec![
 //!     PrimitiveSection::new(primitive_ids::KV, kv_data),
@@ -48,7 +48,7 @@ use tracing::{debug, info, warn};
 ///
 /// Instead of implementing `SnapshotSerializable`, implement `PrimitiveStorageExt`:
 ///
-/// ```ignore
+/// ```text
 /// use strata_core::PrimitiveStorageExt;
 ///
 /// impl PrimitiveStorageExt for MyPrimitive {

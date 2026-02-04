@@ -8,7 +8,7 @@
 //!
 //! # Example
 //!
-//! ```ignore
+//! ```text
 //! use strata_durability::database::{DatabaseHandle, DatabaseConfig};
 //!
 //! // Create a new database
@@ -42,7 +42,7 @@ use std::path::Path;
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// export_database("source.db", "backup.db", &config)?;
 /// ```
 pub fn export_database(

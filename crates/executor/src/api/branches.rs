@@ -5,7 +5,7 @@
 //!
 //! # Example
 //!
-//! ```ignore
+//! ```text
 //! use strata_executor::Strata;
 //!
 //! let db = Strata::open("/path/to/data")?;
@@ -50,7 +50,7 @@ impl<'a> Branches<'a> {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// for branch in db.branches().list()? {
     ///     println!("Branch: {}", branch);
     /// }
@@ -144,7 +144,7 @@ impl<'a> Branches<'a> {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// db.branches().fork("main", "experiment")?;
     /// ```
     pub fn fork(&self, source: &str, destination: &str) -> Result<ForkInfo> {
@@ -163,7 +163,7 @@ impl<'a> Branches<'a> {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// let diff = db.branches().diff("main", "experiment")?;
     /// println!("Added: {}", diff.summary.total_added);
     /// println!("Removed: {}", diff.summary.total_removed);
@@ -189,7 +189,7 @@ impl<'a> Branches<'a> {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// use strata_engine::MergeStrategy;
     ///
     /// // Merge with last-writer-wins conflict resolution

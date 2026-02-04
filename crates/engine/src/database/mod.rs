@@ -107,7 +107,7 @@ pub(crate) enum PersistenceMode {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// use strata_engine::Database;
 /// use strata_core::types::BranchId;
 ///
@@ -180,7 +180,7 @@ impl Database {
     /// This ensures all threads share the same database instance, which is safe
     /// because Database uses internal synchronization (DashMap, atomics, etc.).
     ///
-    /// ```ignore
+    /// ```text
     /// let db1 = Database::open("/data")?;
     /// let db2 = Database::open("/data")?;  // Same Arc as db1
     /// assert!(Arc::ptr_eq(&db1, &db2));
@@ -206,7 +206,7 @@ impl Database {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// use strata_engine::Database;
     ///
     /// let db = Database::open("/path/to/data")?;
@@ -381,7 +381,7 @@ impl Database {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// use strata_engine::Database;
     /// use strata_core::types::BranchId;
     ///
@@ -499,7 +499,7 @@ impl Database {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// #[derive(Default)]
     /// struct VectorBackendState {
     ///     backends: RwLock<BTreeMap<CollectionId, Box<dyn VectorIndexBackend>>>,
@@ -663,7 +663,7 @@ impl Database {
     /// * `Err` - On validation conflict or closure error
     ///
     /// # Example
-    /// ```ignore
+    /// ```text
     /// let result = db.transaction(branch_id, |txn| {
     ///     let val = txn.get(&key)?;
     ///     txn.put(key, new_value)?;
@@ -692,7 +692,7 @@ impl Database {
     /// * `Err` - On validation conflict or closure error
     ///
     /// # Example
-    /// ```ignore
+    /// ```text
     /// let (result, commit_version) = db.transaction_with_version(branch_id, |txn| {
     ///     txn.put(key, value)?;
     ///     Ok("success")
@@ -735,7 +735,7 @@ impl Database {
     /// * `Err` - On non-conflict error or max retries exceeded
     ///
     /// # Example
-    /// ```ignore
+    /// ```text
     /// let config = RetryConfig::default();
     /// let result = db.transaction_with_retry(branch_id, config, |txn| {
     ///     let val = txn.get(&key)?;
@@ -791,7 +791,7 @@ impl Database {
     /// * `TransactionContext` - Active transaction ready for operations
     ///
     /// # Example
-    /// ```ignore
+    /// ```text
     /// let mut txn = db.begin_transaction(branch_id);
     /// txn.put(key, value)?;
     /// db.commit_transaction(&mut txn)?;
@@ -817,7 +817,7 @@ impl Database {
     /// * `ctx` - Transaction context to return to pool
     ///
     /// # Example
-    /// ```ignore
+    /// ```text
     /// let mut txn = db.begin_transaction(branch_id);
     /// txn.put(key, value)?;
     /// db.commit_transaction(&mut txn)?;
@@ -896,7 +896,7 @@ impl Database {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// db.shutdown()?;
     /// assert!(!db.is_open());
     /// ```

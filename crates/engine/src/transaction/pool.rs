@@ -36,7 +36,7 @@ thread_local! {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// // Acquire a context (from pool or new allocation)
 /// let ctx = TransactionPool::acquire(1, branch_id, Some(snapshot));
 ///

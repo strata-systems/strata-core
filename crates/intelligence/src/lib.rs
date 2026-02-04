@@ -15,7 +15,7 @@
 //!
 //! # Usage
 //!
-//! ```ignore
+//! ```text
 //! use strata_intelligence::DatabaseSearchExt;
 //!
 //! let response = db.hybrid().search(&request)?;
@@ -51,7 +51,7 @@ pub use tokenizer::{tokenize, tokenize_unique};
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// use strata_intelligence::DatabaseSearchExt;
 /// use std::sync::Arc;
 ///

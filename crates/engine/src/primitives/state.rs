@@ -55,7 +55,7 @@ fn from_stored_value<T: for<'de> Deserialize<'de>>(
 ///
 /// ## Example
 ///
-/// ```rust,ignore
+/// ```text
 /// use strata_primitives::StateCell;
 /// use strata_core::value::Value;
 ///

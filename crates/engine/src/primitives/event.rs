@@ -240,7 +240,7 @@ fn from_stored_value<T: for<'de> Deserialize<'de>>(
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// use strata_primitives::EventLog;
 /// use strata_engine::Database;
 /// use strata_core::types::BranchId;

@@ -22,7 +22,7 @@
 //!
 //! Primitives register their recovery functions at startup:
 //!
-//! ```ignore
+//! ```text
 //! use strata_engine::{register_recovery_participant, RecoveryParticipant};
 //!
 //! // Called once at initialization

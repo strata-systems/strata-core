@@ -6,7 +6,7 @@
 //!
 //! # Usage
 //!
-//! ```ignore
+//! ```text
 //! use strata_executor::Session;
 //!
 //! let mut session = Session::new(db.clone());

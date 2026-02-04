@@ -14,7 +14,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust,ignore
+//! ```text
 //! db.transaction(&branch_id, |txn| {
 //!     // Read from KV
 //!     let config = txn.kv_get("config")?;

@@ -38,7 +38,7 @@ use strata_core::{Version, VersionedHistory};
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// let db = Database::open("/path/to/data")?;
 /// let kv = KVStore::new(db);
 /// let branch_id = BranchId::new();
@@ -76,7 +76,7 @@ impl KVStore {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// let value = kv.get(&branch_id, "default", "user:123")?;
     /// if let Some(v) = value {
     ///     println!("Found: {:?}", v);
@@ -128,7 +128,7 @@ impl KVStore {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// let version = kv.put(&branch_id, "default", "user:123", Value::String("Alice".into()))?;
     /// ```
     pub fn put(
@@ -152,7 +152,7 @@ impl KVStore {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// let was_deleted = kv.delete(&branch_id, "default", "user:123")?;
     /// ```
     pub fn delete(&self, branch_id: &BranchId, space: &str, key: &str) -> StrataResult<bool> {
@@ -172,7 +172,7 @@ impl KVStore {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// // List all keys starting with "user:"
     /// let keys = kv.list(&branch_id, "default", Some("user:"))?;
     ///

@@ -33,7 +33,7 @@ use strata_core::{
 ///
 /// # Usage
 ///
-/// ```ignore
+/// ```text
 /// db.transaction(&branch_id, |txn| {
 ///     // KV operations
 ///     let value = txn.kv_get("key")?;

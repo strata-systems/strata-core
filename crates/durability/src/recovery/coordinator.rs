@@ -14,7 +14,7 @@
 //!
 //! # Example
 //!
-//! ```ignore
+//! ```text
 //! let recovery = RecoveryCoordinator::new(db_dir, codec);
 //! let result = recovery.recover()?;
 //! println!("Recovered {} records from WAL", result.replay_stats.records_applied);

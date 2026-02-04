@@ -5,7 +5,7 @@
 //!
 //! # Example
 //!
-//! ```ignore
+//! ```text
 //! use strata_durability::testing::ReferenceModel;
 //!
 //! let mut model = ReferenceModel::new();

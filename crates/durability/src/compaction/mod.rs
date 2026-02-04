@@ -20,7 +20,7 @@
 //!
 //! # Example
 //!
-//! ```ignore
+//! ```text
 //! // Compact WAL only (safe mode)
 //! let info = database.compact(CompactMode::WALOnly)?;
 //! println!("Reclaimed {} bytes", info.reclaimed_bytes);

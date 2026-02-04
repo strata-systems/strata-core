@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// use strata_executor::{Command, Error, Executor};
 ///
 /// match executor.execute(cmd) {

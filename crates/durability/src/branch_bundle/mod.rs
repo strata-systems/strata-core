@@ -22,17 +22,17 @@
 //! ## Usage
 //!
 //! Export a completed branch:
-//! ```ignore
+//! ```text
 //! let info = db.export_branch(&branch_id, Path::new("./my-branch.branchbundle.tar.zst"))?;
 //! ```
 //!
 //! Verify a bundle:
-//! ```ignore
+//! ```text
 //! let info = db.verify_bundle(Path::new("./my-branch.branchbundle.tar.zst"))?;
 //! ```
 //!
 //! Import into a database:
-//! ```ignore
+//! ```text
 //! let info = db.import_branch(Path::new("./my-branch.branchbundle.tar.zst"))?;
 //! ```
 //!

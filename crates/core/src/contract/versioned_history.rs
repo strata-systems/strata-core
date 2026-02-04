@@ -15,8 +15,12 @@ use std::ops::Index;
 ///
 /// # Example
 ///
-/// ```ignore
-/// let history = kv.getv(&branch_id, "key")?.unwrap();
+/// ```no_run
+/// # use strata_core::{Version, Versioned, VersionedHistory};
+/// # use strata_core::value::Value;
+/// # let v1 = Versioned::new(Value::Int(2), Version::txn(2));
+/// # let v2 = Versioned::new(Value::Int(1), Version::txn(1));
+/// # let history = VersionedHistory::new(vec![v1, v2]).unwrap();
 /// let latest = &history[0];          // newest version
 /// let previous = &history[1];        // one version back
 /// println!("total versions: {}", history.len());

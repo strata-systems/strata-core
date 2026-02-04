@@ -22,7 +22,7 @@ impl Strata {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// db.kv_put("name", "Alice")?;
     /// db.kv_put("age", 30i64)?;
     /// db.kv_put("score", 95.5)?;
@@ -86,7 +86,7 @@ impl Strata {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// db.kv_put("counter", 1i64)?;
     /// db.kv_put("counter", 2i64)?;
     /// db.kv_put("counter", 3i64)?;

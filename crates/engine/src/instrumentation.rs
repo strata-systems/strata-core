@@ -5,7 +5,7 @@
 //!
 //! # Usage
 //!
-//! ```ignore
+//! ```text
 //! use strata_engine::instrumentation::PerfTrace;
 //!
 //! #[cfg(feature = "perf-trace")]
@@ -132,7 +132,7 @@ impl PerfTrace {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// let mut trace = PerfTrace::new();
 /// let snapshot = perf_time!(trace, snapshot_acquire_ns, {
 ///     engine.snapshot()

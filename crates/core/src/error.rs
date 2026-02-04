@@ -45,7 +45,9 @@
 //!
 //! ### Usage
 //!
-//! ```ignore
+//! ```no_run
+//! # use strata_core::{StrataError, StrataResult};
+//! # let result: StrataResult<String> = Ok("ok".to_string());
 //! match result {
 //!     Err(StrataError::NotFound { entity_ref }) => {
 //!         println!("Entity not found: {}", entity_ref);
@@ -420,7 +422,8 @@ impl std::fmt::Display for ConstraintReason {
 ///
 /// ## Usage
 ///
-/// ```ignore
+/// ```no_run
+/// # fn some_db_operation() -> strata_core::StrataResult<String> { Ok("value".to_string()) }
 /// use strata_core::{StrataError, StrataResult, EntityRef, Version};
 ///
 /// fn example_operation() -> StrataResult<String> {
@@ -428,6 +431,7 @@ impl std::fmt::Display for ConstraintReason {
 ///     Ok(value)
 /// }
 ///
+/// # let result: StrataResult<String> = some_db_operation();
 /// match result {
 ///     Err(StrataError::NotFound { entity_ref }) => {
 ///         println!("Entity not found: {}", entity_ref);
@@ -520,12 +524,14 @@ pub enum StrataError {
     /// Wire code: `Conflict`
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::{StrataError, EntityRef, BranchId, Version};
+    /// # let branch_id = BranchId::new();
     /// StrataError::version_conflict(
     ///     EntityRef::state(branch_id, "counter"),
     ///     Version::Counter(5),  // expected
     ///     Version::Counter(6),  // actual
-    /// )
+    /// );
     /// ```
     #[error("version conflict on {entity_ref}: expected {expected}, got {actual}")]
     VersionConflict {
@@ -543,8 +549,10 @@ pub enum StrataError {
     /// This error is **retryable** - the transaction can be retried.
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::write_conflict(EntityRef::kv(branch_id, "shared-key"))
+    /// ```no_run
+    /// # use strata_core::{StrataError, EntityRef, BranchId};
+    /// # let branch_id = BranchId::new();
+    /// StrataError::write_conflict(EntityRef::kv(branch_id, "shared-key"));
     /// ```
     #[error("write conflict on {entity_ref}")]
     WriteConflict {
@@ -561,10 +569,11 @@ pub enum StrataError {
     /// transactional failure. This error is **retryable**.
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::StrataError;
     /// StrataError::TransactionAborted {
     ///     reason: "Conflict on key 'counter'".to_string(),
-    /// }
+    /// };
     /// ```
     #[error("transaction aborted: {reason}")]
     TransactionAborted {
@@ -577,8 +586,9 @@ pub enum StrataError {
     /// The transaction exceeded the maximum allowed duration.
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::TransactionTimeout { duration_ms: 5000 }
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::TransactionTimeout { duration_ms: 5000 };
     /// ```
     #[error("transaction timeout after {duration_ms}ms")]
     TransactionTimeout {
@@ -592,10 +602,11 @@ pub enum StrataError {
     /// been committed or rolled back.
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::StrataError;
     /// StrataError::TransactionNotActive {
     ///     state: "committed".to_string(),
-    /// }
+    /// };
     /// ```
     #[error("transaction not active (already {state})")]
     TransactionNotActive {
@@ -613,11 +624,14 @@ pub enum StrataError {
     /// invalid state transition.
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::{StrataError, EntityRef, BranchId};
+    /// # let branch_id = BranchId::new();
+    /// # let doc_id = "doc";
     /// StrataError::invalid_operation(
     ///     EntityRef::json(branch_id, doc_id),
     ///     "Document already exists",
-    /// )
+    /// );
     /// ```
     #[error("invalid operation on {entity_ref}: {reason}")]
     InvalidOperation {
@@ -633,8 +647,9 @@ pub enum StrataError {
     /// cannot be fixed by retrying - the input must be corrected.
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::invalid_input("Key cannot be empty")
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::invalid_input("Key cannot be empty");
     /// ```
     #[error("invalid input: {message}")]
     InvalidInput {
@@ -647,8 +662,9 @@ pub enum StrataError {
     /// The vector dimension doesn't match the collection's configured dimension.
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::dimension_mismatch(384, 768)
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::dimension_mismatch(384, 768);
     /// ```
     #[error("dimension mismatch: expected {expected}, got {got}")]
     DimensionMismatch {
@@ -665,11 +681,14 @@ pub enum StrataError {
     /// Wire code: `InvalidPath`
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::{StrataError, EntityRef, BranchId};
+    /// # let branch_id = BranchId::new();
+    /// # let doc_id = "doc";
     /// StrataError::PathNotFound {
     ///     entity_ref: EntityRef::json(branch_id, doc_id),
     ///     path: "/data/items/0/name".to_string(),
-    /// }
+    /// };
     /// ```
     #[error("path not found in {entity_ref}: {path}")]
     PathNotFound {
@@ -690,12 +709,14 @@ pub enum StrataError {
     /// Wire code: `HistoryTrimmed`
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::{StrataError, EntityRef, BranchId, Version};
+    /// # let branch_id = BranchId::new();
     /// StrataError::history_trimmed(
     ///     EntityRef::kv(branch_id, "key"),
     ///     Version::Txn(100),
     ///     Version::Txn(150),
-    /// )
+    /// );
     /// ```
     #[error(
         "history trimmed for {entity_ref}: requested {requested}, earliest is {earliest_retained}"
@@ -717,8 +738,9 @@ pub enum StrataError {
     /// Low-level storage operation failed.
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::storage("Disk write failed")
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::storage("Disk write failed");
     /// ```
     #[error("storage error: {message}")]
     Storage {
@@ -734,8 +756,9 @@ pub enum StrataError {
     /// Failed to serialize or deserialize data.
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::serialization("Invalid UTF-8 in key")
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::serialization("Invalid UTF-8 in key");
     /// ```
     #[error("serialization error: {message}")]
     Serialization {
@@ -749,10 +772,11 @@ pub enum StrataError {
     /// require recovery from backup.
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::StrataError;
     /// StrataError::Corruption {
     ///     message: "CRC mismatch in event log".to_string(),
-    /// }
+    /// };
     /// ```
     #[error("corruption detected: {message}")]
     Corruption {
@@ -768,12 +792,13 @@ pub enum StrataError {
     /// A resource limit was exceeded.
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::StrataError;
     /// StrataError::CapacityExceeded {
     ///     resource: "event log".to_string(),
     ///     limit: 1_000_000,
     ///     requested: 1_000_001,
-    /// }
+    /// };
     /// ```
     #[error("capacity exceeded: {resource} (limit: {limit}, requested: {requested})")]
     CapacityExceeded {
@@ -790,10 +815,11 @@ pub enum StrataError {
     /// The operation exceeded its computational budget.
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::StrataError;
     /// StrataError::BudgetExceeded {
     ///     operation: "vector search".to_string(),
-    /// }
+    /// };
     /// ```
     #[error("budget exceeded: {operation}")]
     BudgetExceeded {
@@ -810,8 +836,9 @@ pub enum StrataError {
     /// that indicates a bug in the system.
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::internal("Unexpected state in transaction manager")
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::internal("Unexpected state in transaction manager");
     /// ```
     #[error("internal error: {message}")]
     Internal {
@@ -828,8 +855,10 @@ impl StrataError {
     /// Create a NotFound error
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::not_found(EntityRef::kv(branch_id, "missing-key"))
+    /// ```no_run
+    /// # use strata_core::{StrataError, EntityRef, BranchId};
+    /// # let branch_id = BranchId::new();
+    /// StrataError::not_found(EntityRef::kv(branch_id, "missing-key"));
     /// ```
     pub fn not_found(entity_ref: EntityRef) -> Self {
         StrataError::NotFound { entity_ref }
@@ -838,8 +867,10 @@ impl StrataError {
     /// Create a BranchNotFound error
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::branch_not_found(branch_id)
+    /// ```no_run
+    /// # use strata_core::{StrataError, BranchId};
+    /// # let branch_id = BranchId::new();
+    /// StrataError::branch_not_found(branch_id);
     /// ```
     pub fn branch_not_found(branch_id: BranchId) -> Self {
         StrataError::BranchNotFound { branch_id }
@@ -848,12 +879,14 @@ impl StrataError {
     /// Create a VersionConflict error
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::{StrataError, EntityRef, BranchId, Version};
+    /// # let branch_id = BranchId::new();
     /// StrataError::version_conflict(
     ///     EntityRef::state(branch_id, "counter"),
     ///     Version::Counter(5),
     ///     Version::Counter(6),
-    /// )
+    /// );
     /// ```
     pub fn version_conflict(entity_ref: EntityRef, expected: Version, actual: Version) -> Self {
         StrataError::VersionConflict {
@@ -866,8 +899,10 @@ impl StrataError {
     /// Create a WriteConflict error
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::write_conflict(EntityRef::kv(branch_id, "shared-key"))
+    /// ```no_run
+    /// # use strata_core::{StrataError, EntityRef, BranchId};
+    /// # let branch_id = BranchId::new();
+    /// StrataError::write_conflict(EntityRef::kv(branch_id, "shared-key"));
     /// ```
     pub fn write_conflict(entity_ref: EntityRef) -> Self {
         StrataError::WriteConflict { entity_ref }
@@ -876,8 +911,9 @@ impl StrataError {
     /// Create a TransactionAborted error
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::transaction_aborted("Conflict on key 'counter'")
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::transaction_aborted("Conflict on key 'counter'");
     /// ```
     pub fn transaction_aborted(reason: impl Into<String>) -> Self {
         StrataError::TransactionAborted {
@@ -888,8 +924,9 @@ impl StrataError {
     /// Create a TransactionTimeout error
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::transaction_timeout(5000)
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::transaction_timeout(5000);
     /// ```
     pub fn transaction_timeout(duration_ms: u64) -> Self {
         StrataError::TransactionTimeout { duration_ms }
@@ -898,8 +935,9 @@ impl StrataError {
     /// Create a TransactionNotActive error
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::transaction_not_active("committed")
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::transaction_not_active("committed");
     /// ```
     pub fn transaction_not_active(state: impl Into<String>) -> Self {
         StrataError::TransactionNotActive {
@@ -910,11 +948,14 @@ impl StrataError {
     /// Create an InvalidOperation error
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::{StrataError, EntityRef, BranchId};
+    /// # let branch_id = BranchId::new();
+    /// # let doc_id = "doc";
     /// StrataError::invalid_operation(
     ///     EntityRef::json(branch_id, doc_id),
     ///     "Document already exists",
-    /// )
+    /// );
     /// ```
     pub fn invalid_operation(entity_ref: EntityRef, reason: impl Into<String>) -> Self {
         StrataError::InvalidOperation {
@@ -926,8 +967,9 @@ impl StrataError {
     /// Create an InvalidInput error
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::invalid_input("Key cannot be empty")
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::invalid_input("Key cannot be empty");
     /// ```
     pub fn invalid_input(message: impl Into<String>) -> Self {
         StrataError::InvalidInput {
@@ -938,8 +980,9 @@ impl StrataError {
     /// Create a DimensionMismatch error
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::dimension_mismatch(384, 768)
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::dimension_mismatch(384, 768);
     /// ```
     pub fn dimension_mismatch(expected: usize, got: usize) -> Self {
         StrataError::DimensionMismatch { expected, got }
@@ -948,11 +991,14 @@ impl StrataError {
     /// Create a PathNotFound error
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::{StrataError, EntityRef, BranchId};
+    /// # let branch_id = BranchId::new();
+    /// # let doc_id = "doc";
     /// StrataError::path_not_found(
     ///     EntityRef::json(branch_id, doc_id),
     ///     "/data/items/0",
-    /// )
+    /// );
     /// ```
     pub fn path_not_found(entity_ref: EntityRef, path: impl Into<String>) -> Self {
         StrataError::PathNotFound {
@@ -964,12 +1010,14 @@ impl StrataError {
     /// Create a HistoryTrimmed error
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::{StrataError, EntityRef, BranchId, Version};
+    /// # let branch_id = BranchId::new();
     /// StrataError::history_trimmed(
     ///     EntityRef::kv(branch_id, "key"),
     ///     Version::Txn(100),
     ///     Version::Txn(150),
-    /// )
+    /// );
     /// ```
     pub fn history_trimmed(
         entity_ref: EntityRef,
@@ -986,8 +1034,9 @@ impl StrataError {
     /// Create a Storage error
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::storage("Disk write failed")
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::storage("Disk write failed");
     /// ```
     pub fn storage(message: impl Into<String>) -> Self {
         StrataError::Storage {
@@ -999,8 +1048,10 @@ impl StrataError {
     /// Create a Storage error with source
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::storage_with_source("Failed to write", io_error)
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// # let io_error = std::io::Error::new(std::io::ErrorKind::Other, "test");
+    /// StrataError::storage_with_source("Failed to write", io_error);
     /// ```
     pub fn storage_with_source(
         message: impl Into<String>,
@@ -1015,8 +1066,9 @@ impl StrataError {
     /// Create a Serialization error
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::serialization("Invalid UTF-8 in key")
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::serialization("Invalid UTF-8 in key");
     /// ```
     pub fn serialization(message: impl Into<String>) -> Self {
         StrataError::Serialization {
@@ -1027,8 +1079,9 @@ impl StrataError {
     /// Create a Corruption error
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::corruption("CRC mismatch")
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::corruption("CRC mismatch");
     /// ```
     pub fn corruption(message: impl Into<String>) -> Self {
         StrataError::Corruption {
@@ -1039,8 +1092,9 @@ impl StrataError {
     /// Create a CapacityExceeded error
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::capacity_exceeded("event log", 1_000_000, 1_000_001)
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::capacity_exceeded("event log", 1_000_000, 1_000_001);
     /// ```
     pub fn capacity_exceeded(resource: impl Into<String>, limit: usize, requested: usize) -> Self {
         StrataError::CapacityExceeded {
@@ -1053,8 +1107,9 @@ impl StrataError {
     /// Create a BudgetExceeded error
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::budget_exceeded("vector search")
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::budget_exceeded("vector search");
     /// ```
     pub fn budget_exceeded(operation: impl Into<String>) -> Self {
         StrataError::BudgetExceeded {
@@ -1065,8 +1120,9 @@ impl StrataError {
     /// Create an Internal error
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::internal("Unexpected state")
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::internal("Unexpected state");
     /// ```
     pub fn internal(message: impl Into<String>) -> Self {
         StrataError::Internal {
@@ -1077,8 +1133,9 @@ impl StrataError {
     /// Create a WrongType error
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::wrong_type("Int", "String")
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::wrong_type("Int", "String");
     /// ```
     pub fn wrong_type(expected: impl Into<String>, actual: impl Into<String>) -> Self {
         StrataError::WrongType {
@@ -1090,8 +1147,9 @@ impl StrataError {
     /// Create a Conflict error (generic temporal failure)
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::conflict("Version mismatch on key 'counter'")
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// StrataError::conflict("Version mismatch on key 'counter'");
     /// ```
     pub fn conflict(reason: impl Into<String>) -> Self {
         StrataError::Conflict {
@@ -1103,8 +1161,10 @@ impl StrataError {
     /// Create a Conflict error with entity reference
     ///
     /// ## Example
-    /// ```ignore
-    /// StrataError::conflict_on(EntityRef::kv(branch_id, "key"), "Version mismatch")
+    /// ```no_run
+    /// # use strata_core::{StrataError, EntityRef, BranchId};
+    /// # let branch_id = BranchId::new();
+    /// StrataError::conflict_on(EntityRef::kv(branch_id, "key"), "Version mismatch");
     /// ```
     pub fn conflict_on(entity_ref: EntityRef, reason: impl Into<String>) -> Self {
         StrataError::Conflict {
@@ -1264,7 +1324,9 @@ impl StrataError {
     /// Returns true for: `NotFound`, `BranchNotFound`, `PathNotFound`
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// # let error = StrataError::internal("test");
     /// if error.is_not_found() {
     ///     // Handle missing entity
     /// }
@@ -1283,7 +1345,9 @@ impl StrataError {
     /// Returns true for: `Conflict`, `VersionConflict`, `WriteConflict`
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// # let error = StrataError::internal("test");
     /// if error.is_conflict() {
     ///     // Retry with fresh data
     /// }
@@ -1309,7 +1373,9 @@ impl StrataError {
     /// Returns true for: `TransactionAborted`, `TransactionTimeout`, `TransactionNotActive`
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// # let error = StrataError::internal("test");
     /// if error.is_transaction_error() {
     ///     // Handle transaction failure
     /// }
@@ -1330,7 +1396,9 @@ impl StrataError {
     /// Validation errors indicate bad input - don't retry, fix the input.
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// # let error = StrataError::internal("test");
     /// if error.is_validation_error() {
     ///     // Report to user, don't retry
     /// }
@@ -1349,7 +1417,9 @@ impl StrataError {
     /// Returns true for: `Storage`, `Serialization`, `Corruption`
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// # let error = StrataError::internal("test");
     /// if error.is_storage_error() {
     ///     // Check disk/IO
     /// }
@@ -1372,7 +1442,10 @@ impl StrataError {
     /// - `TransactionAborted`: Retry the transaction
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::{StrataError, StrataResult};
+    /// # fn operation() -> StrataResult<String> { Ok("ok".to_string()) }
+    /// # fn example() -> StrataResult<String> {
     /// loop {
     ///     match operation() {
     ///         Ok(result) => return Ok(result),
@@ -1380,6 +1453,7 @@ impl StrataError {
     ///         Err(e) => return Err(e),
     ///     }
     /// }
+    /// # }
     /// ```
     pub fn is_retryable(&self) -> bool {
         matches!(
@@ -1400,10 +1474,12 @@ impl StrataError {
     /// These should be logged, alerted, and investigated.
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// # let error = StrataError::internal("test");
     /// if error.is_serious() {
-    ///     log::error!("SERIOUS ERROR: {}", error);
-    ///     alert_oncall();
+    ///     eprintln!("SERIOUS ERROR: {}", error);
+    ///     // alert_oncall();
     /// }
     /// ```
     pub fn is_serious(&self) -> bool {
@@ -1418,7 +1494,9 @@ impl StrataError {
     /// Returns true for: `CapacityExceeded`, `BudgetExceeded`
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// # let error = StrataError::internal("test");
     /// if error.is_resource_error() {
     ///     // Reduce batch size or implement backpressure
     /// }
@@ -1442,7 +1520,9 @@ impl StrataError {
     /// Returns `None` for errors without entity context.
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// # let error = StrataError::internal("test");
     /// if let Some(entity) = error.entity_ref() {
     ///     println!("Error on entity: {}", entity);
     /// }
@@ -1465,7 +1545,9 @@ impl StrataError {
     /// - Entity-related errors: The branch from the EntityRef
     ///
     /// ## Example
-    /// ```ignore
+    /// ```no_run
+    /// # use strata_core::StrataError;
+    /// # let error = StrataError::internal("test");
     /// if let Some(branch_id) = error.branch_id() {
     ///     println!("Error in branch: {}", branch_id);
     /// }
@@ -1487,9 +1569,11 @@ impl StrataError {
 /// All Strata API methods return `StrataResult<T>`.
 ///
 /// ## Example
-/// ```ignore
+/// ```no_run
+/// # use strata_core::{StrataError, StrataResult, EntityRef, BranchId};
 /// fn get_value(branch_id: BranchId, key: &str) -> StrataResult<String> {
-///     let value = db.kv().get(&branch_id, key)?;
+///     // Look up the key; return error if not found
+///     # let value: Option<String> = None;
 ///     match value {
 ///         Some(v) => Ok(v),
 ///         None => Err(StrataError::not_found(EntityRef::kv(branch_id, key))),

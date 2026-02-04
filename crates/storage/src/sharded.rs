@@ -240,7 +240,7 @@ impl Default for Shard {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// use strata_storage::ShardedStore;
 /// use std::sync::Arc;
 ///
@@ -765,7 +765,7 @@ impl ShardedStore {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// use std::sync::Arc;
     /// use strata_storage::ShardedStore;
     ///
@@ -795,7 +795,7 @@ impl ShardedStore {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// use std::sync::Arc;
     /// use strata_storage::ShardedStore;
     ///

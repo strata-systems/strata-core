@@ -194,7 +194,7 @@ fn from_stored_value<T: for<'de> Deserialize<'de>>(
 ///
 /// ## Example
 ///
-/// ```rust,ignore
+/// ```text
 /// let ri = BranchIndex::new(db.clone());
 ///
 /// // Create a branch

@@ -18,7 +18,7 @@
 //!
 //! # Example
 //!
-//! ```ignore
+//! ```text
 //! use strata_executor::{Strata, Value};
 //!
 //! let mut db = Strata::open("/path/to/data")?;
@@ -98,7 +98,7 @@ impl Strata {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// use strata_executor::{Strata, Value};
     ///
     /// let mut db = Strata::open("/var/data/myapp")?;
@@ -115,7 +115,7 @@ impl Strata {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// use strata_executor::{Strata, OpenOptions, AccessMode};
     ///
     /// let db = Strata::open_with("/var/data/myapp", OpenOptions::new().access_mode(AccessMode::ReadOnly))?;
@@ -147,7 +147,7 @@ impl Strata {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// let mut db = Strata::cache()?;
     /// db.kv_put("key", Value::Int(42))?;
     /// ```
@@ -177,7 +177,7 @@ impl Strata {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// let db = Strata::open("/data/myapp")?;
     /// let handle = db.new_handle()?;
     /// std::thread::spawn(move || {
@@ -282,7 +282,7 @@ impl Strata {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// // List all branches
     /// for branch in db.branches().list()? {
     ///     println!("Branch: {}", branch);
@@ -329,7 +329,7 @@ impl Strata {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// // Switch to an existing branch
     /// db.set_branch("my-experiment")?;
     /// db.kv_put("key", "value")?;  // Data goes to my-experiment
@@ -360,7 +360,7 @@ impl Strata {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// // Create a new branch
     /// db.create_branch("experiment")?;
     ///
@@ -379,7 +379,7 @@ impl Strata {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// // Fork current branch to "experiment"
     /// db.fork_branch("experiment")?;
     ///

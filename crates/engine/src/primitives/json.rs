@@ -71,7 +71,7 @@ fn limit_error_to_error(e: JsonLimitError) -> StrataError {
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```text
 /// use strata_engine::JsonDoc;
 /// use strata_core::primitives::json::JsonValue;
 ///
@@ -150,7 +150,7 @@ impl JsonDoc {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// use strata_primitives::JsonStore;
 /// use crate::database::Database;
 /// use strata_core::types::BranchId;
@@ -238,7 +238,7 @@ impl JsonStore {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// let version = json.create(&branch_id, "default", &doc_id, JsonValue::object())?;
     /// assert_eq!(version, Version::counter(1));
     /// ```
@@ -507,7 +507,7 @@ impl JsonStore {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// // Remove a field from an object
     /// json.delete_at_path(&branch_id, "default", &doc_id, &"user.temp".parse().unwrap())?;
     /// ```
@@ -560,7 +560,7 @@ impl JsonStore {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// let existed = json.destroy(&branch_id, "default", &doc_id)?;
     /// assert!(existed);
     /// ```
@@ -602,7 +602,7 @@ impl JsonStore {
     ///
     /// # Example
     ///
-    /// ```ignore
+    /// ```text
     /// // List first 10 documents
     /// let result = json.list(&branch_id, "default", None, None, 10)?;
     ///

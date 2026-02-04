@@ -11,7 +11,7 @@
 //!
 //! # Usage
 //!
-//! ```ignore
+//! ```text
 //! let replayer = WalReplayer::new(wal_dir, codec);
 //! let stats = replayer.replay_after(Some(watermark), |record| {
 //!     // Apply record to your state

@@ -14,7 +14,7 @@ use std::time::Duration;
 /// This configuration controls the retry behavior for transactions.
 ///
 /// # Example
-/// ```ignore
+/// ```text
 /// let config = RetryConfig {
 ///     max_retries: 5,
 ///     base_delay_ms: 10,

@@ -16,7 +16,7 @@ use crate::types::*;
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// use strata_executor::{Command, Output, Executor};
 ///
 /// let result = executor.execute(Command::KvGet { branch, key })?;

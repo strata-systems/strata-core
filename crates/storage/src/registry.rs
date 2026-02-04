@@ -5,7 +5,7 @@
 //!
 //! ## Usage
 //!
-//! ```rust,ignore
+//! ```text
 //! let mut registry = PrimitiveRegistry::new();
 //!
 //! // Register primitives
