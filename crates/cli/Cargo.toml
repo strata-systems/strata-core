@@ -1,0 +1,17 @@
+[package]
+name = "strata-cli"
+version = "0.5.2"
+edition = "2021"
+description = "Redis-inspired CLI for the Strata database"
+publish = false
+
+[[bin]]
+name = "strata"
+path = "src/main.rs"
+
+[dependencies]
+strata-executor = { path = "../executor" }
+clap = { version = "4", features = ["string"] }
+rustyline = { version = "15", features = ["with-file-history"] }
+shlex = "1"
+serde_json = { workspace = true }

@@ -1,0 +1,498 @@
+//! Clap command tree definition.
+//!
+//! Builds the full `clap::Command` tree used by both shell mode (directly)
+//! and REPL mode (via `try_get_matches_from`).
+
+use clap::{Arg, Command};
+
+/// Build the complete CLI command tree.
+///
+/// This is shared between shell mode and REPL mode.
+pub fn build_cli() -> Command {
+    Command::new("strata")
+        .about("Redis-inspired CLI for the Strata database")
+        .subcommand_required(false)
+        .arg(
+            Arg::new("db")
+                .long("db")
+                .help("Database path (default: .strata)")
+                .global(true),
+        )
+        .arg(
+            Arg::new("cache")
+                .long("cache")
+                .help("Ephemeral in-memory database, no disk")
+                .action(clap::ArgAction::SetTrue)
+                .conflicts_with("db")
+                .global(true),
+        )
+        .arg(
+            Arg::new("branch")
+                .long("branch")
+                .help("Initial branch (default: default)")
+                .global(true),
+        )
+        .arg(
+            Arg::new("space")
+                .long("space")
+                .help("Initial space (default: default)")
+                .global(true),
+        )
+        .arg(
+            Arg::new("json")
+                .long("json")
+                .help("JSON output mode")
+                .action(clap::ArgAction::SetTrue)
+                .conflicts_with("raw")
+                .global(true),
+        )
+        .arg(
+            Arg::new("raw")
+                .long("raw")
+                .help("Raw output mode (no type prefixes, no quotes)")
+                .action(clap::ArgAction::SetTrue)
+                .global(true),
+        )
+        .arg(
+            Arg::new("read-only")
+                .long("read-only")
+                .help("Open database in read-only mode")
+                .action(clap::ArgAction::SetTrue)
+                .global(true),
+        )
+        .subcommand(build_kv())
+        .subcommand(build_json())
+        .subcommand(build_event())
+        .subcommand(build_state())
+        .subcommand(build_vector())
+        .subcommand(build_branch())
+        .subcommand(build_space())
+        .subcommand(build_txn_begin())
+        .subcommand(build_txn_commit())
+        .subcommand(build_txn_rollback())
+        .subcommand(build_txn())
+        .subcommand(build_ping())
+        .subcommand(build_info())
+        .subcommand(build_flush())
+        .subcommand(build_compact())
+        .subcommand(build_search())
+}
+
+/// Build a command tree for REPL mode (no global flags).
+pub fn build_repl_cmd() -> Command {
+    Command::new("repl")
+        .multicall(true)
+        .subcommand_required(true)
+        .subcommand(build_kv())
+        .subcommand(build_json())
+        .subcommand(build_event())
+        .subcommand(build_state())
+        .subcommand(build_vector())
+        .subcommand(build_branch())
+        .subcommand(build_space())
+        .subcommand(build_txn_begin())
+        .subcommand(build_txn_commit())
+        .subcommand(build_txn_rollback())
+        .subcommand(build_txn())
+        .subcommand(build_ping())
+        .subcommand(build_info())
+        .subcommand(build_flush())
+        .subcommand(build_compact())
+        .subcommand(build_search())
+}
+
+// =========================================================================
+// KV
+// =========================================================================
+
+fn build_kv() -> Command {
+    Command::new("kv")
+        .about("Key-value operations")
+        .subcommand_required(true)
+        .subcommand(
+            Command::new("put")
+                .about("Set a key-value pair")
+                .arg(Arg::new("key").required(true).help("Key name"))
+                .arg(Arg::new("value").required(true).help("Value to store")),
+        )
+        .subcommand(
+            Command::new("get")
+                .about("Get a value by key")
+                .arg(Arg::new("key").required(true).help("Key name")),
+        )
+        .subcommand(
+            Command::new("del")
+                .about("Delete a key")
+                .arg(Arg::new("key").required(true).help("Key name")),
+        )
+        .subcommand(
+            Command::new("list")
+                .about("List keys")
+                .arg(Arg::new("prefix").long("prefix").help("Key prefix filter"))
+                .arg(Arg::new("limit").long("limit").help("Maximum keys to return"))
+                .arg(Arg::new("cursor").long("cursor").help("Pagination cursor")),
+        )
+        .subcommand(
+            Command::new("history")
+                .about("Get version history for a key")
+                .arg(Arg::new("key").required(true).help("Key name")),
+        )
+}
+
+// =========================================================================
+// JSON
+// =========================================================================
+
+fn build_json() -> Command {
+    Command::new("json")
+        .about("JSON document operations")
+        .subcommand_required(true)
+        .subcommand(
+            Command::new("set")
+                .about("Set a value at a path in a JSON document")
+                .arg(Arg::new("key").required(true).help("Document key"))
+                .arg(Arg::new("path").required(true).help("JSON path"))
+                .arg(Arg::new("value").required(true).help("JSON value")),
+        )
+        .subcommand(
+            Command::new("get")
+                .about("Get a value from a JSON document")
+                .arg(Arg::new("key").required(true).help("Document key"))
+                .arg(Arg::new("path").default_value("$").help("JSON path (default: $)")),
+        )
+        .subcommand(
+            Command::new("del")
+                .about("Delete a value at a path")
+                .arg(Arg::new("key").required(true).help("Document key"))
+                .arg(Arg::new("path").required(true).help("JSON path")),
+        )
+        .subcommand(
+            Command::new("list")
+                .about("List JSON documents")
+                .arg(Arg::new("prefix").long("prefix").help("Key prefix filter"))
+                .arg(Arg::new("cursor").long("cursor").help("Pagination cursor"))
+                .arg(Arg::new("limit").long("limit").help("Maximum documents to return")),
+        )
+        .subcommand(
+            Command::new("history")
+                .about("Get version history for a document")
+                .arg(Arg::new("key").required(true).help("Document key")),
+        )
+}
+
+// =========================================================================
+// Event
+// =========================================================================
+
+fn build_event() -> Command {
+    Command::new("event")
+        .about("Event log operations")
+        .subcommand_required(true)
+        .subcommand(
+            Command::new("append")
+                .about("Append an event")
+                .arg(Arg::new("type").required(true).help("Event type"))
+                .arg(Arg::new("payload").required(true).help("JSON payload")),
+        )
+        .subcommand(
+            Command::new("get")
+                .about("Get event by sequence number")
+                .arg(Arg::new("sequence").required(true).help("Sequence number")),
+        )
+        .subcommand(
+            Command::new("list")
+                .about("List events by type")
+                .arg(Arg::new("type").required(true).help("Event type"))
+                .arg(Arg::new("limit").long("limit").help("Maximum events"))
+                .arg(Arg::new("after").long("after").help("After sequence number")),
+        )
+        .subcommand(Command::new("len").about("Get total event count"))
+}
+
+// =========================================================================
+// State
+// =========================================================================
+
+fn build_state() -> Command {
+    Command::new("state")
+        .about("State cell operations")
+        .subcommand_required(true)
+        .subcommand(
+            Command::new("set")
+                .about("Set a state cell value")
+                .arg(Arg::new("cell").required(true).help("Cell name"))
+                .arg(Arg::new("value").required(true).help("Value")),
+        )
+        .subcommand(
+            Command::new("get")
+                .about("Get a state cell value")
+                .arg(Arg::new("cell").required(true).help("Cell name")),
+        )
+        .subcommand(
+            Command::new("del")
+                .about("Delete a state cell")
+                .arg(Arg::new("cell").required(true).help("Cell name")),
+        )
+        .subcommand(
+            Command::new("init")
+                .about("Initialize a state cell (only if not exists)")
+                .arg(Arg::new("cell").required(true).help("Cell name"))
+                .arg(Arg::new("value").required(true).help("Initial value")),
+        )
+        .subcommand(
+            Command::new("cas")
+                .about("Compare-and-swap on a state cell")
+                .arg(Arg::new("cell").required(true).help("Cell name"))
+                .arg(
+                    Arg::new("expected")
+                        .required(true)
+                        .help("Expected version (or 'none' for unset)"),
+                )
+                .arg(Arg::new("value").required(true).help("New value")),
+        )
+        .subcommand(
+            Command::new("list")
+                .about("List state cells")
+                .arg(Arg::new("prefix").long("prefix").help("Cell name prefix filter")),
+        )
+        .subcommand(
+            Command::new("history")
+                .about("Get version history for a cell")
+                .arg(Arg::new("cell").required(true).help("Cell name")),
+        )
+}
+
+// =========================================================================
+// Vector
+// =========================================================================
+
+fn build_vector() -> Command {
+    Command::new("vector")
+        .about("Vector store operations")
+        .subcommand_required(true)
+        .subcommand(
+            Command::new("upsert")
+                .about("Insert or update a vector")
+                .arg(Arg::new("collection").required(true).help("Collection name"))
+                .arg(Arg::new("key").required(true).help("Vector key"))
+                .arg(Arg::new("vector").required(true).help("Vector as JSON array, e.g. [1.0,2.0,3.0]"))
+                .arg(Arg::new("metadata").long("metadata").help("Metadata as JSON")),
+        )
+        .subcommand(
+            Command::new("get")
+                .about("Get a vector by key")
+                .arg(Arg::new("collection").required(true).help("Collection name"))
+                .arg(Arg::new("key").required(true).help("Vector key")),
+        )
+        .subcommand(
+            Command::new("del")
+                .about("Delete a vector")
+                .arg(Arg::new("collection").required(true).help("Collection name"))
+                .arg(Arg::new("key").required(true).help("Vector key")),
+        )
+        .subcommand(
+            Command::new("search")
+                .about("Search for similar vectors")
+                .arg(Arg::new("collection").required(true).help("Collection name"))
+                .arg(Arg::new("query").required(true).help("Query vector as JSON array"))
+                .arg(Arg::new("k").default_value("10").help("Number of results"))
+                .arg(Arg::new("metric").long("metric").help("Distance metric: cosine, euclidean, dotproduct"))
+                .arg(Arg::new("filter").long("filter").help("Metadata filter as JSON")),
+        )
+        .subcommand(
+            Command::new("create")
+                .about("Create a vector collection")
+                .arg(Arg::new("name").required(true).help("Collection name"))
+                .arg(Arg::new("dim").required(true).help("Vector dimension"))
+                .arg(Arg::new("metric").long("metric").default_value("cosine").help("Distance metric")),
+        )
+        .subcommand(
+            Command::new("drop")
+                .about("Delete a vector collection")
+                .arg(Arg::new("name").required(true).help("Collection name")),
+        )
+        .subcommand(Command::new("collections").about("List all vector collections"))
+        .subcommand(
+            Command::new("stats")
+                .about("Get collection statistics")
+                .arg(Arg::new("collection").required(true).help("Collection name")),
+        )
+        .subcommand(
+            Command::new("batch-upsert")
+                .about("Batch insert/update vectors")
+                .arg(Arg::new("collection").required(true).help("Collection name"))
+                .arg(Arg::new("json").required(true).help("JSON array of {key, vector, metadata?}")),
+        )
+}
+
+// =========================================================================
+// Branch
+// =========================================================================
+
+fn build_branch() -> Command {
+    Command::new("branch")
+        .about("Branch operations")
+        .subcommand_required(true)
+        .subcommand(
+            Command::new("create")
+                .about("Create a new branch")
+                .arg(Arg::new("name").help("Branch name (auto-generated if omitted)")),
+        )
+        .subcommand(
+            Command::new("info")
+                .about("Get branch info")
+                .arg(Arg::new("name").required(true).help("Branch name")),
+        )
+        .subcommand(
+            Command::new("list")
+                .about("List all branches")
+                .arg(Arg::new("limit").long("limit").help("Maximum branches")),
+        )
+        .subcommand(
+            Command::new("exists")
+                .about("Check if a branch exists")
+                .arg(Arg::new("name").required(true).help("Branch name")),
+        )
+        .subcommand(
+            Command::new("del")
+                .about("Delete a branch")
+                .arg(Arg::new("name").required(true).help("Branch name")),
+        )
+        .subcommand(
+            Command::new("fork")
+                .about("Fork current branch to a new branch")
+                .arg(Arg::new("dest").required(true).help("Destination branch name")),
+        )
+        .subcommand(
+            Command::new("diff")
+                .about("Compare two branches")
+                .arg(Arg::new("a").required(true).help("Branch A"))
+                .arg(Arg::new("b").required(true).help("Branch B")),
+        )
+        .subcommand(
+            Command::new("merge")
+                .about("Merge source branch into current branch")
+                .arg(Arg::new("source").required(true).help("Source branch"))
+                .arg(
+                    Arg::new("strategy")
+                        .long("strategy")
+                        .default_value("lww")
+                        .help("Merge strategy: lww or strict"),
+                ),
+        )
+        .subcommand(
+            Command::new("export")
+                .about("Export a branch to a bundle file")
+                .arg(Arg::new("branch").required(true).help("Branch name"))
+                .arg(Arg::new("path").required(true).help("Output file path")),
+        )
+        .subcommand(
+            Command::new("import")
+                .about("Import a branch from a bundle file")
+                .arg(Arg::new("path").required(true).help("Bundle file path")),
+        )
+        .subcommand(
+            Command::new("validate")
+                .about("Validate a branch bundle file")
+                .arg(Arg::new("path").required(true).help("Bundle file path")),
+        )
+}
+
+// =========================================================================
+// Space
+// =========================================================================
+
+fn build_space() -> Command {
+    Command::new("space")
+        .about("Space operations")
+        .subcommand_required(true)
+        .subcommand(Command::new("list").about("List all spaces"))
+        .subcommand(
+            Command::new("create")
+                .about("Create a space")
+                .arg(Arg::new("name").required(true).help("Space name")),
+        )
+        .subcommand(
+            Command::new("del")
+                .about("Delete a space")
+                .arg(Arg::new("name").required(true).help("Space name"))
+                .arg(
+                    Arg::new("force")
+                        .long("force")
+                        .action(clap::ArgAction::SetTrue)
+                        .help("Force delete even if non-empty"),
+                ),
+        )
+        .subcommand(
+            Command::new("exists")
+                .about("Check if a space exists")
+                .arg(Arg::new("name").required(true).help("Space name")),
+        )
+}
+
+// =========================================================================
+// Transaction
+// =========================================================================
+
+fn build_txn_begin() -> Command {
+    Command::new("begin")
+        .about("Begin a new transaction")
+        .arg(
+            Arg::new("txn-read-only")
+                .long("read-only")
+                .action(clap::ArgAction::SetTrue)
+                .help("Start a read-only transaction"),
+        )
+}
+
+fn build_txn_commit() -> Command {
+    Command::new("commit").about("Commit the current transaction")
+}
+
+fn build_txn_rollback() -> Command {
+    Command::new("rollback").about("Rollback the current transaction")
+}
+
+fn build_txn() -> Command {
+    Command::new("txn")
+        .about("Transaction info")
+        .subcommand_required(true)
+        .subcommand(Command::new("info").about("Get current transaction info"))
+        .subcommand(Command::new("active").about("Check if a transaction is active"))
+}
+
+// =========================================================================
+// Database
+// =========================================================================
+
+fn build_ping() -> Command {
+    Command::new("ping").about("Ping the database")
+}
+
+fn build_info() -> Command {
+    Command::new("info").about("Get database information")
+}
+
+fn build_flush() -> Command {
+    Command::new("flush").about("Flush pending writes to disk")
+}
+
+fn build_compact() -> Command {
+    Command::new("compact").about("Trigger compaction")
+}
+
+// =========================================================================
+// Search
+// =========================================================================
+
+fn build_search() -> Command {
+    Command::new("search")
+        .about("Search across multiple primitives")
+        .arg(Arg::new("query").required(true).help("Search query"))
+        .arg(Arg::new("k").long("k").help("Number of results"))
+        .arg(
+            Arg::new("primitives")
+                .long("primitives")
+                .help("Comma-separated list of primitives to search"),
+        )
+}
