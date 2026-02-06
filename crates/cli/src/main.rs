@@ -15,13 +15,14 @@ mod value;
 use std::io::IsTerminal;
 use std::process;
 
-use strata_executor::{AccessMode, OpenOptions, Strata};
+use strata_executor::{AccessMode, Command, OpenOptions, Output, Strata};
 
 use commands::build_cli;
 use format::{
-    format_diff, format_error, format_fork_info, format_merge_info, format_output, OutputMode,
+    format_diff, format_error, format_fork_info, format_merge_info, format_multi_output,
+    format_multi_versioned_output, format_output, format_versioned_output, OutputMode,
 };
-use parse::{matches_to_action, BranchOp, CliAction};
+use parse::{matches_to_action, BranchOp, CliAction, Primitive};
 use state::SessionState;
 
 fn main() {
@@ -153,6 +154,172 @@ fn run_shell_mode(
             eprintln!("(error) Meta-commands are only available in REPL mode");
             1
         }
+        Ok(CliAction::MultiPut {
+            branch,
+            space,
+            pairs,
+        }) => {
+            let mut outputs = Vec::new();
+            for (key, value) in pairs {
+                match state.execute(Command::KvPut {
+                    branch: branch.clone(),
+                    space: space.clone(),
+                    key,
+                    value,
+                }) {
+                    Ok(output) => outputs.push(output),
+                    Err(e) => {
+                        eprintln!("{}", format_error(&e, mode));
+                        return 1;
+                    }
+                }
+            }
+            let formatted = format_multi_output(&outputs, mode);
+            if !formatted.is_empty() {
+                println!("{}", formatted);
+            }
+            0
+        }
+        Ok(CliAction::MultiGet {
+            branch,
+            space,
+            keys,
+            with_version,
+        }) => {
+            let mut outputs = Vec::new();
+            for key in keys {
+                match state.execute(Command::KvGet {
+                    branch: branch.clone(),
+                    space: space.clone(),
+                    key,
+                }) {
+                    Ok(output) => outputs.push(output),
+                    Err(e) => {
+                        eprintln!("{}", format_error(&e, mode));
+                        return 1;
+                    }
+                }
+            }
+            let formatted = format_multi_versioned_output(&outputs, mode, with_version);
+            if !formatted.is_empty() {
+                println!("{}", formatted);
+            }
+            0
+        }
+        Ok(CliAction::MultiDel {
+            branch,
+            space,
+            keys,
+        }) => {
+            let mut outputs = Vec::new();
+            for key in keys {
+                match state.execute(Command::KvDelete {
+                    branch: branch.clone(),
+                    space: space.clone(),
+                    key,
+                }) {
+                    Ok(output) => outputs.push(output),
+                    Err(e) => {
+                        eprintln!("{}", format_error(&e, mode));
+                        return 1;
+                    }
+                }
+            }
+            let formatted = format_multi_output(&outputs, mode);
+            if !formatted.is_empty() {
+                println!("{}", formatted);
+            }
+            0
+        }
+        Ok(CliAction::ListAll {
+            branch,
+            space,
+            prefix,
+            primitive,
+        }) => {
+            let mut all_keys = Vec::new();
+            let mut cursor: Option<String> = None;
+
+            loop {
+                let output = match primitive {
+                    Primitive::Kv => state.execute(Command::KvList {
+                        branch: branch.clone(),
+                        space: space.clone(),
+                        prefix: prefix.clone(),
+                        cursor: cursor.clone(),
+                        limit: Some(1000),
+                    }),
+                    Primitive::Json => state.execute(Command::JsonList {
+                        branch: branch.clone(),
+                        space: space.clone(),
+                        prefix: prefix.clone(),
+                        cursor: cursor.clone(),
+                        limit: 1000,
+                    }),
+                    Primitive::State => {
+                        // State list doesn't have pagination, just execute once
+                        match state.execute(Command::StateList {
+                            branch: branch.clone(),
+                            space: space.clone(),
+                            prefix: prefix.clone(),
+                        }) {
+                            Ok(output) => {
+                                let formatted = format_output(&output, mode);
+                                if !formatted.is_empty() {
+                                    println!("{}", formatted);
+                                }
+                                return 0;
+                            }
+                            Err(e) => {
+                                eprintln!("{}", format_error(&e, mode));
+                                return 1;
+                            }
+                        }
+                    }
+                };
+
+                match output {
+                    Ok(Output::Keys(keys)) => {
+                        all_keys.extend(keys);
+                        break;
+                    }
+                    Ok(Output::JsonListResult { keys, cursor: next }) => {
+                        all_keys.extend(keys);
+                        if next.is_none() {
+                            break;
+                        }
+                        cursor = next;
+                    }
+                    Ok(_) => break,
+                    Err(e) => {
+                        eprintln!("{}", format_error(&e, mode));
+                        return 1;
+                    }
+                }
+            }
+
+            let formatted = format_output(&Output::Keys(all_keys), mode);
+            if !formatted.is_empty() {
+                println!("{}", formatted);
+            }
+            0
+        }
+        Ok(CliAction::GetWithVersion {
+            command,
+            with_version,
+        }) => match state.execute(command) {
+            Ok(output) => {
+                let formatted = format_versioned_output(&output, mode, with_version);
+                if !formatted.is_empty() {
+                    println!("{}", formatted);
+                }
+                0
+            }
+            Err(e) => {
+                eprintln!("{}", format_error(&e, mode));
+                1
+            }
+        },
         Err(e) => {
             eprintln!("(error) {}", e);
             1

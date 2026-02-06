@@ -6,7 +6,7 @@
 //! - **Raw** (`--raw`): Bare values, no quotes, no type prefixes
 
 use strata_executor::{
-    BranchDiffResult, Error, ForkInfo, MergeInfo, Output, Value,
+    BranchDiffResult, Error, ForkInfo, MergeInfo, Output, Value, VersionedValue,
 };
 
 /// Output formatting mode.
@@ -38,6 +38,64 @@ pub fn format_error(err: &Error, mode: OutputMode) -> String {
         OutputMode::Raw => format!("{}", err),
         OutputMode::Human => format!("(error) {}", err),
     }
+}
+
+/// Format output with version info when --with-version is specified.
+pub fn format_versioned_output(output: &Output, mode: OutputMode, with_version: bool) -> String {
+    if !with_version {
+        return format_output(output, mode);
+    }
+
+    match output {
+        Output::MaybeVersioned(Some(vv)) => format_versioned_value(vv, mode),
+        Output::MaybeVersioned(None) => format_output(output, mode),
+        _ => format_output(output, mode),
+    }
+}
+
+/// Format a single versioned value with version info.
+fn format_versioned_value(vv: &VersionedValue, mode: OutputMode) -> String {
+    match mode {
+        OutputMode::Human => {
+            format!(
+                "{} (v{}, ts={})",
+                format_value_human(&vv.value),
+                vv.version,
+                vv.timestamp
+            )
+        }
+        OutputMode::Json => {
+            serde_json::to_string_pretty(&serde_json::json!({
+                "value": vv.value,
+                "version": vv.version,
+                "timestamp": vv.timestamp
+            }))
+            .unwrap()
+        }
+        OutputMode::Raw => format_value_raw(&vv.value),
+    }
+}
+
+/// Format multiple outputs (for multi-key operations).
+pub fn format_multi_output(outputs: &[Output], mode: OutputMode) -> String {
+    outputs
+        .iter()
+        .map(|o| format_output(o, mode))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Format multiple versioned outputs.
+pub fn format_multi_versioned_output(
+    outputs: &[Output],
+    mode: OutputMode,
+    with_version: bool,
+) -> String {
+    outputs
+        .iter()
+        .map(|o| format_versioned_output(o, mode, with_version))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Format branch fork info.

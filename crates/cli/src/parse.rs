@@ -4,10 +4,15 @@
 //! - Standard commands → `CliAction::Execute(Command)`
 //! - Branch power ops → `CliAction::BranchOp`
 //! - REPL meta-commands → `CliAction::Meta`
+//! - Multi-key operations → `CliAction::MultiPut/MultiGet/MultiDel`
+//! - Pagination → `CliAction::ListAll`
+
+use std::io::Read;
 
 use clap::ArgMatches;
 use strata_executor::{
     BranchId, BatchVectorEntry, Command, DistanceMetric, MergeStrategy, MetadataFilter, TxnOptions,
+    Value,
 };
 
 use crate::state::SessionState;
@@ -22,6 +27,45 @@ pub enum CliAction {
     BranchOp(BranchOp),
     /// A REPL-only meta-command.
     Meta(MetaCommand),
+    /// Multi-key put operation.
+    MultiPut {
+        branch: Option<BranchId>,
+        space: Option<String>,
+        pairs: Vec<(String, Value)>,
+    },
+    /// Multi-key get operation.
+    MultiGet {
+        branch: Option<BranchId>,
+        space: Option<String>,
+        keys: Vec<String>,
+        with_version: bool,
+    },
+    /// Multi-key delete operation.
+    MultiDel {
+        branch: Option<BranchId>,
+        space: Option<String>,
+        keys: Vec<String>,
+    },
+    /// List all with automatic pagination.
+    ListAll {
+        branch: Option<BranchId>,
+        space: Option<String>,
+        prefix: Option<String>,
+        primitive: Primitive,
+    },
+    /// Get with version flag (wraps existing command).
+    GetWithVersion {
+        command: Command,
+        with_version: bool,
+    },
+}
+
+/// Primitive type for ListAll pagination.
+#[derive(Debug, Clone, Copy)]
+pub enum Primitive {
+    Kv,
+    Json,
+    State,
 }
 
 /// Branch operations that bypass the Command enum.
@@ -103,6 +147,56 @@ fn space(state: &SessionState) -> Option<String> {
 }
 
 // =========================================================================
+// File reading helper
+// =========================================================================
+
+/// Read a value from a file or stdin.
+///
+/// If `source` is "-", reads from stdin.
+/// Attempts to parse as JSON first, falls back to string.
+fn read_value_from_source(source: &str) -> Result<Value, String> {
+    let content = if source == "-" {
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .map_err(|e| format!("Failed to read stdin: {}", e))?;
+        buf
+    } else {
+        std::fs::read_to_string(source)
+            .map_err(|e| format!("Failed to read '{}': {}", source, e))?
+    };
+
+    // Try JSON first
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+        return Ok(Value::from(json));
+    }
+
+    // Fall back to string (trimmed)
+    Ok(Value::String(content.trim().to_string()))
+}
+
+/// Read JSON value from a file or stdin.
+///
+/// If `source` is "-", reads from stdin.
+/// Must be valid JSON.
+fn read_json_from_source(source: &str) -> Result<Value, String> {
+    let content = if source == "-" {
+        let mut buf = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .map_err(|e| format!("Failed to read stdin: {}", e))?;
+        buf
+    } else {
+        std::fs::read_to_string(source)
+            .map_err(|e| format!("Failed to read '{}': {}", source, e))?
+    };
+
+    let json: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("Invalid JSON in file: {}", e))?;
+    Ok(Value::from(json))
+}
+
+// =========================================================================
 // KV
 // =========================================================================
 
@@ -110,47 +204,142 @@ fn parse_kv(matches: &ArgMatches, state: &SessionState) -> Result<CliAction, Str
     let (sub, m) = matches.subcommand().ok_or("No kv subcommand")?;
     match sub {
         "put" => {
-            let key = m.get_one::<String>("key").unwrap().clone();
-            let raw = m.get_one::<String>("value").unwrap();
-            let value = parse_value(raw);
-            Ok(CliAction::Execute(Command::KvPut {
-                branch: branch(state),
-                space: space(state),
-                key,
-                value,
-            }))
+            if let Some(file_path) = m.get_one::<String>("file") {
+                // File mode: requires exactly one key in pairs
+                let pairs: Vec<String> = m
+                    .get_many::<String>("pairs")
+                    .map(|v| v.cloned().collect())
+                    .unwrap_or_default();
+
+                if pairs.len() != 1 {
+                    return Err("--file requires exactly one key argument".to_string());
+                }
+
+                let value = read_value_from_source(file_path)?;
+                Ok(CliAction::Execute(Command::KvPut {
+                    branch: branch(state),
+                    space: space(state),
+                    key: pairs[0].clone(),
+                    value,
+                }))
+            } else {
+                // Normal mode: key-value pairs from args
+                let pairs: Vec<String> = m
+                    .get_many::<String>("pairs")
+                    .ok_or("Missing key-value pairs")?
+                    .cloned()
+                    .collect();
+
+                if pairs.len() < 2 {
+                    return Err("kv put requires at least one key-value pair".to_string());
+                }
+
+                if pairs.len() % 2 != 0 {
+                    return Err("Key-value pairs must come in pairs".to_string());
+                }
+
+                if pairs.len() == 2 {
+                    // Single pair
+                    let key = pairs[0].clone();
+                    let value = parse_value(&pairs[1]);
+                    Ok(CliAction::Execute(Command::KvPut {
+                        branch: branch(state),
+                        space: space(state),
+                        key,
+                        value,
+                    }))
+                } else {
+                    // Multiple pairs
+                    let kv_pairs: Vec<(String, Value)> = pairs
+                        .chunks(2)
+                        .map(|c| (c[0].clone(), parse_value(&c[1])))
+                        .collect();
+                    Ok(CliAction::MultiPut {
+                        branch: branch(state),
+                        space: space(state),
+                        pairs: kv_pairs,
+                    })
+                }
+            }
         }
         "get" => {
-            let key = m.get_one::<String>("key").unwrap().clone();
-            Ok(CliAction::Execute(Command::KvGet {
-                branch: branch(state),
-                space: space(state),
-                key,
-            }))
+            let keys: Vec<String> = m
+                .get_many::<String>("keys")
+                .unwrap()
+                .cloned()
+                .collect();
+            let with_version = m.get_flag("with-version");
+
+            if keys.len() == 1 {
+                let cmd = Command::KvGet {
+                    branch: branch(state),
+                    space: space(state),
+                    key: keys[0].clone(),
+                };
+                if with_version {
+                    Ok(CliAction::GetWithVersion {
+                        command: cmd,
+                        with_version: true,
+                    })
+                } else {
+                    Ok(CliAction::Execute(cmd))
+                }
+            } else {
+                Ok(CliAction::MultiGet {
+                    branch: branch(state),
+                    space: space(state),
+                    keys,
+                    with_version,
+                })
+            }
         }
         "del" => {
-            let key = m.get_one::<String>("key").unwrap().clone();
-            Ok(CliAction::Execute(Command::KvDelete {
-                branch: branch(state),
-                space: space(state),
-                key,
-            }))
+            let keys: Vec<String> = m
+                .get_many::<String>("keys")
+                .unwrap()
+                .cloned()
+                .collect();
+
+            if keys.len() == 1 {
+                Ok(CliAction::Execute(Command::KvDelete {
+                    branch: branch(state),
+                    space: space(state),
+                    key: keys[0].clone(),
+                }))
+            } else {
+                Ok(CliAction::MultiDel {
+                    branch: branch(state),
+                    space: space(state),
+                    keys,
+                })
+            }
         }
         "list" => {
+            let all = m.get_flag("all");
             let prefix = m.get_one::<String>("prefix").cloned();
-            let limit = m
-                .get_one::<String>("limit")
-                .map(|s| s.parse::<u64>())
-                .transpose()
-                .map_err(|e| format!("Invalid limit: {}", e))?;
-            let cursor = m.get_one::<String>("cursor").cloned();
-            Ok(CliAction::Execute(Command::KvList {
-                branch: branch(state),
-                space: space(state),
-                prefix,
-                cursor,
-                limit,
-            }))
+
+            if all {
+                Ok(CliAction::ListAll {
+                    branch: branch(state),
+                    space: space(state),
+                    prefix,
+                    primitive: Primitive::Kv,
+                })
+            } else {
+                let limit = m
+                    .get_one::<String>("limit")
+                    .map(|s| s.parse::<u64>())
+                    .transpose()
+                    .map_err(|e| format!("Invalid limit: {}", e))?;
+                let cursor = m.get_one::<String>("cursor").cloned();
+                Ok(CliAction::Execute(Command::KvList {
+                    branch: branch(state),
+                    space: space(state),
+                    prefix,
+                    cursor,
+                    limit,
+                }))
+            }
         }
         "history" => {
             let key = m.get_one::<String>("key").unwrap().clone();
@@ -174,8 +363,14 @@ fn parse_json(matches: &ArgMatches, state: &SessionState) -> Result<CliAction, S
         "set" => {
             let key = m.get_one::<String>("key").unwrap().clone();
             let path = m.get_one::<String>("path").unwrap().clone();
-            let raw = m.get_one::<String>("value").unwrap();
-            let value = parse_json_value(raw)?;
+
+            let value = if let Some(file_path) = m.get_one::<String>("file") {
+                read_json_from_source(file_path)?
+            } else {
+                let raw = m.get_one::<String>("value").unwrap();
+                parse_json_value(raw)?
+            };
+
             Ok(CliAction::Execute(Command::JsonSet {
                 branch: branch(state),
                 space: space(state),
@@ -187,12 +382,23 @@ fn parse_json(matches: &ArgMatches, state: &SessionState) -> Result<CliAction, S
         "get" => {
             let key = m.get_one::<String>("key").unwrap().clone();
             let path = m.get_one::<String>("path").unwrap().clone();
-            Ok(CliAction::Execute(Command::JsonGet {
+            let with_version = m.get_flag("with-version");
+
+            let cmd = Command::JsonGet {
                 branch: branch(state),
                 space: space(state),
                 key,
                 path,
-            }))
+            };
+
+            if with_version {
+                Ok(CliAction::GetWithVersion {
+                    command: cmd,
+                    with_version: true,
+                })
+            } else {
+                Ok(CliAction::Execute(cmd))
+            }
         }
         "del" => {
             let key = m.get_one::<String>("key").unwrap().clone();
@@ -205,21 +411,32 @@ fn parse_json(matches: &ArgMatches, state: &SessionState) -> Result<CliAction, S
             }))
         }
         "list" => {
+            let all = m.get_flag("all");
             let prefix = m.get_one::<String>("prefix").cloned();
-            let cursor = m.get_one::<String>("cursor").cloned();
-            let limit = m
-                .get_one::<String>("limit")
-                .map(|s| s.parse::<u64>())
-                .transpose()
-                .map_err(|e| format!("Invalid limit: {}", e))?
-                .unwrap_or(100);
-            Ok(CliAction::Execute(Command::JsonList {
-                branch: branch(state),
-                space: space(state),
-                prefix,
-                cursor,
-                limit,
-            }))
+
+            if all {
+                Ok(CliAction::ListAll {
+                    branch: branch(state),
+                    space: space(state),
+                    prefix,
+                    primitive: Primitive::Json,
+                })
+            } else {
+                let cursor = m.get_one::<String>("cursor").cloned();
+                let limit = m
+                    .get_one::<String>("limit")
+                    .map(|s| s.parse::<u64>())
+                    .transpose()
+                    .map_err(|e| format!("Invalid limit: {}", e))?
+                    .unwrap_or(100);
+                Ok(CliAction::Execute(Command::JsonList {
+                    branch: branch(state),
+                    space: space(state),
+                    prefix,
+                    cursor,
+                    limit,
+                }))
+            }
         }
         "history" => {
             let key = m.get_one::<String>("key").unwrap().clone();
@@ -242,8 +459,14 @@ fn parse_event(matches: &ArgMatches, state: &SessionState) -> Result<CliAction, 
     match sub {
         "append" => {
             let event_type = m.get_one::<String>("type").unwrap().clone();
-            let raw = m.get_one::<String>("payload").unwrap();
-            let payload = parse_json_value(raw)?;
+
+            let payload = if let Some(file_path) = m.get_one::<String>("file") {
+                read_json_from_source(file_path)?
+            } else {
+                let raw = m.get_one::<String>("payload").unwrap();
+                parse_json_value(raw)?
+            };
+
             Ok(CliAction::Execute(Command::EventAppend {
                 branch: branch(state),
                 space: space(state),
@@ -300,8 +523,14 @@ fn parse_state(matches: &ArgMatches, state: &SessionState) -> Result<CliAction, 
     match sub {
         "set" => {
             let cell = m.get_one::<String>("cell").unwrap().clone();
-            let raw = m.get_one::<String>("value").unwrap();
-            let value = parse_value(raw);
+
+            let value = if let Some(file_path) = m.get_one::<String>("file") {
+                read_value_from_source(file_path)?
+            } else {
+                let raw = m.get_one::<String>("value").unwrap();
+                parse_value(raw)
+            };
+
             Ok(CliAction::Execute(Command::StateSet {
                 branch: branch(state),
                 space: space(state),
@@ -311,11 +540,22 @@ fn parse_state(matches: &ArgMatches, state: &SessionState) -> Result<CliAction, 
         }
         "get" => {
             let cell = m.get_one::<String>("cell").unwrap().clone();
-            Ok(CliAction::Execute(Command::StateGet {
+            let with_version = m.get_flag("with-version");
+
+            let cmd = Command::StateGet {
                 branch: branch(state),
                 space: space(state),
                 cell,
-            }))
+            };
+
+            if with_version {
+                Ok(CliAction::GetWithVersion {
+                    command: cmd,
+                    with_version: true,
+                })
+            } else {
+                Ok(CliAction::Execute(cmd))
+            }
         }
         "del" => {
             let cell = m.get_one::<String>("cell").unwrap().clone();
@@ -359,12 +599,23 @@ fn parse_state(matches: &ArgMatches, state: &SessionState) -> Result<CliAction, 
             }))
         }
         "list" => {
+            let all = m.get_flag("all");
             let prefix = m.get_one::<String>("prefix").cloned();
-            Ok(CliAction::Execute(Command::StateList {
-                branch: branch(state),
-                space: space(state),
-                prefix,
-            }))
+
+            if all {
+                Ok(CliAction::ListAll {
+                    branch: branch(state),
+                    space: space(state),
+                    prefix,
+                    primitive: Primitive::State,
+                })
+            } else {
+                Ok(CliAction::Execute(Command::StateList {
+                    branch: branch(state),
+                    space: space(state),
+                    prefix,
+                }))
+            }
         }
         "history" => {
             let cell = m.get_one::<String>("cell").unwrap().clone();
