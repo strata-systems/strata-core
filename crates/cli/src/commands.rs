@@ -111,26 +111,69 @@ fn build_kv() -> Command {
         .subcommand_required(true)
         .subcommand(
             Command::new("put")
-                .about("Set a key-value pair")
-                .arg(Arg::new("key").required(true).help("Key name"))
-                .arg(Arg::new("value").required(true).help("Value to store")),
+                .about("Set one or more key-value pairs")
+                .arg(
+                    Arg::new("pairs")
+                        .num_args(1..)
+                        .value_name("KEY VALUE")
+                        .help("Key-value pairs (key1 val1 key2 val2 ...)"),
+                )
+                .arg(
+                    Arg::new("file")
+                        .long("file")
+                        .short('f')
+                        .value_name("PATH")
+                        .help("Read value from file (use with single key, '-' for stdin)"),
+                ),
         )
         .subcommand(
             Command::new("get")
-                .about("Get a value by key")
-                .arg(Arg::new("key").required(true).help("Key name")),
+                .about("Get one or more values by key")
+                .arg(
+                    Arg::new("keys")
+                        .required(true)
+                        .num_args(1..)
+                        .value_name("KEY")
+                        .help("Key(s) to retrieve"),
+                )
+                .arg(
+                    Arg::new("with-version")
+                        .long("with-version")
+                        .short('v')
+                        .action(clap::ArgAction::SetTrue)
+                        .help("Include version and timestamp in output"),
+                ),
         )
         .subcommand(
             Command::new("del")
-                .about("Delete a key")
-                .arg(Arg::new("key").required(true).help("Key name")),
+                .about("Delete one or more keys")
+                .arg(
+                    Arg::new("keys")
+                        .required(true)
+                        .num_args(1..)
+                        .value_name("KEY")
+                        .help("Key(s) to delete"),
+                ),
         )
         .subcommand(
             Command::new("list")
                 .about("List keys")
-                .arg(Arg::new("prefix").long("prefix").help("Key prefix filter"))
-                .arg(Arg::new("limit").long("limit").help("Maximum keys to return"))
-                .arg(Arg::new("cursor").long("cursor").help("Pagination cursor")),
+                .arg(Arg::new("prefix").long("prefix").short('p').help("Key prefix filter"))
+                .arg(
+                    Arg::new("limit")
+                        .long("limit")
+                        .short('n')
+                        .help("Maximum keys to return"),
+                )
+                .arg(Arg::new("cursor").long("cursor").short('c').help("Pagination cursor"))
+                .arg(
+                    Arg::new("all")
+                        .long("all")
+                        .short('a')
+                        .action(clap::ArgAction::SetTrue)
+                        .conflicts_with_all(["limit", "cursor"])
+                        .help("Fetch all keys (automatic pagination)"),
+                ),
         )
         .subcommand(
             Command::new("history")
@@ -152,13 +195,31 @@ fn build_json() -> Command {
                 .about("Set a value at a path in a JSON document")
                 .arg(Arg::new("key").required(true).help("Document key"))
                 .arg(Arg::new("path").required(true).help("JSON path"))
-                .arg(Arg::new("value").required(true).help("JSON value")),
+                .arg(
+                    Arg::new("value")
+                        .required_unless_present("file")
+                        .help("JSON value"),
+                )
+                .arg(
+                    Arg::new("file")
+                        .long("file")
+                        .short('f')
+                        .value_name("PATH")
+                        .help("Read value from JSON file ('-' for stdin)"),
+                ),
         )
         .subcommand(
             Command::new("get")
                 .about("Get a value from a JSON document")
                 .arg(Arg::new("key").required(true).help("Document key"))
-                .arg(Arg::new("path").default_value("$").help("JSON path (default: $)")),
+                .arg(Arg::new("path").default_value("$").help("JSON path (default: $)"))
+                .arg(
+                    Arg::new("with-version")
+                        .long("with-version")
+                        .short('v')
+                        .action(clap::ArgAction::SetTrue)
+                        .help("Include version and timestamp in output"),
+                ),
         )
         .subcommand(
             Command::new("del")
@@ -169,9 +230,17 @@ fn build_json() -> Command {
         .subcommand(
             Command::new("list")
                 .about("List JSON documents")
-                .arg(Arg::new("prefix").long("prefix").help("Key prefix filter"))
-                .arg(Arg::new("cursor").long("cursor").help("Pagination cursor"))
-                .arg(Arg::new("limit").long("limit").help("Maximum documents to return")),
+                .arg(Arg::new("prefix").long("prefix").short('p').help("Key prefix filter"))
+                .arg(Arg::new("cursor").long("cursor").short('c').help("Pagination cursor"))
+                .arg(Arg::new("limit").long("limit").short('n').help("Maximum documents to return"))
+                .arg(
+                    Arg::new("all")
+                        .long("all")
+                        .short('a')
+                        .action(clap::ArgAction::SetTrue)
+                        .conflicts_with_all(["limit", "cursor"])
+                        .help("Fetch all keys (automatic pagination)"),
+                ),
         )
         .subcommand(
             Command::new("history")
@@ -192,7 +261,18 @@ fn build_event() -> Command {
             Command::new("append")
                 .about("Append an event")
                 .arg(Arg::new("type").required(true).help("Event type"))
-                .arg(Arg::new("payload").required(true).help("JSON payload")),
+                .arg(
+                    Arg::new("payload")
+                        .required_unless_present("file")
+                        .help("JSON payload"),
+                )
+                .arg(
+                    Arg::new("file")
+                        .long("file")
+                        .short('f')
+                        .value_name("PATH")
+                        .help("Read payload from JSON file ('-' for stdin)"),
+                ),
         )
         .subcommand(
             Command::new("get")
@@ -221,12 +301,30 @@ fn build_state() -> Command {
             Command::new("set")
                 .about("Set a state cell value")
                 .arg(Arg::new("cell").required(true).help("Cell name"))
-                .arg(Arg::new("value").required(true).help("Value")),
+                .arg(
+                    Arg::new("value")
+                        .required_unless_present("file")
+                        .help("Value"),
+                )
+                .arg(
+                    Arg::new("file")
+                        .long("file")
+                        .short('f')
+                        .value_name("PATH")
+                        .help("Read value from file ('-' for stdin)"),
+                ),
         )
         .subcommand(
             Command::new("get")
                 .about("Get a state cell value")
-                .arg(Arg::new("cell").required(true).help("Cell name")),
+                .arg(Arg::new("cell").required(true).help("Cell name"))
+                .arg(
+                    Arg::new("with-version")
+                        .long("with-version")
+                        .short('v')
+                        .action(clap::ArgAction::SetTrue)
+                        .help("Include version and timestamp in output"),
+                ),
         )
         .subcommand(
             Command::new("del")
@@ -253,7 +351,14 @@ fn build_state() -> Command {
         .subcommand(
             Command::new("list")
                 .about("List state cells")
-                .arg(Arg::new("prefix").long("prefix").help("Cell name prefix filter")),
+                .arg(Arg::new("prefix").long("prefix").short('p').help("Cell name prefix filter"))
+                .arg(
+                    Arg::new("all")
+                        .long("all")
+                        .short('a')
+                        .action(clap::ArgAction::SetTrue)
+                        .help("Fetch all cells (automatic pagination)"),
+                ),
         )
         .subcommand(
             Command::new("history")
@@ -308,6 +413,7 @@ fn build_vector() -> Command {
         )
         .subcommand(
             Command::new("drop")
+                .visible_alias("del-collection")
                 .about("Delete a vector collection")
                 .arg(Arg::new("name").required(true).help("Collection name")),
         )
@@ -340,6 +446,7 @@ fn build_branch() -> Command {
         )
         .subcommand(
             Command::new("info")
+                .visible_alias("get")
                 .about("Get branch info")
                 .arg(Arg::new("name").required(true).help("Branch name")),
         )
