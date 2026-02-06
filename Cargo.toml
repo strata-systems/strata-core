@@ -89,6 +89,8 @@ perf-trace = []  # Enable per-layer timing instrumentation for M4
 comparison-benchmarks = ["dep:redb", "dep:heed", "dep:rusqlite"]
 # Enable USearch for vector comparisons (requires C++ build tools)
 usearch-enabled = ["dep:usearch"]
+# Enable auto-embedding (MiniLM-L6-v2 inference runtime)
+embed = ["strata-executor/embed"]
 
 [dependencies]
 strata-executor = { path = "crates/executor" }

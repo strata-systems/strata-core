@@ -30,6 +30,9 @@ pub enum AccessMode {
 pub struct OpenOptions {
     /// The access mode for the database.
     pub access_mode: AccessMode,
+    /// Enable automatic text embedding for semantic search.
+    /// `None` means "use the config file default".
+    pub auto_embed: Option<bool>,
 }
 
 impl OpenOptions {
@@ -43,12 +46,19 @@ impl OpenOptions {
         self.access_mode = mode;
         self
     }
+
+    /// Enable or disable automatic text embedding.
+    pub fn auto_embed(mut self, enabled: bool) -> Self {
+        self.auto_embed = Some(enabled);
+        self
+    }
 }
 
 impl Default for OpenOptions {
     fn default() -> Self {
         Self {
             access_mode: AccessMode::ReadWrite,
+            auto_embed: None,
         }
     }
 }

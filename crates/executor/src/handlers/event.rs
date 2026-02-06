@@ -41,11 +41,31 @@ pub fn event_append(
 ) -> Result<Output> {
     require_branch_exists(p, &branch)?;
     let core_branch_id = bridge::to_core_branch_id(&branch)?;
+
+    // Extract text before payload is consumed
+    let text = super::embed_hook::extract_text(&payload);
+
     let version = convert_result(
         p.event
             .append(&core_branch_id, &space, &event_type, payload),
     )?;
-    Ok(Output::Version(bridge::extract_version(&version)))
+
+    // Best-effort auto-embed after successful write
+    let sequence = bridge::extract_version(&version);
+    if let Some(ref text) = text {
+        let event_key = sequence.to_string();
+        super::embed_hook::maybe_embed_text(
+            p,
+            core_branch_id,
+            &space,
+            super::embed_hook::SHADOW_EVENT,
+            &event_key,
+            text,
+            strata_core::EntityRef::event(core_branch_id, sequence),
+        );
+    }
+
+    Ok(Output::Version(sequence))
 }
 
 /// Handle EventGet command.

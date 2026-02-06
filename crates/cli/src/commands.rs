@@ -60,6 +60,13 @@ pub fn build_cli() -> Command {
                 .action(clap::ArgAction::SetTrue)
                 .global(true),
         )
+        .arg(
+            Arg::new("auto-embed")
+                .long("auto-embed")
+                .help("Enable automatic text embedding for semantic search")
+                .action(clap::ArgAction::SetTrue)
+                .global(true),
+        )
         .subcommand(build_kv())
         .subcommand(build_json())
         .subcommand(build_event())

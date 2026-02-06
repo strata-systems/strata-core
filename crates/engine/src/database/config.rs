@@ -27,6 +27,9 @@ pub struct StrataConfig {
     /// Durability mode: `"standard"` or `"always"`.
     #[serde(default = "default_durability_str")]
     pub durability: String,
+    /// Enable automatic text embedding for semantic search.
+    #[serde(default)]
+    pub auto_embed: bool,
 }
 
 fn default_durability_str() -> String {
@@ -37,6 +40,7 @@ impl Default for StrataConfig {
     fn default() -> Self {
         Self {
             durability: default_durability_str(),
+            auto_embed: false,
         }
     }
 }
@@ -66,6 +70,10 @@ impl StrataConfig {
 #   "standard" = periodic fsync (~100ms), may lose last interval on crash
 #   "always"   = fsync every commit, zero data loss
 durability = "standard"
+
+# Auto-embed: automatically generate embeddings for text data (default: false)
+# Requires the "embed" feature to be compiled in.
+auto_embed = false
 "#
     }
 

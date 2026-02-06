@@ -126,6 +126,18 @@ impl Strata {
         let db = Database::open(path).map_err(|e| Error::Internal {
             reason: format!("Failed to open database: {}", e),
         })?;
+
+        // Override auto_embed if explicitly set in OpenOptions
+        if let Some(enabled) = opts.auto_embed {
+            if enabled {
+                #[cfg(not(feature = "embed"))]
+                return Err(Error::Internal {
+                    reason: "auto_embed requires the 'embed' feature to be compiled in".into(),
+                });
+            }
+            db.set_auto_embed(enabled);
+        }
+
         let access_mode = opts.access_mode;
         let executor = Executor::new_with_mode(db, access_mode);
 

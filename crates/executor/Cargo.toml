@@ -9,6 +9,10 @@ repository.workspace = true
 publish = false
 description = "Command execution layer for Strata database"
 
+[features]
+default = []
+embed = ["strata-intelligence/embed", "strata-engine/embed"]
+
 [dependencies]
 # Internal crates
 strata-core = { path = "../core" }

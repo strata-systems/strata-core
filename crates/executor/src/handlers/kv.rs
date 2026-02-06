@@ -67,7 +67,25 @@ pub fn kv_put(
     require_branch_exists(p, &branch)?;
     let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_key(&key))?;
+
+    // Extract text before the value is consumed by put()
+    let text = super::embed_hook::extract_text(&value);
+
     let version = convert_result(p.kv.put(&branch_id, &space, &key, value))?;
+
+    // Best-effort auto-embed after successful write
+    if let Some(ref text) = text {
+        super::embed_hook::maybe_embed_text(
+            p,
+            branch_id,
+            &space,
+            super::embed_hook::SHADOW_KV,
+            &key,
+            text,
+            strata_core::EntityRef::kv(branch_id, &key),
+        );
+    }
+
     Ok(Output::Version(extract_version(&version)))
 }
 
@@ -92,6 +110,18 @@ pub fn kv_delete(
     let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_key(&key))?;
     let existed = convert_result(p.kv.delete(&branch_id, &space, &key))?;
+
+    // Best-effort remove shadow embedding
+    if existed {
+        super::embed_hook::maybe_remove_embedding(
+            p,
+            branch_id,
+            &space,
+            super::embed_hook::SHADOW_KV,
+            &key,
+        );
+    }
+
     Ok(Output::Bool(existed))
 }
 

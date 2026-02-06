@@ -4,10 +4,14 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
-license.workspace = true
+license = "BUSL-1.1"
 repository.workspace = true
 publish = false
 description = "Intelligence layer for Strata — derived operations over primitives"
+
+[features]
+default = []
+embed = []
 
 [dependencies]
 strata-core = { path = "../core" }
@@ -16,6 +20,7 @@ dashmap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
+once_cell = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

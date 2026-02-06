@@ -68,7 +68,25 @@ pub fn state_set(
     require_branch_exists(p, &branch)?;
     let branch_id = bridge::to_core_branch_id(&branch)?;
     convert_result(bridge::validate_key(&cell))?;
+
+    // Extract text before value is consumed
+    let text = super::embed_hook::extract_text(&value);
+
     let version = convert_result(p.state.set(&branch_id, &space, &cell, value))?;
+
+    // Best-effort auto-embed after successful write
+    if let Some(ref text) = text {
+        super::embed_hook::maybe_embed_text(
+            p,
+            branch_id,
+            &space,
+            super::embed_hook::SHADOW_STATE,
+            &cell,
+            text,
+            strata_core::EntityRef::state(branch_id, &cell),
+        );
+    }
+
     Ok(Output::Version(bridge::extract_version(&version)))
 }
 
@@ -101,7 +119,11 @@ pub fn state_cas(
     require_branch_exists(p, &branch)?;
     let branch_id = bridge::to_core_branch_id(&branch)?;
     convert_result(bridge::validate_key(&cell))?;
-    match expected_counter {
+
+    // Extract text before value is consumed
+    let text = super::embed_hook::extract_text(&value);
+
+    let result = match expected_counter {
         None => {
             // Init semantics: create only if cell doesn't exist.
             // Check existence first since init() is idempotent.
@@ -142,7 +164,24 @@ pub fn state_cas(
                 }
             }
         }
+    };
+
+    // Best-effort auto-embed only if the CAS/init actually succeeded (returned a version)
+    if let Ok(Output::MaybeVersion(Some(_))) = &result {
+        if let Some(ref text) = text {
+            super::embed_hook::maybe_embed_text(
+                p,
+                branch_id,
+                &space,
+                super::embed_hook::SHADOW_STATE,
+                &cell,
+                text,
+                strata_core::EntityRef::state(branch_id, &cell),
+            );
+        }
     }
+
+    result
 }
 
 /// Handle StateInit command.
@@ -156,7 +195,25 @@ pub fn state_init(
     require_branch_exists(p, &branch)?;
     let branch_id = bridge::to_core_branch_id(&branch)?;
     convert_result(bridge::validate_key(&cell))?;
+
+    // Extract text before value is consumed
+    let text = super::embed_hook::extract_text(&value);
+
     let version = convert_result(p.state.init(&branch_id, &space, &cell, value))?;
+
+    // Best-effort auto-embed after successful write
+    if let Some(ref text) = text {
+        super::embed_hook::maybe_embed_text(
+            p,
+            branch_id,
+            &space,
+            super::embed_hook::SHADOW_STATE,
+            &cell,
+            text,
+            strata_core::EntityRef::state(branch_id, &cell),
+        );
+    }
+
     Ok(Output::Version(bridge::extract_version(&version)))
 }
 
@@ -171,6 +228,18 @@ pub fn state_delete(
     let branch_id = bridge::to_core_branch_id(&branch)?;
     convert_result(bridge::validate_key(&cell))?;
     let existed = convert_result(p.state.delete(&branch_id, &space, &cell))?;
+
+    // Best-effort remove shadow embedding
+    if existed {
+        super::embed_hook::maybe_remove_embedding(
+            p,
+            branch_id,
+            &space,
+            super::embed_hook::SHADOW_STATE,
+            &cell,
+        );
+    }
+
     Ok(Output::Bool(existed))
 }
 
