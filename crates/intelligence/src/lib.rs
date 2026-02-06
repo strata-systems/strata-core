@@ -30,6 +30,12 @@ pub mod index;
 pub mod scorer;
 pub mod tokenizer;
 
+#[cfg(feature = "embed")]
+pub mod runtime;
+
+#[cfg(feature = "embed")]
+pub mod embed;
+
 use std::sync::Arc;
 use strata_engine::Database;
 

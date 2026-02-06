@@ -45,6 +45,29 @@ use strata_storage::ShardedStore;
 use tracing::{info, warn};
 
 // ============================================================================
+// Auto-Embed State
+// ============================================================================
+
+/// In-memory state for auto-embedding configuration.
+///
+/// Stored as a Database extension to share the enabled flag across all handles.
+pub struct AutoEmbedState {
+    enabled: AtomicBool,
+    /// Tracks which shadow collections have been created (keyed by "branch_id/collection_name").
+    /// Prevents repeated `create_system_collection` calls on every write.
+    pub shadow_collections_created: DashMap<String, ()>,
+}
+
+impl Default for AutoEmbedState {
+    fn default() -> Self {
+        Self {
+            enabled: AtomicBool::new(false),
+            shadow_collections_created: DashMap::new(),
+        }
+    }
+}
+
+// ============================================================================
 // Persistence Mode (Storage/Durability Split)
 // ============================================================================
 
@@ -219,8 +242,27 @@ impl Database {
         config::StrataConfig::write_default_if_missing(&config_path)?;
         let cfg = config::StrataConfig::from_file(&config_path)?;
         let mode = cfg.durability_mode()?;
+        let auto_embed = cfg.auto_embed;
 
-        Self::open_with_mode(path, mode)
+        #[cfg(not(feature = "embed"))]
+        let auto_embed = if auto_embed {
+            warn!(
+                "strata.toml has auto_embed=true but the 'embed' feature is not compiled; \
+                 auto-embedding is disabled"
+            );
+            false
+        } else {
+            auto_embed
+        };
+
+        let db = Self::open_with_mode(path, mode)?;
+        // Only apply config-based auto_embed on fresh creation (strong_count == 1
+        // means we just created it; the registry only holds a Weak reference).
+        // This avoids overriding a runtime toggle set via OpenOptions.
+        if Arc::strong_count(&db) == 1 {
+            db.set_auto_embed(auto_embed);
+        }
+        Ok(db)
     }
 
     /// Open database with specific durability mode
@@ -508,7 +550,7 @@ impl Database {
     /// // All VectorStore instances for this Database share the same state
     /// let state = db.extension::<VectorBackendState>();
     /// ```
-    pub(crate) fn extension<T: Any + Send + Sync + Default>(&self) -> Arc<T> {
+    pub fn extension<T: Any + Send + Sync + Default>(&self) -> Arc<T> {
         let type_id = TypeId::of::<T>();
 
         // Use entry API for atomic get-or-insert
@@ -523,6 +565,29 @@ impl Database {
             .clone()
             .downcast::<T>()
             .expect("extension type mismatch - this is a bug")
+    }
+
+    // ========================================================================
+    // Auto-Embed Accessors
+    // ========================================================================
+
+    /// Check if auto-embedding is enabled.
+    pub fn auto_embed_enabled(&self) -> bool {
+        self.extension::<AutoEmbedState>()
+            .enabled
+            .load(Ordering::Relaxed)
+    }
+
+    /// Enable or disable auto-embedding.
+    pub fn set_auto_embed(&self, enabled: bool) {
+        self.extension::<AutoEmbedState>()
+            .enabled
+            .store(enabled, Ordering::Relaxed);
+    }
+
+    /// Path to the model directory for MiniLM-L6-v2.
+    pub fn model_dir(&self) -> PathBuf {
+        self.data_dir.join("models/minilm-l6-v2")
     }
 
     // ========================================================================

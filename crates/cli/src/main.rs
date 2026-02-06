@@ -77,6 +77,7 @@ fn main() {
 fn open_database(matches: &clap::ArgMatches) -> Result<Strata, String> {
     let read_only = matches.get_flag("read-only");
     let use_cache = matches.get_flag("cache");
+    let auto_embed = matches.get_flag("auto-embed");
 
     if use_cache {
         Strata::cache().map_err(|e| format!("Failed to open cache database: {}", e))
@@ -86,13 +87,17 @@ fn open_database(matches: &clap::ArgMatches) -> Result<Strata, String> {
             .map(|s| s.as_str())
             .unwrap_or(".strata");
 
+        let mut opts = OpenOptions::new();
+
         if read_only {
-            let opts = OpenOptions::new().access_mode(AccessMode::ReadOnly);
-            Strata::open_with(path, opts)
-                .map_err(|e| format!("Failed to open database (read-only): {}", e))
-        } else {
-            Strata::open(path).map_err(|e| format!("Failed to open database: {}", e))
+            opts = opts.access_mode(AccessMode::ReadOnly);
         }
+        if auto_embed {
+            opts = opts.auto_embed(true);
+        }
+
+        Strata::open_with(path, opts)
+            .map_err(|e| format!("Failed to open database: {}", e))
     }
 }
 

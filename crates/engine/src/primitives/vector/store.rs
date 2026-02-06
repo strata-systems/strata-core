@@ -33,7 +33,7 @@ use crate::primitives::vector::{
 };
 use strata_concurrency::TransactionContext;
 use strata_core::contract::{Timestamp, Version, Versioned};
-// Unused after MVP simplification: EntityRef, SearchBudget, SearchHit, SearchResponse, SearchStats
+use strata_core::EntityRef;
 use crate::database::Database;
 use parking_lot::RwLock;
 use serde_json::Value as JsonValue;
@@ -416,6 +416,20 @@ impl VectorStore {
         embedding: &[f32],
         metadata: Option<JsonValue>,
     ) -> VectorResult<Version> {
+        self.insert_inner(branch_id, space, collection, key, embedding, metadata, None)
+    }
+
+    /// Common insert implementation used by both `insert()` and `system_insert_with_source()`.
+    fn insert_inner(
+        &self,
+        branch_id: BranchId,
+        space: &str,
+        collection: &str,
+        key: &str,
+        embedding: &[f32],
+        metadata: Option<JsonValue>,
+        source_ref: Option<EntityRef>,
+    ) -> VectorResult<Version> {
         // Validate key
         validate_vector_key(key)?;
 
@@ -468,12 +482,18 @@ impl VectorStore {
         let (vector_id, record) = if let Some(existing_record) = existing {
             // Update existing: keep the same VectorId
             let mut updated = existing_record;
-            updated.update(embedding.to_vec(), metadata);
+            match source_ref {
+                Some(sr) => updated.update_with_source(embedding.to_vec(), metadata, Some(sr)),
+                None => updated.update(embedding.to_vec(), metadata),
+            }
             (VectorId(updated.vector_id), updated)
         } else {
             // New vector: allocate VectorId from backend's per-collection counter
             let vector_id = backend.allocate_id();
-            let record = VectorRecord::new(vector_id, embedding.to_vec(), metadata);
+            let record = match source_ref {
+                Some(sr) => VectorRecord::new_with_source(vector_id, embedding.to_vec(), metadata, sr),
+                None => VectorRecord::new(vector_id, embedding.to_vec(), metadata),
+            };
             (vector_id, record)
         };
 
@@ -1224,8 +1244,7 @@ impl VectorStore {
     /// Create a system collection (internal use only, bypasses `_` prefix check)
     ///
     /// System collections must have names starting with `_system_`.
-    #[allow(dead_code)]
-    pub(crate) fn create_system_collection(
+    pub fn create_system_collection(
         &self,
         branch_id: BranchId,
         name: &str,
@@ -1278,8 +1297,7 @@ impl VectorStore {
     }
 
     /// Insert into a system collection (internal use only)
-    #[allow(dead_code)]
-    pub(crate) fn system_insert(
+    pub fn system_insert(
         &self,
         branch_id: BranchId,
         collection: &str,
@@ -1293,9 +1311,26 @@ impl VectorStore {
         self.insert(branch_id, "default", collection, key, embedding, metadata)
     }
 
+    /// Insert into a system collection with a source reference (internal use only)
+    ///
+    /// Like `system_insert` but also stores an `EntityRef` that traces the
+    /// shadow embedding back to the originating record, enabling hybrid search.
+    pub fn system_insert_with_source(
+        &self,
+        branch_id: BranchId,
+        collection: &str,
+        key: &str,
+        embedding: &[f32],
+        metadata: Option<JsonValue>,
+        source_ref: EntityRef,
+    ) -> VectorResult<Version> {
+        use crate::primitives::vector::collection::validate_system_collection_name;
+        validate_system_collection_name(collection)?;
+        self.insert_inner(branch_id, "default", collection, key, embedding, metadata, Some(source_ref))
+    }
+
     /// Search a system collection (internal use only)
-    #[allow(dead_code)]
-    pub(crate) fn system_search(
+    pub fn system_search(
         &self,
         branch_id: BranchId,
         collection: &str,
@@ -1306,6 +1341,18 @@ impl VectorStore {
         use crate::primitives::vector::collection::validate_system_collection_name;
         validate_system_collection_name(collection)?;
         self.search(branch_id, "default", collection, query, k, filter)
+    }
+
+    /// Delete from a system collection (internal use only)
+    pub fn system_delete(
+        &self,
+        branch_id: BranchId,
+        collection: &str,
+        key: &str,
+    ) -> VectorResult<bool> {
+        use crate::primitives::vector::collection::validate_system_collection_name;
+        validate_system_collection_name(collection)?;
+        self.delete(branch_id, "default", collection, key)
     }
 
     /// Get index type name and memory usage for a collection

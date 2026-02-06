@@ -4,7 +4,7 @@ Complete specifications for the StrataDB API.
 
 ## SDK & Interface References
 
-- **[CLI Reference](cli.md)** — Redis-inspired command-line interface
+- **[CLI Reference](cli.md)** — Interactive command-line interface
 - **[MCP Server Reference](mcp.md)** — Model Context Protocol server for AI assistants
 - **[Python SDK Reference](python-sdk.md)** — Native Python bindings via PyO3
 - **[Node.js SDK Reference](node-sdk.md)** — Native Node.js bindings via NAPI-RS

@@ -82,6 +82,7 @@ pub fn json_set(
     require_branch_exists(p, &branch)?;
     let branch_id = to_core_branch_id(&branch)?;
     convert_result(validate_key(&key))?;
+
     let json_path = convert_result(parse_path(&path))?;
     let json_value = convert_result(value_to_json(value))?;
 
@@ -91,6 +92,10 @@ pub fn json_set(
         p.json
             .set_or_create(&branch_id, &space, &key, &json_path, json_value),
     )?;
+
+    // Best-effort auto-embed: read back the full document so we embed the complete
+    // content, not just the fragment written at this path.
+    embed_full_doc(p, branch_id, &space, &key);
 
     Ok(Output::Version(extract_version(&version)))
 }
@@ -141,10 +146,26 @@ pub fn json_delete(
 
     if json_path.is_root() {
         let deleted = convert_result(p.json.destroy(&branch_id, &space, &key))?;
+
+        // Best-effort remove shadow embedding when entire document is destroyed
+        if deleted {
+            super::embed_hook::maybe_remove_embedding(
+                p,
+                branch_id,
+                &space,
+                super::embed_hook::SHADOW_JSON,
+                &key,
+            );
+        }
+
         Ok(Output::Uint(if deleted { 1 } else { 0 }))
     } else {
         match p.json.delete_at_path(&branch_id, &space, &key, &json_path) {
-            Ok(_) => Ok(Output::Uint(1)),
+            Ok(_) => {
+                // Re-embed the remaining document after sub-path deletion
+                embed_full_doc(p, branch_id, &space, &key);
+                Ok(Output::Uint(1))
+            }
             Err(e) => {
                 // If path not found, return 0 (nothing deleted)
                 let err = crate::Error::from(e);
@@ -182,6 +203,47 @@ pub fn json_list(
         keys: result.doc_ids,
         cursor: result.next_cursor,
     })
+}
+
+/// Best-effort: read back the full JSON document and embed its complete text.
+///
+/// This ensures that partial-path writes (e.g. `$.name`) produce an embedding
+/// that reflects the entire document, not just the written fragment.
+fn embed_full_doc(
+    p: &Arc<Primitives>,
+    branch_id: strata_core::types::BranchId,
+    space: &str,
+    key: &str,
+) {
+    use strata_core::primitives::json::JsonPath;
+
+    let full_doc = p.json.get(&branch_id, space, key, &JsonPath::root());
+    match full_doc {
+        Ok(Some(json_val)) => {
+            if let Ok(value) = json_to_value(json_val) {
+                if let Some(text) = super::embed_hook::extract_text(&value) {
+                    super::embed_hook::maybe_embed_text(
+                        p,
+                        branch_id,
+                        space,
+                        super::embed_hook::SHADOW_JSON,
+                        key,
+                        &text,
+                        strata_core::EntityRef::json(branch_id, key),
+                    );
+                }
+            }
+        }
+        Ok(None) => {}
+        Err(e) => {
+            tracing::warn!(
+                target: "strata::embed",
+                key = key,
+                error = %e,
+                "Failed to read back document for embedding"
+            );
+        }
+    }
 }
 
 #[cfg(test)]

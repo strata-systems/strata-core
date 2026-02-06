@@ -11,6 +11,7 @@ publish = false
 [features]
 default = []
 perf-trace = []  # Enable per-layer timing instrumentation for M4
+embed = []       # Marker feature: auto-embed runtime is available
 
 [dependencies]
 strata-core = { path = "../core" }

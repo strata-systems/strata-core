@@ -1,6 +1,6 @@
 # CLI Reference
 
-The StrataDB CLI (`strata`) provides a Redis-inspired command-line interface for interacting with StrataDB databases.
+The StrataDB CLI (`strata`) provides an interactive command-line interface for interacting with StrataDB databases.
 
 ## Installation
 
