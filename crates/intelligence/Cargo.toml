@@ -11,7 +11,7 @@ description = "Intelligence layer for Strata — derived operations over primiti
 
 [features]
 default = []
-embed = []
+embed = ["dep:ureq", "dep:tar", "dep:zstd"]
 
 [dependencies]
 strata-core = { path = "../core" }
@@ -21,6 +21,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 once_cell = { workspace = true }
+ureq = { workspace = true, optional = true }
+tar = { workspace = true, optional = true }
+zstd = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

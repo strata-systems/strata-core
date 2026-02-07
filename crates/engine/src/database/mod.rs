@@ -586,8 +586,26 @@ impl Database {
     }
 
     /// Path to the model directory for MiniLM-L6-v2.
+    ///
+    /// Checks in order:
+    /// 1. Database-local `{data_dir}/models/minilm-l6-v2/`
+    /// 2. System-wide `~/.stratadb/models/minilm-l6-v2/`
+    /// 3. Falls back to the local path (for error messages)
     pub fn model_dir(&self) -> PathBuf {
-        self.data_dir.join("models/minilm-l6-v2")
+        let local = self.data_dir.join("models/minilm-l6-v2");
+        if local.join("model.safetensors").exists() && local.join("vocab.txt").exists() {
+            return local;
+        }
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .ok();
+        if let Some(home) = home {
+            let system = PathBuf::from(home).join(".stratadb/models/minilm-l6-v2");
+            if system.join("model.safetensors").exists() && system.join("vocab.txt").exists() {
+                return system;
+            }
+        }
+        local
     }
 
     // ========================================================================

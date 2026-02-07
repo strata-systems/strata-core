@@ -29,6 +29,12 @@ fn main() {
     let cli = build_cli();
     let matches = cli.get_matches();
 
+    // Handle `setup` subcommand before opening any database.
+    if matches.subcommand_name() == Some("setup") {
+        run_setup();
+        return;
+    }
+
     // Determine output mode
     let output_mode = if matches.get_flag("json") {
         OutputMode::Json
@@ -37,6 +43,19 @@ fn main() {
     } else {
         OutputMode::Human
     };
+
+    // Auto-download model files when --auto-embed is set (best-effort).
+    #[cfg(feature = "embed")]
+    if matches.get_flag("auto-embed") {
+        match strata_intelligence::embed::download::ensure_model() {
+            Ok(path) => {
+                eprintln!("Model files ready at {}", path.display());
+            }
+            Err(e) => {
+                eprintln!("Warning: failed to download model files: {}", e);
+            }
+        }
+    }
 
     // Open database
     let db = match open_database(&matches) {
@@ -329,5 +348,27 @@ fn run_shell_mode(
             eprintln!("(error) {}", e);
             1
         }
+    }
+}
+
+fn run_setup() {
+    #[cfg(feature = "embed")]
+    {
+        eprintln!("Downloading MiniLM-L6-v2 model files...");
+        match strata_intelligence::embed::download::ensure_model() {
+            Ok(path) => {
+                eprintln!("Model files ready at {}", path.display());
+            }
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                process::exit(1);
+            }
+        }
+    }
+
+    #[cfg(not(feature = "embed"))]
+    {
+        eprintln!("The 'embed' feature is not enabled. Rebuild with --features embed");
+        process::exit(1);
     }
 }
