@@ -9,8 +9,13 @@ publish = false
 name = "strata"
 path = "src/main.rs"
 
+[features]
+default = []
+embed = ["strata-executor/embed", "dep:strata-intelligence"]
+
 [dependencies]
 strata-executor = { path = "../executor" }
+strata-intelligence = { path = "../intelligence", features = ["embed"], optional = true }
 clap = { version = "4", features = ["string"] }
 rustyline = { version = "15", features = ["with-file-history"] }
 shlex = "1"

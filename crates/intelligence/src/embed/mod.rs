@@ -3,6 +3,7 @@
 //! Provides a lazy-loading model lifecycle via [`EmbedModelState`] and
 //! text extraction from Strata [`Value`] types.
 
+pub mod download;
 pub mod extract;
 pub mod model;
 pub mod tokenizer;

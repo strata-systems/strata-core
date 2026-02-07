@@ -83,6 +83,7 @@ pub fn build_cli() -> Command {
         .subcommand(build_flush())
         .subcommand(build_compact())
         .subcommand(build_search())
+        .subcommand(build_setup())
 }
 
 /// Build a command tree for REPL mode (no global flags).
@@ -609,4 +610,12 @@ fn build_search() -> Command {
                 .long("primitives")
                 .help("Comma-separated list of primitives to search"),
         )
+}
+
+// =========================================================================
+// Setup
+// =========================================================================
+
+fn build_setup() -> Command {
+    Command::new("setup").about("Download model files for auto-embedding")
 }
