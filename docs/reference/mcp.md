@@ -9,9 +9,9 @@ The StrataDB MCP (Model Context Protocol) server exposes StrataDB as a tool prov
 cargo install strata-mcp
 
 # From source
-git clone https://github.com/stratadb-labs/strata-core
-cd strata-core
-cargo install --path crates/mcp
+git clone https://github.com/stratadb-labs/strata-mcp
+cd strata-mcp
+cargo install --path .
 ```
 
 ## Configuration
@@ -59,11 +59,11 @@ For ephemeral databases:
 
 ## Tools
 
-The MCP server exposes the following tools to AI assistants:
+The MCP server exposes the following tools to AI assistants.
 
 ### Database Tools
 
-#### strata_ping
+#### strata_db_ping
 
 Check database connectivity.
 
@@ -71,10 +71,10 @@ Check database connectivity.
 
 **Returns:**
 ```json
-{"version": "0.5.1"}
+{"pong": true, "version": "0.5.1"}
 ```
 
-#### strata_info
+#### strata_db_info
 
 Get database information.
 
@@ -90,33 +90,33 @@ Get database information.
 }
 ```
 
-#### strata_flush
+#### strata_db_flush
 
 Flush pending writes to disk.
 
 **Parameters:** None
 
-#### strata_compact
+#### strata_db_compact
 
 Trigger database compaction.
 
 **Parameters:** None
 
-#### strata_time_range
+#### strata_db_time_range
 
-Get the available time-travel window for a branch.
+Get the available time range for the current branch. Use the returned timestamps with the `as_of` parameter on read tools for time-travel queries.
 
-**Parameters:**
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `branch` | string | No | Branch name (defaults to current branch) |
+**Parameters:** None
 
 **Returns:**
 ```json
-{"oldest_ts": 1700001000, "latest_ts": 1700009000}
+{
+  "oldest_ts": 1700000000000000,
+  "latest_ts": 1700001000000000
+}
 ```
 
-Returns `{"oldest_ts": null, "latest_ts": null}` if the branch has no data.
+Returns `null` timestamps if the branch has no data.
 
 ---
 
@@ -142,7 +142,7 @@ Get a value by key.
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `key` | string | Yes | The key to retrieve |
-| `as_of` | number | No | Timestamp (microseconds since epoch) for time-travel read |
+| `as_of` | integer | No | Microsecond timestamp for time-travel reads |
 
 **Returns:** The value, or `null` if not found
 
@@ -155,7 +155,7 @@ Delete a key.
 |------|------|----------|-------------|
 | `key` | string | Yes | The key to delete |
 
-**Returns:** `{"deleted": true}` or `{"deleted": false}`
+**Returns:** `true` or `false`
 
 #### strata_kv_list
 
@@ -165,11 +165,11 @@ List keys with optional prefix filter.
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `prefix` | string | No | Filter keys by prefix |
-| `limit` | number | No | Maximum keys to return |
+| `limit` | integer | No | Maximum keys to return |
 | `cursor` | string | No | Pagination cursor |
-| `as_of` | number | No | Timestamp (microseconds since epoch) for time-travel read |
+| `as_of` | integer | No | Microsecond timestamp for time-travel reads |
 
-**Returns:** `{"keys": ["key1", "key2", ...]}`
+**Returns:** Array of key names
 
 #### strata_kv_history
 
@@ -179,8 +179,42 @@ Get version history for a key.
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `key` | string | Yes | The key |
+| `as_of` | integer | No | Microsecond timestamp — get history up to that point |
 
 **Returns:** Array of `{value, version, timestamp}`
+
+#### strata_kv_put_many
+
+Store multiple key-value pairs in a single operation.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `items` | object[] | Yes | Array of `{key, value}` objects |
+
+**Returns:** Array of version numbers
+
+#### strata_kv_get_many
+
+Get multiple keys in a single operation.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `keys` | string[] | Yes | Array of key names |
+
+**Returns:** Array of values (null for missing keys)
+
+#### strata_kv_delete_many
+
+Delete multiple keys in a single operation.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `keys` | string[] | Yes | Array of key names |
+
+**Returns:** Array of booleans (true if key existed)
 
 ---
 
@@ -206,7 +240,7 @@ Get a state cell value.
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `cell` | string | Yes | The cell name |
-| `as_of` | number | No | Timestamp (microseconds since epoch) for time-travel read |
+| `as_of` | integer | No | Microsecond timestamp for time-travel reads |
 
 **Returns:** The value, or `null` if not found
 
@@ -231,9 +265,9 @@ Compare-and-swap update.
 |------|------|----------|-------------|
 | `cell` | string | Yes | The cell name |
 | `value` | any | Yes | The new value |
-| `expected_version` | number | No | Expected current version |
+| `expected_counter` | integer | No | Expected current version |
 
-**Returns:** `{"version": 2}` on success, `{"failed": true}` on CAS failure
+**Returns:** New version on success, `null` on CAS failure
 
 #### strata_state_delete
 
@@ -244,7 +278,7 @@ Delete a state cell.
 |------|------|----------|-------------|
 | `cell` | string | Yes | The cell name |
 
-**Returns:** `{"deleted": true}` or `{"deleted": false}`
+**Returns:** `true` or `false`
 
 #### strata_state_list
 
@@ -254,8 +288,21 @@ List state cell names.
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `prefix` | string | No | Filter by prefix |
+| `as_of` | integer | No | Microsecond timestamp for time-travel reads |
 
-**Returns:** `{"cells": ["cell1", "cell2", ...]}`
+**Returns:** Array of cell names
+
+#### strata_state_history
+
+Get version history for a state cell.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `cell` | string | Yes | The cell name |
+| `as_of` | integer | No | Microsecond timestamp — get history up to that point |
+
+**Returns:** Array of `{value, version, timestamp}`
 
 ---
 
@@ -269,9 +316,9 @@ Append an event to the log.
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `event_type` | string | Yes | The event type |
-| `payload` | object | Yes | The event payload (must be an object) |
+| `payload` | any | Yes | The event payload |
 
-**Returns:** `{"sequence": 0}`
+**Returns:** `{"version": 0}` (sequence number)
 
 #### strata_event_get
 
@@ -280,8 +327,8 @@ Get an event by sequence number.
 **Parameters:**
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `sequence` | number | Yes | The sequence number |
-| `as_of` | number | No | Timestamp (microseconds since epoch) for time-travel read |
+| `sequence` | integer | Yes | The sequence number |
+| `as_of` | integer | No | Microsecond timestamp for time-travel reads |
 
 **Returns:** `{value, version, timestamp}` or `null`
 
@@ -293,11 +340,11 @@ List events by type.
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `event_type` | string | Yes | The event type |
-| `limit` | number | No | Maximum events |
-| `after` | number | No | Return events after this sequence |
-| `as_of` | number | No | Timestamp (microseconds since epoch) for time-travel read |
+| `limit` | integer | No | Maximum events |
+| `after_sequence` | integer | No | Return events after this sequence |
+| `as_of` | integer | No | Microsecond timestamp for time-travel reads |
 
-**Returns:** Array of events
+**Returns:** Array of `{value, version, timestamp}`
 
 #### strata_event_len
 
@@ -305,7 +352,7 @@ Get total event count.
 
 **Parameters:** None
 
-**Returns:** `{"count": 100}`
+**Returns:** Event count (number)
 
 ---
 
@@ -333,7 +380,7 @@ Get a value at a JSONPath.
 |------|------|----------|-------------|
 | `key` | string | Yes | The document key |
 | `path` | string | Yes | JSONPath |
-| `as_of` | number | No | Timestamp (microseconds since epoch) for time-travel read |
+| `as_of` | integer | No | Microsecond timestamp for time-travel reads |
 
 **Returns:** The value, or `null` if not found
 
@@ -347,7 +394,7 @@ Delete a value at a JSONPath.
 | `key` | string | Yes | The document key |
 | `path` | string | Yes | JSONPath |
 
-**Returns:** `{"deleted": 1}`
+**Returns:** Count of elements deleted (number)
 
 #### strata_json_list
 
@@ -357,10 +404,23 @@ List JSON document keys.
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `prefix` | string | No | Filter by prefix |
-| `limit` | number | Yes | Maximum keys |
+| `limit` | integer | No | Maximum keys (default: 100) |
 | `cursor` | string | No | Pagination cursor |
+| `as_of` | integer | No | Microsecond timestamp for time-travel reads |
 
 **Returns:** `{"keys": [...], "cursor": "..."}`
+
+#### strata_json_history
+
+Get version history for a JSON document.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `key` | string | Yes | The document key |
+| `as_of` | integer | No | Microsecond timestamp — get history up to that point |
+
+**Returns:** Array of `{value, version, timestamp}`
 
 ---
 
@@ -374,7 +434,7 @@ Create a vector collection.
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `collection` | string | Yes | Collection name |
-| `dimension` | number | Yes | Vector dimension |
+| `dimension` | integer | Yes | Vector dimension |
 | `metric` | string | No | `cosine` (default), `euclidean`, `dot_product` |
 
 **Returns:** `{"version": 1}`
@@ -388,7 +448,7 @@ Delete a vector collection.
 |------|------|----------|-------------|
 | `collection` | string | Yes | Collection name |
 
-**Returns:** `{"deleted": true}`
+**Returns:** `true` or `false`
 
 #### strata_vector_list_collections
 
@@ -396,7 +456,18 @@ List all vector collections.
 
 **Parameters:** None
 
-**Returns:** Array of collection info
+**Returns:** Array of collection info objects
+
+#### strata_vector_stats
+
+Get detailed statistics for a collection.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `collection` | string | Yes | Collection name |
+
+**Returns:** Collection info object
 
 #### strata_vector_upsert
 
@@ -408,7 +479,7 @@ Insert or update a vector.
 | `collection` | string | Yes | Collection name |
 | `key` | string | Yes | Vector key |
 | `vector` | number[] | Yes | Vector embedding |
-| `metadata` | object | No | Optional metadata |
+| `metadata` | any | No | Optional metadata |
 
 **Returns:** `{"version": 1}`
 
@@ -421,7 +492,7 @@ Get a vector by key.
 |------|------|----------|-------------|
 | `collection` | string | Yes | Collection name |
 | `key` | string | Yes | Vector key |
-| `as_of` | number | No | Timestamp (microseconds since epoch) for time-travel read |
+| `as_of` | integer | No | Microsecond timestamp for time-travel reads |
 
 **Returns:** `{key, embedding, metadata, version, timestamp}` or `null`
 
@@ -435,7 +506,7 @@ Delete a vector.
 | `collection` | string | Yes | Collection name |
 | `key` | string | Yes | Vector key |
 
-**Returns:** `{"deleted": true}`
+**Returns:** `true` or `false`
 
 #### strata_vector_search
 
@@ -446,10 +517,10 @@ Search for similar vectors.
 |------|------|----------|-------------|
 | `collection` | string | Yes | Collection name |
 | `query` | number[] | Yes | Query vector |
-| `k` | number | Yes | Number of results |
+| `k` | integer | Yes | Number of results |
 | `metric` | string | No | Override distance metric |
 | `filter` | object[] | No | Metadata filters |
-| `as_of` | number | No | Timestamp (microseconds since epoch) for temporal search |
+| `as_of` | integer | No | Microsecond timestamp for time-travel reads |
 
 **Filter format:**
 ```json
@@ -473,7 +544,7 @@ Batch insert/update vectors.
 | `collection` | string | Yes | Collection name |
 | `entries` | object[] | Yes | Array of `{key, vector, metadata?}` |
 
-**Returns:** `{"versions": [1, 2, 3, ...]}`
+**Returns:** Array of version numbers
 
 ---
 
@@ -505,7 +576,7 @@ List all branches.
 
 **Parameters:** None
 
-**Returns:** `{"branches": ["default", "feature", ...]}`
+**Returns:** Array of branch info objects
 
 #### strata_branch_exists
 
@@ -516,7 +587,7 @@ Check if a branch exists.
 |------|------|----------|-------------|
 | `name` | string | Yes | Branch name |
 
-**Returns:** `{"exists": true}`
+**Returns:** `true` or `false`
 
 #### strata_branch_delete
 
@@ -537,7 +608,7 @@ Fork a branch with all its data.
 | `source` | string | Yes | Source branch |
 | `destination` | string | Yes | New branch name |
 
-**Returns:** `{"source", "destination", "keys_copied"}`
+**Returns:** `{source, destination, keys_copied}`
 
 #### strata_branch_diff
 
@@ -579,7 +650,7 @@ Get current branch name.
 
 **Parameters:** None
 
-**Returns:** `{"branch": "default"}`
+**Returns:** Branch name (string)
 
 ---
 
@@ -600,7 +671,7 @@ List all spaces.
 
 **Parameters:** None
 
-**Returns:** `{"spaces": ["default", ...]}`
+**Returns:** Array of space names
 
 #### strata_space_exists
 
@@ -611,16 +682,17 @@ Check if a space exists.
 |------|------|----------|-------------|
 | `name` | string | Yes | Space name |
 
-**Returns:** `{"exists": true}`
+**Returns:** `true` or `false`
 
 #### strata_space_delete
 
-Delete an empty space.
+Delete a space.
 
 **Parameters:**
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `name` | string | Yes | Space name |
+| `force` | boolean | No | Delete even if non-empty |
 
 #### strata_space_use
 
@@ -637,7 +709,7 @@ Get current space name.
 
 **Parameters:** None
 
-**Returns:** `{"space": "default"}`
+**Returns:** Space name (string)
 
 ---
 
@@ -658,7 +730,7 @@ Commit the current transaction.
 
 **Parameters:** None
 
-**Returns:** `{"version": 5}`
+**Returns:** `{"status": "committed", "version": 5}`
 
 #### strata_txn_rollback
 
@@ -680,7 +752,7 @@ Check if a transaction is active.
 
 **Parameters:** None
 
-**Returns:** `{"active": true}`
+**Returns:** `true` or `false`
 
 ---
 
@@ -694,8 +766,8 @@ Search across multiple primitives.
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `query` | string | Yes | Search query |
-| `k` | number | No | Maximum results |
-| `primitives` | string[] | No | Primitives to search |
+| `k` | integer | No | Maximum results |
+| `primitives` | string[] | No | Primitives to search (`kv`, `json`, `state`, `event`) |
 
 **Returns:** Array of `{entity, primitive, score, rank, snippet}`
 
@@ -703,7 +775,7 @@ Search across multiple primitives.
 
 ### Bundle Tools
 
-#### strata_branch_export
+#### strata_bundle_export
 
 Export a branch to a bundle file.
 
@@ -713,9 +785,9 @@ Export a branch to a bundle file.
 | `branch` | string | Yes | Branch name |
 | `path` | string | Yes | Output file path |
 
-**Returns:** Export result
+**Returns:** `{branch_id, path, entry_count, bundle_size}`
 
-#### strata_branch_import
+#### strata_bundle_import
 
 Import a branch from a bundle file.
 
@@ -724,9 +796,9 @@ Import a branch from a bundle file.
 |------|------|----------|-------------|
 | `path` | string | Yes | Bundle file path |
 
-**Returns:** Import result
+**Returns:** `{branch_id, transactions_applied, keys_written}`
 
-#### strata_branch_validate
+#### strata_bundle_validate
 
 Validate a bundle file.
 
@@ -735,7 +807,51 @@ Validate a bundle file.
 |------|------|----------|-------------|
 | `path` | string | Yes | Bundle file path |
 
-**Returns:** Validation result
+**Returns:** `{branch_id, format_version, entry_count, checksums_valid}`
+
+---
+
+### Retention Tools
+
+#### strata_retention_apply
+
+Apply the retention policy to expire old data.
+
+**Parameters:** None
+
+---
+
+## Time Travel
+
+StrataDB supports point-in-time queries via the `as_of` parameter. Timestamps are in **microseconds since Unix epoch**.
+
+### Workflow
+
+1. Call `strata_db_time_range` to discover the available timestamp range
+2. Pass an `as_of` timestamp to any supported read tool
+
+### Supported Tools
+
+The following tools accept the optional `as_of` parameter:
+
+| Category | Tools |
+|----------|-------|
+| KV | `strata_kv_get`, `strata_kv_list`, `strata_kv_history` |
+| State | `strata_state_get`, `strata_state_list`, `strata_state_history` |
+| Events | `strata_event_get`, `strata_event_list` |
+| JSON | `strata_json_get`, `strata_json_list`, `strata_json_history` |
+| Vector | `strata_vector_get`, `strata_vector_search` |
+
+### Example
+
+```
+User: "What was the value of 'config' 5 minutes ago?"
+
+Claude:
+1. Calls strata_db_time_range → {"oldest_ts": 1700000000000000, "latest_ts": 1700001000000000}
+2. Calculates: 5 minutes ago = latest_ts - 300000000
+3. Calls strata_kv_get with key="config", as_of=1700000700000000
+```
 
 ---
 
@@ -747,15 +863,15 @@ Tool errors are returned in the standard MCP error format:
 {
   "error": {
     "code": -32000,
-    "message": "Branch not found: nonexistent"
+    "message": "strata error: Branch not found: nonexistent"
   }
 }
 ```
 
 Common error codes:
-- `-32000`: Application error (invalid operation, not found, etc.)
-- `-32602`: Invalid parameters
+- `-32602`: Invalid parameters (missing args, wrong types, not found)
 - `-32603`: Internal error
+- `-32601`: Unknown tool
 
 ---
 
@@ -777,3 +893,11 @@ Done! I've stored your name as "Alice" in the database.
 *[Calls strata_branch_use with name="experiment"]*
 
 Done! Created the "experiment" branch and switched to it. Any data operations will now happen on this branch.
+
+**User:** "What was stored under 'name' before I changed it?"
+
+**Claude:** Let me check the history.
+*[Calls strata_db_time_range]*
+*[Calls strata_kv_get with key="name", as_of=<earlier_timestamp>]*
+
+The previous value was "Alice".

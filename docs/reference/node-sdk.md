@@ -1,68 +1,78 @@
 # Node.js SDK Reference
 
-The StrataDB Node.js SDK provides native bindings via NAPI-RS with full TypeScript support.
+The StrataDB Node.js SDK provides native bindings via NAPI-RS with full TypeScript support. All data methods are async and return Promises.
 
 ## Installation
 
 ```bash
-npm install stratadb
-# or
-yarn add stratadb
+npm install @stratadb/core
 ```
 
 ## Quick Start
 
 ```typescript
-import { Strata } from 'stratadb';
+import { Strata } from '@stratadb/core';
 
 // Open a database
 const db = Strata.open('/path/to/data');
 
 // Store and retrieve data
-db.kvPut('greeting', 'Hello, World!');
-console.log(db.kvGet('greeting'));  // "Hello, World!"
+await db.kv.set('greeting', 'Hello, World!');
+console.log(await db.kv.get('greeting'));  // "Hello, World!"
 
-// Use transactions
-db.begin();
-try {
-  db.kvPut('a', 1);
-  db.kvPut('b', 2);
-  db.commit();
-} catch (e) {
-  db.rollback();
-  throw e;
-}
+// Transaction with auto-commit/rollback
+await db.transaction(async (tx) => {
+  await tx.kv.set('a', 1);
+  await tx.kv.set('b', 2);
+});
+
+// Time-travel reads
+const range = await db.timeRange();
+const snapshot = db.at(range.oldestTs);
+console.log(await snapshot.kv.get('greeting'));  // value at that time
 
 // Vector search
-db.vectorCreateCollection('embeddings', 384);
-db.vectorUpsert('embeddings', 'doc-1', new Array(384).fill(0.1));
-const results = db.vectorSearch('embeddings', new Array(384).fill(0.1), 5);
+await db.vector.createCollection('embeddings', { dimension: 384 });
+await db.vector.upsert('embeddings', 'doc-1', new Array(384).fill(0.1));
+const results = await db.vector.search('embeddings', new Array(384).fill(0.1), { limit: 5 });
+
+// Close when done
+await db.close();
 ```
 
 ---
 
 ## Opening a Database
 
-### Strata.open(path)
+### Strata.open(path, options?)
 
-Open a database at the given path.
+Open a database at the given path. Synchronous.
 
 ```typescript
 const db = Strata.open('/path/to/data');
+const db = Strata.open('/path/to/data', { autoEmbed: true });
+const db = Strata.open('/path/to/data', { readOnly: true });
 ```
 
 **Parameters:**
 | Name | Type | Description |
 |------|------|-------------|
 | `path` | string | Path to the database directory |
+| `options` | OpenOptions? | Optional settings |
+
+**OpenOptions:**
+| Name | Type | Description |
+|------|------|-------------|
+| `autoEmbed` | boolean? | Enable automatic text embedding |
+| `readOnly` | boolean? | Open in read-only mode |
 
 **Returns:** `Strata` instance
 
-**Throws:** Error if the database cannot be opened
+**Throws:** `IoError` if the database cannot be opened
 
 ### Strata.cache()
 
-Create an ephemeral in-memory database.
+Create an ephemeral in-memory database. Synchronous.
 
 ```typescript
 const db = Strata.cache();
@@ -72,14 +82,14 @@ const db = Strata.cache();
 
 ---
 
-## KV Store
+## KV Store — `db.kv`
 
-### kvPut(key, value)
+### kv.set(key, value)
 
 Store a key-value pair.
 
 ```typescript
-const version = db.kvPut('user:123', { name: 'Alice', age: 30 });
+const version = await db.kv.set('user:123', { name: 'Alice', age: 30 });
 ```
 
 **Parameters:**
@@ -88,140 +98,132 @@ const version = db.kvPut('user:123', { name: 'Alice', age: 30 });
 | `key` | string | The key |
 | `value` | JsonValue | The value |
 
-**Returns:** `number` - Version number
+**Returns:** `Promise<number>` — Version number
 
-### kvGet(key, asOf?)
+### kv.get(key, options?)
 
 Get a value by key.
 
 ```typescript
-const value = db.kvGet('user:123');
-if (value !== null) {
-  console.log(value.name);
-}
+const value = await db.kv.get('user:123');
 
-// Time-travel: read historical value
-const historical = db.kvGet('user:123', 1700002000);
+// Time-travel read
+const value = await db.kv.get('user:123', { asOf: timestamp });
 ```
 
 **Parameters:**
 | Name | Type | Description |
 |------|------|-------------|
 | `key` | string | The key |
-| `asOf` | number? | Timestamp (microseconds since epoch) for time-travel read |
+| `options.asOf` | number? | Microsecond timestamp for time-travel reads |
 
-**Returns:** `JsonValue` - Value or `null` if not found
+**Returns:** `Promise<JsonValue>` — Value or `null` if not found
 
-### kvDelete(key)
+### kv.delete(key)
 
 Delete a key.
 
 ```typescript
-const deleted = db.kvDelete('user:123');
+const deleted = await db.kv.delete('user:123');
 ```
 
-**Returns:** `boolean` - True if the key existed
+**Returns:** `Promise<boolean>` — True if the key existed
 
-### kvList(prefix?)
+### kv.keys(options?)
 
-List keys with optional prefix filter.
+List keys with optional prefix filter and pagination.
 
 ```typescript
-const allKeys = db.kvList();
-const userKeys = db.kvList('user:');
+const allKeys = await db.kv.keys();
+const userKeys = await db.kv.keys({ prefix: 'user:' });
+const page = await db.kv.keys({ prefix: 'user:', limit: 100 });
+const past = await db.kv.keys({ prefix: 'user:', asOf: timestamp });
 ```
 
-**Returns:** `string[]` - Key names
+**Parameters:**
+| Name | Type | Description |
+|------|------|-------------|
+| `options.prefix` | string? | Filter keys by prefix |
+| `options.limit` | number? | Maximum keys to return |
+| `options.asOf` | number? | Microsecond timestamp for time-travel reads |
 
-### kvHistory(key)
+**Returns:** `Promise<string[]>`
+
+### kv.history(key)
 
 Get version history for a key.
 
 ```typescript
-const history = db.kvHistory('user:123');
+const history = await db.kv.history('user:123');
 if (history) {
   for (const entry of history) {
-    console.log(`v${entry.version}: ${entry.value}`);
+    console.log(`v${entry.version}: ${JSON.stringify(entry.value)}`);
   }
 }
 ```
 
-**Returns:** `VersionedValue[] | null`
+**Returns:** `Promise<VersionedValue[] | null>`
 
-### kvGetVersioned(key)
+### kv.getVersioned(key)
 
-Get a value with version info.
+Get a value with version and timestamp info.
 
 ```typescript
-const result = db.kvGetVersioned('user:123');
+const result = await db.kv.getVersioned('user:123');
 if (result) {
   console.log(`Value: ${result.value}, Version: ${result.version}`);
 }
 ```
 
-**Returns:** `VersionedValue | null`
-
-### kvListPaginated(prefix?, limit?, cursor?)
-
-List keys with pagination.
-
-```typescript
-const result = db.kvListPaginated('user:', 100);
-console.log(result.keys);
-```
-
-**Returns:** `KvListResult` with `keys` array
+**Returns:** `Promise<VersionedValue | null>`
 
 ---
 
-## State Cell
+## State Cell — `db.state`
 
-### stateSet(cell, value)
+### state.set(cell, value)
 
-Set a state cell value.
+Set a state cell value (unconditional write).
 
 ```typescript
-const version = db.stateSet('counter', 0);
+const version = await db.state.set('counter', 0);
 ```
 
-**Returns:** `number` - Version number
+**Returns:** `Promise<number>` — Version number
 
-### stateGet(cell, asOf?)
+### state.get(cell, options?)
 
 Get a state cell value.
 
 ```typescript
-const value = db.stateGet('counter');
-
-// Time-travel: read historical value
-const historical = db.stateGet('counter', 1700002000);
+const value = await db.state.get('counter');
+const past = await db.state.get('counter', { asOf: timestamp });
 ```
 
 **Parameters:**
 | Name | Type | Description |
 |------|------|-------------|
 | `cell` | string | The cell name |
-| `asOf` | number? | Timestamp (microseconds since epoch) for time-travel read |
+| `options.asOf` | number? | Microsecond timestamp for time-travel reads |
 
-**Returns:** `JsonValue` - Value or `null`
+**Returns:** `Promise<JsonValue>` — Value or `null`
 
-### stateInit(cell, value)
+### state.init(cell, value)
 
 Initialize a state cell only if it doesn't exist.
 
 ```typescript
-const version = db.stateInit('counter', 0);
+const version = await db.state.init('counter', 0);
 ```
 
-**Returns:** `number` - Version number
+**Returns:** `Promise<number>` — Version number
 
-### stateCas(cell, newValue, expectedVersion?)
+### state.cas(cell, newValue, options?)
 
 Compare-and-swap update.
 
 ```typescript
-// Only update if version is 5
-const newVersion = db.stateCas('counter', 10, 5);
+const newVersion = await db.state.cas('counter', 10, { expectedVersion: 5 });
 if (newVersion === null) {
   console.log('CAS failed - version mismatch');
 }
@@ -232,61 +234,68 @@ if (newVersion === null) {
 |------|------|-------------|
 | `cell` | string | The cell name |
 | `newValue` | JsonValue | The new value |
-| `expectedVersion` | number? | Expected current version |
+| `options.expectedVersion` | number? | Expected current version |
 
-**Returns:** `number | null` - New version or null if CAS failed
+**Returns:** `Promise<number | null>` — New version or null if CAS failed
 
-### stateDelete(cell)
+### state.delete(cell)
 
 Delete a state cell.
 
 ```typescript
-const deleted = db.stateDelete('counter');
+const deleted = await db.state.delete('counter');
 ```
 
-**Returns:** `boolean`
+**Returns:** `Promise<boolean>`
 
-### stateList(prefix?)
+### state.keys(options?)
 
 List state cell names.
 
 ```typescript
-const cells = db.stateList();
-const configCells = db.stateList('config:');
+const cells = await db.state.keys();
+const configCells = await db.state.keys({ prefix: 'config:' });
+const past = await db.state.keys({ prefix: 'config:', asOf: timestamp });
 ```
 
-**Returns:** `string[]`
+**Parameters:**
+| Name | Type | Description |
+|------|------|-------------|
+| `options.prefix` | string? | Filter by prefix |
+| `options.asOf` | number? | Microsecond timestamp for time-travel reads |
 
-### stateHistory(cell)
+**Returns:** `Promise<string[]>`
+
+### state.history(cell)
 
 Get version history for a state cell.
 
 ```typescript
-const history = db.stateHistory('counter');
+const history = await db.state.history('counter');
 ```
 
-**Returns:** `VersionedValue[] | null`
+**Returns:** `Promise<VersionedValue[] | null>`
 
-### stateGetVersioned(cell)
+### state.getVersioned(cell)
 
 Get a state cell with version info.
 
 ```typescript
-const result = db.stateGetVersioned('counter');
+const result = await db.state.getVersioned('counter');
 ```
 
-**Returns:** `VersionedValue | null`
+**Returns:** `Promise<VersionedValue | null>`
 
 ---
 
-## Event Log
+## Event Log — `db.events`
 
-### eventAppend(eventType, payload)
+### events.append(eventType, payload)
 
 Append an event to the log.
 
 ```typescript
-const seq = db.eventAppend('user_action', { action: 'click', target: 'button' });
+const seq = await db.events.append('user_action', { action: 'click', target: 'button' });
 ```
 
 **Parameters:**
@@ -295,75 +304,66 @@ const seq = db.eventAppend('user_action', { action: 'click', target: 'button' })
 | `eventType` | string | The event type |
 | `payload` | JsonValue | The event payload |
 
-**Returns:** `number` - Sequence number
+**Returns:** `Promise<number>` — Sequence number
 
-### eventGet(sequence)
+### events.get(sequence, options?)
 
 Get an event by sequence number.
 
 ```typescript
-const event = db.eventGet(0);
-if (event) {
-  console.log(event.value);
-}
+const event = await db.events.get(0);
+const past = await db.events.get(0, { asOf: timestamp });
 ```
 
-**Returns:** `VersionedValue | null`
+**Parameters:**
+| Name | Type | Description |
+|------|------|-------------|
+| `sequence` | number | The sequence number |
+| `options.asOf` | number? | Microsecond timestamp for time-travel reads |
 
-### eventList(eventType)
+**Returns:** `Promise<VersionedValue | null>`
 
-List events by type.
+### events.list(eventType, options?)
 
-```typescript
-const events = db.eventList('user_action');
-for (const event of events) {
-  console.log(event.value);
-}
-```
-
-**Returns:** `VersionedValue[]`
-
-### eventLen()
-
-Get total event count.
+List events by type with optional pagination.
 
 ```typescript
-const count = db.eventLen();
-```
-
-**Returns:** `number`
-
-### eventListPaginated(eventType, limit?, after?)
-
-List events with pagination.
-
-```typescript
-const events = db.eventListPaginated('user_action', 100, 500);
+const events = await db.events.list('user_action');
+const page = await db.events.list('user_action', { limit: 100, after: 500 });
+const past = await db.events.list('user_action', { asOf: timestamp });
 ```
 
 **Parameters:**
 | Name | Type | Description |
 |------|------|-------------|
 | `eventType` | string | The event type |
-| `limit` | number? | Maximum events |
-| `after` | number? | Return events after this sequence |
+| `options.limit` | number? | Maximum events |
+| `options.after` | number? | Return events after this sequence |
+| `options.asOf` | number? | Microsecond timestamp for time-travel reads |
 
-**Returns:** `VersionedValue[]`
+**Returns:** `Promise<VersionedValue[]>`
+
+### events.count()
+
+Get total event count.
+
+```typescript
+const count = await db.events.count();
+```
+
+**Returns:** `Promise<number>`
 
 ---
 
-## JSON Store
+## JSON Store — `db.json`
 
-### jsonSet(key, path, value)
+### json.set(key, path, value)
 
 Set a value at a JSONPath.
 
 ```typescript
-// Set entire document
-db.jsonSet('user:123', '$', { name: 'Alice', age: 30 });
-
-// Set nested field
-db.jsonSet('user:123', '$.email', 'alice@example.com');
+await db.json.set('user:123', '$', { name: 'Alice', age: 30 });
+await db.json.set('user:123', '$.email', 'alice@example.com');
 ```
 
 **Parameters:**
@@ -373,122 +373,141 @@ db.jsonSet('user:123', '$.email', 'alice@example.com');
 | `path` | string | JSONPath (use `$` for root) |
 | `value` | JsonValue | The value |
 
-**Returns:** `number` - Version number
+**Returns:** `Promise<number>` — Version number
 
-### jsonGet(key, path, asOf?)
+### json.get(key, path, options?)
 
 Get a value at a JSONPath.
 
 ```typescript
-const doc = db.jsonGet('user:123', '$');
-const name = db.jsonGet('user:123', '$.name');
-
-// Time-travel: read historical document
-const historical = db.jsonGet('config', '$', 1700002000);
+const doc = await db.json.get('user:123', '$');
+const name = await db.json.get('user:123', '$.name');
+const past = await db.json.get('user:123', '$', { asOf: timestamp });
 ```
 
 **Parameters:**
 | Name | Type | Description |
 |------|------|-------------|
 | `key` | string | Document key |
-| `path` | string | JSONPath (use `$` for root) |
-| `asOf` | number? | Timestamp (microseconds since epoch) for time-travel read |
+| `path` | string | JSONPath |
+| `options.asOf` | number? | Microsecond timestamp for time-travel reads |
 
-**Returns:** `JsonValue` - Value or `null`
+**Returns:** `Promise<JsonValue>` — Value or `null`
 
-### jsonDelete(key, path)
+### json.delete(key, path)
 
 Delete a value at a JSONPath.
 
 ```typescript
-const deletedCount = db.jsonDelete('user:123', '$.email');
+const count = await db.json.delete('user:123', '$.email');
 ```
 
-**Returns:** `number` - Count of elements deleted
+**Returns:** `Promise<number>` — Count of elements deleted
 
-### jsonList(limit, prefix?, cursor?)
+### json.keys(options?)
 
 List JSON document keys with pagination.
 
 ```typescript
-const result = db.jsonList(100, 'user:');
-const { keys, cursor } = result;
-```
-
-**Returns:** `JsonListResult` with `keys` and optional `cursor`
-
-### jsonHistory(key)
-
-Get version history for a JSON document.
-
-```typescript
-const history = db.jsonHistory('user:123');
-```
-
-**Returns:** `VersionedValue[] | null`
-
-### jsonGetVersioned(key)
-
-Get a JSON document with version info.
-
-```typescript
-const result = db.jsonGetVersioned('user:123');
-```
-
-**Returns:** `VersionedValue | null`
-
----
-
-## Vector Store
-
-### vectorCreateCollection(collection, dimension, metric?)
-
-Create a vector collection.
-
-```typescript
-db.vectorCreateCollection('embeddings', 384);
-db.vectorCreateCollection('images', 512, 'euclidean');
+const result = await db.json.keys();
+const filtered = await db.json.keys({ prefix: 'user:', limit: 100 });
+const past = await db.json.keys({ prefix: 'user:', asOf: timestamp });
 ```
 
 **Parameters:**
 | Name | Type | Description |
 |------|------|-------------|
-| `collection` | string | Collection name |
-| `dimension` | number | Vector dimension |
-| `metric` | string? | `cosine` (default), `euclidean`, `dot_product` |
+| `options.prefix` | string? | Filter by prefix |
+| `options.limit` | number? | Maximum keys (default: 100) |
+| `options.cursor` | string? | Pagination cursor |
+| `options.asOf` | number? | Microsecond timestamp for time-travel reads |
 
-**Returns:** `number` - Version number
+**Returns:** `Promise<JsonListResult>` — `{ keys: string[], cursor?: string }`
 
-### vectorDeleteCollection(collection)
+### json.history(key)
+
+Get version history for a JSON document.
+
+```typescript
+const history = await db.json.history('user:123');
+```
+
+**Returns:** `Promise<VersionedValue[] | null>`
+
+### json.getVersioned(key)
+
+Get a JSON document with version info.
+
+```typescript
+const result = await db.json.getVersioned('user:123');
+```
+
+**Returns:** `Promise<VersionedValue | null>`
+
+---
+
+## Vector Store — `db.vector`
+
+### vector.createCollection(name, options)
+
+Create a vector collection.
+
+```typescript
+await db.vector.createCollection('embeddings', { dimension: 384 });
+await db.vector.createCollection('images', { dimension: 512, metric: 'euclidean' });
+```
+
+**Parameters:**
+| Name | Type | Description |
+|------|------|-------------|
+| `name` | string | Collection name |
+| `options.dimension` | number | Vector dimension |
+| `options.metric` | string? | `cosine` (default), `euclidean`, `dot_product` |
+
+**Returns:** `Promise<number>` — Version number
+
+### vector.deleteCollection(name)
 
 Delete a vector collection.
 
 ```typescript
-const deleted = db.vectorDeleteCollection('embeddings');
+const deleted = await db.vector.deleteCollection('embeddings');
 ```
 
-**Returns:** `boolean`
+**Returns:** `Promise<boolean>`
 
-### vectorListCollections()
+### vector.listCollections()
 
 List all vector collections.
 
 ```typescript
-const collections = db.vectorListCollections();
+const collections = await db.vector.listCollections();
 for (const c of collections) {
   console.log(`${c.name}: ${c.count} vectors`);
 }
 ```
 
-**Returns:** `CollectionInfo[]`
+**Returns:** `Promise<CollectionInfo[]>`
 
-### vectorUpsert(collection, key, vector, metadata?)
+### vector.stats(collection)
+
+Get detailed collection statistics.
+
+```typescript
+const stats = await db.vector.stats('embeddings');
+console.log(`Count: ${stats.count}, Memory: ${stats.memoryBytes} bytes`);
+```
+
+**Returns:** `Promise<CollectionInfo>`
+
+### vector.upsert(collection, key, vector, options?)
 
 Insert or update a vector.
 
 ```typescript
 const embedding = new Array(384).fill(0).map(() => Math.random());
-db.vectorUpsert('embeddings', 'doc-1', embedding, { title: 'Hello' });
+await db.vector.upsert('embeddings', 'doc-1', embedding);
+await db.vector.upsert('embeddings', 'doc-1', embedding, { metadata: { title: 'Hello' } });
 ```
 
 **Parameters:**
@@ -497,47 +516,79 @@ db.vectorUpsert('embeddings', 'doc-1', embedding, { title: 'Hello' });
 | `collection` | string | Collection name |
 | `key` | string | Vector key |
 | `vector` | number[] | Vector embedding |
-| `metadata` | JsonValue? | Optional metadata |
+| `options.metadata` | JsonValue? | Optional metadata |
 
-**Returns:** `number` - Version number
+**Returns:** `Promise<number>` — Version number
 
-### vectorGet(collection, key)
+### vector.get(collection, key, options?)
 
 Get a vector by key.
 
 ```typescript
-const result = db.vectorGet('embeddings', 'doc-1');
+const result = await db.vector.get('embeddings', 'doc-1');
 if (result) {
   console.log(result.embedding);
   console.log(result.metadata);
 }
+
+// Time-travel read
+const past = await db.vector.get('embeddings', 'doc-1', { asOf: timestamp });
 ```
 
-**Returns:** `VectorData | null`
+**Parameters:**
+| Name | Type | Description |
+|------|------|-------------|
+| `collection` | string | Collection name |
+| `key` | string | Vector key |
+| `options.asOf` | number? | Microsecond timestamp for time-travel reads |
 
-### vectorDelete(collection, key)
+**Returns:** `Promise<VectorData | null>`
+
+### vector.delete(collection, key)
 
 Delete a vector.
 
 ```typescript
-const deleted = db.vectorDelete('embeddings', 'doc-1');
+const deleted = await db.vector.delete('embeddings', 'doc-1');
 ```
 
-**Returns:** `boolean`
+**Returns:** `Promise<boolean>`
 
-### vectorSearch(collection, query, k, asOf?)
+### vector.batchUpsert(collection, entries)
 
-Search for similar vectors.
+Batch insert/update vectors.
 
 ```typescript
-const query = new Array(384).fill(0.1);
-const matches = db.vectorSearch('embeddings', query, 10);
-for (const match of matches) {
-  console.log(`${match.key}: ${match.score}`);
-}
+const versions = await db.vector.batchUpsert('embeddings', [
+  { key: 'doc-1', vector: [...], metadata: { title: 'A' } },
+  { key: 'doc-2', vector: [...] },
+]);
+```
 
-// Time-travel: search as of a past timestamp
-const historical = db.vectorSearch('embeddings', query, 10, 1700002000);
+**Returns:** `Promise<number[]>` — Version numbers
+
+### vector.search(collection, query, options?)
+
+Search for similar vectors with optional filters and metric override.
+
+```typescript
+const matches = await db.vector.search('embeddings', queryVector, { limit: 10 });
+
+// With filters and metric override
+const filtered = await db.vector.search('embeddings', queryVector, {
+  limit: 10,
+  metric: 'euclidean',
+  filter: [
+    { field: 'category', op: 'eq', value: 'science' },
+    { field: 'year', op: 'gte', value: 2020 },
+  ],
+});
+
+// Time-travel search
+const past = await db.vector.search('embeddings', queryVector, {
+  limit: 10,
+  asOf: timestamp,
+});
 ```
 
 **Parameters:**
@@ -545,329 +596,317 @@ const historical = db.vectorSearch('embeddings', query, 10, 1700002000);
 |------|------|-------------|
 | `collection` | string | Collection name |
 | `query` | number[] | Query vector |
-| `k` | number | Number of results |
-| `asOf` | number? | Timestamp (microseconds since epoch) for temporal search |
-
-**Returns:** `SearchMatch[]` with `key`, `score`, `metadata`
-
-### vectorSearchFiltered(collection, query, k, metric?, filter?)
-
-Search with filter and metric override.
-
-```typescript
-const matches = db.vectorSearchFiltered(
-  'embeddings',
-  query,
-  10,
-  'euclidean',
-  [
-    { field: 'category', op: 'eq', value: 'science' },
-    { field: 'year', op: 'gte', value: 2020 }
-  ]
-);
-```
+| `options.limit` | number? | Number of results (default: 10) |
+| `options.metric` | string? | Override distance metric |
+| `options.filter` | MetadataFilter[]? | Metadata filters |
+| `options.asOf` | number? | Microsecond timestamp for time-travel reads |
 
 **Filter operators:** `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in`, `contains`
 
-**Returns:** `SearchMatch[]`
-
-### vectorCollectionStats(collection)
-
-Get detailed collection statistics.
-
-```typescript
-const stats = db.vectorCollectionStats('embeddings');
-console.log(`Count: ${stats.count}, Memory: ${stats.memoryBytes} bytes`);
-```
-
-**Returns:** `CollectionInfo`
-
-### vectorBatchUpsert(collection, vectors)
-
-Batch insert/update vectors.
-
-```typescript
-const vectors = [
-  { key: 'doc-1', vector: [...], metadata: { title: 'A' } },
-  { key: 'doc-2', vector: [...] },
-];
-const versions = db.vectorBatchUpsert('embeddings', vectors);
-```
-
-**Returns:** `number[]` - Version numbers
+**Returns:** `Promise<SearchMatch[]>` — `{ key, score, metadata }`
 
 ---
 
-## Branches
+## Branches — `db.branch`
 
-### currentBranch()
+### branch.current()
 
 Get the current branch name.
 
 ```typescript
-const branch = db.currentBranch();
+const branch = await db.branch.current();
 ```
 
-**Returns:** `string`
+**Returns:** `Promise<string>`
 
-### setBranch(branch)
-
-Switch to a different branch.
-
-```typescript
-db.setBranch('feature');
-```
-
-### createBranch(branch)
+### branch.create(name)
 
 Create a new empty branch.
 
 ```typescript
-db.createBranch('experiment');
+await db.branch.create('experiment');
 ```
 
-### listBranches()
+### branch.switch(name)
+
+Switch to a different branch.
+
+```typescript
+await db.branch.switch('feature');
+```
+
+### branch.list()
 
 List all branches.
 
 ```typescript
-const branches = db.listBranches();
+const branches = await db.branch.list();
 ```
 
-**Returns:** `string[]`
+**Returns:** `Promise<string[]>`
 
-### deleteBranch(branch)
-
-Delete a branch.
-
-```typescript
-db.deleteBranch('experiment');
-```
-
-### branchExists(name)
+### branch.exists(name)
 
 Check if a branch exists.
 
 ```typescript
-const exists = db.branchExists('feature');
+const exists = await db.branch.exists('feature');
 ```
 
-**Returns:** `boolean`
+**Returns:** `Promise<boolean>`
 
-### branchGet(name)
+### branch.get(name)
 
 Get branch metadata.
 
 ```typescript
-const info = db.branchGet('default');
+const info = await db.branch.get('default');
 if (info) {
   console.log(`Created: ${info.createdAt}, Version: ${info.version}`);
 }
 ```
 
-**Returns:** `BranchInfo | null`
+**Returns:** `Promise<BranchInfo | null>`
 
-### forkBranch(destination)
+### branch.delete(name)
+
+Delete a branch.
+
+```typescript
+await db.branch.delete('experiment');
+```
+
+### branch.fork(destination)
 
 Fork the current branch with all its data.
 
 ```typescript
-const result = db.forkBranch('experiment-copy');
+const result = await db.branch.fork('experiment-copy');
 console.log(`Copied ${result.keysCopied} keys`);
 ```
 
-**Returns:** `ForkResult`
+**Returns:** `Promise<ForkResult>`
 
-### diffBranches(branchA, branchB)
+### branch.diff(branchA, branchB)
 
 Compare two branches.
 
 ```typescript
-const diff = db.diffBranches('default', 'feature');
+const diff = await db.branch.diff('default', 'feature');
 console.log(`Added: ${diff.summary.totalAdded}`);
 ```
 
-**Returns:** `DiffResult`
+**Returns:** `Promise<DiffResult>`
 
-### mergeBranches(source, strategy?)
+### branch.merge(source, options?)
 
 Merge a branch into the current branch.
 
 ```typescript
-const result = db.mergeBranches('feature', 'last_writer_wins');
+const result = await db.branch.merge('feature');
+const result = await db.branch.merge('feature', { strategy: 'last_writer_wins' });
 ```
 
 **Parameters:**
 | Name | Type | Description |
 |------|------|-------------|
 | `source` | string | Source branch |
-| `strategy` | string? | `last_writer_wins` (default) or `strict` |
+| `options.strategy` | string? | `last_writer_wins` (default) or `strict` |
 
-**Returns:** `MergeResult`
+**Returns:** `Promise<MergeResult>`
+
+### branch.export(branch, path)
+
+Export a branch to a bundle file.
+
+```typescript
+const result = await db.branch.export('default', '/tmp/backup.bundle');
+console.log(`Exported ${result.entryCount} entries`);
+```
+
+**Returns:** `Promise<BranchExportResult>`
+
+### branch.import(path)
+
+Import a branch from a bundle file.
+
+```typescript
+const result = await db.branch.import('/tmp/backup.bundle');
+console.log(`Imported to branch ${result.branchId}`);
+```
+
+**Returns:** `Promise<BranchImportResult>`
+
+### branch.validateBundle(path)
+
+Validate a bundle file without importing.
+
+```typescript
+const result = await db.branch.validateBundle('/tmp/backup.bundle');
+console.log(`Valid: ${result.checksumsValid}`);
+```
+
+**Returns:** `Promise<BundleValidateResult>`
 
 ---
 
-## Spaces
+## Spaces — `db.space`
 
-### currentSpace()
+### space.current()
 
 Get the current space name.
 
 ```typescript
-const space = db.currentSpace();
+const space = await db.space.current();
 ```
 
-**Returns:** `string`
+**Returns:** `Promise<string>`
 
-### setSpace(space)
+### space.create(name)
+
+Create a new space.
+
+```typescript
+await db.space.create('archive');
+```
+
+### space.switch(name)
 
 Switch to a different space.
 
 ```typescript
-db.setSpace('conversations');
+await db.space.switch('conversations');
 ```
 
-### listSpaces()
+### space.list()
 
 List all spaces.
 
 ```typescript
-const spaces = db.listSpaces();
+const spaces = await db.space.list();
 ```
 
-**Returns:** `string[]`
+**Returns:** `Promise<string[]>`
 
-### deleteSpace(space)
-
-Delete an empty space.
-
-```typescript
-db.deleteSpace('old-space');
-```
-
-### deleteSpaceForce(space)
-
-Delete a space and all its data.
-
-```typescript
-db.deleteSpaceForce('old-space');
-```
-
-### spaceCreate(space)
-
-Create a new space explicitly.
-
-```typescript
-db.spaceCreate('archive');
-```
-
-### spaceExists(space)
+### space.exists(name)
 
 Check if a space exists.
 
 ```typescript
-const exists = db.spaceExists('archive');
+const exists = await db.space.exists('archive');
 ```
 
-**Returns:** `boolean`
+**Returns:** `Promise<boolean>`
 
----
+### space.delete(name, options?)
 
-## Transactions
-
-### begin(readOnly?)
-
-Begin a new transaction.
+Delete a space.
 
 ```typescript
-db.begin();
-// or read-only
-db.begin(true);
+await db.space.delete('old-space');                    // must be empty
+await db.space.delete('old-space', { force: true });   // delete even if non-empty
 ```
 
 **Parameters:**
 | Name | Type | Description |
 |------|------|-------------|
-| `readOnly` | boolean? | Read-only transaction |
+| `name` | string | Space name |
+| `options.force` | boolean? | Delete even if non-empty |
 
-### commit()
+---
 
-Commit the current transaction.
+## Time Travel — `db.at()`
+
+Create an immutable snapshot at a given timestamp. The snapshot provides read-only access to all namespaces as they existed at that point in time. Write operations throw `StateError`.
 
 ```typescript
-const version = db.commit();
+// Get the available time range
+const range = await db.timeRange();
+console.log(`Data from ${range.oldestTs} to ${range.latestTs}`);
+
+// Create a snapshot and read from it
+const snapshot = db.at(range.oldestTs);
+const oldValue = await snapshot.kv.get('key');
+const oldKeys = await snapshot.kv.keys({ prefix: 'user:' });
+const oldState = await snapshot.state.get('counter');
+const oldEvents = await snapshot.events.list('clicks');
+const oldDoc = await snapshot.json.get('config', '$');
+const oldResults = await snapshot.vector.search('embeddings', queryVec, { limit: 5 });
+
+// Writes throw StateError
+snapshot.kv.set('key', 'value');  // throws StateError
 ```
 
-**Returns:** `number` - Commit version
+**Available snapshot namespaces:** `kv`, `state`, `events`, `json`, `vector`
 
-### rollback()
+### timeRange()
 
-Rollback the current transaction.
+Get the available time range for the current branch.
 
 ```typescript
-db.rollback();
+const range = await db.timeRange();
+// { oldestTs: number | null, latestTs: number | null }
 ```
 
-### txnInfo()
+**Returns:** `Promise<TimeRange>`
 
-Get current transaction info.
+---
+
+## Transactions — `db.transaction()`
+
+Execute a function inside a transaction with auto-commit on success and auto-rollback on error.
 
 ```typescript
-const info = db.txnInfo();
-if (info) {
-  console.log(`Transaction ${info.id} is ${info.status}`);
+// Auto-commit on success
+await db.transaction(async (tx) => {
+  await tx.kv.set('a', 1);
+  await tx.kv.set('b', 2);
+});
+
+// Return values from transactions
+const result = await db.transaction(async (tx) => {
+  await tx.kv.set('key', 'value');
+  return 42;
+});
+console.log(result);  // 42
+
+// Read-only transaction (auto-rollback instead of commit)
+const data = await db.transaction(async (tx) => {
+  const a = await tx.kv.get('a');
+  const b = await tx.kv.get('b');
+  return { a, b };
+}, { readOnly: true });
+
+// Auto-rollback on error
+try {
+  await db.transaction(async (tx) => {
+    await tx.kv.set('key', 'value');
+    throw new Error('something went wrong');
+  });
+} catch (e) {
+  // transaction was rolled back automatically
 }
 ```
 
-**Returns:** `TransactionInfo | null`
+### Manual Transaction Control
 
-### txnIsActive()
-
-Check if a transaction is active.
+For advanced use cases, manual transaction methods are still available:
 
 ```typescript
-const active = db.txnIsActive();
-```
-
-**Returns:** `boolean`
-
-### Transaction Pattern
-
-```typescript
-db.begin();
+await db.begin();
 try {
-  db.kvPut('a', 1);
-  db.kvPut('b', 2);
-  db.commit();
+  await db.kv.set('a', 1);
+  await db.kv.set('b', 2);
+  await db.commit();
 } catch (e) {
-  db.rollback();
+  await db.rollback();
   throw e;
 }
+
+// Transaction info
+const info = await db.txnInfo();     // { id, status, startedAt } or null
+const active = await db.txnIsActive(); // boolean
 ```
-
----
-
-## Search
-
-### search(query, k?, primitives?)
-
-Search across multiple primitives.
-
-```typescript
-const results = db.search('hello world', 10, ['kv', 'json']);
-for (const hit of results) {
-  console.log(`${hit.entity} (${hit.primitive}): ${hit.score}`);
-}
-```
-
-**Parameters:**
-| Name | Type | Description |
-|------|------|-------------|
-| `query` | string | Search query |
-| `k` | number? | Maximum results |
-| `primitives` | string[]? | Primitives to search |
-
-**Returns:** `SearchHit[]` with `entity`, `primitive`, `score`, `rank`, `snippet`
 
 ---
 
@@ -878,29 +917,28 @@ for (const hit of results) {
 Check database connectivity.
 
 ```typescript
-const version = db.ping();
+const version = await db.ping();
 ```
 
-**Returns:** `string` - Version string
+**Returns:** `Promise<string>`
 
 ### info()
 
 Get database information.
 
 ```typescript
-const info = db.info();
-console.log(`Version: ${info.version}`);
-console.log(`Total keys: ${info.totalKeys}`);
+const info = await db.info();
+console.log(`Version: ${info.version}, Total keys: ${info.totalKeys}`);
 ```
 
-**Returns:** `DatabaseInfo`
+**Returns:** `Promise<DatabaseInfo>`
 
 ### flush()
 
 Flush pending writes to disk.
 
 ```typescript
-db.flush();
+await db.flush();
 ```
 
 ### compact()
@@ -908,90 +946,99 @@ db.flush();
 Trigger database compaction.
 
 ```typescript
-db.compact();
+await db.compact();
 ```
 
-### timeRange(branch?)
+### close()
 
-Get the available time-travel window for a branch.
+Release all database resources.
 
 ```typescript
-const range = db.timeRange();
-if (range) {
-  console.log(`Data from ${range.oldestTs} to ${range.latestTs}`);
+await db.close();
+```
+
+### search(query, k?, primitives?)
+
+Search across multiple primitives.
+
+```typescript
+const results = await db.search('hello world', 10, ['kv', 'json']);
+for (const hit of results) {
+  console.log(`${hit.entity} (${hit.primitive}): ${hit.score}`);
 }
 ```
 
-**Parameters:**
-| Name | Type | Description |
-|------|------|-------------|
-| `branch` | string? | Branch name (defaults to current branch) |
+**Returns:** `Promise<SearchHit[]>`
 
-**Returns:** `TimeRange | null` with `oldestTs` and `latestTs`
+### retentionApply()
 
----
-
-## Bundle Operations
-
-### branchExport(branch, path)
-
-Export a branch to a bundle file.
+Apply the retention policy to expire old data.
 
 ```typescript
-const result = db.branchExport('default', '/tmp/backup.bundle');
-console.log(`Exported ${result.entryCount} entries`);
+await db.retentionApply();
 ```
-
-**Returns:** `BranchExportResult`
-
-### branchImport(path)
-
-Import a branch from a bundle file.
-
-```typescript
-const result = db.branchImport('/tmp/backup.bundle');
-console.log(`Imported to branch ${result.branchId}`);
-```
-
-**Returns:** `BranchImportResult`
-
-### branchValidateBundle(path)
-
-Validate a bundle file without importing.
-
-```typescript
-const result = db.branchValidateBundle('/tmp/backup.bundle');
-console.log(`Valid: ${result.checksumsValid}`);
-```
-
-**Returns:** `BundleValidateResult`
 
 ---
 
 ## Error Handling
 
-All methods may throw errors for database operations:
+All errors are typed subclasses of `StrataError` with a machine-readable `code` property:
 
 ```typescript
+import {
+  StrataError,
+  NotFoundError,
+  ValidationError,
+  ConflictError,
+  StateError,
+  ConstraintError,
+  AccessDeniedError,
+  IoError,
+} from '@stratadb/core';
+
 try {
-  db.setBranch('nonexistent');
-} catch (e) {
-  console.log(`Error: ${e.message}`);
+  await db.vector.search('nonexistent', [1, 0, 0, 0], { limit: 1 });
+} catch (err) {
+  if (err instanceof NotFoundError) {
+    console.log(err.code);     // "NOT_FOUND"
+    console.log(err.message);  // human-readable message
+  }
 }
 ```
 
-Common errors:
-- Branch not found
-- Collection not found
-- CAS version mismatch
-- Transaction already active
-- Invalid input
+**Error classes:**
+
+| Class | Code | Description |
+|-------|------|-------------|
+| `NotFoundError` | `NOT_FOUND` | Key, collection, or branch not found |
+| `ValidationError` | `VALIDATION` | Invalid input (bad metric, bad path, etc.) |
+| `ConflictError` | `CONFLICT` | Version conflict or merge conflict |
+| `StateError` | `STATE` | Invalid state (e.g., writing to a snapshot) |
+| `ConstraintError` | `CONSTRAINT` | Constraint violation (e.g., dimension mismatch) |
+| `AccessDeniedError` | `ACCESS_DENIED` | Operation not permitted |
+| `IoError` | `IO` | File system or I/O error |
+
+All error classes extend `StrataError`, which extends `Error`.
+
+---
+
+## Auto-Embedding Setup
+
+To use automatic text embedding for semantic search:
+
+```typescript
+import { Strata, setup } from '@stratadb/core';
+
+// Download model files (one-time)
+const modelDir = setup();
+
+// Open with auto-embed enabled
+const db = Strata.open('/path/to/data', { autoEmbed: true });
+```
 
 ---
 
 ## TypeScript Types
-
-### JsonValue
 
 ```typescript
 type JsonValue =
@@ -1001,21 +1048,13 @@ type JsonValue =
   | string
   | JsonValue[]
   | { [key: string]: JsonValue };
-```
 
-### VersionedValue
-
-```typescript
 interface VersionedValue {
   value: JsonValue;
   version: number;
   timestamp: number;
 }
-```
 
-### CollectionInfo
-
-```typescript
 interface CollectionInfo {
   name: string;
   dimension: number;
@@ -1024,11 +1063,7 @@ interface CollectionInfo {
   indexType: string;
   memoryBytes: number;
 }
-```
 
-### VectorData
-
-```typescript
 interface VectorData {
   key: string;
   embedding: number[];
@@ -1036,31 +1071,19 @@ interface VectorData {
   version: number;
   timestamp: number;
 }
-```
 
-### SearchMatch
-
-```typescript
 interface SearchMatch {
   key: string;
   score: number;
   metadata?: JsonValue;
 }
-```
 
-### MetadataFilter
-
-```typescript
 interface MetadataFilter {
   field: string;
   op: 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'contains';
   value: JsonValue;
 }
-```
 
-### SearchHit
-
-```typescript
 interface SearchHit {
   entity: string;
   primitive: string;
@@ -1068,21 +1091,18 @@ interface SearchHit {
   rank: number;
   snippet?: string;
 }
-```
 
-### TransactionInfo
+interface TimeRange {
+  oldestTs: number | null;
+  latestTs: number | null;
+}
 
-```typescript
 interface TransactionInfo {
   id: string;
   status: string;
   startedAt: number;
 }
-```
 
-### BranchInfo
-
-```typescript
 interface BranchInfo {
   id: string;
   status: string;
@@ -1092,32 +1112,54 @@ interface BranchInfo {
   version: number;
   timestamp: number;
 }
-```
 
-### DatabaseInfo
-
-```typescript
 interface DatabaseInfo {
   version: string;
   uptimeSecs: number;
   branchCount: number;
   totalKeys: number;
 }
-```
 
----
-
-## Synchronous API
-
-All methods in the Node.js SDK are **synchronous**. This is because StrataDB is an embedded database with no network I/O, making synchronous operations efficient.
-
-For async patterns, wrap in promises:
-
-```typescript
-async function getData(key: string): Promise<JsonValue> {
-  return db.kvGet(key);
+interface ForkResult {
+  source: string;
+  destination: string;
+  keysCopied: number;
 }
 
-// Or use worker threads for heavy operations
-import { Worker } from 'worker_threads';
+interface DiffResult {
+  branchA: string;
+  branchB: string;
+  summary: { totalAdded: number; totalRemoved: number; totalModified: number };
+}
+
+interface MergeResult {
+  keysApplied: number;
+  spacesMerged: number;
+  conflicts: { key: string; space: string }[];
+}
+
+interface JsonListResult {
+  keys: string[];
+  cursor?: string;
+}
+
+interface BranchExportResult {
+  branchId: string;
+  path: string;
+  entryCount: number;
+  bundleSize: number;
+}
+
+interface BranchImportResult {
+  branchId: string;
+  transactionsApplied: number;
+  keysWritten: number;
+}
+
+interface BundleValidateResult {
+  branchId: string;
+  formatVersion: number;
+  entryCount: number;
+  checksumsValid: boolean;
+}
 ```
