@@ -4,7 +4,7 @@ Other databases store data for AI. Strata *is* AI infrastructure. It doesn't jus
 
 The roadmap has three acts:
 
-1. **Branches as the unit of agent thought** — fork, explore, diff, merge, replay
+1. **Branches as the unit of agent thought** — fork, explore, diff, merge, time-travel, sandboxing
 2. **The database that understands itself** — auto-embedding, natural language search, cross-primitive knowledge graph
 3. **Agents that think in branches** — parallel planning, speculative execution, evaluation harness
 
@@ -42,9 +42,11 @@ PyO3-based Python SDK ([strata-python](https://github.com/strata-systems/strata-
 | [**v0.8: Enhanced Hybrid Search**](v0.8-enhanced-hybrid-search.md) | MiniLM vectors in RRF, new retrieval signals, internal knowledge graph | v0.7 |
 | [**v0.9: NL Search (Basic)**](v0.9-nl-search-basic.md) | Qwen3 NL→query decomposition | v0.8 |
 | [**v0.10: NL Search (Advanced)**](v0.10-nl-search-advanced.md) | Query expansion, result summarization, multi-step retrieval | v0.9 |
-| [**v0.11: Advanced Branch Workflows**](v0.11-advanced-branch-workflows.md) | Time-travel, replay, sandboxing | v0.5 |
+| [**v0.11: Advanced Branch Workflows**](v0.11-advanced-branch-workflows.md) | Time-travel queries (v0.11.1), branch sandboxing (v0.11.2) | v0.5 |
+| [**Document Primitive**](markdown-documents.md) | Composite document store with section-level search via existing `Search` | v0.7 |
 | [**v0.12: Sophisticated Intelligence**](v0.12-sophisticated-intelligence.md) | Fine-tuned models, multi-turn context, agentic workflows | v0.10 |
 | [**v1.0: Stable Release**](v1.0-stable.md) | Storage efficiency, engine optimizations, format freeze, semver | v0.5–v0.12 |
+| [**Strata Cloud Sync**](strata-cloud-sync.md) | StrataHub, push/pull branches, multi-agent collaboration | v0.5 |
 | [**Post-1.0: Scaling**](post-1.0-scaling.md) | Server mode, replication, sharding, agent runtime, WASM | v1.0 |
 
 ---
@@ -71,41 +73,45 @@ PyO3-based Python SDK ([strata-python](https://github.com/strata-systems/strata-
                        │
               ┌────────┴────────┐
               │                 │
-            v0.6              v0.11
-            SDKs          Advanced Branch
-       (Python/Node)       Workflows
+            v0.6            v0.11.1          v0.11.2
+            SDKs         Time-Travel       Sandboxing
+       (Python/Node)    (WAL index +      (Policy guard
+              │          historical         + scoped
+              │           queries)           merges)
               │
          ┌────┴────┐
          │         │
        v0.7      v0.8
    Auto-Embedding  Enhanced
       (MiniLM)   Hybrid Search
-              + Knowledge Graph
-                   │
-                 v0.9
-             NL Search
-              (Basic)
-                   │
-                v0.10
-             NL Search
-             (Advanced)
-                   │
-                v0.12
-            Sophisticated
-            Intelligence
-                   │
-              ┌────┘
-              │
-            v1.0
-         Stable Release
-              │
-          Post-1.0
-           Scaling
+         │     + Knowledge Graph
+         │            │
+      Document      v0.9
+     Primitive   NL Search
+                  (Basic)
+                     │
+                  v0.10
+               NL Search
+               (Advanced)
+                     │
+                  v0.12
+              Sophisticated
+              Intelligence
+                     │
+                ┌────┘
+                │
+              v1.0
+           Stable Release
+                │
+            Post-1.0
+             Scaling
 ```
 
 **Critical path**: v0.5 → v0.6 → v0.7 → v0.8 → v0.9 → v0.10 → v0.12 → v1.0
 
-**Independent tracks**: v0.11 (advanced branch workflows) can proceed in parallel once v0.5 is complete.
+**Independent tracks**: v0.11.1 (time-travel) and v0.11.2 (sandboxing) can proceed in parallel once v0.5 is complete; v0.11.1 recommended first as the WAL timestamp index is foundational. Document Primitive can proceed in parallel once v0.7 is complete.
+
+> **Surface update policy**: Each v0.11 sub-release requires follow-up updates to CLI, MCP server (strata-mcp), Python SDK (strata-python), and Node.js SDK (strata-node) to expose new features.
 
 ---
 

@@ -76,18 +76,33 @@ struct HnswNode {
     neighbors: Vec<BTreeSet<VectorId>>,
     /// Max layer this node appears in
     max_layer: usize,
-    /// Whether this node is marked as deleted
-    deleted: bool,
+    /// Creation timestamp (microseconds since epoch; 0 = legacy/unknown)
+    created_at: u64,
+    /// Soft-delete timestamp: Some(ts) = deleted at ts; None = alive
+    deleted_at: Option<u64>,
 }
 
 impl HnswNode {
-    fn new(max_layer: usize) -> Self {
+    fn new(max_layer: usize, created_at: u64) -> Self {
         let neighbors = (0..=max_layer).map(|_| BTreeSet::new()).collect();
         Self {
             neighbors,
             max_layer,
-            deleted: false,
+            created_at,
+            deleted_at: None,
         }
+    }
+
+    /// Returns true if this node has been soft-deleted
+    fn is_deleted(&self) -> bool {
+        self.deleted_at.is_some()
+    }
+
+    /// Check if this node was alive at the given timestamp.
+    /// Nodes with created_at == 0 are treated as always-existing (legacy nodes).
+    fn is_alive_at(&self, as_of_ts: u64) -> bool {
+        (self.created_at == 0 || self.created_at <= as_of_ts)
+            && self.deleted_at.map_or(true, |d| d > as_of_ts)
     }
 }
 
@@ -136,6 +151,8 @@ pub struct HnswBackend {
     rng_seed: u64,
     /// Monotonic counter for deterministic RNG
     rng_counter: u64,
+    /// Timestamps stored during recovery, consumed by rebuild_graph()
+    pending_timestamps: BTreeMap<VectorId, u64>,
 }
 
 impl HnswBackend {
@@ -150,6 +167,7 @@ impl HnswBackend {
             max_level: 0,
             rng_seed: 42,
             rng_counter: 0,
+            pending_timestamps: BTreeMap::new(),
         }
     }
 
@@ -164,6 +182,7 @@ impl HnswBackend {
             max_level: 0,
             rng_seed: 42,
             rng_counter: 0,
+            pending_timestamps: BTreeMap::new(),
         }
     }
 
@@ -246,7 +265,7 @@ impl HnswBackend {
         let entry_deleted = self
             .nodes
             .get(&entry_id)
-            .map(|n| n.deleted)
+            .map(|n| n.is_deleted())
             .unwrap_or(false);
         if !entry_deleted {
             results.push(Reverse(ScoredId {
@@ -294,7 +313,7 @@ impl HnswBackend {
                                 let is_deleted = self
                                     .nodes
                                     .get(&neighbor_id)
-                                    .map(|n| n.deleted)
+                                    .map(|n| n.is_deleted())
                                     .unwrap_or(false);
                                 if !is_deleted {
                                     results.push(Reverse(ScoredId {
@@ -460,8 +479,10 @@ impl HnswBackend {
                 Some(e) => e.to_vec(),
                 None => continue,
             };
-            self.insert_into_graph(id, &embedding);
+            let created_at = self.pending_timestamps.remove(&id).unwrap_or(0);
+            self.insert_into_graph(id, &embedding, created_at);
         }
+        self.pending_timestamps.clear();
     }
 
     /// Insert a vector into the graph structure (Paper Algorithm 1: INSERT)
@@ -470,11 +491,11 @@ impl HnswBackend {
     /// - Line 9: SELECT-NEIGHBORS uses M (not Mmax) for the new node's connections
     /// - Lines 11-15: Existing neighbors are pruned to Mmax only if they exceed capacity
     /// - Mmax = M for layers > 0, 2*M for layer 0
-    fn insert_into_graph(&mut self, id: VectorId, embedding: &[f32]) {
+    fn insert_into_graph(&mut self, id: VectorId, embedding: &[f32], created_at: u64) {
         let level = self.assign_level();
 
         // Create node
-        let node = HnswNode::new(level);
+        let node = HnswNode::new(level, created_at);
         self.nodes.insert(id, node);
 
         // First node
@@ -585,8 +606,18 @@ impl HnswBackend {
             data.extend_from_slice(&id.as_u64().to_le_bytes());
             // max_layer
             data.extend_from_slice(&(node.max_layer as u64).to_le_bytes());
-            // deleted flag
-            data.push(if node.deleted { 1 } else { 0 });
+            // created_at timestamp
+            data.extend_from_slice(&node.created_at.to_le_bytes());
+            // deleted_at: [has_deleted_at: u8] [deleted_at: u64 if flag=1]
+            match node.deleted_at {
+                Some(ts) => {
+                    data.push(1u8);
+                    data.extend_from_slice(&ts.to_le_bytes());
+                }
+                None => {
+                    data.push(0u8);
+                }
+            }
             // Layer count
             data.extend_from_slice(&(node.neighbors.len() as u64).to_le_bytes());
             // Neighbors per layer
@@ -648,7 +679,13 @@ impl HnswBackend {
         for _ in 0..node_count {
             let id = VectorId::new(read_u64(&mut pos, data)?);
             let max_layer = read_u64(&mut pos, data)? as usize;
-            let deleted = read_u8(&mut pos, data)? == 1;
+            let created_at = read_u64(&mut pos, data)?;
+            let has_deleted_at = read_u8(&mut pos, data)?;
+            let deleted_at = if has_deleted_at == 1 {
+                Some(read_u64(&mut pos, data)?)
+            } else {
+                None
+            };
             let layer_count = read_u64(&mut pos, data)? as usize;
 
             let mut neighbors = Vec::with_capacity(layer_count);
@@ -667,7 +704,8 @@ impl HnswBackend {
                 HnswNode {
                     neighbors,
                     max_layer,
-                    deleted,
+                    created_at,
+                    deleted_at,
                 },
             );
         }
@@ -682,6 +720,15 @@ impl VectorIndexBackend for HnswBackend {
     }
 
     fn insert(&mut self, id: VectorId, embedding: &[f32]) -> Result<(), VectorError> {
+        self.insert_with_timestamp(id, embedding, 0)
+    }
+
+    fn insert_with_timestamp(
+        &mut self,
+        id: VectorId,
+        embedding: &[f32],
+        created_at: u64,
+    ) -> Result<(), VectorError> {
         // Check if this is an update
         let is_update = self.heap.contains(id);
 
@@ -709,8 +756,8 @@ impl VectorIndexBackend for HnswBackend {
             }
         }
 
-        // Insert into graph
-        self.insert_into_graph(id, embedding);
+        // Insert into graph with timestamp
+        self.insert_into_graph(id, embedding, created_at);
 
         Ok(())
     }
@@ -721,12 +768,32 @@ impl VectorIndexBackend for HnswBackend {
         Ok(())
     }
 
+    fn insert_with_id_and_timestamp(
+        &mut self,
+        id: VectorId,
+        embedding: &[f32],
+        created_at: u64,
+    ) -> Result<(), VectorError> {
+        self.heap.insert_with_id(id, embedding)?;
+        // Store timestamp for rebuild_graph() to use later
+        self.pending_timestamps.insert(id, created_at);
+        Ok(())
+    }
+
     fn delete(&mut self, id: VectorId) -> Result<bool, VectorError> {
+        self.delete_with_timestamp(id, 0)
+    }
+
+    fn delete_with_timestamp(
+        &mut self,
+        id: VectorId,
+        deleted_at: u64,
+    ) -> Result<bool, VectorError> {
         let existed = self.heap.delete(id);
         if existed {
-            // Mark as deleted in graph (lazy deletion)
+            // Mark as deleted in graph (lazy deletion) with timestamp
             if let Some(node) = self.nodes.get_mut(&id) {
-                node.deleted = true;
+                node.deleted_at = Some(deleted_at);
             }
 
             // If we deleted the entry point, find a new one
@@ -734,7 +801,7 @@ impl VectorIndexBackend for HnswBackend {
                 self.entry_point = self
                     .nodes
                     .iter()
-                    .find(|(_, n)| !n.deleted)
+                    .find(|(_, n)| !n.is_deleted())
                     .map(|(id, _)| *id);
 
                 if let Some(ep) = self.entry_point {
@@ -762,7 +829,7 @@ impl VectorIndexBackend for HnswBackend {
         };
 
         // Skip if entry point is deleted and no valid nodes exist
-        if self.nodes.values().all(|n| n.deleted) {
+        if self.nodes.values().all(|n| n.is_deleted()) {
             return Vec::new();
         }
 
@@ -779,11 +846,42 @@ impl VectorIndexBackend for HnswBackend {
         // Filter out deleted nodes and take top-k
         let results: Vec<(VectorId, f32)> = candidates
             .into_iter()
-            .filter(|s| self.nodes.get(&s.id).map(|n| !n.deleted).unwrap_or(false))
+            .filter(|s| self.nodes.get(&s.id).map(|n| !n.is_deleted()).unwrap_or(false))
             .take(k)
             .map(|s| (s.id, s.score))
             .collect();
 
+        results
+    }
+
+    fn search_at(&self, query: &[f32], k: usize, as_of_ts: u64) -> Vec<(VectorId, f32)> {
+        if self.nodes.is_empty() || k == 0 {
+            return Vec::new();
+        }
+
+        if query.len() != self.heap.dimension() {
+            return Vec::new();
+        }
+
+        // Early exit: if no nodes were alive at as_of_ts, no results possible.
+        let has_alive = self.nodes.values().any(|n| n.is_alive_at(as_of_ts));
+        if !has_alive {
+            return Vec::new();
+        }
+
+        // Strategy: traverse the *full* current graph (including nodes created after
+        // as_of_ts) and filter results temporally. This is correct because:
+        //   - Graph edges are never removed, so newer nodes provide additional
+        //     shortcuts that improve traversal quality.
+        //   - The over-fetch (k * 2) compensates for nodes filtered out.
+        //   - Final results are restricted to nodes alive at as_of_ts.
+        let mut results = self.search(query, k * 2);
+
+        results.retain(|(id, _)| {
+            self.nodes.get(id).is_some_and(|n| n.is_alive_at(as_of_ts))
+        });
+
+        results.truncate(k);
         results
     }
 

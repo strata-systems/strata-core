@@ -20,13 +20,14 @@
 //! - Only removes segments fully covered by snapshot
 //! - Requires a valid snapshot to exist
 
+use crate::format::segment_meta::SegmentMeta;
 use crate::format::{
     ManifestManager, SegmentHeader, WalRecord, WalRecordError, SEGMENT_HEADER_SIZE,
 };
 use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use super::{CompactInfo, CompactMode, CompactionError};
 
@@ -103,6 +104,20 @@ impl WalOnlyCompactor {
                                 continue;
                             }
 
+                            // Also remove the .meta sidecar (non-fatal if missing)
+                            let meta_path =
+                                SegmentMeta::meta_path(&self.wal_dir, segment_number);
+                            if meta_path.exists() {
+                                if let Err(e) = std::fs::remove_file(&meta_path) {
+                                    warn!(
+                                        target: "strata::compaction",
+                                        segment = segment_number,
+                                        error = %e,
+                                        "Failed to remove .meta sidecar"
+                                    );
+                                }
+                            }
+
                             info.reclaimed_bytes += segment_size;
                             info.wal_segments_removed += 1;
                         }
@@ -166,10 +181,42 @@ impl WalOnlyCompactor {
         Ok(segments)
     }
 
-    /// Check if a segment is fully covered by the snapshot watermark
+    /// Check if a segment is fully covered by the snapshot watermark.
     ///
     /// A segment is covered if its highest txn_id <= watermark.
+    /// Tries `.meta` sidecar first for O(1) check; falls back to full scan.
     fn segment_covered_by_watermark(
+        &self,
+        segment_number: u64,
+        watermark: u64,
+    ) -> Result<bool, CompactionError> {
+        // Try .meta sidecar first (O(1) check)
+        match SegmentMeta::read_from_file(&self.wal_dir, segment_number) {
+            Ok(Some(meta)) if meta.segment_number == segment_number => {
+                if meta.is_empty() {
+                    debug!(target: "strata::compaction", segment = segment_number, "Empty segment (via .meta), considered covered");
+                    return Ok(true);
+                }
+                let covered = meta.max_txn_id <= watermark;
+                debug!(target: "strata::compaction", segment = segment_number, max_txn_id = meta.max_txn_id, watermark, covered, "Coverage check via .meta");
+                return Ok(covered);
+            }
+            Ok(Some(_)) => {
+                warn!(target: "strata::compaction", segment = segment_number, "Segment meta has mismatched segment number, falling back to full scan");
+            }
+            Ok(None) => {
+                // No .meta file — fall through to full scan
+            }
+            Err(e) => {
+                warn!(target: "strata::compaction", segment = segment_number, error = %e, "Corrupted .meta sidecar, falling back to full scan");
+            }
+        }
+
+        self.segment_covered_by_watermark_full_scan(segment_number, watermark)
+    }
+
+    /// Full-scan fallback: read all records to determine max txn_id.
+    fn segment_covered_by_watermark_full_scan(
         &self,
         segment_number: u64,
         watermark: u64,
@@ -219,16 +266,12 @@ impl WalOnlyCompactor {
                     cursor += consumed;
                 }
                 Err(WalRecordError::InsufficientData) => {
-                    // Reached end of valid records (might have partial record at end)
                     break;
                 }
                 Err(WalRecordError::ChecksumMismatch { .. }) => {
-                    // Corrupted record - stop reading
-                    // The max_txn_id we have so far is from valid records
                     break;
                 }
                 Err(_) => {
-                    // Other errors - stop reading
                     break;
                 }
             }
@@ -472,5 +515,82 @@ mod tests {
         assert!(info.reclaimed_bytes > 0);
         assert!(info.duration_ms < 10000); // Should complete in reasonable time
         assert!(info.timestamp > 0);
+    }
+
+    #[test]
+    fn test_compact_removes_meta_with_segment() {
+        let (_dir, wal_dir, manifest) = setup_test_env();
+
+        // Create segments with records
+        create_segment_with_records(&wal_dir, 1, &[1, 2, 3]).unwrap();
+        create_segment_with_records(&wal_dir, 2, &[4, 5, 6]).unwrap();
+
+        // Write .meta files for both segments
+        let mut meta1 = SegmentMeta::new_empty(1);
+        meta1.track_record(1, 1000);
+        meta1.track_record(2, 2000);
+        meta1.track_record(3, 3000);
+        meta1.write_to_file(&wal_dir).unwrap();
+
+        let mut meta2 = SegmentMeta::new_empty(2);
+        meta2.track_record(4, 4000);
+        meta2.track_record(5, 5000);
+        meta2.track_record(6, 6000);
+        meta2.write_to_file(&wal_dir).unwrap();
+
+        // Verify .meta files exist
+        assert!(SegmentMeta::meta_path(&wal_dir, 1).exists());
+        assert!(SegmentMeta::meta_path(&wal_dir, 2).exists());
+
+        // Set watermark to cover segment 1 only
+        {
+            let mut m = manifest.lock();
+            m.set_snapshot_watermark(1, 3).unwrap();
+            m.manifest_mut().active_wal_segment = 10;
+            m.persist().unwrap();
+        }
+
+        let compactor = WalOnlyCompactor::new(wal_dir.clone(), manifest);
+        let info = compactor.compact().unwrap();
+
+        assert_eq!(info.wal_segments_removed, 1);
+
+        // Segment 1 and its .meta should be removed
+        assert!(!segment_path(&wal_dir, 1).exists());
+        assert!(!SegmentMeta::meta_path(&wal_dir, 1).exists());
+
+        // Segment 2 and its .meta should remain
+        assert!(segment_path(&wal_dir, 2).exists());
+        assert!(SegmentMeta::meta_path(&wal_dir, 2).exists());
+    }
+
+    #[test]
+    fn test_compact_uses_meta_for_coverage_check() {
+        let (_dir, wal_dir, manifest) = setup_test_env();
+
+        // Create segment with records
+        create_segment_with_records(&wal_dir, 1, &[1, 2, 3]).unwrap();
+
+        // Write a .meta file (this avoids the full scan path)
+        let mut meta = SegmentMeta::new_empty(1);
+        meta.track_record(1, 1000);
+        meta.track_record(2, 2000);
+        meta.track_record(3, 3000);
+        meta.write_to_file(&wal_dir).unwrap();
+
+        // Set watermark at exactly max_txn_id=3 and active segment high
+        {
+            let mut m = manifest.lock();
+            m.set_snapshot_watermark(1, 3).unwrap();
+            m.manifest_mut().active_wal_segment = 10;
+            m.persist().unwrap();
+        }
+
+        let compactor = WalOnlyCompactor::new(wal_dir.clone(), manifest);
+        let info = compactor.compact().unwrap();
+
+        // Should be removed (meta.max_txn_id=3 <= watermark=3)
+        assert_eq!(info.wal_segments_removed, 1);
+        assert!(!segment_path(&wal_dir, 1).exists());
     }
 }
