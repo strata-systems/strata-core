@@ -173,6 +173,22 @@ JSON set, get, and delete operations participate in transactions. Path-level upd
 
 See [Sessions and Transactions](sessions-and-transactions.md) for details.
 
+## Time-Travel Queries
+
+Read JSON documents as they existed at a past timestamp using `--as-of` (microseconds since epoch):
+
+```bash
+# What was the config at a specific point in time?
+strata --cache json get config $ --as-of 1700002000
+
+# Read a nested path from the historical document
+strata --cache json get config $.temperature --as-of 1700002000
+```
+
+The historical value is returned as a full document, and path extraction is applied on the historical version. `json list --as-of` returns only documents that existed at the target time.
+
+See [Time-Travel Queries](../concepts/time-travel.md) for the full guide.
+
 ## Next
 
 - [Vector Store](vector-store.md) — embeddings and similarity search

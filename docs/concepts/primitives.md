@@ -37,6 +37,7 @@ StrataDB provides **six data primitives** — purpose-built data structures that
 | List/scan | By prefix | By type | No | By prefix | By collection |
 | Search | No | No | No | No | Similarity |
 | Versioned | Yes | Yes (sequence) | Yes (counter) | Yes | Yes |
+| Time-travel | Yes | Yes | Yes | Yes | Yes |
 | Transactional | Yes | Yes | Yes | Yes | No* |
 
 *Vector operations are not transactional — they bypass the session transaction system.
@@ -64,7 +65,12 @@ Spaces are organizational, not isolation boundaries. Transactions can span multi
 
 The CLI auto-detects types from input format. Strings, integers, floats, and booleans are recognized automatically. JSON objects and arrays can be passed as JSON strings.
 
+## Time-Travel Queries
+
+All primitives support **time-travel reads** via the `as_of` parameter. Pass a timestamp (microseconds since epoch) to any read command to see the state as it existed at that time. See [Time-Travel Queries](time-travel.md) for details.
+
 ## Next
 
+- [Time-Travel Queries](time-travel.md) — reading historical state
 - [Value Types](value-types.md) — the 8-variant type system
 - [Guides](../guides/index.md) — per-primitive API walkthroughs

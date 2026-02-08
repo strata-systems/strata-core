@@ -10,6 +10,7 @@ Welcome to the StrataDB documentation. StrataDB is an embedded database for AI a
 | Understand what branches are and how data isolation works | [Concepts: Branches](concepts/branches.md) |
 | Organize data within branches using spaces | [Guide: Spaces](guides/spaces.md) |
 | Learn how to use a specific primitive | [Guides](guides/index.md) |
+| Read historical state as-of a past timestamp | [Time-Travel Queries](concepts/time-travel.md) |
 | See every method at a glance | [API Quick Reference](reference/api-quick-reference.md) |
 | Build a real-world pattern (agent state, RAG, etc.) | [Cookbook](cookbook/index.md) |
 | Understand the architecture | [Architecture Overview](architecture/index.md) |
@@ -23,7 +24,7 @@ Installation, feature flags, and a step-by-step tutorial that covers all six pri
 
 ### [Concepts](concepts/index.md)
 
-Core ideas you need to understand: [branches](concepts/branches.md), [primitives](concepts/primitives.md), [value types](concepts/value-types.md), [transactions](concepts/transactions.md), and [durability](concepts/durability.md).
+Core ideas you need to understand: [branches](concepts/branches.md), [primitives](concepts/primitives.md), [value types](concepts/value-types.md), [transactions](concepts/transactions.md), [durability](concepts/durability.md), and [time-travel queries](concepts/time-travel.md).
 
 ### [Guides](guides/index.md)
 

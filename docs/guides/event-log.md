@@ -136,6 +136,19 @@ Event append operations participate in transactions. Within a transaction, appen
 
 See [Sessions and Transactions](sessions-and-transactions.md) for details.
 
+## Time-Travel Queries
+
+Events are immutable — they cannot be updated or deleted after being appended. Time-travel on events filters by timestamp: `--as-of` returns only events whose timestamp is at or before the given time.
+
+```bash
+# Get all tool_call events that existed before a certain point in time
+strata --cache event list tool_call --as-of 1700002000
+```
+
+This is useful for reconstructing the event history as it existed at a past decision point. Combined with time-travel on other primitives, you can reconstruct the full state an agent saw when making a decision.
+
+See [Time-Travel Queries](../concepts/time-travel.md) for the full guide.
+
 ## Next
 
 - [State Cell](state-cell.md) — mutable state with CAS

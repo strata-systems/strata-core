@@ -102,6 +102,22 @@ Trigger database compaction.
 
 **Parameters:** None
 
+#### strata_time_range
+
+Get the available time-travel window for a branch.
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `branch` | string | No | Branch name (defaults to current branch) |
+
+**Returns:**
+```json
+{"oldest_ts": 1700001000, "latest_ts": 1700009000}
+```
+
+Returns `{"oldest_ts": null, "latest_ts": null}` if the branch has no data.
+
 ---
 
 ### KV Store Tools
@@ -126,6 +142,7 @@ Get a value by key.
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `key` | string | Yes | The key to retrieve |
+| `as_of` | number | No | Timestamp (microseconds since epoch) for time-travel read |
 
 **Returns:** The value, or `null` if not found
 
@@ -150,6 +167,7 @@ List keys with optional prefix filter.
 | `prefix` | string | No | Filter keys by prefix |
 | `limit` | number | No | Maximum keys to return |
 | `cursor` | string | No | Pagination cursor |
+| `as_of` | number | No | Timestamp (microseconds since epoch) for time-travel read |
 
 **Returns:** `{"keys": ["key1", "key2", ...]}`
 
@@ -188,6 +206,7 @@ Get a state cell value.
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `cell` | string | Yes | The cell name |
+| `as_of` | number | No | Timestamp (microseconds since epoch) for time-travel read |
 
 **Returns:** The value, or `null` if not found
 
@@ -262,6 +281,7 @@ Get an event by sequence number.
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `sequence` | number | Yes | The sequence number |
+| `as_of` | number | No | Timestamp (microseconds since epoch) for time-travel read |
 
 **Returns:** `{value, version, timestamp}` or `null`
 
@@ -275,6 +295,7 @@ List events by type.
 | `event_type` | string | Yes | The event type |
 | `limit` | number | No | Maximum events |
 | `after` | number | No | Return events after this sequence |
+| `as_of` | number | No | Timestamp (microseconds since epoch) for time-travel read |
 
 **Returns:** Array of events
 
@@ -312,6 +333,7 @@ Get a value at a JSONPath.
 |------|------|----------|-------------|
 | `key` | string | Yes | The document key |
 | `path` | string | Yes | JSONPath |
+| `as_of` | number | No | Timestamp (microseconds since epoch) for time-travel read |
 
 **Returns:** The value, or `null` if not found
 
@@ -399,6 +421,7 @@ Get a vector by key.
 |------|------|----------|-------------|
 | `collection` | string | Yes | Collection name |
 | `key` | string | Yes | Vector key |
+| `as_of` | number | No | Timestamp (microseconds since epoch) for time-travel read |
 
 **Returns:** `{key, embedding, metadata, version, timestamp}` or `null`
 
@@ -426,6 +449,7 @@ Search for similar vectors.
 | `k` | number | Yes | Number of results |
 | `metric` | string | No | Override distance metric |
 | `filter` | object[] | No | Metadata filters |
+| `as_of` | number | No | Timestamp (microseconds since epoch) for temporal search |
 
 **Filter format:**
 ```json

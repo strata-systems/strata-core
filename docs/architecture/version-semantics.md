@@ -118,12 +118,15 @@ A KV key `"foo"` and a State cell `"foo"` are different keys in storage (`(branc
 | Context | Comparison Method | Correct? |
 |---------|------------------|----------|
 | Storage `get_at_version()` | `as_u64()` — raw numeric | Yes — all entries are Txn |
+| Storage `get_at_timestamp()` | `u64::from(sv.timestamp())` — raw numeric | Yes — compares microsecond timestamps |
 | Storage `gc()` | `as_u64()` — raw numeric | Yes — all entries are Txn |
 | Storage `history()` | `as_u64()` — raw numeric | Yes — all entries are Txn |
 | Read-set validation | `u64 == u64` | Yes — both from same version space |
 | State CAS (engine) | `Version == Version` — full enum | Yes — both always Counter |
 | State CAS (TransactionOps) | `Version != Version` — full enum | Yes — both always Counter |
 | `Ord` trait | Discriminant then value | N/A — not used in production paths |
+
+**Note on timestamps**: `get_at_timestamp()` compares `StoredValue.timestamp()` (a microsecond-precision wall-clock timestamp) rather than the MVCC version. This is used for time-travel queries where the user provides a wall-clock timestamp rather than a version number.
 
 ## 7. Version at the Executor Boundary
 

@@ -4,6 +4,19 @@ All notable changes to StrataDB are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.1] - 2026-02-07
+
+### Added
+
+- **Time-travel queries**: Read any primitive as-of a past timestamp. All read commands (`KvGet`, `KvList`, `StateGet`, `StateList`, `EventGet`, `EventGetByType`, `JsonGet`, `JsonList`, `VectorGet`, `VectorSearch`) accept an optional `as_of` field (microseconds since epoch) to query historical state.
+- **WAL timestamp index**: Storage-level `get_at_timestamp()` and `scan_prefix_at_timestamp()` methods for MVCC lookups by timestamp, using the existing version chain (newest-first scan).
+- **Version-aware HNSW**: Temporal tracking on HNSW nodes (`created_at`/`deleted_at`). New `is_alive_at()` check and `search_at()` method that filters by node liveness at the target timestamp — zero reconstruction cost for historical vector search.
+- **Historical state reconstruction**: Per-primitive `get_at()` / `list_at()` methods (KV, State, Event, JSON, Vector) that read directly from storage version chains without requiring snapshot reconstruction.
+- **`TimeRange` command**: Returns the oldest and newest timestamps for a branch, enabling clients to discover the available time-travel window.
+- **`HistoryUnavailable` error**: Returned when a requested timestamp predates the oldest available data (e.g., after compaction or WAL truncation).
+- **Dual time-travel strategy**: KV, State, Event, and JSON use in-memory version chain lookup; Vector uses live HNSW index with temporal filtering. Both achieve O(1)-per-key or O(log n) search cost with no data copying.
+- **WAL replay timestamp preservation**: WAL replay now uses `insert_with_id_and_timestamp` / `delete_with_timestamp` to preserve vector `created_at`/`deleted_at` timestamps, ensuring `search_at()` works correctly after recovery.
+
 ## [0.5.1] - 2026-02-04
 
 ### Added

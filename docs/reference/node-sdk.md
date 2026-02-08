@@ -90,7 +90,7 @@ const version = db.kvPut('user:123', { name: 'Alice', age: 30 });
 
 **Returns:** `number` - Version number
 
-### kvGet(key)
+### kvGet(key, asOf?)
 
 Get a value by key.
 
@@ -99,12 +99,16 @@ const value = db.kvGet('user:123');
 if (value !== null) {
   console.log(value.name);
 }
+
+// Time-travel: read historical value
+const historical = db.kvGet('user:123', 1700002000);
 ```
 
 **Parameters:**
 | Name | Type | Description |
 |------|------|-------------|
 | `key` | string | The key |
+| `asOf` | number? | Timestamp (microseconds since epoch) for time-travel read |
 
 **Returns:** `JsonValue` - Value or `null` if not found
 
@@ -182,13 +186,22 @@ const version = db.stateSet('counter', 0);
 
 **Returns:** `number` - Version number
 
-### stateGet(cell)
+### stateGet(cell, asOf?)
 
 Get a state cell value.
 
 ```typescript
 const value = db.stateGet('counter');
+
+// Time-travel: read historical value
+const historical = db.stateGet('counter', 1700002000);
 ```
+
+**Parameters:**
+| Name | Type | Description |
+|------|------|-------------|
+| `cell` | string | The cell name |
+| `asOf` | number? | Timestamp (microseconds since epoch) for time-travel read |
 
 **Returns:** `JsonValue` - Value or `null`
 
@@ -362,14 +375,24 @@ db.jsonSet('user:123', '$.email', 'alice@example.com');
 
 **Returns:** `number` - Version number
 
-### jsonGet(key, path)
+### jsonGet(key, path, asOf?)
 
 Get a value at a JSONPath.
 
 ```typescript
 const doc = db.jsonGet('user:123', '$');
 const name = db.jsonGet('user:123', '$.name');
+
+// Time-travel: read historical document
+const historical = db.jsonGet('config', '$', 1700002000);
 ```
+
+**Parameters:**
+| Name | Type | Description |
+|------|------|-------------|
+| `key` | string | Document key |
+| `path` | string | JSONPath (use `$` for root) |
+| `asOf` | number? | Timestamp (microseconds since epoch) for time-travel read |
 
 **Returns:** `JsonValue` - Value or `null`
 
@@ -502,7 +525,7 @@ const deleted = db.vectorDelete('embeddings', 'doc-1');
 
 **Returns:** `boolean`
 
-### vectorSearch(collection, query, k)
+### vectorSearch(collection, query, k, asOf?)
 
 Search for similar vectors.
 
@@ -512,7 +535,18 @@ const matches = db.vectorSearch('embeddings', query, 10);
 for (const match of matches) {
   console.log(`${match.key}: ${match.score}`);
 }
+
+// Time-travel: search as of a past timestamp
+const historical = db.vectorSearch('embeddings', query, 10, 1700002000);
 ```
+
+**Parameters:**
+| Name | Type | Description |
+|------|------|-------------|
+| `collection` | string | Collection name |
+| `query` | number[] | Query vector |
+| `k` | number | Number of results |
+| `asOf` | number? | Timestamp (microseconds since epoch) for temporal search |
 
 **Returns:** `SearchMatch[]` with `key`, `score`, `metadata`
 
@@ -876,6 +910,24 @@ Trigger database compaction.
 ```typescript
 db.compact();
 ```
+
+### timeRange(branch?)
+
+Get the available time-travel window for a branch.
+
+```typescript
+const range = db.timeRange();
+if (range) {
+  console.log(`Data from ${range.oldestTs} to ${range.latestTs}`);
+}
+```
+
+**Parameters:**
+| Name | Type | Description |
+|------|------|-------------|
+| `branch` | string? | Branch name (defaults to current branch) |
+
+**Returns:** `TimeRange | null` with `oldestTs` and `latestTs`
 
 ---
 

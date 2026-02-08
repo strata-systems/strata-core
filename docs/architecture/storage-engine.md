@@ -44,9 +44,20 @@ Values in the store are wrapped in `StoredValue`, which includes:
 
 ## MVCC (Multi-Version Concurrency Control)
 
-StrataDB supports versioned reads via `getv()` / `getv()` operations. The storage layer retains version history for keys, allowing you to read the value at a specific version.
+StrataDB supports versioned reads via `getv()` operations. The storage layer retains version history for keys, allowing you to read the value at a specific version.
 
 Version history is subject to the retention policy — old versions may be trimmed.
+
+### Version Chain Temporal Access
+
+The storage layer also supports **timestamp-based lookups** for time-travel queries:
+
+- `get_at_timestamp(key, max_timestamp)` — scans the version chain (newest-first) to find the version whose timestamp <= the requested time
+- `scan_prefix_at_timestamp(prefix, max_timestamp)` — prefix scan with timestamp filtering, returning all keys that existed at the target time
+
+These methods power the `as_of` parameter on all read commands. Since versions are stored newest-first, the scan is efficient for recent timestamps — it stops at the first matching version.
+
+Tombstoned and expired values are filtered out: if the matching version is a tombstone (the key was deleted by that time), `None` is returned.
 
 ## Branch Registry
 
@@ -70,6 +81,8 @@ The `InvertedIndex` indexes text content from KV values, event payloads, and JSO
 | Point read | O(1) | Hash lookup |
 | Point write | O(1) | Hash insert |
 | Prefix scan | O(n) | Scans matching prefix |
+| Temporal read | O(v) | Scans version chain; v = versions per key |
+| Temporal prefix scan | O(n * v) | Prefix scan + version chain scan per key |
 | Branch deletion | O(n) | Scans and deletes all keys in branch |
 
-Where n is the number of keys matching the prefix/branch.
+Where n is the number of keys matching the prefix/branch, and v is the number of versions per key.

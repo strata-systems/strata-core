@@ -79,6 +79,16 @@ Trigger database compaction.
 compact
 ```
 
+### time_range
+
+Get the available time-travel window for the current branch.
+
+```
+time_range
+```
+
+**Returns:** Oldest and latest timestamps (microseconds since epoch), or empty if the branch has no data.
+
 ---
 
 ## KV Store Commands
@@ -108,18 +118,21 @@ Get one or more values by key.
 ```
 kv get <key> [<key> ...]
 kv get <key> --with-version
+kv get <key> --as-of <timestamp>
 ```
 
 **Options:**
 | Option | Description |
 |--------|-------------|
 | `--with-version`, `-v` | Include version and timestamp |
+| `--as-of` | Read value as of this timestamp (microseconds since epoch) |
 
 **Examples:**
 ```bash
 kv get name
 kv get a b c
 kv get config --with-version
+kv get config --as-of 1700002000
 ```
 
 **Returns:** Value(s) or `(nil)` if not found
@@ -145,7 +158,7 @@ kv del a b c
 List keys with optional prefix filter.
 
 ```
-kv list [--prefix <prefix>] [--limit <n>] [--cursor <cursor>] [--all]
+kv list [--prefix <prefix>] [--limit <n>] [--cursor <cursor>] [--all] [--as-of <timestamp>]
 ```
 
 **Options:**
@@ -155,6 +168,7 @@ kv list [--prefix <prefix>] [--limit <n>] [--cursor <cursor>] [--all]
 | `--limit`, `-n` | Maximum keys to return |
 | `--cursor`, `-c` | Pagination cursor |
 | `--all`, `-a` | Fetch all keys (auto-pagination) |
+| `--as-of` | List keys as of this timestamp (microseconds since epoch) |
 
 **Examples:**
 ```bash
@@ -162,6 +176,7 @@ kv list
 kv list --prefix "user:"
 kv list --prefix "session:" --limit 100
 kv list --all
+kv list --prefix "user:" --as-of 1700002000
 ```
 
 ### kv history
@@ -201,7 +216,13 @@ Get a state cell value.
 ```
 state get <cell>
 state get <cell> --with-version
+state get <cell> --as-of <timestamp>
 ```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `--as-of` | Read value as of this timestamp (microseconds since epoch) |
 
 **Returns:** Value or `(nil)` if not found
 
@@ -251,7 +272,7 @@ state del <cell>
 List state cell names.
 
 ```
-state list [--prefix <prefix>]
+state list [--prefix <prefix>] [--as-of <timestamp>]
 ```
 
 ### state history
@@ -294,8 +315,13 @@ echo '{"data": 123}' | event append sensor_reading -f -
 Get an event by sequence number.
 
 ```
-event get <sequence>
+event get <sequence> [--as-of <timestamp>]
 ```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `--as-of` | Read event as of this timestamp (microseconds since epoch) |
 
 **Returns:** Event with type, payload, and timestamp
 
@@ -304,7 +330,7 @@ event get <sequence>
 List events by type.
 
 ```
-event list <type> [--limit <n>] [--after <seq>]
+event list <type> [--limit <n>] [--after <seq>] [--as-of <timestamp>]
 ```
 
 **Options:**
@@ -312,11 +338,13 @@ event list <type> [--limit <n>] [--after <seq>]
 |--------|-------------|
 | `--limit`, `-n` | Maximum events to return |
 | `--after`, `-a` | Return events after this sequence number |
+| `--as-of` | List events as of this timestamp (microseconds since epoch) |
 
 **Examples:**
 ```bash
 event list user_action
 event list sensor_reading --limit 100 --after 500
+event list tool_call --as-of 1700002000
 ```
 
 ### event len
@@ -358,13 +386,20 @@ Get a value at a JSONPath.
 ```
 json get <key> <path>
 json get <key> <path> --with-version
+json get <key> <path> --as-of <timestamp>
 ```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `--as-of` | Read document as of this timestamp (microseconds since epoch) |
 
 **Examples:**
 ```bash
 json get user:123 $
 json get user:123 $.name
 json get user:123 $.address.city
+json get config $ --as-of 1700002000
 ```
 
 ### json del
@@ -382,7 +417,7 @@ json del <key> <path>
 List JSON document keys.
 
 ```
-json list [--prefix <prefix>] [--limit <n>] [--cursor <cursor>]
+json list [--prefix <prefix>] [--limit <n>] [--cursor <cursor>] [--as-of <timestamp>]
 ```
 
 ### json history
@@ -463,8 +498,13 @@ vector upsert embeddings doc-2 "[...]" --metadata '{"title": "Hello"}'
 Get a vector by key.
 
 ```
-vector get <collection> <key>
+vector get <collection> <key> [--as-of <timestamp>]
 ```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `--as-of` | Read vector as of this timestamp (microseconds since epoch) |
 
 **Returns:** Vector embedding, metadata, version, timestamp
 
@@ -481,7 +521,7 @@ vector del <collection> <key>
 Search for similar vectors.
 
 ```
-vector search <collection> <query> <k> [--metric <metric>] [--filter <json>]
+vector search <collection> <query> <k> [--metric <metric>] [--filter <json>] [--as-of <timestamp>]
 ```
 
 **Options:**
@@ -489,6 +529,7 @@ vector search <collection> <query> <k> [--metric <metric>] [--filter <json>]
 |--------|-------------|
 | `--metric`, `-m` | Override distance metric for this search |
 | `--filter`, `-f` | Metadata filter (JSON array) |
+| `--as-of` | Search as of this timestamp (microseconds since epoch) |
 
 **Filter operators:** `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in`, `contains`
 

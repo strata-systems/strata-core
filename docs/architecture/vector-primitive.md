@@ -139,7 +139,7 @@ pub enum IndexBackendFactory {
 | Component | Purpose |
 |-----------|---------|
 | `HnswConfig` | M, ef_construction, ef_search, ml parameters |
-| `HnswNode` | Per-node neighbors (BTreeSet per layer), max_layer, deleted flag |
+| `HnswNode` | Per-node neighbors (BTreeSet per layer), max_layer, deleted flag, `created_at`/`deleted_at` timestamps |
 | `ScoredId` | Candidate with score for heap-based beam search |
 | `search_layer()` | Algorithm 2: beam search at a single layer with max-heap candidates |
 | `greedy_search_to_layer()` | Algorithm 5: greedy descent through upper layers |
@@ -147,6 +147,8 @@ pub enum IndexBackendFactory {
 | `rebuild_graph()` | Post-recovery reconstruction from heap embeddings |
 | `serialize_graph_state()` | Snapshot: serialize full graph topology |
 | `deserialize_graph_state()` | Snapshot: restore graph from bytes |
+| `is_alive_at(ts)` | Temporal check: `created_at <= ts && (deleted_at.is_none() \|\| deleted_at > ts)` |
+| `search_at(query, k, ts)` | Temporal search: same as `search()` but filters by `is_alive_at(ts)` |
 
 ### Distance Functions (distance.rs)
 
@@ -204,6 +206,38 @@ All normalized: **higher = more similar** (Invariant R2).
 
 Returns `CollectionInfo` with `index_type` ("brute_force" or "hnsw") and `memory_bytes` (approximate heap + graph memory usage).
 
+## Temporal Search (Time-Travel)
+
+### HnswNode Temporal Tracking
+
+Each `HnswNode` tracks two timestamps:
+- `created_at` — set when the node is first inserted (microseconds since epoch)
+- `deleted_at` — set when the node is soft-deleted (via `delete_with_timestamp`)
+
+Legacy nodes (from before temporal tracking) have `created_at == 0` and are treated as "always existed".
+
+### `is_alive_at(ts)` Check
+
+```
+fn is_alive_at(&self, as_of_ts: u64) -> bool {
+    (self.created_at == 0 || self.created_at <= as_of_ts)
+        && self.deleted_at.map_or(true, |d| d > as_of_ts)
+}
+```
+
+### `search_at()` Flow
+
+1. Same entry point selection and greedy descent as `search()`
+2. Same ef-search beam search at layer 0
+3. Different filter: instead of `!n.is_deleted()`, uses `n.is_alive_at(as_of_ts)`
+4. Results contain only vectors that existed at the target timestamp
+5. Metadata filtering and adaptive over-fetch still apply on top of temporal filtering
+6. Metadata is loaded via `get_at()` (historical KV lookup) to get the metadata as it was at the target time
+
+### WAL Replay Timestamp Preservation
+
+WAL replay uses `insert_with_id_and_timestamp()` and `delete_with_timestamp()` to preserve the original `created_at`/`deleted_at` timestamps on HNSW nodes. This ensures `search_at()` returns correct results after database recovery.
+
 ## Metadata Filtering
 
 ### FilterOp Operators
@@ -243,11 +277,13 @@ VectorRecord {
     embedding:   Vec<f32>               // Full embedding (for recovery)
     metadata:    Option<serde_json::Value>
     version:     u64                    // Per-vector counter
-    created_at:  u64                    // Microseconds
+    created_at:  u64                    // Microseconds (used for time-travel)
     updated_at:  u64                    // Microseconds
     source_ref:  Option<EntityRef>      // Cross-reference to source entity
 }
 ```
+
+Note: `created_at` and `updated_at` are used by time-travel queries. The HNSW node mirrors these as `created_at`/`deleted_at` for temporal graph filtering during `search_at()`.
 
 ### CollectionRecord (stored as MessagePack)
 

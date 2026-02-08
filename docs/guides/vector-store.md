@@ -243,6 +243,36 @@ See [Spaces](spaces.md) for the full guide.
 
 Vector operations **do not** participate in transactions. They are executed immediately and are always visible, even within a session that has an active transaction.
 
+## Time-Travel Queries
+
+### Historical Vector Lookup
+
+Retrieve a vector as it existed at a past timestamp:
+
+```bash
+strata --cache vector get docs doc-1 --as-of 1700002000
+```
+
+Returns the vector data if the vector existed at that time (i.e., it was created before and not deleted before the target timestamp).
+
+### Temporal Vector Search
+
+Search for the most similar vectors as of a past timestamp:
+
+```bash
+strata --cache vector search items [1.0,0.0,0.0,0.0] 5 --as-of 1700002000
+```
+
+This uses the live HNSW index with **temporal filtering** — each node in the HNSW graph tracks `created_at` and `deleted_at` timestamps. During search, nodes are filtered by liveness at the target time. This means:
+
+- Vectors created after the target timestamp are excluded
+- Vectors deleted before the target timestamp are excluded
+- No index reconstruction is needed — the live graph is reused
+
+Temporal search composes with metadata filtering: both filters apply, with HNSW filtering by liveness first and metadata filtering applied on the results.
+
+See [Time-Travel Queries](../concepts/time-travel.md) for the full guide.
+
 ## Next
 
 - [Branch Management](branch-management.md) — creating and managing branches

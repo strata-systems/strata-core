@@ -158,6 +158,34 @@ OK
 
 Both writes become visible atomically. See [Sessions and Transactions](sessions-and-transactions.md) for the full guide.
 
+## Time-Travel Queries
+
+Read KV values as they existed at a past timestamp using `--as-of` (microseconds since epoch):
+
+```
+$ strata --cache
+strata:default/default> kv put config v1
+(version) 1
+strata:default/default> kv put config v2
+(version) 2
+strata:default/default> kv put config v3
+(version) 3
+strata:default/default> kv get config
+"v3"
+```
+
+To read a historical value, pass the `--as-of` flag with a timestamp. The command returns the latest value whose commit timestamp is at or before the given time. If no value existed at that time, returns `(nil)`.
+
+Time-travel also works with `kv list`:
+
+```bash
+strata --cache kv list --prefix user: --as-of 1700002000
+```
+
+This returns only keys that existed at the given timestamp, with their historical values.
+
+See [Time-Travel Queries](../concepts/time-travel.md) for the full guide.
+
 ## Next
 
 - [Event Log](event-log.md) — append-only event streams

@@ -154,6 +154,28 @@ State cell operations (read, init, CAS) participate in transactions.
 
 See [Sessions and Transactions](sessions-and-transactions.md) for details.
 
+## Time-Travel Queries
+
+Read state cell values as they existed at a past timestamp using `--as-of` (microseconds since epoch):
+
+```
+$ strata --cache
+strata:default/default> state set status pending
+(version) 1
+strata:default/default> state set status running
+(version) 2
+strata:default/default> state set status completed
+(version) 3
+strata:default/default> state get status
+"completed"
+```
+
+Pass `--as-of` to retrieve the historical value at a given timestamp. This is useful for debugging state machine transitions — you can inspect what state the cell held at any point in time.
+
+Time-travel also works with `state list --as-of` to see which cells existed at a past time.
+
+See [Time-Travel Queries](../concepts/time-travel.md) for the full guide.
+
 ## Next
 
 - [JSON Store](json-store.md) — structured documents

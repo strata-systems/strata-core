@@ -79,8 +79,26 @@ strata:session-001/default> state get status
 "completed"
 ```
 
+## Time-Travel Alternative
+
+For debugging, you may not need full deterministic replay. Time-travel queries let you inspect the exact state at any past timestamp without replaying:
+
+```bash
+# What did the agent see at the decision point?
+DECISION_TIME=1700005000
+
+strata --db ./data --branch session-001 kv get decision --as-of $DECISION_TIME
+strata --db ./data --branch session-001 state get status --as-of $DECISION_TIME
+strata --db ./data --branch session-001 event list external_input --as-of $DECISION_TIME
+```
+
+Time-travel works across all primitives and requires no special recording setup — every write is automatically timestamped.
+
+See [Time-Travel Queries](../concepts/time-travel.md) for the full guide.
+
 ## See Also
 
 - [Event Log Guide](../guides/event-log.md) — event append and read operations
 - [Branch Management Guide](../guides/branch-management.md) — branch-per-session pattern
 - [Agent State Management](agent-state-management.md) — full session pattern
+- [Time-Travel Queries](../concepts/time-travel.md) — inspecting historical state

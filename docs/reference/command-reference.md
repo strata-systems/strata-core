@@ -17,7 +17,7 @@ This reference is primarily for SDK builders and contributors. Most users should
 | Space | 4 | Space management operations |
 | Transaction | 5 | Transaction control |
 | Retention | 3 | Retention policy |
-| Database | 4 | Database-level operations |
+| Database | 5 | Database-level operations |
 | Bundle | 3 | Branch export/import |
 | Intelligence | 1 | Cross-primitive search |
 
@@ -26,28 +26,28 @@ This reference is primarily for SDK builders and contributors. Most users should
 | Command | Fields | Output |
 |---------|--------|--------|
 | `KvPut` | `branch?`, `space?`, `key`, `value` | `Version(u64)` |
-| `KvGet` | `branch?`, `space?`, `key` | `Maybe(Option<Value>)` |
+| `KvGet` | `branch?`, `space?`, `key`, `as_of?` | `Maybe(Option<Value>)` |
 | `KvDelete` | `branch?`, `space?`, `key` | `Bool(existed)` |
-| `KvList` | `branch?`, `space?`, `prefix?` | `Keys(Vec<String>)` |
-| `KvGetv` | `branch?`, `space?`, `key` | `VersionHistory(Option<Vec<VersionedValue>>)` |
+| `KvList` | `branch?`, `space?`, `prefix?`, `as_of?` | `Keys(Vec<String>)` |
+| `KvGetv` | `branch?`, `space?`, `key`, `as_of?` | `VersionHistory(Option<Vec<VersionedValue>>)` |
 
 ## JSON Commands
 
 | Command | Fields | Output |
 |---------|--------|--------|
 | `JsonSet` | `branch?`, `space?`, `key`, `path`, `value` | `Version(u64)` |
-| `JsonGet` | `branch?`, `space?`, `key`, `path` | `Maybe(Option<Value>)` |
+| `JsonGet` | `branch?`, `space?`, `key`, `path`, `as_of?` | `Maybe(Option<Value>)` |
 | `JsonDelete` | `branch?`, `space?`, `key`, `path` | `Uint(count)` |
-| `JsonGetv` | `branch?`, `space?`, `key` | `VersionHistory(Option<Vec<VersionedValue>>)` |
-| `JsonList` | `branch?`, `space?`, `prefix?`, `cursor?`, `limit` | `JsonListResult { keys, cursor }` |
+| `JsonGetv` | `branch?`, `space?`, `key`, `as_of?` | `VersionHistory(Option<Vec<VersionedValue>>)` |
+| `JsonList` | `branch?`, `space?`, `prefix?`, `cursor?`, `limit`, `as_of?` | `JsonListResult { keys, cursor }` |
 
 ## Event Commands
 
 | Command | Fields | Output |
 |---------|--------|--------|
 | `EventAppend` | `branch?`, `space?`, `event_type`, `payload` | `Version(u64)` |
-| `EventGet` | `branch?`, `space?`, `sequence` | `MaybeVersioned(Option<VersionedValue>)` |
-| `EventGetByType` | `branch?`, `space?`, `event_type` | `VersionedValues(Vec<VersionedValue>)` |
+| `EventGet` | `branch?`, `space?`, `sequence`, `as_of?` | `MaybeVersioned(Option<VersionedValue>)` |
+| `EventGetByType` | `branch?`, `space?`, `event_type`, `as_of?` | `VersionedValues(Vec<VersionedValue>)` |
 | `EventLen` | `branch?`, `space?` | `Uint(count)` |
 
 ## State Commands
@@ -55,10 +55,11 @@ This reference is primarily for SDK builders and contributors. Most users should
 | Command | Fields | Output |
 |---------|--------|--------|
 | `StateSet` | `branch?`, `space?`, `cell`, `value` | `Version(u64)` |
-| `StateGet` | `branch?`, `space?`, `cell` | `Maybe(Option<Value>)` |
+| `StateGet` | `branch?`, `space?`, `cell`, `as_of?` | `Maybe(Option<Value>)` |
 | `StateCas` | `branch?`, `space?`, `cell`, `expected_counter?`, `value` | `MaybeVersion(Option<u64>)` |
 | `StateInit` | `branch?`, `space?`, `cell`, `value` | `Version(u64)` |
-| `StateGetv` | `branch?`, `space?`, `cell` | `VersionHistory(Option<Vec<VersionedValue>>)` |
+| `StateGetv` | `branch?`, `space?`, `cell`, `as_of?` | `VersionHistory(Option<Vec<VersionedValue>>)` |
+| `StateList` | `branch?`, `space?`, `prefix?`, `as_of?` | `Keys(Vec<String>)` |
 
 ## Vector Commands
 
@@ -70,9 +71,9 @@ This reference is primarily for SDK builders and contributors. Most users should
 | `VectorCollectionStats` | `branch?`, `space?`, `collection` | `VectorCollectionList(Vec<CollectionInfo>)` |
 | `VectorUpsert` | `branch?`, `space?`, `collection`, `key`, `vector`, `metadata?` | `Version(u64)` |
 | `VectorBatchUpsert` | `branch?`, `space?`, `collection`, `entries` | `Versions(Vec<u64>)` |
-| `VectorGet` | `branch?`, `space?`, `collection`, `key` | `VectorData(Option<VersionedVectorData>)` |
+| `VectorGet` | `branch?`, `space?`, `collection`, `key`, `as_of?` | `VectorData(Option<VersionedVectorData>)` |
 | `VectorDelete` | `branch?`, `space?`, `collection`, `key` | `Bool(existed)` |
-| `VectorSearch` | `branch?`, `space?`, `collection`, `query`, `k`, `filter?`, `metric?` | `VectorMatches(Vec<VectorMatch>)` |
+| `VectorSearch` | `branch?`, `space?`, `collection`, `query`, `k`, `filter?`, `metric?`, `as_of?` | `VectorMatches(Vec<VectorMatch>)` |
 
 ## Branch Commands
 
@@ -111,6 +112,7 @@ This reference is primarily for SDK builders and contributors. Most users should
 | `Info` | (none) | `DatabaseInfo(info)` |
 | `Flush` | (none) | `Unit` |
 | `Compact` | (none) | `Unit` |
+| `TimeRange` | `branch?` | `TimeRange { oldest_ts, latest_ts }` |
 
 ## Bundle Commands
 
@@ -142,6 +144,12 @@ Data-scoped commands have an optional `branch` field. When `None`, it defaults t
 
 Data-scoped commands have an optional `space` field. When `None`, it defaults to the current space on the handle (initially `"default"`). Space lifecycle commands (`SpaceList`, `SpaceCreate`, `SpaceDelete`, `SpaceExists`) do not have a `space` field — they operate on spaces within the specified branch.
 
+## `as_of` Field Convention
+
+Read commands accept an optional `as_of` field — a timestamp in microseconds since epoch. When present, the command returns the state as it existed at that time instead of the current state. When absent (or `null`), the command behaves normally and returns the current state.
+
+The `as_of` field uses `#[serde(default, skip_serializing_if = "Option::is_none")]` for full backward compatibility — existing clients that don't send `as_of` continue to work unchanged.
+
 ## Serialization
 
 All commands implement `Serialize` and `Deserialize` with `deny_unknown_fields`. The format uses serde's externally tagged representation:
@@ -149,5 +157,7 @@ All commands implement `Serialize` and `Deserialize` with `deny_unknown_fields`.
 ```json
 {"KvPut": {"key": "foo", "value": {"Int": 42}}}
 {"KvGet": {"key": "foo"}}
+{"KvGet": {"key": "foo", "as_of": 1700002000}}
+{"TimeRange": {"branch": "default"}}
 {"TxnCommit": null}
 ```

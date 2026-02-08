@@ -85,7 +85,7 @@ version = db.kv_put("user:123", {"name": "Alice", "age": 30})
 
 **Returns:** `int` - Version number
 
-### kv_get(key)
+### kv_get(key, as_of=None)
 
 Get a value by key.
 
@@ -93,12 +93,16 @@ Get a value by key.
 value = db.kv_get("user:123")
 if value is not None:
     print(value["name"])
+
+# Time-travel: read historical value
+historical = db.kv_get("user:123", as_of=1700002000)
 ```
 
 **Parameters:**
 | Name | Type | Description |
 |------|------|-------------|
 | `key` | str | The key |
+| `as_of` | int, optional | Timestamp (microseconds since epoch) for time-travel read |
 
 **Returns:** Value or `None` if not found
 
@@ -182,13 +186,22 @@ version = db.state_set("counter", 0)
 
 **Returns:** `int` - Version number
 
-### state_get(cell)
+### state_get(cell, as_of=None)
 
 Get a state cell value.
 
 ```python
 value = db.state_get("counter")
+
+# Time-travel: read historical value
+historical = db.state_get("counter", as_of=1700002000)
 ```
+
+**Parameters:**
+| Name | Type | Description |
+|------|------|-------------|
+| `cell` | str | The cell name |
+| `as_of` | int, optional | Timestamp (microseconds since epoch) for time-travel read |
 
 **Returns:** Value or `None`
 
@@ -359,14 +372,24 @@ db.json_set("user:123", "$.email", "alice@example.com")
 
 **Returns:** `int` - Version number
 
-### json_get(key, path)
+### json_get(key, path, as_of=None)
 
 Get a value at a JSONPath.
 
 ```python
 doc = db.json_get("user:123", "$")
 name = db.json_get("user:123", "$.name")
+
+# Time-travel: read historical document
+historical = db.json_get("config", "$", as_of=1700002000)
 ```
+
+**Parameters:**
+| Name | Type | Description |
+|------|------|-------------|
+| `key` | str | Document key |
+| `path` | str | JSONPath (use `$` for root) |
+| `as_of` | int, optional | Timestamp (microseconds since epoch) for time-travel read |
 
 **Returns:** Value or `None`
 
@@ -503,7 +526,7 @@ deleted = db.vector_delete("embeddings", "doc-1")
 
 **Returns:** `bool`
 
-### vector_search(collection, query, k)
+### vector_search(collection, query, k, as_of=None)
 
 Search for similar vectors.
 
@@ -512,7 +535,18 @@ query = np.random.rand(384).astype(np.float32)
 matches = db.vector_search("embeddings", query, k=10)
 for match in matches:
     print(f"{match['key']}: {match['score']}")
+
+# Time-travel: search as of a past timestamp
+historical = db.vector_search("embeddings", query, k=10, as_of=1700002000)
 ```
+
+**Parameters:**
+| Name | Type | Description |
+|------|------|-------------|
+| `collection` | str | Collection name |
+| `query` | ndarray or list | Query vector |
+| `k` | int | Number of results |
+| `as_of` | int, optional | Timestamp (microseconds since epoch) for temporal search |
 
 **Returns:** `list[dict]` with `key`, `score`, `metadata`
 
@@ -880,6 +914,23 @@ Trigger database compaction.
 ```python
 db.compact()
 ```
+
+### time_range(branch=None)
+
+Get the available time-travel window for a branch.
+
+```python
+result = db.time_range()
+if result:
+    print(f"Data from {result['oldest_ts']} to {result['latest_ts']}")
+```
+
+**Parameters:**
+| Name | Type | Description |
+|------|------|-------------|
+| `branch` | str, optional | Branch name (defaults to current branch) |
+
+**Returns:** `dict` with `oldest_ts` and `latest_ts`, or `None` if branch has no data
 
 ---
 
