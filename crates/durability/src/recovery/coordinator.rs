@@ -25,8 +25,10 @@ use std::path::{Path, PathBuf};
 use crate::codec::{CodecError, StorageCodec};
 use crate::disk_snapshot::{SnapshotReadError, SnapshotReader};
 use crate::format::manifest::{Manifest, ManifestError, ManifestManager};
+use crate::format::segment_meta::SegmentMeta;
 use crate::format::{snapshot_path, WalRecord};
 use crate::wal::WalReaderError;
+use tracing::{debug, info, warn};
 
 use super::replayer::{ReplayStats, WalReplayError, WalReplayer};
 
@@ -155,12 +157,85 @@ impl RecoveryCoordinator {
         // Truncate partial records
         let truncated = self.truncate_partial_records(&plan.wal_dir)?;
 
+        // Rebuild missing .meta sidecar files for closed segments
+        let active_segment = plan.manifest.active_wal_segment;
+        let meta_rebuilt = self.rebuild_missing_metadata(active_segment)?;
+
         Ok(RecoveryResult {
             manifest: plan.manifest,
             snapshot_watermark: plan.watermark,
             replay_stats,
             bytes_truncated: truncated,
+            meta_files_rebuilt: meta_rebuilt,
         })
+    }
+
+    /// Rebuild missing `.meta` sidecar files for closed WAL segments.
+    ///
+    /// Scans each segment before `active_segment` and regenerates its `.meta`
+    /// file if missing or corrupted. Returns the number of `.meta` files rebuilt.
+    ///
+    /// This handles backward compatibility: existing databases with no `.meta`
+    /// files get them on first recovery.
+    pub fn rebuild_missing_metadata(&self, active_segment: u64) -> Result<usize, RecoveryError> {
+        let wal_dir = self.wal_dir();
+        if !wal_dir.exists() {
+            return Ok(0);
+        }
+
+        let reader = crate::wal::WalReader::new(clone_codec(self.codec.as_ref())?);
+        let segments = reader.list_segments(&wal_dir)?;
+        let mut rebuilt = 0usize;
+
+        for seg_num in segments {
+            // Only rebuild metadata for closed segments (before active)
+            if seg_num >= active_segment {
+                continue;
+            }
+
+            // Check if .meta already exists and is valid
+            match SegmentMeta::read_from_file(&wal_dir, seg_num) {
+                Ok(Some(meta)) if meta.segment_number == seg_num => {
+                    // Valid .meta exists, skip
+                    continue;
+                }
+                Ok(Some(_)) => {
+                    warn!(target: "strata::recovery", segment = seg_num, "Segment meta has mismatched segment number, rebuilding");
+                }
+                Ok(None) => {
+                    debug!(target: "strata::recovery", segment = seg_num, "Missing .meta sidecar, rebuilding");
+                }
+                Err(e) => {
+                    warn!(target: "strata::recovery", segment = seg_num, error = %e, "Corrupted .meta sidecar, rebuilding");
+                }
+            }
+
+            // Scan segment records and build metadata
+            match reader.read_segment(&wal_dir, seg_num) {
+                Ok((records, _, _, _)) => {
+                    let mut meta = SegmentMeta::new_empty(seg_num);
+                    for record in &records {
+                        meta.track_record(record.txn_id, record.timestamp);
+                    }
+                    if !meta.is_empty() {
+                        if let Err(e) = meta.write_to_file(&wal_dir) {
+                            warn!(target: "strata::recovery", segment = seg_num, error = %e, "Failed to write rebuilt .meta");
+                            continue;
+                        }
+                    }
+                    rebuilt += 1;
+                }
+                Err(e) => {
+                    warn!(target: "strata::recovery", segment = seg_num, error = %e, "Failed to read segment for .meta rebuild");
+                }
+            }
+        }
+
+        if rebuilt > 0 {
+            info!(target: "strata::recovery", rebuilt, "Rebuilt missing .meta sidecar files");
+        }
+
+        Ok(rebuilt)
     }
 
     /// Truncate partial WAL records at the tail of the active segment
@@ -236,6 +311,8 @@ pub struct RecoveryResult {
     pub replay_stats: ReplayStats,
     /// Bytes truncated from partial records
     pub bytes_truncated: u64,
+    /// Number of `.meta` sidecar files rebuilt during recovery
+    pub meta_files_rebuilt: usize,
 }
 
 /// Recovery errors
@@ -729,5 +806,136 @@ mod tests {
             "Expected Replay error when callback fails, got: {:?}",
             result
         );
+    }
+
+    #[test]
+    fn test_rebuild_missing_metadata() {
+        let dir = tempdir().unwrap();
+        let db_dir = dir.path().to_path_buf();
+        let wal_dir = db_dir.join("WAL");
+        std::fs::create_dir_all(&wal_dir).unwrap();
+
+        // Create 3 closed segments (without .meta files — legacy scenario)
+        for seg_num in 1..=3 {
+            let mut segment = crate::format::WalSegment::create(&wal_dir, seg_num, test_uuid()).unwrap();
+            for i in 0..3 {
+                let txn_id = (seg_num - 1) * 3 + i + 1;
+                let record = WalRecord::new(txn_id, test_uuid(), txn_id * 1000, vec![txn_id as u8]);
+                segment.write(&record.to_bytes()).unwrap();
+            }
+            segment.close().unwrap();
+        }
+
+        // Verify no .meta files exist
+        for seg_num in 1..=3 {
+            assert!(
+                crate::format::segment_meta::SegmentMeta::read_from_file(&wal_dir, seg_num)
+                    .unwrap()
+                    .is_none(),
+                "Segment {} should not have .meta yet",
+                seg_num
+            );
+        }
+
+        let coordinator = RecoveryCoordinator::new(db_dir, make_codec());
+
+        // active_segment=4 means segments 1-3 are closed and should be rebuilt
+        let rebuilt = coordinator.rebuild_missing_metadata(4).unwrap();
+        assert_eq!(rebuilt, 3, "Should have rebuilt .meta for 3 segments");
+
+        // Verify .meta files now exist with correct content
+        for seg_num in 1..=3u64 {
+            let meta = crate::format::segment_meta::SegmentMeta::read_from_file(&wal_dir, seg_num)
+                .unwrap()
+                .expect(&format!("Segment {} should have .meta", seg_num));
+            assert_eq!(meta.segment_number, seg_num);
+            assert_eq!(meta.record_count, 3);
+            let base_txn = (seg_num - 1) * 3 + 1;
+            assert_eq!(meta.min_txn_id, base_txn);
+            assert_eq!(meta.max_txn_id, base_txn + 2);
+        }
+
+        // Running again should not rebuild (already valid)
+        let rebuilt = coordinator.rebuild_missing_metadata(4).unwrap();
+        assert_eq!(rebuilt, 0, "Should not rebuild already-valid .meta files");
+    }
+
+    #[test]
+    fn test_rebuild_skips_active_segment() {
+        let dir = tempdir().unwrap();
+        let db_dir = dir.path().to_path_buf();
+        let wal_dir = db_dir.join("WAL");
+        std::fs::create_dir_all(&wal_dir).unwrap();
+
+        // Create 2 segments without .meta
+        for seg_num in 1..=2 {
+            let mut segment = crate::format::WalSegment::create(&wal_dir, seg_num, test_uuid()).unwrap();
+            let record = WalRecord::new(seg_num, test_uuid(), seg_num * 1000, vec![seg_num as u8]);
+            segment.write(&record.to_bytes()).unwrap();
+            segment.close().unwrap();
+        }
+
+        let coordinator = RecoveryCoordinator::new(db_dir, make_codec());
+
+        // active_segment=2 means only segment 1 should be rebuilt (2 is active)
+        let rebuilt = coordinator.rebuild_missing_metadata(2).unwrap();
+        assert_eq!(rebuilt, 1);
+
+        assert!(
+            crate::format::segment_meta::SegmentMeta::read_from_file(&wal_dir, 1)
+                .unwrap()
+                .is_some(),
+            "Segment 1 should have .meta"
+        );
+        assert!(
+            crate::format::segment_meta::SegmentMeta::read_from_file(&wal_dir, 2)
+                .unwrap()
+                .is_none(),
+            "Active segment 2 should NOT have .meta"
+        );
+    }
+
+    #[test]
+    fn test_recover_rebuilds_meta_for_legacy_db() {
+        let dir = tempdir().unwrap();
+        let db_dir = dir.path().to_path_buf();
+
+        // Create manifest with active_wal_segment=3 (segments 1-2 are closed)
+        let mut manager = ManifestManager::create(
+            db_dir.join("MANIFEST"),
+            test_uuid(),
+            "identity".to_string(),
+        )
+        .unwrap();
+        manager.set_active_segment(3).unwrap();
+
+        // Create segments 1-2 with records (no .meta — legacy)
+        let wal_dir = db_dir.join("WAL");
+        std::fs::create_dir_all(&wal_dir).unwrap();
+        for seg_num in 1..=2u64 {
+            let mut segment = crate::format::WalSegment::create(&wal_dir, seg_num, test_uuid()).unwrap();
+            let record = WalRecord::new(seg_num, test_uuid(), seg_num * 1000, vec![seg_num as u8]);
+            segment.write(&record.to_bytes()).unwrap();
+            segment.close().unwrap();
+        }
+        // Create empty active segment 3
+        crate::format::WalSegment::create(&wal_dir, 3, test_uuid()).unwrap();
+
+        let coordinator = RecoveryCoordinator::new(db_dir, make_codec());
+        let result = coordinator
+            .recover(|_| Ok(()), |_| Ok(()))
+            .unwrap();
+
+        // Recovery should have rebuilt .meta for closed segments 1-2
+        assert_eq!(result.meta_files_rebuilt, 2);
+
+        // Verify .meta files exist
+        for seg_num in 1..=2u64 {
+            let meta = crate::format::segment_meta::SegmentMeta::read_from_file(&wal_dir, seg_num)
+                .unwrap()
+                .expect(&format!("Segment {} should have .meta after recovery", seg_num));
+            assert_eq!(meta.segment_number, seg_num);
+            assert_eq!(meta.record_count, 1);
+        }
     }
 }

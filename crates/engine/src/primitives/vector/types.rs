@@ -27,7 +27,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Get current time in microseconds since Unix epoch
 ///
 /// Returns 0 if system clock is before Unix epoch (clock went backwards).
-fn now_micros() -> u64 {
+pub(crate) fn now_micros() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_micros() as u64)

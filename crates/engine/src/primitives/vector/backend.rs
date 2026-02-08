@@ -39,10 +39,48 @@ pub trait VectorIndexBackend: Send + Sync {
     /// don't reuse IDs from replayed entries.
     fn insert_with_id(&mut self, id: VectorId, embedding: &[f32]) -> Result<(), VectorError>;
 
+    /// Insert with timestamp (for temporal tracking)
+    ///
+    /// Backends that support temporal tracking override this to store the
+    /// creation timestamp. Default: delegates to `insert()`, ignoring timestamp.
+    fn insert_with_timestamp(
+        &mut self,
+        id: VectorId,
+        embedding: &[f32],
+        _created_at: u64,
+    ) -> Result<(), VectorError> {
+        self.insert(id, embedding)
+    }
+
+    /// Insert with specific ID and timestamp (for recovery with temporal data)
+    ///
+    /// Stores the timestamp for later use by `rebuild_index()`.
+    /// Default: delegates to `insert_with_id()`, ignoring timestamp.
+    fn insert_with_id_and_timestamp(
+        &mut self,
+        id: VectorId,
+        embedding: &[f32],
+        _created_at: u64,
+    ) -> Result<(), VectorError> {
+        self.insert_with_id(id, embedding)
+    }
+
     /// Delete a vector
     ///
     /// Returns true if the vector existed and was deleted.
     fn delete(&mut self, id: VectorId) -> Result<bool, VectorError>;
+
+    /// Delete with timestamp (for temporal tracking)
+    ///
+    /// Backends that support temporal tracking override this to record
+    /// the deletion timestamp. Default: delegates to `delete()`, ignoring timestamp.
+    fn delete_with_timestamp(
+        &mut self,
+        id: VectorId,
+        _deleted_at: u64,
+    ) -> Result<bool, VectorError> {
+        self.delete(id)
+    }
 
     /// Search for k nearest neighbors
     ///

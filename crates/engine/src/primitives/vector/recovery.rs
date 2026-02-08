@@ -150,11 +150,15 @@ fn recover_from_db(db: &Database) -> StrataResult<()> {
                     }
                 };
 
-                // Insert into the backend
+                // Insert into the backend with timestamp for temporal tracking
                 let vid = VectorId::new(vec_record.vector_id);
                 let mut backends = state.backends.write();
                 if let Some(backend) = backends.get_mut(&collection_id) {
-                    let _ = backend.insert_with_id(vid, &vec_record.embedding);
+                    let _ = backend.insert_with_id_and_timestamp(
+                        vid,
+                        &vec_record.embedding,
+                        vec_record.created_at,
+                    );
                     stats.vectors_upserted += 1;
                 }
             }

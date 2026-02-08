@@ -3,9 +3,11 @@
 //! The reader handles reading WAL records from segments for recovery.
 
 use crate::codec::StorageCodec;
+use crate::format::segment_meta::SegmentMeta;
 use crate::format::{WalRecord, WalRecordError, WalSegment};
 use std::io::Read;
 use std::path::Path;
+use tracing::warn;
 
 /// Maximum number of bytes to scan forward when searching for the next
 /// valid record after encountering corruption during WAL recovery.
@@ -250,6 +252,113 @@ impl WalReader {
         let result = self.read_all(wal_dir)?;
         Ok(result.records.iter().map(|r| r.txn_id).max())
     }
+
+    /// List all segments with their metadata sidecars.
+    ///
+    /// For each segment, attempts to load its `.meta` file. Missing or corrupted
+    /// metadata is returned as `None` (with a warning logged).
+    pub fn list_segments_with_metadata(
+        &self,
+        wal_dir: &Path,
+    ) -> Result<Vec<(u64, Option<SegmentMeta>)>, WalReaderError> {
+        let segments = self.list_segments(wal_dir)?;
+        let mut result = Vec::with_capacity(segments.len());
+
+        for seg_num in segments {
+            match SegmentMeta::read_from_file(wal_dir, seg_num) {
+                Ok(Some(meta)) => {
+                    if meta.segment_number != seg_num {
+                        warn!(
+                            target: "strata::wal",
+                            segment = seg_num,
+                            meta_segment = meta.segment_number,
+                            "Segment meta has mismatched segment number, ignoring"
+                        );
+                        result.push((seg_num, None));
+                    } else {
+                        result.push((seg_num, Some(meta)));
+                    }
+                }
+                Ok(None) => {
+                    result.push((seg_num, None));
+                }
+                Err(e) => {
+                    warn!(
+                        target: "strata::wal",
+                        segment = seg_num,
+                        error = %e,
+                        "Corrupted .meta sidecar, ignoring"
+                    );
+                    result.push((seg_num, None));
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Find segments that may contain a record with the given timestamp.
+    ///
+    /// A segment is included if `min_ts <= target_ts <= max_ts`.
+    /// Segments without metadata are conservatively included.
+    pub fn find_segments_for_timestamp(
+        &self,
+        wal_dir: &Path,
+        target_ts: u64,
+    ) -> Result<Vec<u64>, WalReaderError> {
+        let segments = self.list_segments_with_metadata(wal_dir)?;
+        Ok(segments
+            .into_iter()
+            .filter(|(_, meta)| match meta {
+                Some(m) => m.min_timestamp <= target_ts && target_ts <= m.max_timestamp,
+                None => true, // Conservative: include segments without metadata
+            })
+            .map(|(num, _)| num)
+            .collect())
+    }
+
+    /// Find segments that overlap with a timestamp range `[min_ts, max_ts]`.
+    ///
+    /// A segment is included if its range overlaps: `seg.min_ts <= max_ts && seg.max_ts >= min_ts`.
+    /// Segments without metadata are conservatively included.
+    pub fn find_segments_for_timestamp_range(
+        &self,
+        wal_dir: &Path,
+        min_ts: u64,
+        max_ts: u64,
+    ) -> Result<Vec<u64>, WalReaderError> {
+        let segments = self.list_segments_with_metadata(wal_dir)?;
+        Ok(segments
+            .into_iter()
+            .filter(|(_, meta)| match meta {
+                Some(m) => m.min_timestamp <= max_ts && m.max_timestamp >= min_ts,
+                None => true,
+            })
+            .map(|(num, _)| num)
+            .collect())
+    }
+
+    /// Find segments that may contain records at or before `target_ts`.
+    ///
+    /// A segment is included if `min_ts <= target_ts` (the segment contains at
+    /// least one record at or before the target). This is the key API for
+    /// time-travel state reconstruction.
+    /// Segments without metadata are conservatively included.
+    pub fn find_segments_before_timestamp(
+        &self,
+        wal_dir: &Path,
+        target_ts: u64,
+    ) -> Result<Vec<u64>, WalReaderError> {
+        let segments = self.list_segments_with_metadata(wal_dir)?;
+        Ok(segments
+            .into_iter()
+            .filter(|(_, meta)| match meta {
+                Some(m) => m.min_timestamp <= target_ts,
+                None => true,
+            })
+            .map(|(num, _)| num)
+            .collect())
+    }
 }
 
 /// Reason why record reading stopped before reaching end of segment.
@@ -490,5 +599,321 @@ mod tests {
         assert!(result.truncate_info.is_some());
         let truncate = result.truncate_info.unwrap();
         assert_eq!(truncate.bytes_to_truncate(), 10);
+    }
+
+    // ---- Metadata query tests ----
+
+    /// Helper: write records using WalWriter (which emits .meta on close)
+    fn write_records_with_close(wal_dir: &Path, records: &[WalRecord]) {
+        let writer = WalWriter::new(
+            wal_dir.to_path_buf(),
+            [1u8; 16],
+            DurabilityMode::Always,
+            WalConfig::for_testing(),
+            make_codec(),
+        )
+        .unwrap();
+
+        let mut writer = writer;
+        for record in records {
+            writer.append(record).unwrap();
+        }
+
+        writer.close().unwrap();
+    }
+
+    /// Helper: create 3 segments directly with known timestamp ranges and .meta files.
+    ///
+    /// Segment 1: txn_ids 1-2, timestamps 1000-2000
+    /// Segment 2: txn_ids 3-4, timestamps 3000-4000
+    /// Segment 3: txn_ids 5-6, timestamps 5000-6000
+    fn create_segments_with_meta(wal_dir: &Path) {
+        std::fs::create_dir_all(wal_dir).unwrap();
+
+        for (seg_num, txn_ids, timestamps) in [
+            (1u64, [1u64, 2], [1000u64, 2000]),
+            (2, [3, 4], [3000, 4000]),
+            (3, [5, 6], [5000, 6000]),
+        ] {
+            let mut segment = WalSegment::create(wal_dir, seg_num, [1u8; 16]).unwrap();
+            let mut meta = SegmentMeta::new_empty(seg_num);
+            for (&txn_id, &ts) in txn_ids.iter().zip(timestamps.iter()) {
+                let record = WalRecord::new(txn_id, [1u8; 16], ts, vec![txn_id as u8; 10]);
+                segment.write(&record.to_bytes()).unwrap();
+                meta.track_record(txn_id, ts);
+            }
+            segment.close().unwrap();
+            meta.write_to_file(wal_dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_meta_written_on_close() {
+        let dir = tempdir().unwrap();
+        let wal_dir = dir.path().join("wal");
+
+        let records: Vec<_> = (1..=3)
+            .map(|i| WalRecord::new(i, [1u8; 16], i * 1000, vec![i as u8]))
+            .collect();
+        write_records_with_close(&wal_dir, &records);
+
+        // .meta should exist for segment 1
+        let meta = SegmentMeta::read_from_file(&wal_dir, 1)
+            .unwrap()
+            .expect(".meta should exist");
+        assert_eq!(meta.segment_number, 1);
+        assert_eq!(meta.min_txn_id, 1);
+        assert_eq!(meta.max_txn_id, 3);
+        assert_eq!(meta.min_timestamp, 1000);
+        assert_eq!(meta.max_timestamp, 3000);
+        assert_eq!(meta.record_count, 3);
+    }
+
+    #[test]
+    fn test_meta_written_on_rotation() {
+        let dir = tempdir().unwrap();
+        let wal_dir = dir.path().join("wal");
+
+        // Use tiny segment size to force rotation
+        let config = crate::wal::config::WalConfig::new()
+            .with_segment_size(100)
+            .with_buffered_sync_bytes(50);
+
+        let mut writer = WalWriter::new(
+            wal_dir.to_path_buf(),
+            [1u8; 16],
+            DurabilityMode::Always,
+            config,
+            make_codec(),
+        )
+        .unwrap();
+
+        // Write enough records to force at least one rotation
+        writer
+            .append(&WalRecord::new(1, [1u8; 16], 1000, vec![0; 50]))
+            .unwrap();
+        writer
+            .append(&WalRecord::new(2, [1u8; 16], 2000, vec![0; 50]))
+            .unwrap();
+        writer
+            .append(&WalRecord::new(3, [1u8; 16], 3000, vec![0; 50]))
+            .unwrap();
+
+        writer.close().unwrap();
+
+        // There should be multiple segments with .meta files
+        let reader = WalReader::new(make_codec());
+        let segments_with_meta = reader.list_segments_with_metadata(&wal_dir).unwrap();
+
+        // Multiple segments should exist (rotation happened)
+        assert!(segments_with_meta.len() > 1, "Should have rotated");
+
+        // At least some segments should have metadata
+        let with_meta_count = segments_with_meta.iter().filter(|(_, m)| m.is_some()).count();
+        assert!(
+            with_meta_count > 0,
+            "At least one segment should have .meta"
+        );
+    }
+
+    #[test]
+    fn test_list_segments_with_metadata_no_meta() {
+        let dir = tempdir().unwrap();
+        let wal_dir = dir.path().join("wal");
+        std::fs::create_dir_all(&wal_dir).unwrap();
+
+        // Create segments without .meta files (legacy scenario)
+        WalSegment::create(&wal_dir, 1, [1u8; 16]).unwrap();
+        WalSegment::create(&wal_dir, 2, [1u8; 16]).unwrap();
+
+        let reader = WalReader::new(make_codec());
+        let result = reader.list_segments_with_metadata(&wal_dir).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert!(result[0].1.is_none());
+        assert!(result[1].1.is_none());
+    }
+
+    #[test]
+    fn test_find_segments_for_timestamp() {
+        let dir = tempdir().unwrap();
+        let wal_dir = dir.path().join("wal");
+
+        // Create 3 segments with known ranges:
+        //   seg 1: ts 1000-2000, seg 2: ts 3000-4000, seg 3: ts 5000-6000
+        create_segments_with_meta(&wal_dir);
+
+        let reader = WalReader::new(make_codec());
+
+        // Timestamp 1500 should match segment 1 (1000 <= 1500 <= 2000)
+        let result = reader.find_segments_for_timestamp(&wal_dir, 1500).unwrap();
+        assert_eq!(result, vec![1]);
+
+        // Exact boundary: timestamp 2000 matches segment 1
+        let result = reader.find_segments_for_timestamp(&wal_dir, 2000).unwrap();
+        assert_eq!(result, vec![1]);
+
+        // Exact boundary: timestamp 3000 matches segment 2
+        let result = reader.find_segments_for_timestamp(&wal_dir, 3000).unwrap();
+        assert_eq!(result, vec![2]);
+
+        // Between segments: timestamp 2500 matches nothing
+        let result = reader.find_segments_for_timestamp(&wal_dir, 2500).unwrap();
+        assert!(result.is_empty());
+
+        // Far future: matches nothing
+        let result = reader.find_segments_for_timestamp(&wal_dir, 999_999).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_find_segments_for_timestamp_range() {
+        let dir = tempdir().unwrap();
+        let wal_dir = dir.path().join("wal");
+
+        create_segments_with_meta(&wal_dir);
+
+        let reader = WalReader::new(make_codec());
+
+        // Range covering all data
+        let result = reader
+            .find_segments_for_timestamp_range(&wal_dir, 0, 10000)
+            .unwrap();
+        assert_eq!(result, vec![1, 2, 3]);
+
+        // Range covering first two segments
+        let result = reader
+            .find_segments_for_timestamp_range(&wal_dir, 1500, 3500)
+            .unwrap();
+        assert_eq!(result, vec![1, 2]);
+
+        // Range between segments: 2500-2900 matches nothing
+        let result = reader
+            .find_segments_for_timestamp_range(&wal_dir, 2500, 2900)
+            .unwrap();
+        assert!(result.is_empty());
+
+        // Range touching segment boundary: 2000-3000 matches segments 1 and 2
+        let result = reader
+            .find_segments_for_timestamp_range(&wal_dir, 2000, 3000)
+            .unwrap();
+        assert_eq!(result, vec![1, 2]);
+    }
+
+    #[test]
+    fn test_find_segments_before_timestamp() {
+        let dir = tempdir().unwrap();
+        let wal_dir = dir.path().join("wal");
+
+        create_segments_with_meta(&wal_dir);
+
+        let reader = WalReader::new(make_codec());
+
+        // Before any timestamp: nothing
+        let result = reader.find_segments_before_timestamp(&wal_dir, 0).unwrap();
+        assert!(result.is_empty());
+
+        // At first segment's min_ts: includes segment 1
+        let result = reader
+            .find_segments_before_timestamp(&wal_dir, 1000)
+            .unwrap();
+        assert_eq!(result, vec![1]);
+
+        // At second segment's min_ts: includes segments 1 and 2
+        let result = reader
+            .find_segments_before_timestamp(&wal_dir, 3000)
+            .unwrap();
+        assert_eq!(result, vec![1, 2]);
+
+        // After all timestamps: all segments
+        let result = reader
+            .find_segments_before_timestamp(&wal_dir, 999_999)
+            .unwrap();
+        assert_eq!(result, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_find_segments_conservative_without_meta() {
+        let dir = tempdir().unwrap();
+        let wal_dir = dir.path().join("wal");
+
+        create_segments_with_meta(&wal_dir);
+
+        // Delete .meta for segment 2 to simulate legacy/corrupted state
+        let meta_path = SegmentMeta::meta_path(&wal_dir, 2);
+        std::fs::remove_file(&meta_path).unwrap();
+
+        let reader = WalReader::new(make_codec());
+
+        // Between segments: segment 2 (no meta) should be conservatively included
+        let result = reader.find_segments_for_timestamp(&wal_dir, 2500).unwrap();
+        assert_eq!(result, vec![2], "Segment without .meta should be conservatively included");
+    }
+
+    #[test]
+    fn test_meta_written_for_reopened_segment() {
+        let dir = tempdir().unwrap();
+        let wal_dir = dir.path().join("wal");
+
+        // Write a record and flush (but don't close — simulates crash)
+        {
+            let mut writer = WalWriter::new(
+                wal_dir.to_path_buf(),
+                [1u8; 16],
+                DurabilityMode::Always,
+                WalConfig::for_testing(),
+                make_codec(),
+            )
+            .unwrap();
+            writer.append(&WalRecord::new(1, [1u8; 16], 1000, vec![1])).unwrap();
+            writer.flush().unwrap();
+            // Drop without close — no .meta written
+        }
+
+        // Reopen (segment is reopened) — writer should rebuild metadata from records
+        {
+            let mut writer = WalWriter::new(
+                wal_dir.to_path_buf(),
+                [1u8; 16],
+                DurabilityMode::Always,
+                WalConfig::for_testing(),
+                make_codec(),
+            )
+            .unwrap();
+
+            // In-memory metadata should have been rebuilt from existing records
+            let meta = writer.current_segment_meta().expect("should have metadata");
+            assert_eq!(meta.min_txn_id, 1);
+            assert_eq!(meta.max_txn_id, 1);
+            assert_eq!(meta.min_timestamp, 1000);
+            assert_eq!(meta.max_timestamp, 1000);
+            assert_eq!(meta.record_count, 1);
+
+            // Append another record
+            writer.append(&WalRecord::new(2, [1u8; 16], 2000, vec![2])).unwrap();
+
+            // Metadata should track both records
+            let meta = writer.current_segment_meta().unwrap();
+            assert_eq!(meta.min_txn_id, 1);
+            assert_eq!(meta.max_txn_id, 2);
+            assert_eq!(meta.min_timestamp, 1000);
+            assert_eq!(meta.max_timestamp, 2000);
+            assert_eq!(meta.record_count, 2);
+
+            writer.close().unwrap();
+        }
+
+        // .meta should exist with correct values
+        let seg_num = {
+            let reader = WalReader::new(make_codec());
+            let segments = reader.list_segments(&wal_dir).unwrap();
+            *segments.last().unwrap()
+        };
+        let meta = SegmentMeta::read_from_file(&wal_dir, seg_num)
+            .unwrap()
+            .expect(".meta should exist after close");
+        assert_eq!(meta.min_txn_id, 1);
+        assert_eq!(meta.max_txn_id, 2);
+        assert_eq!(meta.record_count, 2);
     }
 }

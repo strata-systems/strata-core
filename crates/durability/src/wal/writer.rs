@@ -5,11 +5,13 @@
 
 use super::DurabilityMode;
 use crate::codec::StorageCodec;
+use crate::format::segment_meta::SegmentMeta;
 use crate::format::{WalRecord, WalSegment, SEGMENT_HEADER_SIZE_V2};
 use crate::wal::config::WalConfig;
+use crate::wal::reader::WalReader;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// Cumulative WAL operation counters.
 ///
@@ -77,6 +79,10 @@ pub struct WalWriter {
     /// Whether there is data written but not yet fsynced
     has_unsynced_data: bool,
 
+    /// In-memory metadata for the current active segment.
+    /// `None` in Cache mode (no WAL persistence).
+    current_segment_meta: Option<SegmentMeta>,
+
     /// Cumulative: total WAL record appends
     total_wal_appends: u64,
     /// Cumulative: total sync/fsync calls
@@ -112,6 +118,7 @@ impl WalWriter {
                 writes_since_sync: 0,
                 last_sync_time: Instant::now(),
                 current_segment_number: 0,
+                current_segment_meta: None,
                 has_unsynced_data: false,
                 total_wal_appends: 0,
                 total_sync_calls: 0,
@@ -126,24 +133,32 @@ impl WalWriter {
         // Find the latest segment
         let latest_segment = Self::find_latest_segment(&wal_dir);
 
-        let (segment, segment_number) = match latest_segment {
+        let (segment, segment_number, is_reopened) = match latest_segment {
             Some(num) => {
                 // Try to open existing segment for appending
                 match WalSegment::open_append(&wal_dir, num) {
-                    Ok(seg) => (seg, num),
+                    Ok(seg) => (seg, num, true),
                     Err(_) => {
                         // Segment might be corrupted or closed, create new one
                         let new_num = num + 1;
                         let seg = WalSegment::create(&wal_dir, new_num, database_uuid)?;
-                        (seg, new_num)
+                        (seg, new_num, false)
                     }
                 }
             }
             None => {
                 // No existing segments, create first one
                 let seg = WalSegment::create(&wal_dir, 1, database_uuid)?;
-                (seg, 1)
+                (seg, 1, false)
             }
+        };
+
+        // Build initial segment metadata
+        let current_segment_meta = if is_reopened {
+            // Reopening an existing segment — rebuild metadata from its records
+            Self::rebuild_meta_for_segment(&wal_dir, segment_number)
+        } else {
+            Some(SegmentMeta::new_empty(segment_number))
         };
 
         Ok(WalWriter {
@@ -157,6 +172,7 @@ impl WalWriter {
             writes_since_sync: 0,
             last_sync_time: Instant::now(),
             current_segment_number: segment_number,
+            current_segment_meta,
             has_unsynced_data: false,
             total_wal_appends: 0,
             total_sync_calls: 0,
@@ -196,6 +212,11 @@ impl WalWriter {
         // Write to segment
         let segment = self.segment.as_mut().unwrap();
         segment.write(&encoded)?;
+
+        // Track metadata for the current segment
+        if let Some(ref mut meta) = self.current_segment_meta {
+            meta.track_record(record.txn_id, record.timestamp);
+        }
 
         self.total_wal_appends += 1;
         self.total_bytes_written += encoded.len() as u64;
@@ -258,6 +279,15 @@ impl WalWriter {
             segment.close()?;
         }
 
+        // Write .meta for the closed segment
+        if let Some(ref meta) = self.current_segment_meta {
+            if !meta.is_empty() {
+                if let Err(e) = meta.write_to_file(&self.wal_dir) {
+                    warn!(target: "strata::wal", segment = old_segment, error = %e, "Failed to write .meta sidecar");
+                }
+            }
+        }
+
         // Create new segment
         self.current_segment_number += 1;
         let new_segment = WalSegment::create(
@@ -267,6 +297,7 @@ impl WalWriter {
         )?;
 
         self.segment = Some(new_segment);
+        self.current_segment_meta = Some(SegmentMeta::new_empty(self.current_segment_number));
         self.reset_sync_counters();
 
         info!(target: "strata::wal", old_segment, new_segment = self.current_segment_number, "WAL segment rotated");
@@ -347,6 +378,34 @@ impl WalWriter {
         &self.wal_dir
     }
 
+    /// Get the in-memory metadata for the current active segment.
+    ///
+    /// Returns `None` in Cache mode.
+    pub fn current_segment_meta(&self) -> Option<&SegmentMeta> {
+        self.current_segment_meta.as_ref()
+    }
+
+    /// Rebuild metadata for an existing segment by scanning its records.
+    ///
+    /// Returns `Some(meta)` on success, or `Some(empty_meta)` if the segment
+    /// cannot be read (best-effort).
+    fn rebuild_meta_for_segment(wal_dir: &Path, segment_number: u64) -> Option<SegmentMeta> {
+        let reader = WalReader::new(Box::new(crate::codec::IdentityCodec));
+        match reader.read_segment(wal_dir, segment_number) {
+            Ok((records, _, _, _)) => {
+                let mut meta = SegmentMeta::new_empty(segment_number);
+                for record in &records {
+                    meta.track_record(record.txn_id, record.timestamp);
+                }
+                Some(meta)
+            }
+            Err(e) => {
+                warn!(target: "strata::wal", segment = segment_number, error = %e, "Failed to rebuild segment meta, starting empty");
+                Some(SegmentMeta::new_empty(segment_number))
+            }
+        }
+    }
+
     /// Find the latest segment number in the WAL directory.
     fn find_latest_segment(dir: &Path) -> Option<u64> {
         std::fs::read_dir(dir)
@@ -386,6 +445,16 @@ impl WalWriter {
     /// Close the writer, ensuring all data is flushed.
     pub fn close(mut self) -> std::io::Result<()> {
         self.flush()?;
+
+        // Write .meta for the current segment before closing
+        if let Some(ref meta) = self.current_segment_meta {
+            if !meta.is_empty() {
+                if let Err(e) = meta.write_to_file(&self.wal_dir) {
+                    warn!(target: "strata::wal", segment = self.current_segment_number, error = %e, "Failed to write .meta sidecar on close");
+                }
+            }
+        }
+
         if let Some(ref mut segment) = self.segment {
             segment.close()?;
         }

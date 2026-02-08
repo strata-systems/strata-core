@@ -106,6 +106,9 @@ pub use format::{
     WritesetError,
     MANIFEST_FORMAT_VERSION,
     MANIFEST_MAGIC,
+    // Segment metadata
+    SegmentMeta,
+    SegmentMetaError,
     SEGMENT_FORMAT_VERSION,
     SEGMENT_HEADER_SIZE,
     SEGMENT_HEADER_SIZE_V2,

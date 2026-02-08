@@ -13,6 +13,7 @@
 
 pub mod manifest;
 pub mod primitives;
+pub mod segment_meta;
 pub mod snapshot;
 pub mod wal_record;
 pub mod watermark;
@@ -37,4 +38,5 @@ pub use primitives::{
     PrimitiveSerializeError, SnapshotSerializer, StateSnapshotEntry, VectorCollectionSnapshotEntry,
     VectorSnapshotEntry,
 };
+pub use segment_meta::{SegmentMeta, SegmentMetaError, SEGMENT_META_MAGIC, SEGMENT_META_SIZE, SEGMENT_META_VERSION};
 pub use watermark::{CheckpointInfo, SnapshotWatermark, WatermarkError};

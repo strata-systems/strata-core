@@ -509,7 +509,7 @@ impl VectorStore {
             .map_err(|e| VectorError::Storage(e.to_string()))?;
 
         // Only update backend AFTER KV commit succeeds
-        backend.insert(vector_id, embedding)?;
+        backend.insert_with_timestamp(vector_id, embedding, record.created_at)?;
 
         drop(backends);
 
@@ -612,10 +612,11 @@ impl VectorStore {
 
         // Delete from backend
         {
+            use super::types::now_micros;
             let state = self.state()?;
             let mut backends = state.backends.write();
             if let Some(backend) = backends.get_mut(&collection_id) {
-                backend.delete(vector_id)?;
+                backend.delete_with_timestamp(vector_id, now_micros())?;
             }
         }
 
@@ -710,8 +711,8 @@ impl VectorStore {
                 })
                 .map_err(|e| VectorError::Storage(e.to_string()))?;
 
-            // Update backend
-            backend.insert(vector_id, &embedding)?;
+            // Update backend with timestamp
+            backend.insert_with_timestamp(vector_id, &embedding, record.created_at)?;
 
             versions.push(Version::counter(record_version));
         }
