@@ -101,6 +101,7 @@ const INVALID_INPUT_CODES: &[&str] = &[
     "invalid_argument.engine.vector_batch",
     "invalid_argument.engine.vector_collection",
     "invalid_argument.engine.vector_collection_reserved",
+    "invalid_argument.engine.embedding_model",
     "invalid_argument.engine.vector_dimension",
     "invalid_argument.engine.vector_embedding",
     "invalid_argument.engine.vector_filter",
@@ -141,6 +142,7 @@ const CONFLICT_CODES: &[&str] = &[
     "failed_precondition.engine.graph_ontology_frozen",
     "failed_precondition.engine.graph_ontology_node_type",
     "failed_precondition.engine.graph_ontology_required_property",
+    "failed_precondition.engine.embedding_model_mismatch",
     "failed_precondition.engine.space_not_empty",
 ];
 

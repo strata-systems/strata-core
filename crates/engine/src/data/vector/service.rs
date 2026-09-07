@@ -24,16 +24,17 @@ use super::{
     decode_collection_config, decode_vector_index_manifest, decode_vector_record,
     default_flat_artifact_build_budget_bytes, default_hnsw_artifact_build_budget_bytes,
     encode_collection_config, encode_vector_index_manifest, encode_vector_record,
-    query_vector_sources_with_index_artifacts, FlatVectorArtifact, HnswArtifactConfig,
-    HnswVectorArtifact, VectorArtifactId, VectorArtifactKind, VectorArtifactRef,
-    VectorArtifactSourceDiagnostic, VectorArtifactStore, VectorBatchDeleteOutcome,
-    VectorBatchGetOutcome, VectorBatchUpsertOutcome, VectorBulkDeleteOutcome, VectorCollectionInfo,
-    VectorCollectionName, VectorConfig, VectorDeleteOutcome, VectorEmbedding, VectorEntry,
-    VectorFilter, VectorFlatArtifactIdentity, VectorFlatArtifactSourceInput, VectorHistory,
-    VectorHistoryRow, VectorHnswArtifactSourceInput, VectorIndexDiagnostics, VectorIndexManifest,
-    VectorIndexManifestLookup, VectorIndexPolicy, VectorKey, VectorKeyPage, VectorMetadata,
-    VectorMetadataPatch, VectorMetadataUpdateOutcome, VectorRecord, VectorSearchResult,
-    VectorSourceId, VectorTombstone, VectorUpsertEntry, VectorVersionedEntry, VectorWriteOutcome,
+    query_vector_sources_with_index_artifacts, EmbeddingModelId, FlatVectorArtifact,
+    HnswArtifactConfig, HnswVectorArtifact, VectorArtifactId, VectorArtifactKind,
+    VectorArtifactRef, VectorArtifactSourceDiagnostic, VectorArtifactStore,
+    VectorBatchDeleteOutcome, VectorBatchGetOutcome, VectorBatchUpsertOutcome,
+    VectorBulkDeleteOutcome, VectorCollectionInfo, VectorCollectionName, VectorConfig,
+    VectorDeleteOutcome, VectorEmbedding, VectorEntry, VectorFilter, VectorFlatArtifactIdentity,
+    VectorFlatArtifactSourceInput, VectorHistory, VectorHistoryRow, VectorHnswArtifactSourceInput,
+    VectorIndexDiagnostics, VectorIndexManifest, VectorIndexManifestLookup, VectorIndexPolicy,
+    VectorKey, VectorKeyPage, VectorMetadata, VectorMetadataPatch, VectorMetadataUpdateOutcome,
+    VectorRecord, VectorSearchResult, VectorSourceId, VectorTombstone, VectorUpsertEntry,
+    VectorVersionedEntry, VectorWriteOutcome,
 };
 
 #[cfg(any(test, feature = "testkit"))]
@@ -162,7 +163,7 @@ impl<'a> VectorService<'a> {
             &record,
             vec![RowMutation::put(
                 address,
-                encode_collection_config(&name, config)?,
+                encode_collection_config(&name, &config)?,
             )],
         )?;
         Ok(VectorCollectionInfo::new(
@@ -193,6 +194,44 @@ impl<'a> VectorService<'a> {
         }
         self.commit_batch(&record, mutations)?;
         Ok(true)
+    }
+
+    /// Refuses when a caller's embedding model is not the one the collection
+    /// was built with (CLAUDE.md rule 24).
+    ///
+    /// This is the check dimension cannot do. `miniLM` and `nomic-embed` both
+    /// emit 384-wide vectors, so mixing them passes every width check and then
+    /// returns neighbours that are ranked, confident, and meaningless. Nothing
+    /// downstream can detect it — which is why the collection has to remember.
+    ///
+    /// A collection with no recorded model accepts anything, because every
+    /// collection created before provenance existed is in that state and must
+    /// keep working. It is the text-embedding paths that refuse it, since they
+    /// are the ones that need to know which model to call.
+    pub fn require_embedding_model(
+        &mut self,
+        collection: &VectorCollectionName,
+        model: &EmbeddingModelId,
+    ) -> EngineResult<()> {
+        let record = self.branch_record()?;
+        let config = self.require_collection_config(&record, collection)?;
+        match config.embedding_model() {
+            Some(recorded) if recorded == model => Ok(()),
+            // `conflict` is the constructor; the class comes from the code's
+            // prefix, exactly as `failed_precondition.engine.space_not_empty`
+            // does.
+            Some(recorded) => Err(EngineError::conflict(
+                "failed_precondition.engine.embedding_model_mismatch",
+                format!(
+                    "vector collection `{}` stores vectors from `{}`; `{}` would mix two \
+                     models in one collection, whose distances are not comparable",
+                    collection.as_str(),
+                    recorded.as_str(),
+                    model.as_str(),
+                ),
+            )),
+            None => Ok(()),
+        }
     }
 
     /// Lists visible vector collections.
@@ -1089,7 +1128,7 @@ impl<'a> VectorService<'a> {
         self.index_manifest_resolution(
             &record,
             collection,
-            config,
+            &config,
             collection_generation,
             ReadSelector::Latest,
         )
@@ -1227,7 +1266,7 @@ impl<'a> VectorService<'a> {
             &record,
             collection,
             collection_generation,
-            config,
+            &config,
             &snapshot,
             policy,
         )
@@ -1248,7 +1287,7 @@ impl<'a> VectorService<'a> {
             collection,
             collection_generation,
             source_id,
-            config,
+            &config,
         )?;
         let load = self.artifacts.load_flat(
             &identity,
@@ -1300,7 +1339,7 @@ impl<'a> VectorService<'a> {
             collection,
             collection_generation,
             source_id,
-            config,
+            &config,
         )?;
         let load = self
             .artifacts
@@ -1345,7 +1384,7 @@ impl<'a> VectorService<'a> {
             collection,
             collection_generation,
             source_id,
-            config,
+            &config,
         )?;
         let stale_identity = VectorFlatArtifactIdentity::new(
             identity.artifact_id().clone(),
@@ -1420,7 +1459,7 @@ impl<'a> VectorService<'a> {
                 collection,
                 collection_generation,
                 source_id,
-                config,
+                &config,
             )?,
         };
         let rows = match rows {
@@ -1509,7 +1548,7 @@ impl<'a> VectorService<'a> {
         collection: &VectorCollectionName,
         collection_generation: CommitVersion,
         source_id: &str,
-        config: VectorConfig,
+        config: &VectorConfig,
     ) -> EngineResult<VectorFlatArtifactIdentity> {
         VectorFlatArtifactIdentity::new(
             self.flat_artifact_id_for_test(collection, source_id)?,
@@ -1634,7 +1673,7 @@ impl<'a> VectorService<'a> {
         let manifest_resolution = self.index_manifest_resolution(
             &record,
             collection,
-            config,
+            &config,
             collection_generation,
             selector,
         )?;
@@ -1854,7 +1893,7 @@ impl<'a> VectorService<'a> {
         &mut self,
         record: &BranchCatalogRecord,
         collection: &VectorCollectionName,
-        config: VectorConfig,
+        config: &VectorConfig,
         collection_generation: CommitVersion,
         selector: ReadSelector,
     ) -> EngineResult<VectorIndexManifestResolution> {
@@ -2170,7 +2209,7 @@ impl<'a> VectorService<'a> {
         record: &BranchCatalogRecord,
         collection: &VectorCollectionName,
         collection_generation: CommitVersion,
-        config: VectorConfig,
+        config: &VectorConfig,
         snapshot: &VectorQuerySnapshot,
         policy: VectorIndexPolicy,
     ) -> EngineResult<()> {
@@ -2223,7 +2262,7 @@ impl<'a> VectorService<'a> {
         record: &BranchCatalogRecord,
         collection: &VectorCollectionName,
         collection_generation: CommitVersion,
-        config: VectorConfig,
+        config: &VectorConfig,
         policy: VectorIndexPolicy,
     ) -> EngineResult<Vec<VectorArtifactRef>> {
         let start = encode_vector_collection_entry_prefix(&self.space, collection);
@@ -2267,7 +2306,7 @@ impl<'a> VectorService<'a> {
         record: &BranchCatalogRecord,
         collection: &VectorCollectionName,
         collection_generation: CommitVersion,
-        config: VectorConfig,
+        config: &VectorConfig,
         snapshot: &VectorQuerySnapshot,
     ) -> EngineResult<VectorArtifactRef> {
         let seal_version = snapshot
@@ -2305,7 +2344,7 @@ impl<'a> VectorService<'a> {
         record: &BranchCatalogRecord,
         collection: &VectorCollectionName,
         collection_generation: CommitVersion,
-        config: VectorConfig,
+        config: &VectorConfig,
         snapshot: &VectorQuerySnapshot,
     ) -> EngineResult<VectorArtifactRef> {
         let seal_version = snapshot
@@ -2342,7 +2381,7 @@ impl<'a> VectorService<'a> {
         &mut self,
         collection: &VectorCollectionName,
         collection_generation: CommitVersion,
-        config: VectorConfig,
+        config: &VectorConfig,
         source: &PersistenceImmutableSource,
         entries: &[(PersistenceReadRow, VectorEntry)],
     ) -> EngineResult<VectorArtifactRef> {
@@ -2380,7 +2419,7 @@ impl<'a> VectorService<'a> {
         &mut self,
         collection: &VectorCollectionName,
         collection_generation: CommitVersion,
-        config: VectorConfig,
+        config: &VectorConfig,
         source: &PersistenceImmutableSource,
         entries: &[(PersistenceReadRow, VectorEntry)],
     ) -> EngineResult<VectorArtifactRef> {
