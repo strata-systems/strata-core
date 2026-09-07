@@ -1684,6 +1684,42 @@ mod tests {
         );
     }
 
+    /// The download footer fires only when this build cannot download AND
+    /// something is missing — the mutation gate found both halves untested.
+    #[test]
+    fn the_models_footer_tracks_both_download_ability_and_what_is_missing() {
+        const FOOTER: &str = "cannot download models";
+
+        let status = |can_download: bool, downloaded: u64, catalogued: u64| {
+            human(&json!({
+                "type": "inference_status",
+                "data": {
+                    "local_execution": false,
+                    "model_download": can_download,
+                    "providers": [],
+                    "models_dir": "/models",
+                    "models_downloaded": downloaded,
+                    "models_catalogued": catalogued,
+                }
+            }))
+        };
+
+        // Cannot download, and models are missing: say so.
+        assert!(status(false, 1, 3).contains(FOOTER));
+
+        // Cannot download, but nothing is missing — nothing to say.
+        assert!(
+            !status(false, 3, 3).contains(FOOTER),
+            "a complete set needs no download advice"
+        );
+
+        // Can download: the advice is irrelevant however many are missing.
+        assert!(
+            !status(true, 1, 3).contains(FOOTER),
+            "a build that can download does not need telling"
+        );
+    }
+
     #[test]
     fn human_inference_model_pulled() {
         let value = json!({

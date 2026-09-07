@@ -150,4 +150,23 @@ exclude_re = [
     "\\bdownload\\b",
     "\\bextract\\b",
     "replace <impl Drop for TempDir>::drop with \\(\\)",
+    # D8 download offer (#3124): `execute_with_download_offer` is the
+    # interactive prompt itself — print the refusal, read a line from a real
+    # terminal, re-run. A `cargo test` has no TTY to answer it and no fixtured
+    # release to pull from, so its branches survive vacuously. Same category as
+    # run_repl and run_update above.
+    #
+    # Its DECISION logic is extracted and stays mutated: `should_offer_download`
+    # (truth table over terminal / output format / error code) and
+    # `missing_model_spec` (which model the command was going to load). Both
+    # gained tests because this gate found them untested.
+    "execute_with_download_offer",
+    # D2 install-local (#3124): the same self-replacing-binary glue already
+    # excluded above for `strata update` — it downloads a release asset,
+    # verifies its checksum and overwrites the running executable, which a test
+    # runner cannot let it do. It shares `install_release_asset` with
+    # `run_update`, whose pure parts (local_asset_name, expected_sha,
+    # target_triple, has_local_execution's feature reflection) are unit-tested.
+    "run_install_local",
+    "has_local_execution",
 ]

@@ -252,3 +252,35 @@ fn binary_on_path() -> bool {
     std::env::split_paths(&paths)
         .any(|dir| !dir.as_os_str().is_empty() && dir.join(&name).is_file())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::inference_report;
+
+    /// The report carries real facts, not an empty value.
+    ///
+    /// The mutation gate replaced the whole function with `Default::default()`
+    /// — a JSON null — and nothing failed, so `strata doctor` could have shipped
+    /// reporting nothing about inference at all.
+    #[test]
+    fn the_inference_report_carries_facts() {
+        let mut issues = Vec::new();
+        let report = inference_report(&mut issues);
+
+        assert!(
+            report
+                .get("models_dir")
+                .is_some_and(serde_json::Value::is_string),
+            "the shared model directory is always reportable: {report}"
+        );
+        assert!(report
+            .get("local_execution")
+            .is_some_and(serde_json::Value::is_boolean));
+        assert!(report
+            .get("ready_providers")
+            .is_some_and(serde_json::Value::is_array));
+        assert!(report
+            .get("models_catalogued")
+            .is_some_and(serde_json::Value::is_number));
+    }
+}

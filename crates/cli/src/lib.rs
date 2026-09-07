@@ -3155,4 +3155,34 @@ mod tests {
             );
         }
     }
+
+    /// `missing_model_spec` picks the model out of the commands that load one.
+    ///
+    /// The mutation gate found this untested: returning `None`, an empty
+    /// string, or a wrong name all passed. `None` silently disables the
+    /// download offer; a wrong name would offer to download the wrong model.
+    #[cfg(all(feature = "native", feature = "inference"))]
+    #[test]
+    fn the_offer_names_the_model_the_command_was_going_to_load() {
+        use super::missing_model_spec;
+        use strata_executor::Command;
+
+        let tokenize = Command::InferenceTokenize {
+            model: "gpt2".to_owned(),
+            text: "hi".to_owned(),
+            add_special: false,
+        };
+        assert_eq!(missing_model_spec(&tokenize).as_deref(), Some("gpt2"));
+
+        let detokenize = Command::InferenceDetokenize {
+            model: "miniLM".to_owned(),
+            ids: vec![1, 2, 3],
+        };
+        assert_eq!(missing_model_spec(&detokenize).as_deref(), Some("miniLM"));
+
+        // A command that loads no model has nothing to offer, and must not
+        // invent one.
+        assert_eq!(missing_model_spec(&Command::InferenceCacheStatus {}), None);
+        assert_eq!(missing_model_spec(&Command::Ping {}), None);
+    }
 }
