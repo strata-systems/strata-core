@@ -49,6 +49,7 @@ pub(super) fn vector_row_commands() -> Vec<Command> {
             collection: "docs".to_owned(),
             key: "doc-a".to_owned(),
             vector: vec![1.0, 0.0],
+            text: None,
             metadata: Some(json!({"kind": "doc"})),
         },
         Command::VectorGet {
@@ -132,6 +133,7 @@ pub(super) fn vector_bulk_commands() -> Vec<Command> {
             space: None,
             collection: "docs".to_owned(),
             query: vec![1.0, 0.0],
+            text: None,
             k: 10,
             filter: Some(VectorMetadataFilter::new(vec![VectorFilterCondition::eq(
                 "kind", "doc",
@@ -210,6 +212,7 @@ pub(super) fn vector_round_trip_edge_commands() -> Vec<Command> {
             collection: "cosine".to_owned(),
             key: "mixed".to_owned(),
             vector: vec![0.0, 1.5, -2.0],
+            text: None,
             metadata: Some(json!({})),
         },
         Command::VectorListKeys {
@@ -245,6 +248,7 @@ pub(super) fn vector_round_trip_edge_commands() -> Vec<Command> {
             space: Some("space-a".to_owned()),
             collection: "cosine".to_owned(),
             query: vec![0.0, 1.5, -2.0],
+            text: None,
             k: 3,
             filter: Some(VectorMetadataFilter::new(vec![VectorFilterCondition::eq(
                 "tag", "doc",

@@ -303,6 +303,7 @@ fn branch_diff_reports_vector_changes() {
             collection: "emb".to_owned(),
             key: "v1".to_owned(),
             vector: vec![0.0, 1.0],
+            text: None,
             metadata: None,
         })
         .expect("upsert v1 on default");
@@ -319,6 +320,7 @@ fn branch_diff_reports_vector_changes() {
             collection: "emb".to_owned(),
             key: "v1".to_owned(),
             vector: vec![9.0, 9.0],
+            text: None,
             metadata: None,
         })
         .expect("change v1 on feature");

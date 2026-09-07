@@ -216,6 +216,7 @@ fn generated_op(rng: &mut SplitMix64) -> (Command, u64) {
                     .map(|_| f64::from(u32::try_from(rng.below(200)).expect("small")) / 10.0)
                     .collect(),
                 metadata: Some(json!({"tag": format!("g{}", rng.below(4))})),
+                text: None,
             },
             1,
         ),
@@ -468,6 +469,7 @@ fn vector_and_graph_sweep() -> Vec<(String, Command)> {
             space: None,
             collection: "vecs".to_owned(),
             query: vec![5.0; 8],
+            text: None,
             k: 4,
             filter: None,
             as_of: None,

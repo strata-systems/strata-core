@@ -78,6 +78,7 @@ impl Executor {
             collection: collection.into(),
             key: key.into(),
             vector: vector.into_iter().map(f64::from).collect(),
+            text: None,
             metadata,
         })
     }
@@ -212,6 +213,7 @@ impl Executor {
             space: None,
             collection: collection.into(),
             query: query.into_iter().map(f64::from).collect(),
+            text: None,
             k,
             filter,
             as_of: None,

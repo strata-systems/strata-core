@@ -204,6 +204,7 @@ fn vector_batch_get_reports_missing_keys_as_misses() {
             collection: "docs".to_owned(),
             key: "present".to_owned(),
             vector: vec![1.0, 0.0],
+            text: None,
             metadata: None,
         })
         .expect("upsert present vector");
@@ -257,6 +258,7 @@ fn vector_batch_exists_reports_present_and_absent_keys() {
             collection: "docs".to_owned(),
             key: "present".to_owned(),
             vector: vec![1.0, 0.0],
+            text: None,
             metadata: None,
         })
         .expect("upsert present vector");
@@ -580,6 +582,7 @@ fn vector_mapping_row_commands() -> Vec<Command> {
             collection: "map".to_owned(),
             key: "map-b".to_owned(),
             vector: vec![0.0, 1.0],
+            text: None,
             metadata: Some(json!({"kind": "doc"})),
         },
         Command::VectorGet {
@@ -652,6 +655,7 @@ fn vector_mapping_bulk_commands() -> Vec<Command> {
             space: None,
             collection: "map".to_owned(),
             query: vec![1.0, 0.0],
+            text: None,
             k: 10,
             filter: None,
             as_of: None,
@@ -755,6 +759,7 @@ fn invalid_input_vector_commands() -> Vec<Command> {
             collection: "docs".to_owned(),
             key: "empty-vector".to_owned(),
             vector: Vec::new(),
+            text: None,
             metadata: None,
         },
         Command::VectorUpsert {
@@ -763,6 +768,7 @@ fn invalid_input_vector_commands() -> Vec<Command> {
             collection: "docs".to_owned(),
             key: "nan-vector".to_owned(),
             vector: vec![f64::NAN, 0.0],
+            text: None,
             metadata: None,
         },
         Command::VectorUpdateMetadata {
@@ -783,6 +789,7 @@ fn invalid_input_vector_commands() -> Vec<Command> {
             space: None,
             collection: "docs".to_owned(),
             query: Vec::new(),
+            text: None,
             k: 10,
             filter: None,
             as_of: None,
@@ -793,6 +800,7 @@ fn invalid_input_vector_commands() -> Vec<Command> {
             space: None,
             collection: "docs".to_owned(),
             query: vec![1.0, 0.0],
+            text: None,
             k: 10,
             filter: Some(VectorMetadataFilter::new(vec![VectorFilterCondition::eq(
                 "nested.path",
@@ -877,6 +885,7 @@ fn closed_handle_vector_commands() -> Vec<Command> {
             collection: "docs".to_owned(),
             key: "doc".to_owned(),
             vector: vec![1.0, 0.0],
+            text: None,
             metadata: None,
         },
         Command::VectorQuery {
@@ -884,6 +893,7 @@ fn closed_handle_vector_commands() -> Vec<Command> {
             space: None,
             collection: "docs".to_owned(),
             query: vec![1.0, 0.0],
+            text: None,
             k: 1,
             filter: None,
             as_of: None,
@@ -1626,6 +1636,7 @@ fn seed_vector_versions(executor: &mut Executor) -> u64 {
             collection: "docs".to_owned(),
             key: "doc-a".to_owned(),
             vector: vec![0.0, 1.0],
+            text: None,
             metadata: Some(json!({"kind": "doc", "rank": 2})),
         })
         .expect("second upsert succeeds");
@@ -1757,6 +1768,7 @@ fn assert_vector_listing_metadata_and_query(executor: &mut Executor) {
             space: None,
             collection: "docs".to_owned(),
             query: vec![1.0, 0.0],
+            text: None,
             k: 10,
             filter: Some(kind_filter("doc")),
             as_of: None,
@@ -1982,6 +1994,7 @@ fn upsert_without_metadata(
             collection: collection.to_owned(),
             key: key.to_owned(),
             vector,
+            text: None,
             metadata: None,
         })
         .expect("upsert without metadata succeeds")
@@ -2005,6 +2018,7 @@ fn upsert_vector(
             collection: collection.to_owned(),
             key: key.to_owned(),
             vector,
+            text: None,
             metadata: Some(metadata),
         })
         .expect("upsert succeeds")
@@ -2030,6 +2044,7 @@ fn upsert_vector_in(
             collection: collection.to_owned(),
             key: key.to_owned(),
             vector,
+            text: None,
             metadata: Some(metadata),
         })
         .expect("upsert succeeds");
@@ -2334,6 +2349,7 @@ fn query_vector_keys_with_options(
             space: space.map(str::to_owned),
             collection: collection.to_owned(),
             query,
+            text: None,
             k,
             filter,
             as_of,
@@ -2475,6 +2491,7 @@ fn vector_scan_returns_ordered_rows_and_paginates_honestly() {
                 collection: "docs".to_owned(),
                 key: format!("doc-{i}"),
                 vector: vec![f64::from(i) + 1.0, 1.0],
+                text: None,
                 metadata: Some(json!({ "n": i })),
             })
             .expect("upsert succeeds");

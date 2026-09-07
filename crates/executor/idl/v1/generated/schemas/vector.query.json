@@ -188,7 +188,8 @@
         "type": "integer"
       },
       "query": {
-        "description": "Query embedding. Accepted at wire (f64) precision and narrowed to the\nsearched f32; a value that underflows or overflows f32 is rejected.",
+        "default": [],
+        "description": "Query embedding. Accepted at wire (f64) precision and narrowed to the\nsearched f32; a value that underflows or overflows f32 is rejected.\n\nEmpty when `text` is supplied instead.",
         "items": {
           "format": "double",
           "type": "number"
@@ -202,6 +203,13 @@
           "null"
         ]
       },
+      "text": {
+        "description": "Text to embed with the collection's recorded model, instead of\nsupplying a query vector (D10).\n\nThis is the half that makes provenance worth recording: the query is\nembedded with the same model the collection was written with, so a\ncaller cannot accidentally compare vectors from two models.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "type": {
         "const": "vector_query",
         "type": "string"
@@ -210,7 +218,6 @@
     "required": [
       "type",
       "collection",
-      "query",
       "k"
     ],
     "type": "object"

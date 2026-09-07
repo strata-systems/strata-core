@@ -97,6 +97,7 @@ fn run_metric(
                 collection: collection.to_owned(),
                 key: format!("v{index}"),
                 vector: vector.clone(),
+                text: None,
                 metadata: None,
             })
             .expect("vector upserts");
@@ -110,6 +111,7 @@ fn run_metric(
                 space: None,
                 collection: collection.to_owned(),
                 query: query.clone(),
+                text: None,
                 k: K as u64,
                 filter: None,
                 as_of: None,

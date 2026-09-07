@@ -380,6 +380,16 @@ const EXECUTOR_ERROR_CODES: &[ErrorCodeRegistryEntry] = &[
         EXECUTOR_SCHEMA,
     ),
     entry(
+        "invalid_argument.executor.vector_input",
+        ErrorClass::InvalidArgument,
+        RetryPolicy::Never,
+        CommitOutcomeStatus::NotStarted,
+        "A vector write or query supplied neither a vector nor a text, or both.",
+        "Pass exactly one: an explicit vector, or a text to embed with the \
+         collection's recorded model.",
+        EXECUTOR_SCHEMA,
+    ),
+    entry(
         "invalid_argument.executor.vector_dimension",
         ErrorClass::InvalidArgument,
         RetryPolicy::Never,

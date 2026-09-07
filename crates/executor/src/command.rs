@@ -961,7 +961,14 @@ pub enum Command {
         key: String,
         /// Dense embedding. Accepted at wire (f64) precision and narrowed to the
         /// stored f32; a value that underflows or overflows f32 is rejected.
+        ///
+        /// Empty when `text` is supplied instead.
+        #[serde(default)]
         vector: Vec<f64>,
+        /// Text to embed with the collection's recorded model, instead of
+        /// supplying a vector (D10). Exactly one of `vector` or `text`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
         /// Optional metadata.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         metadata: Option<Value>,
@@ -1145,7 +1152,18 @@ pub enum Command {
         collection: String,
         /// Query embedding. Accepted at wire (f64) precision and narrowed to the
         /// searched f32; a value that underflows or overflows f32 is rejected.
+        ///
+        /// Empty when `text` is supplied instead.
+        #[serde(default)]
         query: Vec<f64>,
+        /// Text to embed with the collection's recorded model, instead of
+        /// supplying a query vector (D10).
+        ///
+        /// This is the half that makes provenance worth recording: the query is
+        /// embedded with the same model the collection was written with, so a
+        /// caller cannot accidentally compare vectors from two models.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
         /// Maximum number of matches.
         k: u64,
         /// Optional metadata filter.

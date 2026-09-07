@@ -4,14 +4,15 @@ use super::{
     finish_vector_batch_get_results, finish_vector_batch_results, optional_limit,
     optional_vector_key, optional_vector_metadata, presence_exists_failed, presence_exists_item,
     query_embedding, reject_duplicate_vector_keys, require_vector_collection_info, required_usize,
-    update_effect, upsert_effect, usize_to_u64, vector_batch_get_failed, vector_batch_get_item,
-    vector_batch_item_failed, vector_batch_item_result, vector_bulk_delete_output,
-    vector_collection, vector_collection_info, vector_dimension_mismatch_error, vector_embedding,
-    vector_filter, vector_history_result, vector_index_diagnostics, vector_key,
-    vector_key_page_output, vector_match, vector_metadata_patch, vector_upsert_entry,
-    vector_versioned_data, vector_write_output, BatchVectorEntry, EngineEmbeddingModelId,
-    EngineVectorConfig, Executor, ExecutorError, ExecutorResult, Maybe, Output, PageInfo,
-    VectorDistanceMetric, VectorIndexQueryResult, VectorMetadataFilter, DEFAULT_VECTOR_LIST_LIMIT,
+    resolve_vector_or_text, update_effect, upsert_effect, usize_to_u64, vector_batch_get_failed,
+    vector_batch_get_item, vector_batch_item_failed, vector_batch_item_result,
+    vector_bulk_delete_output, vector_collection, vector_collection_info,
+    vector_dimension_mismatch_error, vector_embedding, vector_filter, vector_history_result,
+    vector_index_diagnostics, vector_key, vector_key_page_output, vector_match,
+    vector_metadata_patch, vector_upsert_entry, vector_versioned_data, vector_write_output,
+    BatchVectorEntry, EngineEmbeddingModelId, EngineVectorCollectionName, EngineVectorConfig,
+    Executor, ExecutorError, ExecutorResult, Maybe, Output, PageInfo, VectorDistanceMetric,
+    VectorIndexQueryResult, VectorMetadataFilter, DEFAULT_VECTOR_LIST_LIMIT,
 };
 
 impl Executor {
@@ -135,6 +136,100 @@ impl Executor {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Embeds text with the model the collection was created with (D10).
+    ///
+    /// **This is orchestration in the executor, which is normally forbidden**
+    /// (CLAUDE.md rule 7: engine owns semantics, executor is a thin adapter).
+    /// It is here because engine cannot import inference — hard rules 2 and 3,
+    /// and `strata-engine` has no inference dependency — and the layer that was
+    /// meant to mediate this, intelligence, is deferred with no target release
+    /// (#3171). Recorded as an explicit exception in
+    /// `docs/design/inference-developer-experience.md` (D10).
+    ///
+    /// The embedding happens **before** the write. It can fail — no key, no
+    /// network, model not installed — and when it does, nothing is written.
+    /// The store that follows is the single commit.
+    #[allow(clippy::needless_pass_by_value)]
+    fn embed_with_collection_model(
+        &mut self,
+        branch: Option<&str>,
+        space: Option<&str>,
+        collection: &EngineVectorCollectionName,
+        text: String,
+        input_type: &'static str,
+    ) -> ExecutorResult<Vec<f64>> {
+        let model = {
+            let mut service = self.vector_service(branch, space)?;
+            let info = require_vector_collection_info(&mut service, collection)?;
+            info.config()
+                .embedding_model()
+                .map(|model| model.as_str().to_owned())
+        };
+        let Some(model) = model else {
+            // D9's payoff: without a recorded model there is no way to know
+            // which model to call, and guessing would silently produce vectors
+            // that are not comparable with what is stored.
+            return Err(ExecutorError::invalid_input(
+                "failed_precondition.engine.embedding_model_mismatch",
+                format!(
+                    "vector collection `{}` records no embedding model, so `text` cannot be \
+                     embedded for it. Create a collection with `--embedding-model <model>`, \
+                     or pass a vector directly.",
+                    collection.as_str()
+                ),
+            ));
+        };
+        self.embed_text_with(&model, text, input_type)
+    }
+
+    #[cfg(feature = "inference")]
+    fn embed_text_with(
+        &mut self,
+        model: &str,
+        text: String,
+        input_type: &'static str,
+    ) -> ExecutorResult<Vec<f64>> {
+        use strata_inference::{EmbedInput, EmbeddingsRequest, InputType};
+
+        let request = EmbeddingsRequest {
+            input: EmbedInput::One(text),
+            dimensions: None,
+            normalize: None,
+            // Instruction-tuned embedders produce different vectors for a
+            // stored document and a search query; saying which this is stops
+            // that difference from being silent.
+            input_type: Some(match input_type {
+                "query" => InputType::Query,
+                _ => InputType::Document,
+            }),
+            instruction: None,
+        };
+        let response = self.inference.embeddings(model, &request)?;
+        let item = response.data.into_iter().next().ok_or_else(|| {
+            ExecutorError::invalid_input(
+                "inference.provider_malformed_response",
+                "the embedding provider returned no vector for the text",
+            )
+        })?;
+        Ok(item.embedding.into_iter().map(f64::from).collect())
+    }
+
+    #[cfg(not(feature = "inference"))]
+    #[allow(clippy::unused_self, clippy::needless_pass_by_value)]
+    fn embed_text_with(
+        &mut self,
+        model: &str,
+        text: String,
+        input_type: &'static str,
+    ) -> ExecutorResult<Vec<f64>> {
+        let _ = (model, text, input_type);
+        Err(ExecutorError::invalid_input(
+            "inference.unsupported_operation",
+            "this build has no inference support, so `text` cannot be embedded; \
+             pass a vector directly",
+        ))
+    }
+
     pub(super) fn execute_vector_upsert(
         &mut self,
         branch: Option<&str>,
@@ -142,10 +237,14 @@ impl Executor {
         collection: String,
         key: String,
         vector: Vec<f64>,
+        text: Option<String>,
         metadata: Option<serde_json::Value>,
     ) -> ExecutorResult<Output> {
         let collection = vector_collection(collection)?;
         let key = vector_key(key)?;
+        let vector = resolve_vector_or_text(vector, text, |text| {
+            self.embed_with_collection_model(branch, space, &collection, text, "document")
+        })?;
         let embedding = vector_embedding(vector)?;
         let metadata = optional_vector_metadata(metadata)?;
         let mut service = self.vector_service(branch, space)?;
@@ -394,12 +493,19 @@ impl Executor {
         space: Option<&str>,
         collection: String,
         query: Vec<f64>,
+        text: Option<String>,
         k: u64,
         filter: Option<VectorMetadataFilter>,
         as_of: Option<u64>,
         as_of_time: Option<u64>,
     ) -> ExecutorResult<Output> {
         let collection = vector_collection(collection)?;
+        // A text query is embedded with the collection's own model, so a
+        // caller never has to know which model wrote the collection — and
+        // cannot pick the wrong one.
+        let query = resolve_vector_or_text(query, text, |text| {
+            self.embed_with_collection_model(branch, space, &collection, text, "query")
+        })?;
         let query = query_embedding(query)?;
         let k = required_usize(
             k,

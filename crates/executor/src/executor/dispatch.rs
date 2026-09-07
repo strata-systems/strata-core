@@ -376,6 +376,7 @@ impl Executor {
                 collection,
                 key,
                 vector,
+                text,
                 metadata,
             } => self.execute_vector_upsert(
                 branch.as_deref(),
@@ -383,6 +384,7 @@ impl Executor {
                 collection,
                 key,
                 vector,
+                text,
                 metadata,
             ),
             Command::VectorGet {
@@ -495,6 +497,7 @@ impl Executor {
                 space,
                 collection,
                 query,
+                text,
                 k,
                 filter,
                 as_of,
@@ -504,6 +507,7 @@ impl Executor {
                 space.as_deref(),
                 collection,
                 query,
+                text,
                 k,
                 filter,
                 as_of,

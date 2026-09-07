@@ -929,6 +929,13 @@ pub(crate) enum VectorCommand {
         /// Read vector from a file.
         #[arg(short = 'f', long, conflicts_with = "vector")]
         file: Option<PathBuf>,
+        /// Embed this text with the collection's recorded model instead of
+        /// supplying a vector (D10).
+        ///
+        /// The collection must have been created with `--embedding-model`,
+        /// which is what says which model to call.
+        #[arg(long, conflicts_with_all = ["vector", "file"])]
+        text: Option<String>,
         /// Optional metadata JSON object.
         #[arg(long)]
         metadata: Option<String>,
@@ -1043,6 +1050,13 @@ pub(crate) enum VectorCommand {
         /// Read query vector from a file.
         #[arg(short = 'f', long, conflicts_with = "query")]
         file: Option<PathBuf>,
+        /// Embed this text with the collection's recorded model and search
+        /// with it (D10).
+        ///
+        /// Uses the same model the collection was written with, so the query
+        /// cannot accidentally be compared against another model's vectors.
+        #[arg(long, conflicts_with_all = ["query", "file"])]
+        text: Option<String>,
         /// Maximum number of matches.
         #[arg(short = 'k', long, default_value_t = 10)]
         k: u64,

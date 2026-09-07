@@ -1031,7 +1031,8 @@
         "file": "file",
         "filter": "filter",
         "filter_file": "filter-file",
-        "k": "k"
+        "k": "k",
+        "text": "text"
       }
     },
     "vector sample": {
@@ -1071,7 +1072,8 @@
       "flags": {
         "file": "file",
         "metadata": "metadata",
-        "metadata_file": "metadata-file"
+        "metadata_file": "metadata-file",
+        "text": "text"
       }
     }
   }

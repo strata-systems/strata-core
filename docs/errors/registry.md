@@ -641,6 +641,9 @@ the public registry when adding, renaming, or removing a public error code.
 <a id="invalid_argument.executor.graph_analytics_budget"></a>
 - `invalid_argument.executor.graph_analytics_budget`
 
+<a id="invalid_argument.executor.vector_input"></a>
+- `invalid_argument.executor.vector_input`
+
 <a id="invalid_argument.executor.vector_dimension"></a>
 - `invalid_argument.executor.vector_dimension`
 

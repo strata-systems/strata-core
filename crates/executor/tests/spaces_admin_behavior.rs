@@ -524,6 +524,7 @@ fn populate_rebuilt_primitives_in_space(executor: &mut Executor, space: &str) {
             collection: "docs".to_owned(),
             key: "doc-a".to_owned(),
             vector: vec![1.0, 0.0],
+            text: None,
             metadata: Some(json!({"kind": "doc"})),
         })
         .expect("vector upsert succeeds");

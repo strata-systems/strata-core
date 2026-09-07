@@ -82,6 +82,7 @@ fn upsert(
         collection: collection.to_owned(),
         key: key.to_owned(),
         vector,
+        text: None,
         metadata,
     })
 }

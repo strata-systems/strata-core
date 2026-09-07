@@ -1389,6 +1389,7 @@ fn vector_command(command: VectorCommand, scope: &Scope) -> Result<Command, CliE
             collection,
             key,
             vector,
+            text,
             metadata,
             file,
             metadata_file,
@@ -1397,7 +1398,14 @@ fn vector_command(command: VectorCommand, scope: &Scope) -> Result<Command, CliE
             space: scope.space.clone(),
             collection,
             key,
-            vector: parse_vector_argument(vector.as_deref(), file.as_ref(), "vector")?,
+            // Clap already refuses `--text` alongside a vector or a file, so
+            // an empty vector here means the text form was chosen.
+            vector: if text.is_some() {
+                Vec::new()
+            } else {
+                parse_vector_argument(vector.as_deref(), file.as_ref(), "vector")?
+            },
+            text,
             metadata: parse_optional_json_argument(
                 metadata.as_deref(),
                 metadata_file.as_ref(),
@@ -1494,6 +1502,7 @@ fn vector_command(command: VectorCommand, scope: &Scope) -> Result<Command, CliE
         VectorCommand::Query {
             collection,
             query,
+            text,
             file,
             k,
             filter,
@@ -1505,6 +1514,12 @@ fn vector_command(command: VectorCommand, scope: &Scope) -> Result<Command, CliE
             let command_filter =
                 parse_optional_filter_argument(filter.as_deref(), filter_file.as_ref())?;
             if diagnostics {
+                if text.is_some() {
+                    return Err(CliError::usage(
+                        "`--text` is not supported with `--diagnostics`; \
+                         index diagnostics take an explicit query vector",
+                    ));
+                }
                 Command::VectorIndexQuery {
                     branch: scope.branch.clone(),
                     space: scope.space.clone(),
@@ -1520,7 +1535,12 @@ fn vector_command(command: VectorCommand, scope: &Scope) -> Result<Command, CliE
                     branch: scope.branch.clone(),
                     space: scope.space.clone(),
                     collection,
-                    query: parse_vector_argument(query.as_deref(), file.as_ref(), "query vector")?,
+                    query: if text.is_some() {
+                        Vec::new()
+                    } else {
+                        parse_vector_argument(query.as_deref(), file.as_ref(), "query vector")?
+                    },
+                    text,
                     k,
                     filter: command_filter,
                     as_of,
