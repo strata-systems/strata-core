@@ -1,183 +1,273 @@
 # The database handle model
 
-Status: decision draft (spike complete, decision open) · Gates: #3126, #3127,
-#3128, #3131, #3156, #3180, #3191 and, indirectly, the 24-issue facade and
-naming cluster.
+Status: design (ready for review) · Gates: #3126, #3127, #3128, #3131, #3156,
+#3180, #3191 directly; the 24-issue facade and naming cluster indirectly.
 
-## Why this document exists first
+## Why this document exists before the facade work
 
 `Database` is an exclusive `&mut self` handle. Twenty branches queue on one
 mutex, capability services cannot be held together, readers serialize behind
 writers, and no commit spans two capabilities.
 
-That shape is also the thing the published facade (`crates/stratadb`) will be
-curated *over*. Designing the front door before deciding the handle model means
+That shape is what the published facade (`crates/stratadb`) will be curated
+*over*. Designing the front door before deciding the handle model means
 designing it twice — and the front door is the surface hardest to change once
-it is on crates.io. So this decision is sequenced first, and it is a decision
-rather than an implementation.
+it is on crates.io.
 
-The question that actually needed answering before anything could be planned:
-**is a multi-writer handle a systemic change (2.0) or contained engine work
-(1.2.x)?**
+The question that had to be answered before anything could be planned: **is a
+multi-writer handle a systemic change (2.0) or contained engine work (1.2.x)?**
 
-## Spike result: the constraint is almost entirely incidental
+---
 
-Storage — the layer with the WAL, MVCC rows, and the durable lock, the layer
-that would have made this expensive — **is already shared-reference and already
-designed for concurrent writers.**
+## Part 1 — What the spike found
+
+### Storage is not merely shareable; it is a tuned multi-writer engine
+
+The layer that would have made this expensive is already built. `RuntimeSlot`,
+the thing every runtime holds, is a concurrency structure:
 
 ```rust
-// crates/storage/src/api/runtime/mod.rs
-pub fn commit(&self, batch: &CommitBatch) -> StorageApiResult<CommitSummary>
-pub fn commit_at(&self, batch: &CommitBatch, timestamp: Timestamp) -> …
+pub(super) struct RuntimeSlot<R> {
+    runtime: Arc<ParkingMutex<R>>,
+    /// Off-lock read handles (BS2.4): … so a read never takes the runtime lock.
+    visible: Arc<AtomicU64>,
+    snapshot_registry: Arc<BranchSnapshotRegistry>,
+    /// Write-group join queue (BS5.1): contended durable commits enqueue here
+    /// and are executed in groups by whichever caller holds the runtime lock.
+    commit_groups: CommitGroupQueue,
+    /// Covering-fsync chain (BS5.2): serializes the pipelined groups' off-lock
+    /// syncs so the device flush stays fat.
+    wal_sync: WalSyncChain,
+    /// Commits currently blocked on (or about to take) the runtime lock (BS5.3)
+    /// — measured at 10-18 µs of writer lock-wait PER COMMIT …
+    commit_waiters: Arc<AtomicUsize>,
+}
 ```
 
-This is not `&self` by accident. `execute_commit` documents the concurrency it
-was built for:
+Group commit, a covering-fsync chain, off-lock reads, and *measured* writer
+lock-wait tuning. This is the BS5 write-concurrency workstream, built and
+benchmarked.
+
+Two consequences, both verified by reading the code rather than inferred:
+
+**Reads take no lock at all.** `read_point` → `load_published_snapshot` reads
+an `AtomicU64` with Acquire ordering and an `Arc<BranchSnapshotRegistry>`.
+There is no `.lock()` on the path.
+
+**Writes are `&self` by design.** `StorageRuntime::commit(&self, …)`, and
+`execute_commit` documents why:
 
 > An internally generated base uses the CLAMPING policy: **with concurrent
 > writers**, another commit can advance the monotonic floor between this
 > pre-lock read and the allocator — ordinary interleaving that must not reject
 > the commit.
 
-The exclusivity is imposed one layer up, in the engine adapter, and mostly for
-reasons that have nothing to do with correctness under concurrency.
+### The engine adapter throws that away, mostly for a test hook
 
-### What actually forces `&mut` today
-
-`StoragePersistence` owns exactly this:
+`guard_fault` — the thing that forces `&mut` on every read — **is already
+`&self` in production builds**:
 
 ```rust
-pub(crate) struct StoragePersistence {
-    runtime: StorageRuntime<'static>,          // already &self
-    durable: bool,                             // immutable after open
-    replay_commit_timestamp: Option<Timestamp>,     // artifact import only
-    replay_structural_timestamp: Option<Timestamp>, // import setup only
-    #[cfg(any(test, feature = "testkit"))]
-    faults: FaultSchedule,                     // TEST ONLY
-    #[cfg(any(test, feature = "testkit"))]
-    corruption: CorruptionSchedule,            // TEST ONLY
-}
+#[cfg(not(any(test, feature = "testkit")))]
+#[allow(clippy::unused_self, clippy::unnecessary_wraps)]
+fn guard_fault(&self, _op: FaultOp) -> EngineResult<()> { Ok(()) }
 ```
 
-| Method | Why it takes `&mut self` | Load-bearing? |
-|---|---|---|
-| `read_row` | `self.guard_fault(FaultOp::Read)?` — nothing else | **No.** Test-only hook |
-| `read`, `read_history`, `scan_*` | same, via `read_row` / `guard_fault` | **No.** Test-only hook |
-| `commit` | `guard_fault`, plus `replay_commit_timestamp.take()` | **Narrow.** Test hook + a one-shot import mode |
-| branch ops | mutate the `ControlPlane` catalog | **Yes**, but it is a `BTreeMap` |
-| `close`, `force_creation_durability` | genuine lifecycle transitions | **Yes**, and correctly exclusive |
+Only the test build's variant takes `&mut self`, because `FaultSchedule::take`
+mutates a `Vec`. The method signatures across the whole read path were then
+written to satisfy the *test* build.
+
+So the shipped read path is exclusive to match a testkit signature. Nothing in
+the production build requires it.
+
+`commit` adds exactly one further mutation: `replay_commit_timestamp.take()`,
+a one-shot consume belonging to artifact import — a single-writer mode by
+construction.
+
+`ControlPlane` is an ordinary in-memory catalog (`BTreeMap<BranchName,
+BranchCatalogRecord>`, a default-branch name, a terminal-error latch). A lock
+candidate, not a redesign.
 
 The adapter is already 19 `&self` methods against 11 `&mut self`.
 
-**The entire read path is `&mut` because of a `#[cfg(test)]` fault injector.**
-That is the whole of #3156 — "no `&Database` read path; in-process readers
-serialize on the same `&mut` as writers." The cause is a testkit hook, not any
-requirement of the storage engine.
-
-`ControlPlane` is likewise ordinary:
-
-```rust
-pub(crate) struct ControlPlane {
-    default_branch: BranchName,
-    branches: BTreeMap<BranchName, BranchCatalogRecord>,
-    terminal_error: Option<EngineError>,
-}
-```
-
-An in-memory catalog mutated on branch create/delete. A lock candidate, not a
-redesign.
-
-## The call
+### The call
 
 **Contained engine work. 1.2.x, not 2.0.**
 
-Under the project's version tiers (2.x = new architecture or systemic change;
-1.3 = brand-new feature; 1.2.x = bugs and gaps in existing capabilities), a
-multi-writer handle closes a *gap in a capability the product already claims*.
-Strata already advertises branch-per-agent concurrency; the storage engine
-already implements it. Only the engine's handle types withhold it.
+Under the project's version tiers, this closes a *gap in a capability the
+product already claims*: Strata advertises branch-per-agent concurrency, the
+storage engine implements it and has benchmarks for it, and only the engine's
+handle types withhold it. Nothing here changes the storage substrate, the
+durable format, the commit protocol, or the MVCC model.
 
-Nothing here proposes changing the storage substrate, the durable format, the
-commit protocol, or the MVCC model.
+The honest framing is not "add concurrency." It is **stop hiding the
+concurrency that was already built, measured and tuned.**
 
-## Proposed shape
+---
 
-Three changes, in dependency order. Each is independently shippable and each
-retires issues on its own.
+## Part 2 — The end-to-end design
 
-### 1. Make the read path `&self` — retires #3156
+Five steps. Each is independently shippable and each retires issues on its own.
+The ordering is a dependency order, not a priority order.
 
-Move `FaultSchedule` and `CorruptionSchedule` behind interior mutability. They
-are already `#[cfg(any(test, feature = "testkit"))]`, so this costs the
-production build nothing and changes no public behavior. Then `read`,
-`read_row`, `read_history` and the `scan_*` family become `&self`, and
-`Database` gains a shared read path.
+### Step 1 — The read path becomes `&self`
 
-Smallest change, largest immediate relief: in-process readers stop queueing
-behind writers.
+*Retires #3156. Zero production behaviour change.*
 
-### 2. Make the commit path `&self` — retires #3126, #3191
+Give the test build's `FaultSchedule` and `CorruptionSchedule` interior
+mutability (`RefCell` is sufficient — they are `#[cfg(any(test, feature =
+"testkit"))]` and single-threaded in every current test), so the test variant of
+`guard_fault` can also take `&self`. Then relax to `&self`:
 
-The two replay timestamps are the only non-test mutation. They are consumed by
-artifact import, a mode with a single writer by construction. Interior
-mutability (or moving them into the import driver, which is the more honest
-home for them) makes `commit` `&self`, and `Database` can then hand out several
-capability services at once.
+```
+read, read_row, read_history, scan_prefix, scan_prefix_after_version,
+scan_range, scan_immutable_sources, branch_exists, describe_branch,
+branch_timeline_head, resolve_wall_clock, committed_at_for_versions
+```
 
-With `&self` services, `kv` / `json` / `event` / `graph` can also take
-`&BranchName` / `&ProductSpace` instead of owned values, which is #3191 — a
-per-call clone on a value that never changes for the session.
+**This breaks no caller.** Relaxing `&mut self` to `&self` is a widening: code
+holding `&mut Database` still compiles unchanged. The 527 service-acquisition
+call sites across the workspace are untouched.
 
-**Open question this does not answer:** whether concurrent writers gain
-*throughput* or only ergonomics. Storage admits concurrent commits, but whether
-they proceed in parallel or serialize at the memtable is unmeasured. Ergonomics
-alone justifies the change; a throughput claim must be measured before it is
-made.
+### Step 2 — The commit path becomes `&self`
 
-### 3. Cross-capability atomic commit — #3127 is a different problem
+*Retires the handle half of #3126.*
 
-This one is genuinely harder and should not be folded into the above. It is not
-about the handle: it is about `CommitPlan` carrying mutations from more than one
-capability, and about which layer composes them. A KV write, a JSON document and
-an event append currently produce three commits because each service builds its
-own plan — not because the handle is exclusive.
+The replay timestamps are the only non-test mutation left. Two options:
 
-Recommend: separate design, after 1 and 2 land, informed by whatever the
-handle work reveals about where plans are assembled.
+- **(a)** interior mutability, smallest diff;
+- **(b)** move them into the artifact-import driver, which is their honest home
+  — they exist only for `crate::artifact` and for #3070's multi-branch import
+  ordering.
 
-## What this unblocks
+**Prefer (b)** if it does not disturb #3070's structural-timestamp ordering;
+fall back to (a) if it does. Either way `commit` becomes `&self`, and
+`Database` can hand out several capability services at once.
 
-With the handle model decided — even before it is implemented — the facade work
-(#3137 and its fifteen satellites) and the naming work (eight issues) can be
-designed against a known target: a `Database` that hands out shared services,
-takes borrowed names, and reads without exclusivity.
+Also a widening. No caller breaks.
 
-That is 24 issues that can now be designed once instead of twice.
+### Step 3 — Services borrow their names, and `Database` hands them out shared
+
+*Retires #3191, completes #3126.*
+
+```rust
+// before
+pub fn kv(&mut self, branch: BranchName, space: ProductSpace) -> EngineResult<KvService<'_>>
+// after
+pub fn kv(&self, branch: &BranchName, space: &ProductSpace) -> EngineResult<KvService<'_>>
+```
+
+`KvService<'a>` changes from `&'a mut StoragePersistence` to `&'a`. `ControlPlane`
+goes behind a `RwLock` (branch mutation is rare; reads are frequent).
+
+**This is the breaking step.** Callers passing owned `BranchName`/`ProductSpace`
+must pass references. That is the 527-call-site sweep, and it is why this step
+is separated from 1 and 2 rather than bundled with them.
+
+### Step 4 — Establish and test `Database: Send + Sync`
+
+*Completes #3126's product claim.*
+
+Steps 1–3 make the *borrow checker* permit concurrent use. They do not by
+themselves prove the type is thread-safe. This step adds the `static_assertions`
+bounds, resolves whatever is not `Sync` (the `RwLock` from step 3 and any
+remaining `RefCell` from steps 1–2 will need `parking_lot` equivalents once
+threads are real), and lands a test that actually commits on twenty branches
+from twenty threads.
+
+**This is where the throughput claim gets earned or withdrawn.** Storage has BS5
+group-commit benchmarks; the engine layer has none. No parallel-throughput claim
+should reach the README before this step measures one.
+
+### Step 5 — Cross-capability atomic commit is a separate design
+
+*#3127 is not a handle problem.*
+
+A KV write, a JSON document and an event append produce three commits because
+each service builds its own `CommitPlan`, not because the handle is exclusive.
+Making the handle shared does not make them atomic.
+
+This needs its own design covering how a plan composes mutations from several
+capabilities, which layer owns that composition, and how it interacts with
+per-capability derived state. Recommend: after steps 1–4 land, informed by what
+they reveal about where plans are assembled.
+
+The same is true of **#3128** (library-opened databases hosting IPC), **#3131**
+(mixed put+delete in one commit) and **#3180** (waiting for a prior commit).
+Each is worth re-scoping after step 3, since a shared read path plausibly makes
+#3128 much cheaper.
+
+---
+
+## Part 3 — One PR or several?
+
+**Several. Four, and they are not equal.**
+
+The deciding fact is that steps 1–2 are *widenings* and step 3 is a *breaking
+signature change*. Bundling them would bury roughly forty lines of genuine
+semantic content — the interior-mutability decisions, the replay-timestamp
+relocation — inside a 527-call-site mechanical sweep. Nobody can review that
+honestly, and the repo's own guidance is ≤1,500 LOC of net change per slice.
+
+| PR | Content | Breaking | Size | Retires |
+|---|---|---|---|---|
+| **H1** | Test-build fault/corruption schedules gain interior mutability; read, scan, history and branch-inspection methods relax to `&self` | No | Small | #3156 |
+| **H2** | Replay timestamps relocated (or made interior); `commit` relaxes to `&self` | No | Small | #3126 (handle half) |
+| **H3** | Borrowed `&BranchName`/`&ProductSpace`; `KvService<'a>` holds `&'a`; `ControlPlane` behind a lock; call-site sweep | **Yes** | Large, mostly mechanical | #3191, #3126 |
+| **H4** | `Send + Sync` bounds, `parking_lot` where `RefCell` was, twenty-thread commit test, throughput measurement | No | Medium | #3126 (claim) |
+
+Then separate designs for #3127, #3128, #3131, #3180.
+
+**Why not three PRs** (folding H1 into H2): they touch the same methods but for
+different reasons — H1's is a pure test-harness change with zero production
+delta, H2's is a decision about where import state lives. Keeping them apart
+means H1 can land immediately and uncontroversially while H2's relocation
+question is still being argued.
+
+**Why not five** (splitting H3's sweep from its signature change): the sweep
+*is* the signature change. Splitting them leaves the tree uncompilable in
+between.
+
+### Suggested review posture
+
+- **H1** — mechanical, safe, land it fast. Reviewer question: does any test
+  actually need `&mut` on the schedules across threads?
+- **H2** — the one real design decision. Reviewer question: does moving the
+  replay timestamps disturb #3070's multi-branch import ordering?
+- **H3** — large but boring. Reviewer question: is the call-site diff uniform,
+  and does the mutation gate still have coverage on the touched glue?
+- **H4** — the claim-earning PR. Reviewer question: does the benchmark show
+  parallelism, or only ergonomics? Say whichever is true.
+
+---
 
 ## Open questions for the decision
 
-1. **Interior mutability or restructure?** A `Cell`/`RefCell` around the replay
-   timestamps is the smallest diff; moving them into the import driver is the
-   cleaner model. The latter is preferred if it does not disturb #3070's
-   multi-branch import ordering.
-2. **Does `&self` commit buy parallelism?** Unmeasured. Needs a benchmark before
-   any throughput claim reaches the README.
-3. **Does `ControlPlane` want a `RwLock` or a redesign?** Branch mutation is
-   rare and reads are frequent; a `RwLock` is probably right, but the
-   `terminal_error` field is a latch that may want different treatment.
-4. **Does IPC hosting (#3128) fall out of this?** A library-opened database that
-   can be read through `&self` is much closer to being able to host a read-only
-   IPC surface. Worth checking whether #3128 becomes cheap once 1 lands.
+1. **Interior mutability or relocation for the replay timestamps?** (H2's
+   central question, above.)
+2. **Does `&self` commit buy throughput or only ergonomics?** Storage has BS5
+   group-commit benchmarks; the engine layer has none. H4 answers it; until
+   then, no claim.
+3. **Does `ControlPlane`'s `terminal_error` latch want the same lock as the
+   branch catalog?** It is a one-way health latch, read on every call — arguably
+   an `AtomicBool` plus a separately-locked error payload.
+4. **Does #3128 become cheap after H1?** A library-opened database that can be
+   read through `&self` is much closer to hosting a read-only IPC surface.
 
 ## Evidence
 
-All findings above were read from `main` at `acff6cb4` (v1.2.1):
+Read from `main` at `acff6cb4` (v1.2.1):
 
+- `crates/storage/src/api/runtime/background.rs` — `RuntimeSlot` fields:
+  group commit, covering-fsync chain, off-lock read handles, lock-wait counter
 - `crates/storage/src/api/runtime/mod.rs` — `commit`/`commit_at` are `&self`;
-  `execute_commit`'s clamping-policy comment documents concurrent writers
-- `crates/engine/src/persistence/adapter.rs` — `StoragePersistence` fields;
-  `commit` and `read_row` bodies; 19 `&self` vs 11 `&mut self`
+  `execute_commit`'s clamping-policy comment; `read_point` →
+  `load_published_snapshot` takes no lock
+- `crates/engine/src/persistence/adapter.rs` — `StoragePersistence` fields; the
+  two `guard_fault` variants; `commit` and `read_row` bodies; 19 `&self` vs
+  11 `&mut self`
+- `crates/engine/src/persistence/fault.rs` — `FaultSchedule` is a `Vec`
 - `crates/engine/src/control/bootstrap.rs` — `ControlPlane` fields
-- `crates/engine/src/data/kv/service.rs` — `KvService<'a>` holds
-  `&'a mut StoragePersistence` and `&'a mut ControlPlane`
+- `crates/engine/src/data/kv/service.rs` — `KvService<'a>` holds two `&'a mut`
+- 527 service-acquisition call sites workspace-wide (`grep` for `.kv(` / `.json(`
+  / `.event(` / `.graph(` / `.vector(`)
