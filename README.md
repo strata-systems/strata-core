@@ -131,10 +131,11 @@ strata inference generate <model> "summarize this changelog"
 
 ## Use it as a library
 
-The same engine, embedded in your Rust process:
+The same engine, embedded in your Rust process. The crate is not on crates.io
+yet (see [Status](#status)) — depend on it by path:
 
 ```rust
-use stratadb::{BranchName, CacheOpenOptions, Database, KvKey, KvValue, ProductSpace};
+use stratadb::prelude::*;
 
 let mut db = Database::open_cache(CacheOpenOptions::new())?.into_database();
 let mut kv = db.kv(
@@ -147,6 +148,11 @@ assert!(kv.get(&KvKey::new("greeting")?)?.is_some());
 ```
 
 Durable databases open the same way with `Database::open_local(path, DurableLocalOpenOptions::new())`. The browser build (`crates/wasm`) exposes the **cache-mode** engine to JavaScript via WebAssembly. Cache mode is volatile by design — no WAL, no manifest, no checkpoints — so a browser database lives only as long as the page.
+
+The prelude carries what a first program needs. Beyond it, the crate root holds
+`Database`, the open options, and the error types, and every other type is
+namespaced by the capability it belongs to — `stratadb::json`, `stratadb::event`,
+`stratadb::vector`, `stratadb::graph`, `stratadb::branch`, `stratadb::artifact`.
 
 ## Install
 
@@ -180,7 +186,17 @@ Deeper internals live in [`docs/architecture/`](docs/architecture/).
 
 ## Status
 
-Strata 1.2.0 is released. The install script, Homebrew tap, and hosted docs are live, and the Python SDK ships on PyPI; a Node/TypeScript SDK is next. The on-disk format, error codes, and CLI surface documented here are stable contracts.
+Strata 1.2.1 is released. The on-disk format, error codes, and CLI surface documented here are stable contracts. The four distributions are not on one release train:
+
+| Surface | How you get it | Where it is |
+|---|---|---|
+| CLI (`strata`) | `curl … \| sh`, `brew install stratalab/tap/strata` | 1.2.1, released |
+| Python (`stratadb`) | `pip install stratadb` | on PyPI, its own train |
+| Rust (`stratadb`) | path dependency on this repo | **not on crates.io** — every crate is `publish = false` |
+| Node / TypeScript | — | not shipped |
+
+`cargo add stratadb` does not work yet; the crates.io name is reserved for the
+release train that flips `publish`.
 
 ## License
 

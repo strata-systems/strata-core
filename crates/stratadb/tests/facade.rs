@@ -1,6 +1,7 @@
 //! The facade exposes the engine's D4 surface: open, write, read, branch.
 
-use stratadb::{BranchName, CacheOpenOptions, Database, KvKey, KvValue, ProductSpace};
+use stratadb::kv::{KvKey, KvValue};
+use stratadb::{BranchName, CacheOpenOptions, Database, ProductSpace};
 
 #[test]
 fn facade_round_trips_cache_and_durable() {
@@ -41,12 +42,14 @@ fn round_trip(db: &mut Database) {
 /// its argument types, this stops compiling or passing.
 #[test]
 fn facade_exposes_all_six_data_services() {
-    use stratadb::{
-        BranchName, CacheOpenOptions, Database, EventPayload, EventType, GraphName, GraphNodeData,
-        GraphNodeId, GraphProperties, JsonDocumentId, JsonPath, JsonValue, KvKey, KvValue,
-        ProductSpace, VectorCollectionName, VectorConfig, VectorDistanceMetric, VectorEmbedding,
-        VectorKey,
+    use stratadb::event::{EventPayload, EventType};
+    use stratadb::graph::{GraphName, GraphNodeData, GraphNodeId, GraphProperties};
+    use stratadb::json::{JsonDocumentId, JsonPath, JsonValue};
+    use stratadb::kv::{KvKey, KvValue};
+    use stratadb::vector::{
+        VectorCollectionName, VectorConfig, VectorDistanceMetric, VectorEmbedding, VectorKey,
     };
+    use stratadb::{BranchName, CacheOpenOptions, Database, ProductSpace};
 
     let mut db = Database::open_cache(CacheOpenOptions::new())
         .expect("cache open")
