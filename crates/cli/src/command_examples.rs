@@ -32,6 +32,12 @@ use crate::options::Format;
 /// variant field missing here would leak into the stored output and break the
 /// cross-machine replay guard on CI (the backstop that catches an omission).
 const VOLATILE_FIELDS: &[&str] = &[
+    // D11: `inference status` reports the caller's own model directory and how
+    // many models they happen to have. Capturing those bakes the recording
+    // machine into a committed file — the example passed locally and failed in
+    // CI, where the path and the count are both different.
+    "models_dir",
+    "models_downloaded",
     "version",
     "timestamp",
     "document_version",
