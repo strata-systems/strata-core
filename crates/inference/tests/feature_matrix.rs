@@ -66,7 +66,7 @@ fn local_single_embedding_requires_local_feature_before_cloud_policy() {
     // old sentence did not. Asserting the actionable content rather than the
     // sentence keeps this from pinning prose (CLAUDE.md rule 29).
     assert!(
-        err.to_string().contains("--features inference-local"),
-        "the refusal must name the build that fixes it: {err}"
+        err.to_string().contains("strata inference install-local"),
+        "the refusal must name the command that adds local execution: {err}"
     );
 }

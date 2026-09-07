@@ -2235,6 +2235,8 @@ pub(crate) enum InferenceCommand {
     CacheStatus,
     /// Show what this build can do: providers, keys, and on-disk models.
     Status,
+    /// Add local model execution to this installation.
+    InstallLocal,
 }
 
 /// Inference model management arguments.
@@ -2384,6 +2386,7 @@ mod tests {
         "inference detokenize",
         "inference embed",
         "inference generate",
+        "inference install-local",
         "inference models list",
         "inference models local",
         "inference models pull",

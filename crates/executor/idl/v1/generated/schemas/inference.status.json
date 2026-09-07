@@ -7,6 +7,13 @@
           "description": "Whether this binary can execute local models.",
           "type": "boolean"
         },
+        "local_remedy": {
+          "description": "What to do when local execution is needed and absent. `None` when this\nbuild already has it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "model_download": {
           "description": "Whether this binary can download model artifacts.",
           "type": "boolean"
@@ -95,6 +102,10 @@
             "null"
           ]
         },
+        "model_prefix": {
+          "description": "The model-spec prefix that selects this provider, e.g. `\"openai:\"`.\n\nA caller that finds a ready provider can use this directly: prefix any\nmodel name with it. That is the actionable form for a coding agent,\nwhich reads this over the human table.",
+          "type": "string"
+        },
         "provider": {
           "$ref": "#/$defs/ProviderKind",
           "description": "Which provider this row describes."
@@ -113,7 +124,8 @@
         "feature_enabled",
         "requires_api_key",
         "key_present",
-        "ready"
+        "ready",
+        "model_prefix"
       ],
       "type": "object"
     }

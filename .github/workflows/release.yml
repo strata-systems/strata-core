@@ -40,12 +40,41 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # The lean default: cloud providers only, ~12 MB.
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
+            variant: default
+            suffix: ""
+            features: ""
           - target: aarch64-unknown-linux-gnu
             runner: ubuntu-24.04-arm
+            variant: default
+            suffix: ""
+            features: ""
           - target: aarch64-apple-darwin
             runner: macos-14
+            variant: default
+            suffix: ""
+            features: ""
+          # D2: the build `strata inference install-local` swaps in. Same
+          # version, plus vendored llama.cpp for local GGUF execution. It is on
+          # the release critical path on purpose: a release that cannot produce
+          # the asset `install-local` promises is not ready to ship.
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            variant: local
+            suffix: "-local"
+            features: "--features inference-local"
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            variant: local
+            suffix: "-local"
+            features: "--features inference-local"
+          - target: aarch64-apple-darwin
+            runner: macos-14
+            variant: local
+            suffix: "-local"
+            features: "--features inference-local"
 
     steps:
       - uses: actions/checkout@v4
@@ -54,17 +83,42 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.94.1
         with:
           targets: ${{ matrix.target }}
+      # llama.cpp is built by cmake from the vendored source; only the local
+      # variant needs it.
+      - name: Install cmake (local variant)
+        if: matrix.variant == 'local'
+        run: |
+          if command -v cmake >/dev/null 2>&1; then
+            cmake --version
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            brew install cmake
+          else
+            sudo apt-get update && sudo apt-get install -y cmake
+          fi
       - name: Build release binary
-        run: cargo build --release --locked -p strata-cli --target ${{ matrix.target }}
+        run: cargo build --release --locked -p strata-cli --target ${{ matrix.target }} ${{ matrix.features }}
       - name: Smoke-test the binary
         run: |
           BIN=target/${{ matrix.target }}/release/strata
           "$BIN" --version
           "$BIN" --cache ping
+      - name: Confirm the variant is what it claims
+        run: |
+          BIN=target/${{ matrix.target }}/release/strata
+          # `local_execution` is the field `install-local` and `status` act on;
+          # shipping a "-local" asset that reports false would be the exact
+          # class of defect #3124 was about.
+          "$BIN" --cache inference status --json > status.json
+          cat status.json
+          if [ "${{ matrix.variant }}" = "local" ]; then
+            grep -q '"local_execution":true' status.json
+          else
+            grep -q '"local_execution":false' status.json
+          fi
       - name: Upload strata binary
         uses: actions/upload-artifact@v4
         with:
-          name: strata-${{ matrix.target }}
+          name: strata-${{ matrix.target }}${{ matrix.suffix }}
           path: target/${{ matrix.target }}/release/strata
 
   # ---------------------------------------------------------------------------
@@ -116,6 +170,7 @@ jobs:
           - x86_64-unknown-linux-gnu
           - aarch64-unknown-linux-gnu
           - aarch64-apple-darwin
+        suffix: ["", "-local"]
 
     steps:
       - uses: actions/checkout@v4
@@ -130,21 +185,21 @@ jobs:
       - name: Download strata binary
         uses: actions/download-artifact@v4
         with:
-          name: strata-${{ matrix.target }}
+          name: strata-${{ matrix.target }}${{ matrix.suffix }}
           path: staging
 
       - name: Package
         run: |
           chmod +x staging/strata
           cp README.md staging/
-          ARCHIVE_NAME="strata-v${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz"
+          ARCHIVE_NAME="strata-v${{ steps.version.outputs.version }}-${{ matrix.target }}${{ matrix.suffix }}.tar.gz"
           tar czf "${ARCHIVE_NAME}" -C staging strata README.md
           echo "ARCHIVE_NAME=${ARCHIVE_NAME}" >> "$GITHUB_ENV"
 
       - name: Upload packaged artifact
         uses: actions/upload-artifact@v4
         with:
-          name: package-${{ matrix.target }}
+          name: package-${{ matrix.target }}${{ matrix.suffix }}
           path: ${{ env.ARCHIVE_NAME }}
 
   # ---------------------------------------------------------------------------

@@ -653,6 +653,10 @@
         "top_p": "top-p"
       }
     },
+    "inference install-local": {
+      "positionals": [],
+      "flags": {}
+    },
     "inference models list": {
       "positionals": [],
       "flags": {}

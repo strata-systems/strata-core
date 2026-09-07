@@ -178,6 +178,22 @@ fn execute(cli: Cli) -> Result<i32, CliError> {
             render_value(&value, format)?;
             return Ok(0);
         }
+        #[cfg(feature = "inference")]
+        if let options::TopCommand::Inference(ref args) = command {
+            // A host command like `update`: it replaces the binary and takes no
+            // database target, so it must not reach the connection below.
+            if matches!(args.command, options::InferenceCommand::InstallLocal) {
+                if update::rejects_db_target(cli.db.is_some(), cli.db_path.is_some(), cli.cache) {
+                    return Err(CliError::usage(
+                        "`inference install-local` changes the Strata binary; \
+                         it does not take a database target",
+                    ));
+                }
+                let value = update::run_install_local()?;
+                render_value(&value, format)?;
+                return Ok(0);
+            }
+        }
         if let options::TopCommand::Update(ref args) = command {
             // A host command: it replaces the binary, not a database target.
             if update::rejects_db_target(cli.db.is_some(), cli.db_path.is_some(), cli.cache) {
@@ -2194,6 +2210,14 @@ fn inference_command(command: options::InferenceCommand) -> Result<Command, CliE
         Inf::Unload { model } => Command::InferenceUnload { model },
         Inf::CacheStatus => Command::InferenceCacheStatus {},
         Inf::Status => Command::InferenceStatus {},
+        // Handled before the connection is opened: it replaces the binary
+        // rather than executing against a database, so it has no wire command.
+        Inf::InstallLocal => {
+            return Err(CliError::usage(
+                "`inference install-local` is a host command and is handled \
+                 before dispatch; reaching here is a routing bug",
+            ))
+        }
     })
 }
 

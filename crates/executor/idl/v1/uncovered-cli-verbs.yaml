@@ -13,7 +13,10 @@
 #     only), update (#3038 — replaces the installation binary in place),
 #     agents {guide,commands,errors,init,skill}, changelog (#3094 — prints the
 #     binary's own embedded changelog, offline and with no database),
-#     mcp serve, config
+#     mcp serve, inference install-local (D2 — replaces the installation
+#     binary with the same version's local-capable build, exactly as `update`
+#     replaces it with a newer one; it takes no database and never reaches the
+#     executor), config
 #     {path,set,unset,show} (config get/get-key ARE wire commands and are
 #     covered), command {run,print} (the generic escape hatch itself).
 #   - broker-owner lifecycle wrappers: start blocks hosting a socket until
@@ -39,6 +42,7 @@ uncovered:
   - config unset
   - doctor
   - event by-type
+  - inference install-local
   - init
   - mcp serve
   - start
