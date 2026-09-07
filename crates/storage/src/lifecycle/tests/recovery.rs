@@ -2658,7 +2658,7 @@ fn recovery_checkpoint_multi_branch_rows_round_trip() {
 // configuration, so the rows stay in the WAL and a full replay recovers every branch cleanly even
 // after the manifest is dropped. The per-branch fix that lifts the guard (a durable per-branch
 // flushed-branch set + per-branch recovery, re-enabling the checkpoint) is tracked in
-// docs/architecture/implementation-plans/storage-testing/multi-branch-orphaned-delta-recovery-gap.md.
+// docs/architecture/archive/implementation-plans/storage-testing/multi-branch-orphaned-delta-recovery-gap.md.
 #[allow(
     clippy::too_many_lines,
     reason = "multi-branch durability scenario: two branches flushed, checkpoint defers, crash, reopen-and-verify"

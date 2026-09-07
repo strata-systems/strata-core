@@ -16,7 +16,7 @@ use std::fs;
 #[test]
 fn lifecycle_hardening_closeout_lists_final_plan_documents() {
     let root = common::crate_root();
-    let plans_root = root.join("../../docs/architecture/implementation-plans");
+    let plans_root = root.join("../../docs/architecture/archive/implementation-plans");
     let final_phase_markers = [
         "Branch Lifecycle Completeness",
         "Commit Hardening And Pre-L9 Readiness",
@@ -103,7 +103,7 @@ fn lifecycle_hardening_closeout_fuzz_targets_are_distinct() {
 #[test]
 fn lifecycle_hardening_closeout_sensitivity_ledger_has_mutation_rows() {
     let root = common::crate_root();
-    let plans_root = root.join("../../docs/architecture/implementation-plans");
+    let plans_root = root.join("../../docs/architecture/archive/implementation-plans");
     let porting_log_path = find_doc_file_by_suffix_and_contents(
         &plans_root,
         "porting-log.md",

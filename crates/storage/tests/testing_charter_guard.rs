@@ -20,7 +20,7 @@ const CHARTER_DOCUMENTS: &[&str] = &[
     "docs/architecture/v1-storage-testing-taxonomy-and-gaps.md",
     "docs/architecture/v1-storage-testing-gold-standard-delta.md",
     "docs/architecture/v1-test-coverage-program.md",
-    "docs/architecture/implementation-plans/storage-testing/README.md",
+    "docs/architecture/archive/implementation-plans/storage-testing/README.md",
 ];
 
 /// Anchors that legitimately reference artifacts that do not exist yet (or
