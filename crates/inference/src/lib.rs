@@ -66,7 +66,7 @@ mod provider;
 ))]
 mod generate;
 
-pub use error::{InferenceError, InferenceErrorClass};
+pub use error::{InferenceError, InferenceErrorClass, ProviderFailure};
 pub use registry::{ModelInfo, ModelRegistry, ModelTask};
 pub use runtime::{
     EmbedRequest, EmbedResponse, EmbedRuntimeOutcome, InferenceCapability, InferenceRuntime,
@@ -499,10 +499,16 @@ pub fn load(model_spec: &str) -> Result<Box<dyn InferenceEngine>, InferenceError
             }
             let env_var = api_key_env_var(cloud_provider);
             let api_key = std::env::var(env_var).map_err(|_| {
-                InferenceError::Provider(format!(
-                    "{} not set (required for {}:{})",
-                    env_var, cloud_provider, model
-                ))
+                // D6: a configuration problem, not a provider outage — and
+                // saying so must not depend on the words "not set".
+                InferenceError::ProviderFailed {
+                    kind: ProviderFailure::MissingApiKey,
+                    message: format!(
+                        "no API key for {cloud_provider} (model {model}): set one \
+                         with `strata config set {cloud_provider}.api_key <key>`, or \
+                         export {env_var}"
+                    ),
+                }
             })?;
             Ok(Box::new(GenerationEngine::cloud(
                 cloud_provider,
@@ -571,10 +577,16 @@ pub fn load_embedder(
                 None => {
                     let env_var = api_key_env_var(cloud_provider);
                     std::env::var(env_var).map_err(|_| {
-                        InferenceError::Provider(format!(
-                            "{} not set (required for {}:{})",
-                            env_var, cloud_provider, model
-                        ))
+                        // D6: a configuration problem, not a provider outage — and
+                        // saying so must not depend on the words "not set".
+                        InferenceError::ProviderFailed {
+                            kind: ProviderFailure::MissingApiKey,
+                            message: format!(
+                                "no API key for {cloud_provider} (model {model}): set one \
+                                 with `strata config set {cloud_provider}.api_key <key>`, or \
+                                 export {env_var}"
+                            ),
+                        }
                     })?
                 }
             };

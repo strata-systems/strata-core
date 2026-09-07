@@ -25,6 +25,7 @@ use crate::{
 
 #[cfg(any(feature = "openai", feature = "google"))]
 use crate::embedding_provider_feature_enabled;
+use crate::error::ProviderFailure;
 
 #[cfg(any(feature = "openai", feature = "google"))]
 use crate::InferenceEngine;
@@ -1106,9 +1107,12 @@ fn api_key(provider: ProviderKind) -> Result<String, InferenceError> {
     }
     let env_var = api_key_env_var(provider);
     std::env::var(env_var).map_err(|_| {
-        // Keep the phrase "API key" + "not set" so the error classifies as
-        // `inference.missing_api_key`. Name the exact variable, where to get a
-        // key, and both ways to set it — Strata is embedded and ships no keys.
+        // D6: this used to carry a comment telling future editors to keep the
+        // words "API key" and "not set" in the message, because that is what
+        // made it classify as `inference.missing_api_key`. The constraint is
+        // gone: the kind is carried explicitly, so this text can say whatever
+        // serves the reader. That comment was the clearest evidence #3216 is
+        // worth fixing — the classification was a property of the prose.
         let provider_name = provider.to_string();
         let message = match crate::provider_key_info(&provider_name) {
             Some(info) => format!(
@@ -1120,7 +1124,10 @@ fn api_key(provider: ProviderKind) -> Result<String, InferenceError> {
             ),
             None => format!("{env_var} is not set: the {provider} API key is missing."),
         };
-        InferenceError::Provider(message)
+        InferenceError::ProviderFailed {
+            kind: ProviderFailure::MissingApiKey,
+            message,
+        }
     })
 }
 

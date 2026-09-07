@@ -9,7 +9,7 @@ use crate::wire::{
     ChatChoice, ChatMessage, ChatRequest, ChatResponse, FinishReason, FunctionDef, NamedToolChoice,
     ResponseFormat, Role, Tool, ToolCall, ToolCallFunction, ToolChoice, ToolChoiceMode, Usage,
 };
-use crate::{GenerateRequest, GenerateResponse, InferenceError, StopReason};
+use crate::{GenerateRequest, GenerateResponse, InferenceError, ProviderFailure, StopReason};
 
 const API_URL: &str = "https://api.anthropic.com/v1/messages";
 const API_VERSION: &str = "2023-06-01";
@@ -642,9 +642,23 @@ fn map_http_error(provider: &str, err: ureq::Error) -> InferenceError {
                 503 => "service unavailable",
                 _ => "HTTP error",
             };
-            InferenceError::Provider(format!("{provider}: {description} (HTTP {code})"))
+            // D6: the status IS the classification. Describing it in prose and
+            // matching the prose back is how "invalid API key" became
+            // indistinguishable from an outage.
+            InferenceError::ProviderFailed {
+                kind: ProviderFailure::from_http_status(code),
+                message: format!("{provider}: {description} (HTTP {code})"),
+            }
         }
-        _ => InferenceError::Provider(format!("{provider}: {err}")),
+        // The transport already told us it timed out.
+        ureq::Error::Timeout(_) => InferenceError::ProviderFailed {
+            kind: ProviderFailure::Timeout,
+            message: format!("{provider}: {err}"),
+        },
+        _ => InferenceError::ProviderFailed {
+            kind: ProviderFailure::Unavailable,
+            message: format!("{provider}: {err}"),
+        },
     }
 }
 

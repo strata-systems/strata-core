@@ -7,7 +7,7 @@
 //! Anthropic does not offer an embedding API — attempting to construct a
 //! `CloudEmbeddingEngine` with `ProviderKind::Anthropic` returns `NotSupported`.
 
-use crate::{embedding_provider_feature_enabled, InferenceError, ProviderKind};
+use crate::{embedding_provider_feature_enabled, InferenceError, ProviderFailure, ProviderKind};
 
 /// Embedding engine backed by a cloud provider (OpenAI or Google).
 ///
@@ -299,9 +299,23 @@ fn map_http_error(provider: &str, err: ureq::Error) -> InferenceError {
                 503 => "service unavailable",
                 _ => "HTTP error",
             };
-            InferenceError::Provider(format!("{provider}: {description} (HTTP {code})"))
+            // D6: the status IS the classification. Describing it in prose and
+            // matching the prose back is how "invalid API key" became
+            // indistinguishable from an outage.
+            InferenceError::ProviderFailed {
+                kind: ProviderFailure::from_http_status(code),
+                message: format!("{provider}: {description} (HTTP {code})"),
+            }
         }
-        _ => InferenceError::Provider(format!("{provider}: {err}")),
+        // The transport already told us it timed out.
+        ureq::Error::Timeout(_) => InferenceError::ProviderFailed {
+            kind: ProviderFailure::Timeout,
+            message: format!("{provider}: {err}"),
+        },
+        _ => InferenceError::ProviderFailed {
+            kind: ProviderFailure::Unavailable,
+            message: format!("{provider}: {err}"),
+        },
     }
 }
 
