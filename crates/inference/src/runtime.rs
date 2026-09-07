@@ -1190,10 +1190,17 @@ fn remove_matching<T>(map: &mut HashMap<String, T>, model_spec: Option<&str>) ->
 /// callers of this surface are mostly coding agents, which have no Rust
 /// toolchain and cannot answer a build prompt. A remediation an agent cannot
 /// execute is the same dead end as no remediation at all.
+///
+/// It also states that **a bare model name means a local model**, because
+/// without that the advice to "use a cloud model" is unactionable: the reader
+/// has just named a model and is being told to name one, with no way to see
+/// what should change. `miniLM` and `local:miniLM` are the same spec; the
+/// prefix is the whole difference.
 pub const LOCAL_UNAVAILABLE_REMEDY: &str =
-    "this build runs cloud models only. Add local execution with `strata \
-     inference install-local`, or prefix the model with `openai:`, `google:`, \
-     or `anthropic:`.";
+    "this build runs cloud models only, and a bare model name means a local \
+     model. Either name a cloud model instead — `openai:<model>`, \
+     `google:<model>` or `anthropic:<model>` — or run `strata inference \
+     install-local` to add local execution.";
 
 /// Where a provider's key came from, given which variable it reads and whether
 /// that variable holds anything.

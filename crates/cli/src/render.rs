@@ -460,8 +460,10 @@ fn print_inference_models(data: &Value, out: &mut String) {
         line!(
             out,
             "\n{unavailable} model(s) unavailable: this build cannot run local \
-             models. Add them with `strata inference install-local`, or use a \
-             cloud model (`openai:`, `google:`, `anthropic:`)."
+             models -- a bare name like these means a local model. Add local \
+             execution with `strata inference install-local`, or name a cloud \
+             model instead (`openai:<model>`, `google:<model>`, \
+             `anthropic:<model>`)."
         );
     }
 }
