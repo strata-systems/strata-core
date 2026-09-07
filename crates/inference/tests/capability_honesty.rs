@@ -27,7 +27,16 @@ fn runtime() -> InferenceRuntime {
 #[test]
 fn capability_never_claims_more_than_the_build_can_do() {
     let runtime = runtime();
-    for spec in ["miniLM", "gpt2", "tinyllama", "nomic-embed"] {
+    // One model per task, so every `can_*` has a case where the model itself
+    // supports the operation — otherwise the feature check is the only thing
+    // making the flag false and the rest of the expression is unobservable.
+    for spec in [
+        "miniLM",                // embed
+        "gpt2",                  // generate
+        "tinyllama",             // generate
+        "nomic-embed",           // embed
+        "jina-reranker-v1-tiny", // rank
+    ] {
         let Ok(capability) = runtime.capability(spec) else {
             continue; // not in this build's catalog; nothing claimed, nothing to check
         };
@@ -229,4 +238,21 @@ fn a_reported_key_source_is_a_variable_name() {
             );
         }
     }
+}
+
+/// A rank model is the case that distinguishes `can_rank`'s feature check from
+/// the model's own ability: every other catalogued model has `rank: false`
+/// anyway, so only this one can show the flag following the build.
+#[test]
+fn a_rank_model_claims_ranking_only_when_the_build_can_rank() {
+    let capability = runtime()
+        .capability("jina-reranker-v1-tiny")
+        .expect("the reranker is catalogued");
+
+    assert_eq!(capability.can_rank, LOCAL_BUILT_IN);
+    assert_eq!(capability.can_tokenize, LOCAL_BUILT_IN);
+    assert!(
+        !capability.can_embed,
+        "a reranker is not an embedding model, whatever the build"
+    );
 }
