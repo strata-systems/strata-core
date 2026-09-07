@@ -18,11 +18,14 @@ core
   → inference
 ```
 
-> **`intelligence` is NOT in this stack.** There is no `crates/intelligence` and
-> there never was one in the V1 line — the layer was designed, scheduled as
-> roadmap M8, and never built. It is described below and in
-> `intelligence-architecture.md` as a design, not as shipped code (#3136,
-> #3166, #3171). Anything that reads like a rule about it is aspirational.
+> **`intelligence` is NOT in this stack — milestone M8 is DEFERRED** (decided
+> 2026-09-07, #3171). There is no `crates/intelligence` and there never was one
+> in the V1 line. The layer was designed, scheduled as M8, and deferred with no
+> target release; the design is retained in `intelligence-architecture.md` as
+> the starting point if it is ever built (#3136, #3166).
+>
+> Anything below that reads like a rule about it describes that deferred design,
+> not code you can call. Do not write against it.
 
 - **core** — smallest shared atoms (`BranchId`, `CommitVersion`, timestamp, type-local validation errors). No `Value`, no `EntityRef`, no storage transaction IDs.
 - **storage** — generic persistence mechanics, L1-L9 layered. Knows nothing about KV/JSON/event/vector/graph semantics.
@@ -227,6 +230,10 @@ Benchmark suites and threshold policy will be re-baselined in M9F/M10D. The old 
 ## Out Of V1 Scope
 
 - **Strata Foundry** (SwiftUI macOS app) — on ice during V1. The FFI bridge will be revisited post-V1 once engine APIs stabilize. Do not couple V1 implementation slices to Foundry.
+- **Intelligence layer (roadmap M8) — deferred 2026-09-07 (#3171).** Autoembedding,
+  query expansion, reranking, RAG and generation orchestration. Designed, never
+  built, no `crates/intelligence`, no target release. Design retained in
+  `intelligence-architecture.md`.
 - Network server mode.
 - Cross-machine sync / fleet management. StrataHub V1 substrate is metadata-only; sync is post-V1.
 - Migration of pre-V1 development databases.

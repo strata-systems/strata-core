@@ -4,10 +4,11 @@
 > `crates/intelligence`. `QueryExpander`, `ResultReranker` and `RagGenerator`
 > appear nowhere in `crates/`. Nothing in this document ships in 1.2.x.
 >
-> It is kept because the design is considered sound and is the starting point
-> if the layer is ever built — but it must not be read as a description of the
-> product, and code must not be written against the traits it names. Roadmap
-> milestone M8 covered this work and has no public verdict yet (#3171).
+> **Roadmap milestone M8 is DEFERRED** (decided 2026-09-07, #3171) — deferred,
+> not cut, and with no target release. This document is kept because the design
+> is considered sound and is the starting point if and when the layer is built.
+> It must not be read as a description of the product, and code must not be
+> written against the traits it names.
 
 Status: design only — superseded as a statement of current architecture
 

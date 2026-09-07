@@ -4,11 +4,17 @@
 > This roadmap records how the rewrite was structured. Milestone plans live in
 > `archive/implementation-plans/`.
 >
-> **One milestone did not ship: `M8` (intelligence orchestration).** There is no
-> `crates/intelligence`, and `QueryExpander` / `ResultReranker` / `RagGenerator`
-> appear nowhere in `crates/`. M8 has **no public verdict** — it was neither
-> completed nor formally deferred or cut, which is how 1.2.x came to describe a
-> layer that does not exist. That verdict is an open product decision (#3171).
+> **One milestone did not ship: `M8` (intelligence orchestration) — DEFERRED
+> (decided 2026-09-07, #3171).** There is no `crates/intelligence`, and
+> `QueryExpander` / `ResultReranker` / `RagGenerator` appear nowhere in
+> `crates/`.
+>
+> Deferred, not cut: the design in `intelligence-architecture.md` is retained as
+> the starting point if and when the layer is built. There is no target release.
+> Until then, autoembedding, query expansion, reranking and RAG orchestration
+> are **not Strata features**, and inference is reached directly from executor
+> behind a feature flag rather than through the mediating layer the design
+> describes.
 >
 > Every other milestone (`M1`-`M7`, `M9`-`M10`) is complete.
 
