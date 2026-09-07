@@ -22,7 +22,9 @@ use super::{
 /// a `&'static str` matched inside `embed_text_with`, which put a real decision
 /// inside glue that no CI lane can execute — the mutation gate found it by
 /// deleting the query arm and nothing failed.
-#[cfg(feature = "inference")]
+// Ungated: the upsert and query paths name this whether or not inference is
+// compiled in — without it they still refuse a `text`, and the refusal needs
+// the same signature. Only `input_type` touches an inference type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum EmbedPurpose {
     /// Text being stored in the collection.
