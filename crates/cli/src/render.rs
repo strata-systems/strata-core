@@ -1104,7 +1104,7 @@ mod tests {
     fn kv_comparison(entities: Vec<ComparedEntityItem>) -> Output {
         let space = SpaceComparisonItem::new(
             "default".to_owned(),
-            ComparedCapability::KeyValue,
+            ComparedCapability::Kv,
             Vec::new(),
             Vec::new(),
             entities,
@@ -1121,7 +1121,7 @@ mod tests {
         // Every change group (added/removed/modified) decodes, not just one.
         let space = SpaceComparisonItem::new(
             "default".to_owned(),
-            ComparedCapability::KeyValue,
+            ComparedCapability::Kv,
             vec![ComparedEntityItem::new(bytes("added:key"), 42)],
             vec![ComparedEntityItem::new(bytes("removed:key"), 40)],
             vec![ComparedEntityItem::new(bytes("meta:survival_rate"), 41)],
@@ -1166,19 +1166,19 @@ mod tests {
         // applied (identity + value), deleted (identity, no value), and any
         // conflicts (identity + both sides) all decode.
         let applied = PromotedEntityItem::new(
-            ComparedCapability::KeyValue,
+            ComparedCapability::Kv,
             "default".to_owned(),
             bytes("meta:survival_rate"),
             Some(bytes("0.62")),
         );
         let deleted = PromotedEntityItem::new(
-            ComparedCapability::KeyValue,
+            ComparedCapability::Kv,
             "default".to_owned(),
             bytes("meta:stale_key"),
             None,
         );
         let conflict = PreviewConflictItem::new(
-            ComparedCapability::KeyValue,
+            ComparedCapability::Kv,
             "default".to_owned(),
             bytes("meta:disputed"),
             Some(bytes("mine")),
@@ -1215,7 +1215,7 @@ mod tests {
     #[test]
     fn branch_preview_conflict_identities_and_values_decode() {
         let conflict = PreviewConflictItem::new(
-            ComparedCapability::KeyValue,
+            ComparedCapability::Kv,
             "default".to_owned(),
             bytes("meta:survival_rate"),
             Some(bytes("0.62")),

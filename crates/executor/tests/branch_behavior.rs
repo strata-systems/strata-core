@@ -249,7 +249,7 @@ fn kv_space<'a>(comparison: &'a BranchComparisonItem, space: &str) -> &'a SpaceC
     comparison
         .spaces()
         .iter()
-        .find(|entry| entry.capability() == ComparedCapability::KeyValue && entry.space() == space)
+        .find(|entry| entry.capability() == ComparedCapability::Kv && entry.space() == space)
         .expect("a key-value diff for the space")
 }
 

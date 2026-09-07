@@ -51,7 +51,7 @@ fn test_preview_reports_capability_coverage_spaces_and_derived_state() {
     // it does not.
     assert!(preview
         .capabilities_covered()
-        .contains(&ComparedCapability::KeyValue));
+        .contains(&ComparedCapability::Kv));
     assert!(preview
         .capabilities_unsupported()
         .contains(&ComparedCapability::GraphNode));

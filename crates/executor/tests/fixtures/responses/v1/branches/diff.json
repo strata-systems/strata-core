@@ -5,7 +5,7 @@
     "spaces": [
       {
         "added": [],
-        "capability": "key_value",
+        "capability": "kv",
         "modified": [],
         "removed": [
           {

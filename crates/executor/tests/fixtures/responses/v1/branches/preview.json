@@ -2,7 +2,7 @@
   "data": {
     "branch_point": 3,
     "capabilities_covered": [
-      "key_value",
+      "kv",
       "json",
       "vector"
     ],
@@ -16,7 +16,7 @@
     ],
     "conflicts": [
       {
-        "capability": "key_value",
+        "capability": "kv",
         "identity": "YQ==",
         "kind": "value_divergence",
         "source_value": "dHdv",

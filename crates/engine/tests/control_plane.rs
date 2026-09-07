@@ -59,7 +59,7 @@ fn durable_open_reopen_preserves_control_plane_and_kv() {
         database
             .branches()
             .expect("branch service opens")
-            .create_from_head(&branch("default"), branch("feature"))
+            .fork_current(&branch("default"), branch("feature"))
             .expect("branch create succeeds");
         database
             .kv(branch("feature"), space("default"))
@@ -212,7 +212,7 @@ fn control_diagnostics_report_branch_local_space_catalog_for_create_and_fork() {
     database
         .branches()
         .expect("branch service opens")
-        .create_from_head(&branch("default"), branch("child"))
+        .fork_current(&branch("default"), branch("child"))
         .expect("forked branch create succeeds");
 
     let default_branch = branch("default");

@@ -606,7 +606,7 @@ impl SampleItem {
 #[serde(rename_all = "snake_case")]
 pub enum ComparedCapability {
     /// The key-value capability.
-    KeyValue,
+    Kv,
     /// The JSON document capability.
     Json,
     /// The vector capability.
@@ -1220,12 +1220,12 @@ mod branch_comparison_tests {
     #[test]
     fn promotion_outcome_item_exposes_every_part() {
         let applied = PromotedEntityItem::new(
-            ComparedCapability::KeyValue,
+            ComparedCapability::Kv,
             "default".to_owned(),
             Bytes::from(&b"shared"[..]),
             Some(Bytes::from(&b"src"[..])),
         );
-        assert_eq!(applied.capability(), ComparedCapability::KeyValue);
+        assert_eq!(applied.capability(), ComparedCapability::Kv);
         assert_eq!(applied.space(), "default");
         assert_eq!(applied.identity(), &Bytes::from(&b"shared"[..]));
         assert_eq!(applied.value(), Some(&Bytes::from(&b"src"[..])));
@@ -1240,7 +1240,7 @@ mod branch_comparison_tests {
         assert_eq!(deleted.value(), None);
 
         let conflict = PreviewConflictItem::new(
-            ComparedCapability::KeyValue,
+            ComparedCapability::Kv,
             "default".to_owned(),
             Bytes::from(&b"shared"[..]),
             Some(Bytes::from(&b"src"[..])),
@@ -1248,7 +1248,7 @@ mod branch_comparison_tests {
             ConflictKind::ValueDivergence,
             ConflictStrategyResult::SourceWins,
         );
-        assert_eq!(conflict.capability(), ComparedCapability::KeyValue);
+        assert_eq!(conflict.capability(), ComparedCapability::Kv);
         assert_eq!(conflict.space(), "default");
         assert_eq!(conflict.identity(), &Bytes::from(&b"shared"[..]));
         assert_eq!(conflict.source_value(), Some(&Bytes::from(&b"src"[..])));
@@ -1270,7 +1270,7 @@ mod branch_comparison_tests {
             vec![deleted],
             vec![conflict],
             vec!["default".to_owned()],
-            vec![ComparedCapability::KeyValue],
+            vec![ComparedCapability::Kv],
             vec![ComparedCapability::Event],
             vec![DerivedStateReportItem::new(
                 ComparedCapability::Json,
@@ -1293,10 +1293,7 @@ mod branch_comparison_tests {
         assert_eq!(outcome.conflicts().len(), 1);
         assert_eq!(outcome.conflicts()[0].kind(), ConflictKind::ValueDivergence);
         assert_eq!(outcome.spaces_covered(), ["default".to_owned()]);
-        assert_eq!(
-            outcome.capabilities_covered(),
-            [ComparedCapability::KeyValue]
-        );
+        assert_eq!(outcome.capabilities_covered(), [ComparedCapability::Kv]);
         assert_eq!(
             outcome.capabilities_unsupported(),
             [ComparedCapability::Event]
@@ -1315,7 +1312,7 @@ mod branch_comparison_tests {
     #[test]
     fn branch_preview_item_exposes_every_part() {
         let conflict = PreviewConflictItem::new(
-            ComparedCapability::KeyValue,
+            ComparedCapability::Kv,
             "default".to_owned(),
             Bytes::from(&b"shared"[..]),
             Some(Bytes::from(&b"src"[..])),
@@ -1330,7 +1327,7 @@ mod branch_comparison_tests {
             PromotionStrategy::Strict,
             vec![conflict],
             vec!["default".to_owned()],
-            vec![ComparedCapability::KeyValue],
+            vec![ComparedCapability::Kv],
             vec![ComparedCapability::GraphNode],
             vec![DerivedStateReportItem::new(
                 ComparedCapability::Json,
@@ -1344,10 +1341,7 @@ mod branch_comparison_tests {
         assert_eq!(preview.conflicts().len(), 1);
         assert!(!preview.is_clean());
         assert_eq!(preview.spaces_covered(), ["default".to_owned()]);
-        assert_eq!(
-            preview.capabilities_covered(),
-            [ComparedCapability::KeyValue]
-        );
+        assert_eq!(preview.capabilities_covered(), [ComparedCapability::Kv]);
         assert_eq!(
             preview.capabilities_unsupported(),
             [ComparedCapability::GraphNode]
@@ -1369,7 +1363,7 @@ mod branch_comparison_tests {
             PromotionStrategy::Strict,
             vec![],
             vec!["default".to_owned()],
-            vec![ComparedCapability::KeyValue],
+            vec![ComparedCapability::Kv],
             vec![ComparedCapability::GraphNode],
             vec![],
         );

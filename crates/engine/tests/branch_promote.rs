@@ -164,7 +164,7 @@ fn promote_source_wins_applies_source_changes_and_reports_them() {
         .iter()
         .find(|entity| entity.identity() == b"shared")
         .expect("shared applied");
-    assert_eq!(shared_applied.capability(), ComparedCapability::KeyValue);
+    assert_eq!(shared_applied.capability(), ComparedCapability::Kv);
     assert_eq!(shared_applied.space().as_str(), "default");
     assert_eq!(shared_applied.value(), Some(&b"feature_change"[..]));
     let md_deleted = outcome
@@ -406,7 +406,7 @@ fn test_promotion_outcome_reports_coverage_timestamp_and_derived_state() {
     // Item 7 / rule 4: capability coverage and unsupported areas.
     assert!(outcome
         .capabilities_covered()
-        .contains(&ComparedCapability::KeyValue));
+        .contains(&ComparedCapability::Kv));
     assert!(outcome
         .capabilities_covered()
         .contains(&ComparedCapability::Json));

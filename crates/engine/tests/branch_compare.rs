@@ -101,8 +101,7 @@ fn compare_reports_kv_and_json_added_removed_modified() {
     assert_eq!(comparison.branch_b().as_str(), "feature");
     assert!(!comparison.is_empty());
 
-    let kv_diff =
-        find(&comparison, ComparedCapability::KeyValue, "default").expect("KV diff is present");
+    let kv_diff = find(&comparison, ComparedCapability::Kv, "default").expect("KV diff is present");
     assert_eq!(identities(kv_diff.added()), vec![b"d".to_vec()]);
     assert_eq!(identities(kv_diff.removed()), vec![b"c".to_vec()]);
     assert_eq!(identities(kv_diff.modified()), vec![b"a".to_vec()]);
@@ -174,7 +173,7 @@ fn compare_reports_a_space_present_on_only_one_branch() {
         .expect("compare succeeds");
 
     let extra_diff =
-        find(&comparison, ComparedCapability::KeyValue, "extra").expect("extra-space diff present");
+        find(&comparison, ComparedCapability::Kv, "extra").expect("extra-space diff present");
     assert_eq!(identities(extra_diff.added()), vec![b"only".to_vec()]);
     assert!(extra_diff.removed().is_empty());
     assert!(extra_diff.modified().is_empty());
@@ -236,7 +235,7 @@ fn compare_at_a_timestamp_reads_each_branch_frontier() {
         )
         .expect("current compare succeeds");
     let kv_now =
-        find(&current, ComparedCapability::KeyValue, "default").expect("current KV diff present");
+        find(&current, ComparedCapability::Kv, "default").expect("current KV diff present");
     assert_eq!(identities(kv_now.modified()), vec![b"k".to_vec()]);
 
     // As of the feature write's timestamp, default has no `k` yet, so `k` reads
@@ -251,7 +250,7 @@ fn compare_at_a_timestamp_reads_each_branch_frontier() {
         )
         .expect("at-timestamp compare succeeds");
     let kv_past =
-        find(&past, ComparedCapability::KeyValue, "default").expect("at-timestamp KV diff present");
+        find(&past, ComparedCapability::Kv, "default").expect("at-timestamp KV diff present");
     assert_eq!(identities(kv_past.added()), vec![b"k".to_vec()]);
     assert!(kv_past.modified().is_empty());
 }

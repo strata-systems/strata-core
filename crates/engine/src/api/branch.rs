@@ -340,7 +340,7 @@ pub enum BranchStateSelector {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ComparedCapability {
     /// The key-value capability.
-    KeyValue,
+    Kv,
     /// The JSON document capability.
     Json,
     /// The vector capability.

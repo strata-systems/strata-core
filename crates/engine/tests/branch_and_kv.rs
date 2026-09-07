@@ -166,7 +166,7 @@ fn cache_database_supports_branch_and_kv_workflow() {
     database
         .branches()
         .expect("branch service opens")
-        .create_from_head(&branch("default"), branch("feature"))
+        .fork_current(&branch("default"), branch("feature"))
         .expect("branch create succeeds");
 
     assert_branch_value(&mut database, "feature", "default", b"shared", b"base");
@@ -262,13 +262,13 @@ fn duplicate_and_missing_branches_are_stable_errors() {
     database
         .branches()
         .expect("branch service opens")
-        .create_from_head(&branch("default"), branch("feature"))
+        .fork_current(&branch("default"), branch("feature"))
         .expect("first create succeeds");
 
     let error = database
         .branches()
         .expect("branch service opens")
-        .create_from_head(&branch("default"), branch("feature"))
+        .fork_current(&branch("default"), branch("feature"))
         .expect_err("duplicate branch rejected");
     assert_eq!(error.class(), EngineErrorClass::Conflict);
     assert_eq!(error.code(), "already_exists.engine.branch");
@@ -278,7 +278,7 @@ fn duplicate_and_missing_branches_are_stable_errors() {
     let error = database
         .branches()
         .expect("branch service opens")
-        .create_from_head(&branch("missing"), branch("from-missing"))
+        .fork_current(&branch("missing"), branch("from-missing"))
         .expect_err("missing source rejected");
     assert_eq!(error.class(), EngineErrorClass::NotFound);
     assert_eq!(error.code(), "not_found.engine.branch");
@@ -301,7 +301,7 @@ fn branch_lookup_returns_stable_summary() {
     let created = database
         .branches()
         .expect("branch service opens")
-        .create_from_head(&branch("default"), branch("feature"))
+        .fork_current(&branch("default"), branch("feature"))
         .expect("branch create succeeds");
     assert_eq!(created.branch().name().as_str(), "feature");
     assert_eq!(created.branch().generation(), 1);
@@ -916,7 +916,7 @@ fn branch_create_from_empty_source_stays_isolated() {
     database
         .branches()
         .expect("branch service opens")
-        .create_from_head(&branch("default"), branch("feature"))
+        .fork_current(&branch("default"), branch("feature"))
         .expect("branch create succeeds");
 
     database
@@ -1008,7 +1008,7 @@ fn open_database_with_kv_shape() -> (Database, Timestamp) {
     database
         .branches()
         .expect("branch service opens")
-        .create_from_head(&branch("default"), branch("feature"))
+        .fork_current(&branch("default"), branch("feature"))
         .expect("branch create succeeds");
     database
         .kv(branch("feature"), space("default"))
@@ -1367,7 +1367,7 @@ fn assert_branch_isolation_contract(
     database
         .branches()
         .expect("branch service opens")
-        .create_from_head(&branch("default"), branch("feature"))
+        .fork_current(&branch("default"), branch("feature"))
         .expect("feature branch succeeds");
 
     let mut feature = database
