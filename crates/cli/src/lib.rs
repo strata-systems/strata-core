@@ -697,7 +697,8 @@ pub(crate) fn execute_parsed_command(
             // Make config-file provider keys visible to the runtime (which reads
             // the environment). Env vars already set win — this only fills gaps.
             load_provider_keys_into_env();
-            connection.execute(inference_command(args.command)?)?
+            let command = inference_command(args.command)?;
+            execute_with_download_offer(connection, command, format)?
         }
         options::TopCommand::Command(args) => connection.execute(raw_command(args.command)?)?,
         options::TopCommand::Search(_)
@@ -913,6 +914,97 @@ fn user_config_get(key: &str) -> Result<serde_json::Value, CliError> {
 /// runtime reads these variables, so this bridges `strata config set
 /// <provider>.api_key` to the runtime without the inference layer needing to
 /// know about `~/.strata`.
+/// Runs an inference command, offering the download when a model is missing (D8).
+///
+/// Loading a model never downloads on its own — a silent multi-hundred-megabyte
+/// fetch is not something a caller can consent to mid-operation, and until this
+/// landed `embed` and `rank` did exactly that while `generate` refused.
+///
+/// So the decision moves here, where the CLI knows who is asking:
+///
+/// - **A person at a terminal** is offered the download, with its size, and
+///   answers.
+/// - **Anything else** — `--json`, a pipe, an agent — gets the refusal, which
+///   already names `strata inference models pull <model>`. An agent cannot
+///   answer a prompt, and blocking one on a hidden fetch is the failure this
+///   exists to prevent.
+#[cfg(all(feature = "native", feature = "inference"))]
+fn execute_with_download_offer(
+    connection: &Connection,
+    command: strata_executor::Command,
+    format: options::Format,
+) -> Result<strata_executor::Output, CliError> {
+    use std::io::Write as _;
+
+    let error = match connection.execute(command.clone()) {
+        Ok(value) => return Ok(value),
+        Err(error) => error,
+    };
+
+    // Only a missing model is offerable, and only to a human on a terminal
+    // whose output is not being parsed.
+    if !should_offer_download(std::io::stdin().is_terminal(), format, error.code()) {
+        return Err(error.into());
+    }
+    let Some(model) = missing_model_spec(&command) else {
+        return Err(error.into());
+    };
+
+    eprintln!("{error}");
+    eprint!("\nDownload {model} now? [y/N] ");
+    let _ = std::io::stderr().flush();
+    let mut answer = String::new();
+    if std::io::stdin().read_line(&mut answer).is_err() || !answer.trim().eq_ignore_ascii_case("y")
+    {
+        return Err(error.into());
+    }
+
+    connection.execute(strata_executor::Command::InferenceModelsPull {
+        model: model.clone(),
+    })?;
+    eprintln!("pulled {model}; retrying");
+    Ok(connection.execute(command)?)
+}
+
+/// Whether a failed inference command should offer to download the model (D8).
+///
+/// A pure decision so it has a truth table. All three conditions matter and
+/// each guards a different mistake:
+///
+/// - **A terminal.** An agent cannot answer a prompt; blocking one on a hidden
+///   fetch is the failure D8 exists to prevent.
+/// - **Human output.** `--json` output is parsed. A prompt in the middle of it
+///   corrupts the stream even when a human is watching.
+/// - **The model is merely missing.** Any other failure is not fixed by
+///   downloading, so offering would be a wrong suggestion rather than no
+///   suggestion.
+#[cfg(all(feature = "native", feature = "inference"))]
+const fn should_offer_download(interactive: bool, format: options::Format, code: &str) -> bool {
+    // `const fn` cannot compare strings, so the code check is done by the
+    // caller's match below.
+    interactive && matches!(format, options::Format::Human) && is_missing_model(code)
+}
+
+/// True for the one code a download can fix.
+#[cfg(all(feature = "native", feature = "inference"))]
+const fn is_missing_model(code: &str) -> bool {
+    matches!(code.as_bytes(), b"inference.missing_model")
+}
+
+/// The model spec an inference command would load, when it has one.
+#[cfg(all(feature = "native", feature = "inference"))]
+fn missing_model_spec(command: &strata_executor::Command) -> Option<String> {
+    use strata_executor::Command;
+    match command {
+        Command::InferenceEmbed { model, .. }
+        | Command::InferenceGenerate { model, .. }
+        | Command::InferenceRank { model, .. }
+        | Command::InferenceTokenize { model, .. }
+        | Command::InferenceDetokenize { model, .. } => Some(model.clone()),
+        _ => None,
+    }
+}
+
 #[cfg(all(feature = "native", feature = "inference"))]
 fn load_provider_keys_into_env() {
     for info in strata_executor::INFERENCE_CLOUD_PROVIDER_KEYS {
@@ -3022,5 +3114,45 @@ mod tests {
             run(["strata", "--db", db.as_str(), "kv", "get", "hello"]),
             0
         );
+    }
+
+    /// D8's truth table: all three conditions guard a different mistake.
+    #[cfg(all(feature = "native", feature = "inference"))]
+    #[test]
+    fn the_download_offer_needs_a_terminal_human_output_and_a_missing_model() {
+        use super::should_offer_download;
+        use crate::options::Format;
+
+        const MISSING: &str = "inference.missing_model";
+
+        // The one case that offers.
+        assert!(should_offer_download(true, Format::Human, MISSING));
+
+        // Not a terminal: an agent cannot answer, so it must get the refusal
+        // (which already names the pull command) instead of a hidden fetch.
+        assert!(!should_offer_download(false, Format::Human, MISSING));
+
+        // Machine-readable output: a prompt would corrupt the stream even with
+        // a human watching.
+        for format in [Format::Json, Format::Pretty, Format::Raw] {
+            assert!(
+                !should_offer_download(true, format, MISSING),
+                "{format:?} is parsed, so it must not be interrupted"
+            );
+        }
+
+        // A failure a download cannot fix. Offering here would be a wrong
+        // suggestion, which is worse than none.
+        for code in [
+            "inference.unsupported_operation",
+            "inference.missing_api_key",
+            "inference.provider_auth_failed",
+            "inference.download_disabled",
+        ] {
+            assert!(
+                !should_offer_download(true, Format::Human, code),
+                "{code} is not fixed by downloading"
+            );
+        }
     }
 }

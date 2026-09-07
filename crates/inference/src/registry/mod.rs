@@ -208,21 +208,29 @@ impl ModelRegistry {
 
         let size_display = format_size(variant.size_bytes);
 
-        Err(InferenceError::Registry(format!(
-            "Model '{}' not found locally.\n\n\
-             To download it (requires internet):\n  \
-             strata models pull {}\n\n\
-             Or manually place the GGUF file at:\n  \
+        // D8: the command named here must exist (`strata models pull` never
+        // has — the verb is `strata inference models pull`), and the code is
+        // carried explicitly so rewording this text cannot change it. The
+        // previous wording classified as `missing_model` only because it
+        // happened to contain "not found locally".
+        Err(InferenceError::RegistryFailed {
+            kind: crate::RegistryFailure::MissingModel,
+            message: format!(
+                "Model '{}' is not downloaded.\n\n\
+             To download it ({}, requires internet):\n  \
+             strata inference models pull {}\n\n\
+             Or place the GGUF file at:\n  \
              {}\n\n\
-             Expected file: {} ({})\n\
+             Expected file: {}\n\
              Source: https://huggingface.co/{}",
-            name,
-            name,
-            path.display(),
-            variant.hf_file,
-            size_display,
-            entry.hf_repo
-        )))
+                name,
+                size_display,
+                name,
+                path.display(),
+                variant.hf_file,
+                entry.hf_repo
+            ),
+        })
     }
 
     /// Resolve a model name to a local path, downloading if necessary.
@@ -457,8 +465,16 @@ mod tests {
 
         let err = registry.resolve("miniLM").unwrap_err();
         let msg = format!("{}", err);
-        assert!(msg.contains("not found locally"), "Error: {}", msg);
-        assert!(msg.contains("strata models pull miniLM"), "Error: {}", msg);
+        // D8: the code is carried at the raise site, so assert it rather than
+        // the prose (CLAUDE.md rule 29). The old assertion pinned
+        // `strata models pull`, a verb that has never existed.
+        assert_eq!(err.code(), "inference.missing_model");
+        assert!(msg.contains("is not downloaded"), "Error: {}", msg);
+        assert!(
+            msg.contains("strata inference models pull miniLM"),
+            "the refusal must name the real command: {}",
+            msg
+        );
         assert!(msg.contains(".gguf"), "Error: {}", msg);
         assert!(msg.contains("huggingface.co"), "Error: {}", msg);
         assert!(
@@ -664,7 +680,7 @@ mod tests {
         let err = registry.resolve("tinyllama").unwrap_err();
         let msg = format!("{}", err);
         assert!(
-            msg.contains("not found locally"),
+            msg.contains("is not downloaded"),
             "Should fail for default quant: {}",
             msg
         );
@@ -772,7 +788,7 @@ mod tests {
         let err = registry.resolve("miniLM").unwrap_err();
         let msg = err.to_string();
         assert!(
-            msg.contains("not found locally"),
+            msg.contains("is not downloaded"),
             "Zero-length file should not resolve: {}",
             msg
         );

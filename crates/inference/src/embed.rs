@@ -81,10 +81,12 @@ impl EmbeddingEngine {
     pub fn from_registry(name: &str) -> Result<Self, InferenceError> {
         let registry = crate::registry::ModelRegistry::new();
 
-        #[cfg(feature = "download")]
-        let path = registry.resolve_or_pull(name)?;
-
-        #[cfg(not(feature = "download"))]
+        // D8: loading resolves what is on disk and never downloads. A silent
+        // multi-hundred-megabyte fetch is not something a caller — least of all
+        // an agent — can consent to mid-operation. `inference models pull` is
+        // the explicit path, and the CLI offers it interactively. The download
+        // feature no longer changes this, so the split on it is gone; it used
+        // to make embedding and ranking auto-pull while generation refused.
         let path = registry.resolve(name)?;
 
         match Self::from_gguf(&path) {

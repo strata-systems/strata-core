@@ -324,6 +324,7 @@ impl InferenceRuntime {
 
         #[cfg(feature = "download")]
         {
+            // D8: `pull_model` is the one place that downloads; loading does not.
             let path = self.registry().resolve_or_pull(model)?;
             Ok(PullModelOutput {
                 model: model.to_owned(),

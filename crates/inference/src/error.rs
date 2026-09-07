@@ -26,6 +26,21 @@ pub enum InferenceError {
     /// unknown provider) — caller input error, not a provider outage.
     InvalidSpec(String),
 
+    /// A model-registry failure whose classification was decided **where the
+    /// failure happened**.
+    ///
+    /// D8/#3216. Rewording the not-downloaded message from "not found locally"
+    /// to "is not downloaded" silently reclassified it from `missing_model` to
+    /// `download_failed`, because `registry_code` matches "download" — and the
+    /// D8 download offer keys off `missing_model`, so the feature would have
+    /// been dead on arrival. The fourth time this design bit during one change.
+    RegistryFailed {
+        /// What went wrong, decided at the raise site.
+        kind: RegistryFailure,
+        /// Human-readable detail. Carries no classification weight.
+        message: String,
+    },
+
     /// A cloud provider failure whose classification was decided **where the
     /// failure happened**, instead of guessed from the message afterwards.
     ///
@@ -44,6 +59,37 @@ pub enum InferenceError {
         /// Human-readable detail. Carries no classification weight.
         message: String,
     },
+}
+
+/// Why a model-registry lookup failed, as known at the point of failure.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RegistryFailure {
+    /// The model is catalogued but its artifact is not on disk.
+    MissingModel,
+    /// This build cannot download, or the runtime forbids network access.
+    DownloadDisabled,
+    /// A download was attempted and failed.
+    DownloadFailed,
+    /// A downloaded artifact did not match its expected hash.
+    VerificationFailed,
+    /// The registry's own state is unreadable.
+    Corrupt,
+}
+
+impl RegistryFailure {
+    /// The stable error code for this failure.
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::MissingModel => "inference.missing_model",
+            Self::DownloadDisabled => "inference.download_disabled",
+            Self::DownloadFailed => "inference.download_failed",
+            Self::VerificationFailed => "inference.download_verification_failed",
+            Self::Corrupt => "inference.registry_corrupt",
+        }
+    }
 }
 
 /// Why a cloud provider call failed, as known at the point of failure.
@@ -128,6 +174,11 @@ impl fmt::Debug for InferenceError {
                 .debug_tuple("InvalidSpec")
                 .field(&redact_secrets(message))
                 .finish(),
+            Self::RegistryFailed { kind, message } => formatter
+                .debug_struct("RegistryFailed")
+                .field("kind", kind)
+                .field("message", &redact_secrets(message))
+                .finish(),
             Self::ProviderFailed { kind, message } => formatter
                 .debug_struct("ProviderFailed")
                 .field("kind", kind)
@@ -153,6 +204,9 @@ impl fmt::Display for InferenceError {
             }
             Self::InvalidSpec(message) => {
                 write!(formatter, "invalid model spec: {}", redact_secrets(message))
+            }
+            Self::RegistryFailed { message, .. } => {
+                write!(formatter, "registry error: {}", redact_secrets(message))
             }
             Self::ProviderFailed { message, .. } => {
                 write!(formatter, "provider error: {}", redact_secrets(message))
@@ -203,6 +257,18 @@ impl serde::Serialize for InferenceError {
                 "InvalidSpec",
                 &redact_secrets(message),
             ),
+            Self::RegistryFailed { kind, message } => {
+                use serde::ser::SerializeStructVariant as _;
+                let mut variant = serializer.serialize_struct_variant(
+                    "InferenceError",
+                    7,
+                    "RegistryFailed",
+                    2,
+                )?;
+                variant.serialize_field("kind", kind)?;
+                variant.serialize_field("message", &redact_secrets(message))?;
+                variant.end()
+            }
             Self::ProviderFailed { kind, message } => {
                 use serde::ser::SerializeStructVariant as _;
                 let mut variant = serializer.serialize_struct_variant(
@@ -256,6 +322,7 @@ impl InferenceError {
             Self::NotSupported(message) => not_supported_code(message),
             Self::InvalidSpec(_) => "inference.invalid_request",
             Self::ProviderFailed { kind, .. } => kind.code(),
+            Self::RegistryFailed { kind, .. } => kind.code(),
         }
     }
 

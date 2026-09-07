@@ -66,7 +66,7 @@ mod provider;
 ))]
 mod generate;
 
-pub use error::{InferenceError, InferenceErrorClass, ProviderFailure};
+pub use error::{InferenceError, InferenceErrorClass, ProviderFailure, RegistryFailure};
 pub use registry::{ModelInfo, ModelRegistry, ModelTask};
 pub use runtime::{
     EmbedRequest, EmbedResponse, EmbedRuntimeOutcome, InferenceCapability, InferenceRuntime,

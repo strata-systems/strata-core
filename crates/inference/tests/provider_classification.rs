@@ -263,3 +263,52 @@ fn redaction_cannot_change_a_classified_code() {
         "redaction rewrites the message; the code must not move with it"
     );
 }
+
+// ---------------------------------------------------------------------------
+// D8: the registry half. The same design bit here, and this is the pin.
+// ---------------------------------------------------------------------------
+
+/// A model that is catalogued but not downloaded reports `missing_model`,
+/// whatever the message says.
+///
+/// The wording changed during D8 from "not found locally" to "is not
+/// downloaded", which silently reclassified it to `download_failed` — because
+/// `registry_code` matches "download". The CLI's download offer keys off
+/// `missing_model`, so the feature was dead until the code was carried
+/// explicitly. Fourth time this design bit inside one change.
+#[test]
+fn a_not_downloaded_model_reports_missing_model_whatever_the_wording() {
+    use strata_inference::RegistryFailure;
+
+    let worded_to_trip_the_old_classifier = InferenceError::RegistryFailed {
+        kind: RegistryFailure::MissingModel,
+        message: "Model 'tinyllama' is not downloaded. To download it: \
+                  strata inference models pull tinyllama"
+            .to_owned(),
+    };
+    assert_eq!(
+        worded_to_trip_the_old_classifier.code(),
+        "inference.missing_model",
+        "the message mentions downloading twice; the code must not follow it"
+    );
+}
+
+/// Every registry failure kind has its own code.
+#[test]
+fn every_registry_failure_kind_has_its_own_code() {
+    use strata_inference::RegistryFailure::{
+        Corrupt, DownloadDisabled, DownloadFailed, MissingModel, VerificationFailed,
+    };
+    let kinds = [
+        MissingModel,
+        DownloadDisabled,
+        DownloadFailed,
+        VerificationFailed,
+        Corrupt,
+    ];
+    let mut codes: Vec<&str> = kinds.iter().map(|kind| kind.code()).collect();
+    codes.sort_unstable();
+    let distinct = codes.len();
+    codes.dedup();
+    assert_eq!(codes.len(), distinct, "two kinds share a code: {codes:?}");
+}
