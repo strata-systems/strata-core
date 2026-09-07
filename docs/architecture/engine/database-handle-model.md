@@ -112,7 +112,8 @@ The ordering is a dependency order, not a priority order.
 
 ### Step 1 — The read path becomes `&self`
 
-*Retires #3156. Zero production behaviour change.*
+*Enabler. Zero production behaviour change. Does not retire #3156 by itself —
+see the correction under "One PR or several?".*
 
 Give the test build's `FaultSchedule` and `CorruptionSchedule` interior
 mutability (`RefCell` is sufficient — they are `#[cfg(any(test, feature =
@@ -131,7 +132,7 @@ call sites across the workspace are untouched.
 
 ### Step 2 — The commit path becomes `&self`
 
-*Retires the handle half of #3126.*
+*Enabler. Unblocks the shared services in step 3.*
 
 The replay timestamps are the only non-test mutation left. Two options:
 
@@ -146,9 +147,9 @@ fall back to (a) if it does. Either way `commit` becomes `&self`, and
 
 Also a widening. No caller breaks.
 
-### Step 3 — Services borrow their names, and `Database` hands them out shared
+### Step 3 — Services hold `&'a`, and `Database` hands them out shared
 
-*Retires #3191, completes #3126.*
+*Retires #3156 and the handle half of #3126. Non-breaking.*
 
 ```rust
 // before
@@ -211,12 +212,35 @@ honestly, and the repo's own guidance is ≤1,500 LOC of net change per slice.
 
 | PR | Content | Breaking | Size | Retires |
 |---|---|---|---|---|
-| **H1** | Test-build fault/corruption schedules gain interior mutability; read, scan, history and branch-inspection methods relax to `&self` | No | Small | #3156 |
-| **H2** | Replay timestamps relocated (or made interior); `commit` relaxes to `&self` | No | Small | #3126 (handle half) |
-| **H3** | Borrowed `&BranchName`/`&ProductSpace`; `KvService<'a>` holds `&'a`; `ControlPlane` behind a lock; call-site sweep | **Yes** | Large, mostly mechanical | #3191, #3126 |
-| **H4** | `Send + Sync` bounds, `parking_lot` where `RefCell` was, twenty-thread commit test, throughput measurement | No | Medium | #3126 (claim) |
+| **H1** | Test-build schedules gain interior mutability; read, scan, history and branch-inspection methods relax to `&self` | No | Small | — *(enabler)* |
+| **H2** | Replay timestamps relocated (or made interior); `commit` relaxes to `&self` | No | Small | — *(enabler)* |
+| **H3** | `KvService<'a>` and siblings hold `&'a`; `ControlPlane` behind a lock; `Database::kv/json/event/graph` take `&self` — **still with owned names** | No | Medium | **#3156, #3126** (handle) |
+| **H4** | Borrowed `&BranchName`/`&ProductSpace`; the call-site sweep | **Yes** | Large, mechanical | #3191 |
+| **H5** | `Send + Sync` bounds, twenty-thread commit test, throughput measurement | No | Medium | #3126 (the claim) |
+
+> **Corrected after building H1.** The first draft had four PRs and credited
+> H1 with retiring #3156. It does not. `KvService` holds `&'a mut
+> StoragePersistence` because `put`/`delete` call `commit`, so the service
+> cannot go shared until the commit path does — H1 and H2 are *enablers* that
+> deliver nothing user-visible on their own.
+>
+> Building H1 also revealed a better split. The user-visible win — a shared
+> `Database` handing out several services at once — does **not** require the
+> breaking name change. `Database::kv(&self, branch: BranchName, …)` keeps its
+> owned parameters and breaks no caller. So H3 now delivers the shared handle
+> non-breakingly, and the 527-call-site sweep for borrowed names moves to H4
+> where it can be reviewed as the purely mechanical change it is.
+>
+> That matters for sequencing: **the concurrency benefit can ship without ever
+> taking the breaking change**, if the borrow-a-name ergonomics turn out not to
+> be worth the churn.
 
 Then separate designs for #3127, #3128, #3131, #3180.
+
+**Why not four** (folding the shared-services step into the name sweep): they
+were one step in the first draft, and building H1 showed they separate cleanly —
+one is a non-breaking win, the other is a breaking sweep. Keeping them apart
+means the concurrency benefit is available without committing to the churn.
 
 **Why not three PRs** (folding H1 into H2): they touch the same methods but for
 different reasons — H1's is a pure test-harness change with zero production
