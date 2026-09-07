@@ -24,17 +24,18 @@ pub(crate) fn full() -> &'static str {
 /// for it.
 ///
 /// Sections are delimited by Keep-a-Changelog `## [x.y.z] - date` headings, so
-/// a section runs to the next `## ` at the same level and keeps its own
-/// `### Added` / `### Fixed` subheadings.
+/// a section runs to the next release heading and keeps its own `### Added` /
+/// `### Fixed` subheadings.
 pub(crate) fn section(version: &str) -> Option<&'static str> {
-    let heading = format!("## [{version}]");
-    let start = CHANGELOG.find(&heading)?;
-    let rest = &CHANGELOG[start..];
-    // Skip this heading before hunting the next, or the search finds itself.
-    let end = rest[heading.len()..]
-        .find("\n## ")
-        .map_or(CHANGELOG.len(), |offset| start + heading.len() + offset + 1);
-    Some(CHANGELOG[start..end].trim_end())
+    let start = CHANGELOG.find(&format!("## [{version}]"))?;
+    let body = &CHANGELOG[start..];
+    // Searching for the LEADING newline means the pattern cannot match this
+    // section's own heading, so there is no offset arithmetic to get wrong.
+    // An earlier version computed the end from three added terms; the mutation
+    // gate found those bounds were untested in the shortening direction, and
+    // removing the arithmetic is a better answer than testing it.
+    let end = body.find("\n## [").unwrap_or(body.len());
+    Some(body[..end].trim_end())
 }
 
 /// The versions this build's changelog documents, newest first — used to tell a
@@ -134,6 +135,60 @@ mod tests {
         assert!(
             section.lines().count() > 1,
             "oldest section is empty: {section:?}"
+        );
+    }
+
+    /// Pins where a section ENDS, which the boundary test above does not: it
+    /// only proves the section does not reach the *next* release, so a section
+    /// cut short passed it happily. That is exactly the gap the mutation gate
+    /// found — three surviving arithmetic mutants that all shortened the slice.
+    ///
+    /// A line-based oracle is written independently of the implementation and
+    /// compared for every release in the file. Two different ways of finding
+    /// the same boundary agreeing is a far stronger claim than any single
+    /// assertion about the contents.
+    #[test]
+    fn every_section_matches_an_independent_line_based_split() {
+        for version in versions() {
+            let heading = format!("## [{version}]");
+            let mut lines = CHANGELOG
+                .lines()
+                .skip_while(|line| !line.starts_with(&heading));
+            let first = lines.next().expect("the heading is present");
+            let mut expected = vec![first];
+            for line in lines {
+                if line.starts_with("## [") {
+                    break;
+                }
+                expected.push(line);
+            }
+            let expected = expected.join("\n");
+            assert_eq!(
+                section(version).expect("every listed version has a section"),
+                expected.trim_end(),
+                "section boundaries disagree for {version}"
+            );
+        }
+    }
+
+    /// The sections partition the changelog: everything after the preamble is
+    /// inside exactly one release, so no content can be silently dropped
+    /// between them.
+    #[test]
+    fn sections_account_for_the_whole_changelog_body() {
+        let all = versions();
+        let first_heading = CHANGELOG
+            .find(&format!("## [{}]", all[0]))
+            .expect("the newest release has a heading");
+        let body_bytes = CHANGELOG[first_heading..].trim_end().len();
+        // Each section, plus the "\n\n" separators the join removes.
+        let covered: usize = all
+            .iter()
+            .map(|version| section(version).expect("listed version").len())
+            .sum();
+        assert!(
+            covered + 2 * (all.len() - 1) >= body_bytes,
+            "sections cover {covered} bytes of a {body_bytes}-byte body — content is being dropped"
         );
     }
 
