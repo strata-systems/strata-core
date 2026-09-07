@@ -112,6 +112,12 @@
         "strategy": "strategy"
       }
     },
+    "changelog": {
+      "positionals": [],
+      "flags": {
+        "version": "version"
+      }
+    },
     "clone": {
       "positionals": [
         "dataset",

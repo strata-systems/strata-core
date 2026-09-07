@@ -791,3 +791,59 @@ fn the_cli_refuses_both_clocks_and_explains_an_unparseable_date() {
         "the refusal must show a working spelling: {message}"
     );
 }
+
+/// #3094: a binary of unknown provenance can say what is in it — offline, with
+/// no database, matched to that exact build.
+///
+/// The reported failure was a documented, deliberately wire-visible error
+/// reclassification that still broke a downstream build, because `CHANGELOG.md`
+/// lived only in the repository while the consumer held a binary and a release
+/// asset. These run through the real binary because the value is entirely in
+/// the glue: embedding the file proves nothing if the verb is unreachable, needs
+/// a database, or reports the wrong exit code.
+#[test]
+fn changelog_prints_offline_without_a_database() {
+    let output = strata(&["changelog"]);
+    assert!(
+        output.status.success(),
+        "changelog must not need a database: {}",
+        stderr(&output)
+    );
+    let text = stdout(&output);
+    assert!(text.starts_with("# Changelog"), "got: {text:.60}");
+
+    // The build's own version is documented — otherwise the command answers
+    // nothing about the binary you are holding, which is the original failure
+    // one step later.
+    let version = env!("CARGO_PKG_VERSION");
+    assert!(
+        text.contains(&format!("## [{version}]")),
+        "changelog has no entry for this build ({version})"
+    );
+}
+
+#[test]
+fn changelog_can_print_a_single_release_and_refuses_an_unknown_one() {
+    let version = env!("CARGO_PKG_VERSION");
+    let one = strata(&["changelog", "--version", version]);
+    assert!(one.status.success(), "{}", stderr(&one));
+    let section = stdout(&one);
+    assert!(section.starts_with(&format!("## [{version}]")));
+    assert!(
+        !section.starts_with("# Changelog"),
+        "--version must print one section, not the whole file"
+    );
+
+    let missing = strata(&["changelog", "--version", "0.0.0-nope"]);
+    assert!(
+        !missing.status.success(),
+        "an unknown version must fail, not print nothing successfully"
+    );
+    // The refusal lists what this build does document, so the caller can
+    // correct themselves without cloning the repository.
+    let message = stderr(&missing);
+    assert!(
+        message.contains(version),
+        "refusal should name the versions available: {message}"
+    );
+}

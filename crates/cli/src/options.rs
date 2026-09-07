@@ -138,6 +138,14 @@ pub(crate) enum TopCommand {
     Doctor,
     /// Self-describing surface for agents: guide, catalogs, repo onboarding.
     Agents(AgentsArgs),
+    /// Print this build's changelog (#3094): what shipped, matched to the
+    /// binary you are holding, offline.
+    Changelog {
+        /// Print only this release's entry (e.g. `1.2.0`) instead of the whole
+        /// file.
+        #[arg(long, value_name = "VERSION")]
+        version: Option<String>,
+    },
     /// Model Context Protocol server commands.
     Mcp(McpArgs),
     /// Lightweight liveness check.
@@ -2309,6 +2317,7 @@ mod tests {
         "branch note",
         "branch preview",
         "branch tag",
+        "changelog",
         "clone",
         "command print",
         "command run",
