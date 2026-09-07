@@ -29,6 +29,7 @@ mod agents;
 mod arg_spec;
 #[cfg(test)]
 mod catalog_guard;
+mod changelog;
 #[cfg(test)]
 mod command_examples;
 mod context;
@@ -197,6 +198,12 @@ fn execute(cli: Cli) -> Result<i32, CliError> {
         }
         let command = match command {
             options::TopCommand::Agents(args) => return agents::run(&args.command, format),
+            // #3094: answers from the binary itself, so it needs no database
+            // and no open — the point is that a binary of unknown provenance
+            // can say what is in it.
+            options::TopCommand::Changelog { version } => {
+                return changelog::run(version.as_deref())
+            }
             other => other,
         };
         if matches!(
@@ -568,6 +575,8 @@ fn resolve_durable_target(
 }
 
 #[cfg(feature = "native")]
+// A flat top-level command dispatch, like its family-level siblings.
+#[allow(clippy::too_many_lines)]
 pub(crate) fn execute_parsed_command(
     connection: &Connection,
     command: options::TopCommand,
@@ -619,6 +628,10 @@ pub(crate) fn execute_parsed_command(
             // Exit code is only meaningful for the one-shot path; agents
             // commands never fail healthily inside a session.
             let _exit = agents::run(&args.command, format)?;
+            return Ok(());
+        }
+        options::TopCommand::Changelog { version } => {
+            let _exit = changelog::run(version.as_deref())?;
             return Ok(());
         }
         options::TopCommand::Mcp(_) => {

@@ -177,7 +177,15 @@ jobs:
       # tarball roots at `generated/`. Committed docs are drift-guarded by
       # check-docs, so at a release tag they match the shipped binary.
       - name: Package the IDL docs bundle
-        run: tar czf artifacts/strata-idl-docs.tar.gz -C crates/executor/idl/v1 generated
+        # #3094: CHANGELOG.md rides inside `generated/`, beside the command
+        # index. Whoever unpacks this bundle to adopt a new catalog is exactly
+        # whoever needs to know how that catalog changed — a wire-visible error
+        # reclassification in 1.2.0 was documented, shipped nowhere a consumer
+        # could reach, and broke a downstream build anyway.
+        run: |
+          cp CHANGELOG.md crates/executor/idl/v1/generated/CHANGELOG.md
+          tar czf artifacts/strata-idl-docs.tar.gz -C crates/executor/idl/v1 generated
+          tar tzf artifacts/strata-idl-docs.tar.gz | grep -qx 'generated/CHANGELOG.md'
 
       - name: Generate checksums
         run: |
