@@ -1,6 +1,6 @@
 # Strata V1 Testing And Conformance Plan
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
@@ -10,7 +10,7 @@ each layer, the higher product promises around branching, time travel, recovery,
 IPC, search, graph relationships, vectors, and Strata AI will never be reliable.
 
 This document is the top-level testing plan. It identifies the test families
-Strata must build, then walks the storage-next L1-L9 architecture layer by
+Strata must build, then walks the storage L1-L9 architecture layer by
 layer and records what each layer must prove.
 
 Layer-specific test specs can be written later. This document defines the first
@@ -53,7 +53,7 @@ shared map.
 
 1. This document does not define exact Rust test module names.
 2. This document does not require all test families to exist before the first
-   storage-next implementation begins.
+   storage implementation begins.
 3. This document does not define benchmark thresholds.
 4. This document does not specify a particular fuzzing framework.
 5. This document does not require production OpenDAL or S3 durable mode for V1.
@@ -61,11 +61,11 @@ shared map.
 
 Performance regression benchmarks remain binding where CLAUDE.md or the current
 project rules require them. This plan does not redefine thresholds; a benchmark
-plan should rederive storage-next thresholds once the new architecture exists.
+plan should rederive storage thresholds once the new architecture exists.
 
-Engine-next product-path tests are out of scope until the engine-next
-architecture exists. This plan covers storage-next conformance and identifies
-where engine-next should later add product-path tests over L9.
+Engine-next product-path tests are out of scope until the engine
+architecture exists. This plan covers storage conformance and identifies
+where engine should later add product-path tests over L9.
 
 ## Test Taxonomy
 
@@ -138,7 +138,7 @@ Fuzz targets must prove:
 Backend conformance tests prove every backend implements the same L1 contract
 for the capabilities it claims.
 
-Required backends for the first storage-next implementation:
+Required backends for the first storage implementation:
 
 1. Memory/cache backend.
 2. Local filesystem backend.
@@ -226,7 +226,7 @@ interactions after the base contracts are already specified.
 
 ## Required Test Infrastructure
 
-The first storage-next implementation should build test infrastructure early.
+The first storage implementation should build test infrastructure early.
 
 ### Testkit Crate Or Module
 
@@ -699,7 +699,7 @@ Acceptance criteria:
 
 ### L9 Storage API Boundary
 
-L9 proves engine-next can consume storage without reaching into lower layers.
+L9 proves engine can consume storage without reaching into lower layers.
 
 Boundary conformance tests:
 
@@ -725,7 +725,7 @@ Boundary conformance tests:
 17. Maintenance drain/status/control hooks are exposed for engine/tests.
 18. Safe close/shutdown works through the boundary.
 19. Fault hooks are unavailable or inert in normal production builds.
-20. Upper crates above engine-next cannot import storage-next in normal
+20. Upper crates above engine cannot import storage in normal
    production code.
 
 Error conformance tests:
@@ -739,7 +739,7 @@ Error conformance tests:
 
 Acceptance criteria:
 
-1. L9 is the only normal production storage surface consumed by engine-next.
+1. L9 is the only normal production storage surface consumed by engine.
 2. L9 hides lower-layer implementation detail unless it is a stable storage
    contract.
 3. L9 has cache and local filesystem conformance suites.
@@ -826,7 +826,7 @@ architecture expects these tiers:
 
 1. Per-PR fast unit and conformance tests.
 2. Per-PR memory/cache tests on native and `wasm32-unknown-unknown` once the
-   storage-next crate exists.
+   storage crate exists.
 3. Per-PR local filesystem storage conformance.
 4. Nightly crash and stress tests.
 5. Scheduled fuzzing.
@@ -848,7 +848,7 @@ The first implementation sequence should be:
 10. Build L9 cache and local filesystem conformance suites.
 11. Build resource-profile tests for embedded, desktop, server, unknown, and
     explicit-profile hosts.
-12. After engine-next architecture exists, add engine-next product-path tests
+12. After engine architecture exists, add engine product-path tests
     over L9.
 13. Add long-running randomized tests after deterministic contracts are stable.
 
@@ -868,13 +868,13 @@ Later detailed documents should define:
 7. CI tiers and which tests run by default.
 8. Slow/nightly/stress test policy.
 9. Benchmarks and performance regression thresholds.
-10. Product-path test matrix above engine-next.
+10. Product-path test matrix above engine.
 
 ## Acceptance Criteria
 
 This top-level plan is sufficient when:
 
-1. Every storage-next layer L1-L9 has a named test responsibility.
+1. Every storage layer L1-L9 has a named test responsibility.
 2. Fuzzing responsibilities are assigned to byte/parsing/state-machine layers.
 3. Fault-injection responsibilities are assigned to backend, publish, commit,
    recovery, IPC, and provider boundaries.

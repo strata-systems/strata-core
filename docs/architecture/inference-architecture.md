@@ -1,13 +1,13 @@
 # Inference-Next Architecture
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
-This document defines the target architecture for `inference-next`, the layer
+This document defines the target architecture for `inference`, the layer
 that executes model calls for Strata.
 
-Inference-next is intentionally much smaller than storage-next or engine-next.
+Inference-next is intentionally much smaller than storage or engine.
 The current `strata-inference` crate is already close to the right boundary:
 it owns local model execution, cloud provider adapters, embeddings, reranking,
 model registry behavior, and model download support. It does not depend on
@@ -30,12 +30,12 @@ Architecture anchors:
 
 Engine and product contracts that consume inference:
 
-1. [engine-next/retrieval-and-derived-state-contract.md](./engine-next/retrieval-and-derived-state-contract.md)
-2. [engine-next/product-pathway-conformance-plan.md](./engine-next/product-pathway-conformance-plan.md)
+1. [engine/retrieval-and-derived-state-contract.md](./engine/retrieval-and-derived-state-contract.md)
+2. [engine/product-pathway-conformance-plan.md](./engine/product-pathway-conformance-plan.md)
 3. [docs/product/pathways/retrieval-and-intelligence.md](../product/pathways/retrieval-and-intelligence.md)
 
 [intelligence-architecture.md](./intelligence-architecture.md) sits
-between engine-next and inference-next. Intelligence-next owns model-dependent
+between engine and inference. Intelligence-next owns model-dependent
 Strata behavior. Inference-next owns provider execution.
 
 ## Requirement Language
@@ -138,7 +138,7 @@ Current files and responsibilities:
 ## Binding V1 Decisions
 
 1. **Inference-next has no dependency on engine, storage, or intelligence.**
-   Dependency direction is one-way: intelligence-next may call inference-next.
+   Dependency direction is one-way: intelligence-next may call inference.
    Inference-next must not call back into Strata data layers.
 
 2. **Inference-next owns provider execution, not Strata semantics.**
@@ -155,7 +155,7 @@ Current files and responsibilities:
    Strata's public product APIs may choose their own threading model. The
    inference crate should not force async into the lower model execution
    boundary for V1. Cloud provider adapters use blocking HTTP at this layer; if
-   a future async product API exists, the bridge belongs above inference-next.
+   a future async product API exists, the bridge belongs above inference.
 
 5. **No hidden database-open network calls.**
    Cloud provider calls happen only when an inference request is executed.
@@ -188,7 +188,7 @@ Current files and responsibilities:
 10. **Model registry is a local artifact resolver, not a StrataHub client.**
     Registry behavior can map names, aliases, tasks, quantization variants, and
     local files. StrataHub dataset clone, fleet identity, and cloud sync are
-    outside inference-next.
+    outside inference.
 
 11. **Inference errors must become structured enough for upper layers.**
     The current string-wrapping `InferenceError` shape is acceptable evidence,
@@ -207,7 +207,7 @@ Current files and responsibilities:
     Inference-next does not classify the host or own product-wide budgets.
 
 13. **The inference crate default is minimal.**
-    V1 inference-next should compile without selecting a provider runtime by
+    V1 inference should compile without selecting a provider runtime by
     default. Product crates may opt into `local` or cloud providers explicitly,
     but the lower crate should not surprise lightweight consumers, wasm builds,
     sandboxed agents, or CI with a native llama.cpp build.
@@ -277,7 +277,7 @@ Current files and responsibilities:
     claims, mutex boundaries, panic behavior, and lifecycle stress tests for
     load, generate, embed, and rank. The audit report should live at
     `docs/audits/llama-ffi-unsafe-audit.md`, require a second reviewer, and
-    reconcile the crate-level unsafe policy: inference-next denies unsafe code
+    reconcile the crate-level unsafe policy: inference denies unsafe code
     outside the `local` feature/module boundary and allows audited unsafe only
     there.
 
@@ -345,7 +345,7 @@ The exact file names can change during implementation, but the target structure
 should be domain-shaped and small:
 
 ```text
-crates/inference-next/
+crates/inference/
   Cargo.toml
   build.rs                    # local native build only
   src/
@@ -379,7 +379,7 @@ tree. The important target is conceptual:
 
 The target shape follows the V1 engineering standards. Roadmap labels and
 cleanup-era labels must not become inference module names, feature flags, test
-names, errors, telemetry fields, or public APIs. Temporary `inference-next`
+names, errors, telemetry fields, or public APIs. Temporary `inference`
 package naming is build-branch scaffolding only; code inside the crate should
 use permanent model/provider vocabulary.
 
@@ -549,7 +549,7 @@ only resolves inference model artifacts.
 
 Clone/import behavior should be predictable when model artifacts are absent on
 the receiving machine. Source rows remain readable. Shadow-vector rows and
-derived manifests may name the model that produced them, but inference-next
+derived manifests may name the model that produced them, but inference
 does not fetch that model implicitly. A retrieval or rebuild path that needs the
 missing model reports `inference.missing_model`; engine/intelligence map that
 to embedding-unavailable or embedding-model-mismatch behavior according to the
@@ -794,4 +794,4 @@ current boundary is already mostly healthy. The right implementation path is:
 5. Preserve the no-engine/no-storage dependency boundary.
 
 If the implementation starts creating Strata-specific concepts inside
-inference-next, the design is drifting upward into intelligence-next.
+inference, the design is drifting upward into intelligence-next.

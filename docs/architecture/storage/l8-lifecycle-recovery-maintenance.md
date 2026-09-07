@@ -1,6 +1,6 @@
 # L8. Lifecycle / Recovery / Maintenance
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 Depends on:
 
@@ -15,7 +15,7 @@ Depends on:
 Consumed by:
 
 - [L9. Storage API Boundary](./l9-storage-api-boundary.md)
-- engine-next, through storage lifecycle outcomes and maintenance facts
+- engine, through storage lifecycle outcomes and maintenance facts
 
 ## Purpose
 
@@ -41,7 +41,7 @@ maintenance helpers.
 The target shape is:
 
 ```text
-engine-next open request
+engine open request
   |
   v
 L9 storage boundary
@@ -116,7 +116,7 @@ Memory release remains measure-first. Flush drains record active and frozen
 mutable bytes before and after the drain plus a retained-byte re-evaluation
 threshold. Storage-next does not call nonportable allocator release hooks in V1;
 the counter surface is the handoff for deciding whether such a hook belongs in
-storage-next or a lower allocator/backend layer.
+storage or a lower allocator/backend layer.
 
 ### Snapshot And Pruning Ownership
 
@@ -290,7 +290,7 @@ Current roles:
 
 These are L8-shaped operations, but engine currently also owns product policy,
 primitive callbacks, subsystem freeze hooks, and public error mapping. Those
-parts should stay above storage-next.
+parts should stay above storage.
 
 ### Storage-Owned Durability Evidence
 
@@ -356,7 +356,7 @@ flush, compact, materialize, quarantine, purge, and repair.
 - follower paths in `database/open.rs`, `database/recovery.rs`, and
   `database/lifecycle.rs`
 
-Follower mode is not part of storage-next. It currently adds persisted follower
+Follower mode is not part of storage. It currently adds persisted follower
 state, refresh gates, blocked transaction watermarks, and alternate recovery
 paths. The V1 product direction is IPC for multi-user local access, not
 follower mode. L8 should not preserve follower-specific lifecycle concepts.
@@ -439,9 +439,9 @@ is sound:
   objects, inherited-layer loss, no-manifest fallback, IO failures, and
   quarantine inventory mismatch
 
-Cutover note: these types are storage-next-owned in V1. They currently appear
+Cutover note: these types are storage-owned in V1. They currently appear
 on the engine public surface; the V1 cutover must either re-export/wrap
-storage-owned recovery health through engine-next or retire the engine-owned
+storage-owned recovery health through engine or retire the engine-owned
 definitions.
 
 Storage should classify the facts. Engine-next decides whether a product open
@@ -482,7 +482,7 @@ It should support:
 - deterministic single-threaded execution in tests
 - fault injection at task boundaries
 
-The current engine `BackgroundScheduler` is useful evidence, but storage-next
+The current engine `BackgroundScheduler` is useful evidence, but storage
 should avoid coupling maintenance scheduling to engine product objects.
 
 ### CheckpointPlan
@@ -626,7 +626,7 @@ return StorageOpenOutcome
 
 Cache mode skips durable recovery and starts from empty storage state.
 
-Follower recovery does not exist in storage-next.
+Follower recovery does not exist in storage.
 
 ## Flush And WAL Truncation Sequence
 
@@ -660,7 +660,7 @@ Checkpointing should be storage-ordered but primitive-neutral:
 reject if storage is closing
 quiesce commits through L7
 obtain checkpoint watermark
-ask engine-next for primitive-neutral checkpoint payload
+ask engine for primitive-neutral checkpoint payload
 L4 writes snapshot/checkpoint object
 L4 updates database manifest snapshot watermark
 L8 optionally schedules WAL truncation
@@ -706,7 +706,7 @@ maintenance posture.
 
 ## Health And Metrics
 
-L8 should expose raw health and metrics suitable for engine-next, tests, and
+L8 should expose raw health and metrics suitable for engine, tests, and
 diagnostic tools.
 
 Health facts:
@@ -823,7 +823,7 @@ Failure handling rules:
 
 ## Testing Strategy
 
-L8 is where storage-next should become reference-grade.
+L8 is where storage should become reference-grade.
 
 Required test families:
 
@@ -859,7 +859,7 @@ after the operation contracts are stable.
 
 ## V1 Minimum
 
-The V1 storage-next L8 minimum is:
+The V1 storage L8 minimum is:
 
 1. cache-mode open/close with no durable recovery claim
 2. local filesystem durable open/create
@@ -879,7 +879,7 @@ The V1 storage-next L8 minimum is:
 16. raw health and metrics
 17. deterministic lifecycle/fault test seams
 
-Not required for V1 storage-next:
+Not required for V1 storage:
 
 - production OpenDAL/S3 durability
 - distributed locks or consensus
@@ -891,13 +891,13 @@ Not required for V1 storage-next:
 
 ## Open Questions
 
-1. Should storage-next keep lossy WAL fallback as a supported operator escape
+1. Should storage keep lossy WAL fallback as a supported operator escape
    hatch, or should that become a diagnostic recovery tool outside normal open?
 2. How much of the current WAL flush thread belongs inside storage L8 versus
-   engine-next lifecycle wrapping?
+   engine lifecycle wrapping?
 3. Should checkpointing be entirely explicit at first, or should L8 include an
    automatic checkpoint policy in V1?
-4. What is the minimum storage health surface engine-next needs for Strata AI
+4. What is the minimum storage health surface engine needs for Strata AI
    and future StrataHub diagnostics?
 5. Should L8 expose a maintenance scheduler trait, or a concrete deterministic
    executor with optional threaded implementation?

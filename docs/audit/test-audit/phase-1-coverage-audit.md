@@ -8,7 +8,7 @@ Base reviewed: `origin/main` at `8f0bf36e`
 
 Source log: `docs/architecture/v1-test-coverage-program.md`
 
-STH ledger: `docs/architecture/implementation-plans/storage-testing/README.md`
+STH ledger: `docs/architecture/archive/implementation-plans/storage-testing/README.md`
 
 ## Executive Verdict
 
@@ -62,7 +62,7 @@ Current evidence:
 
 - The STH-5 as-built says the implementation is `compound_faults.rs` plus
   `tests/compound_faults.rs`, with a recovery sweep and maintenance publish
-  cases (`docs/architecture/implementation-plans/storage-testing/sth-5-failure-during-failure-implementation-plan.md:5`).
+  cases (`docs/architecture/archive/implementation-plans/storage-testing/sth-5-failure-during-failure-implementation-plan.md:5`).
 - The source header says the maintenance transitions are "flush, checkpoint,
   compaction, snapshot pruning" (`crates/storage/src/testkit/compound_faults.rs:1`).
 - The actual maintenance sequence is exactly `Flush`, `Checkpoint`, `Compact`,
@@ -103,7 +103,7 @@ nightly fuzzing, traceability, and anti-drift guard
 Current evidence:
 
 - The STH-7 as-built still says the nightly coverage job gates a 73.0% workspace
-  region floor (`docs/architecture/implementation-plans/storage-testing/sth-7-test-process-gates-implementation-plan.md:44`).
+  region floor (`docs/architecture/archive/implementation-plans/storage-testing/sth-7-test-process-gates-implementation-plan.md:44`).
 - Current CI runs the coverage job, but the gate is now the Phase 3
   per-crate, product-only script (`.github/workflows/nightly.yml:271`,
   `.github/workflows/nightly.yml:297`).
@@ -112,8 +112,8 @@ Current evidence:
   (`scripts/coverage_floors.py:1`, `scripts/coverage_floors.py:22`).
 - The STH-7 plan says scheduled fuzzing runs all 30 targets, and the older
   design section says 28 targets
-  (`docs/architecture/implementation-plans/storage-testing/sth-7-test-process-gates-implementation-plan.md:52`,
-  `docs/architecture/implementation-plans/storage-testing/sth-7-test-process-gates-implementation-plan.md:135`).
+  (`docs/architecture/archive/implementation-plans/storage-testing/sth-7-test-process-gates-implementation-plan.md:52`,
+  `docs/architecture/archive/implementation-plans/storage-testing/sth-7-test-process-gates-implementation-plan.md:135`).
 - The current fuzz workflow enumerates targets dynamically with
   `cargo +nightly fuzz list`, so new targets join automatically
   (`.github/workflows/fuzz.yml:40`). The checked-out tree currently has 38 Rust
@@ -174,7 +174,7 @@ Current evidence:
 
 - The STH-7 as-built explicitly says the coverage gate is not MC/DC and that
   mutation is diff-scoped rather than a full-tree campaign
-  (`docs/architecture/implementation-plans/storage-testing/sth-7-test-process-gates-implementation-plan.md:49`).
+  (`docs/architecture/archive/implementation-plans/storage-testing/sth-7-test-process-gates-implementation-plan.md:49`).
 - The current mutation gate is valuable but cost-bounded: PR diff only, with
   additional package-specific runs for executor and inference
   (`.github/workflows/ci.yml:194`, `.github/workflows/ci.yml:260`).
@@ -210,7 +210,7 @@ prefix of acknowledged history: no lost acknowledged commit outside the allowed
 damaged suffix, no phantom, no torn batch, and no gap.
 
 Implemented: Yes. The plan header records the implemented oracle artifacts and
-the repaired stale header (`docs/architecture/implementation-plans/storage-testing/sth-1-recovery-oracle-implementation-plan.md:3`).
+the repaired stale header (`docs/architecture/archive/implementation-plans/storage-testing/sth-1-recovery-oracle-implementation-plan.md:3`).
 The verifier has typed `LostAck`, `Phantom`, `TornBatch`, and `Gap` violations
 (`crates/storage/src/testkit/recovery_oracle/verify.rs:27`) and finds a matching
 watermark against the model before accepting recovery
@@ -234,7 +234,7 @@ budget pressure.
 
 Implemented: Yes. The as-built narrows the V1-reachable sweep to append, sync,
 publish, and delete, with delete reached through snapshot pruning
-(`docs/architecture/implementation-plans/storage-testing/sth-2-fault-injection-sweeps-implementation-plan.md:17`).
+(`docs/architecture/archive/implementation-plans/storage-testing/sth-2-fault-injection-sweeps-implementation-plan.md:17`).
 The source encodes the same operation set and explains why write, conditional,
 read, list, and metadata faults are not part of the STH-2 write-path sweep
 (`crates/storage/src/testkit/fault_sweep/mod.rs:39`). The integration target
@@ -257,7 +257,7 @@ add the write-ordering watchdog that proves dependent publishes do not beat WAL
 durability.
 
 Implemented: Yes. STH-3a/3c landed in June and STH-3b landed as Phase 1.3
-(`docs/architecture/implementation-plans/storage-testing/sth-3-durability-realism-implementation-plan.md:3`).
+(`docs/architecture/archive/implementation-plans/storage-testing/sth-3-durability-realism-implementation-plan.md:3`).
 The FS model tests exercise ordered/atomic, reordered appends, garbage tail, and
 split rename against both durability policies
 (`crates/storage/tests/fs_persistence_models.rs:1`). The watchdog is a pure
@@ -275,7 +275,7 @@ append tails.
 Remaining aspects: the known limitation is real but documented: persistent
 `BackendAppendHandle` appends bypass decorators, so watched runs use the
 per-call fallback path
-(`docs/architecture/implementation-plans/storage-testing/sth-3-durability-realism-implementation-plan.md:22`).
+(`docs/architecture/archive/implementation-plans/storage-testing/sth-3-durability-realism-implementation-plan.md:22`).
 This is not a Phase 1 miss unless production/watched durable tests rely on
 persistent append handles as the primary path.
 
@@ -286,7 +286,7 @@ replayable trajectories, safety/liveness checks, and fault/crash combinations.
 
 Implemented: Yes. The as-built records the production-path driver, clock hook,
 bit-exact facts, fault/crash dimension, and the two found-and-fixed durability
-bugs (`docs/architecture/implementation-plans/storage-testing/sth-4-deterministic-simulation-implementation-plan.md:60`).
+bugs (`docs/architecture/archive/implementation-plans/storage-testing/sth-4-deterministic-simulation-implementation-plan.md:60`).
 The clean simulation test asserts seeds execute, maintenance completes, and the
 manual clock advances (`crates/storage/tests/simulation_smoke.rs:19`). The
 fault simulation test asserts both fault and crash cases execute, at least one
@@ -396,8 +396,8 @@ the liveness matrix covers every public maintenance kind at deterministic
 
 More aspects to cover: the draft objective and exit gate still say the config
 differential covers every mode, policy, and budget
-(`docs/architecture/implementation-plans/storage-testing/sth-6-differential-and-liveness-implementation-plan.md:46`,
-`docs/architecture/implementation-plans/storage-testing/sth-6-differential-and-liveness-implementation-plan.md:124`).
+(`docs/architecture/archive/implementation-plans/storage-testing/sth-6-differential-and-liveness-implementation-plan.md:46`,
+`docs/architecture/archive/implementation-plans/storage-testing/sth-6-differential-and-liveness-implementation-plan.md:124`).
 The as-built fixes policy to `EvaluateAndEnqueue` for determinism, while the
 background scheduler is covered separately. Update the doc so this does not read
 as a hidden unimplemented policy axis.
@@ -433,10 +433,10 @@ Scope: repair stale STH status headers, split mapped versus built in the
 gold-standard delta, and update the STH README status column.
 
 Implemented: Mostly. The STH index now declares the program complete and lists
-each STH slice as done with dates (`docs/architecture/implementation-plans/storage-testing/README.md:3`,
-`docs/architecture/implementation-plans/storage-testing/README.md:35`). STH-1's
+each STH slice as done with dates (`docs/architecture/archive/implementation-plans/storage-testing/README.md:3`,
+`docs/architecture/archive/implementation-plans/storage-testing/README.md:35`). STH-1's
 header explicitly records the old stale-header issue as repaired
-(`docs/architecture/implementation-plans/storage-testing/sth-1-recovery-oracle-implementation-plan.md:3`).
+(`docs/architecture/archive/implementation-plans/storage-testing/sth-1-recovery-oracle-implementation-plan.md:3`).
 
 Correctness verdict: closed for the original stale-header repair. However, the
 current audit found later content drift that the Phase 1 guard cannot catch:

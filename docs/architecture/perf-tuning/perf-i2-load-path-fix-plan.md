@@ -2,7 +2,7 @@
 
 ## Goal
 
-Restore storage-next load throughput by correcting the measured hot path, not by
+Restore storage load throughput by correcting the measured hot path, not by
 introducing speculative architecture. PERF-I2 is limited to the sequential blind
 load path exercised through the L9 storage API.
 
@@ -18,10 +18,10 @@ after reverting the speculative PERF-I2 implementation:
 
 | Engine | Throughput | Elapsed |
 | --- | ---: | ---: |
-| storage-next cache | 38,030 ops/s | 2.63 s |
+| storage cache | 38,030 ops/s | 2.63 s |
 | old cache | about 477K-497K ops/s | about 200 ms |
 
-Current storage-next load trace:
+Current storage load trace:
 
 | Counter | Count |
 | --- | ---: |
@@ -40,12 +40,12 @@ Current storage-next load trace:
 
 Profile artifacts:
 
-1. `benchmarks/results/storage-next-l9/profiles/storage-next-cache-load-1m-sample-2026-06-04T18-35-59Z.txt`
+1. `benchmarks/results/storage-l9/profiles/storage-cache-load-1m-sample-2026-06-04T18-35-59Z.txt`
 2. `benchmarks/results/storage-old-cache/profiles/storage-old-cache-load-1m-sample-2026-06-04T18-36-51Z.txt`
 
 Profile conclusion:
 
-1. storage-next spends the sampled load hot path in:
+1. storage spends the sampled load hot path in:
    `StorageRuntime::commit -> LifecycleCacheRuntime::execute_cache_commit ->
    BudgetedCommitBranch::append_committed_rows_atomically ->
    BranchLocalState::append_committed_rows_atomically -> BranchLocalState::clone
@@ -53,7 +53,7 @@ Profile conclusion:
 2. old cache spends the analogous write path in:
    `SegmentedStore::apply_writes_atomic -> Memtable::put_entry`, mostly skiplist
    search, key encoding, and allocation.
-3. The old path does not clone all prior rows per commit batch. storage-next
+3. The old path does not clone all prior rows per commit batch. storage
    currently does.
 
 ## Non-Goals
@@ -96,9 +96,9 @@ No production behavior change.
 
 Files:
 
-1. `crates/storage-next/src/branch/state/append.rs`
-2. `crates/storage-next/src/table/mutable.rs`
-3. `crates/storage-next/src/branch/state/mod.rs`
+1. `crates/storage/src/branch/state/append.rs`
+2. `crates/storage/src/table/mutable.rs`
+3. `crates/storage/src/branch/state/mod.rs`
 
 Work:
 
@@ -126,8 +126,8 @@ atomic append helper.
 
 Files:
 
-1. `crates/storage-next/src/branch/state/append.rs`
-2. `crates/storage-next/src/branch/tests/identity_state.rs`
+1. `crates/storage/src/branch/state/append.rs`
+2. `crates/storage/src/branch/tests/identity_state.rs`
 
 Work:
 
@@ -163,10 +163,10 @@ batch-local validation plus direct apply.
 
 Files:
 
-1. `crates/storage-next/src/branch/state/append.rs`
-2. `crates/storage-next/src/table/mutable.rs` only if an infallible or rollback
+1. `crates/storage/src/branch/state/append.rs`
+2. `crates/storage/src/table/mutable.rs` only if an infallible or rollback
    table insertion primitive is required.
-3. `crates/storage-next/src/branch/tests/identity_state.rs`
+3. `crates/storage/src/branch/tests/identity_state.rs`
 
 Preferred implementation:
 
@@ -210,17 +210,17 @@ Commands:
 
 ```sh
 cargo fmt --all -- --check
-cargo check -p strata-storage-next --features perf-trace
-cargo test -p strata-storage-next --lib --features perf-trace branch_local_state_rejects_active_and_frozen_duplicates_without_mutation
-cargo test -p strata-storage-next --lib --features perf-trace conflict
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale -- --scales 100k --engines cache,standard --workloads load-seq --samples 1000 --value-bytes 150
+cargo check -p strata-storage --features perf-trace
+cargo test -p strata-storage --lib --features perf-trace branch_local_state_rejects_active_and_frozen_duplicates_without_mutation
+cargo test -p strata-storage --lib --features perf-trace conflict
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale -- --scales 100k --engines cache,standard --workloads load-seq --samples 1000 --value-bytes 150
 ```
 
 Profile command:
 
 ```sh
-cargo build --release --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale
-mkdir -p benchmarks/results/storage-next-l9/profiles
+cargo build --release --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale
+mkdir -p benchmarks/results/storage-l9/profiles
 ```
 
 Then run a long-enough cache load and attach `/usr/bin/sample` for a bounded
@@ -232,7 +232,7 @@ Decision gate:
 1. If append clone counters are still non-zero, PERF-I2C is incomplete.
 2. If append clone counters are zero and throughput is close to old cache for
    100K, stop PERF-I2. Do not implement conflict-source changes.
-3. If append clone counters are zero but storage-next remains materially slower,
+3. If append clone counters are zero but storage remains materially slower,
    inspect the new profile. Only proceed to PERF-I2E if read-view construction
    is now a top measured bottleneck.
 
@@ -243,11 +243,11 @@ clone is gone and read-view construction remains a hot path.
 
 Files:
 
-1. `crates/storage-next/src/commit/conflict.rs`
-2. `crates/storage-next/src/commit/cache.rs`
-3. `crates/storage-next/src/commit/durable.rs`
-4. `crates/storage-next/src/commit/tests/cache.rs`
-5. `crates/storage-next/src/commit/tests/durable.rs`
+1. `crates/storage/src/commit/conflict.rs`
+2. `crates/storage/src/commit/cache.rs`
+3. `crates/storage/src/commit/durable.rs`
+4. `crates/storage/src/commit/tests/cache.rs`
+5. `crates/storage/src/commit/tests/durable.rs`
 
 Work:
 
@@ -284,17 +284,17 @@ Commands:
 
 ```sh
 cargo fmt --all -- --check
-cargo check -p strata-storage-next --features perf-trace
-cargo test -p strata-storage-next --features perf-trace
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale -- --scales 100k --engines cache,standard --workloads load-seq --samples 1000 --value-bytes 150
+cargo check -p strata-storage --features perf-trace
+cargo test -p strata-storage --features perf-trace
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale -- --scales 100k --engines cache,standard --workloads load-seq --samples 1000 --value-bytes 150
 cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-old-cache-scale -- --scales 100k --workloads load-seq --samples 1000 --value-bytes 150
 ```
 
 Success criteria:
 
-1. storage-next load work is O(new rows per batch), not O(accumulated rows per
+1. storage load work is O(new rows per batch), not O(accumulated rows per
    batch);
-2. storage-next 100K cache load is within a small constant factor of old cache;
+2. storage 100K cache load is within a small constant factor of old cache;
 3. cache and standard modes show the same counter shape;
 4. no branch, commit, lifecycle, or durable safety tests regress;
 5. any remaining throughput gap has a fresh profile attached before another

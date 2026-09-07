@@ -6,13 +6,13 @@ Date: 2026-06-08
 
 Companion plans:
 
-- `docs/architecture/implementation-plans/M4P/m4p-l6-branch-lsm-runtime-parity-implementation-plan.md`
-- `docs/architecture/implementation-plans/M4P/m4p-l6-branch-lsm-runtime-parity-test-plan.md`
+- `docs/architecture/archive/implementation-plans/M4P/m4p-l6-branch-lsm-runtime-parity-implementation-plan.md`
+- `docs/architecture/archive/implementation-plans/M4P/m4p-l6-branch-lsm-runtime-parity-test-plan.md`
 
 Audit inputs:
 
-- `docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`
-- `docs/architecture/perf-tuning/storage-next-serving-path-parity-plan.md`
+- `docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`
+- `docs/architecture/perf-tuning/storage-serving-path-parity-plan.md`
 
 ## Scope
 
@@ -42,17 +42,17 @@ The generated branch harness and direct branch tests now cover:
 
 Primary proof files:
 
-- `crates/storage-next/src/testkit/branch_lsm.rs`
-- `crates/storage-next/src/testkit/branch_lsm/model_store.rs`
-- `crates/storage-next/src/testkit/branch_lsm/read_model.rs`
-- `crates/storage-next/src/testkit/branch_lsm/compaction.rs`
-- `crates/storage-next/tests/branch_lsm_properties.rs`
-- `crates/storage-next/tests/branch_lsm_closeout.rs`
-- `crates/storage-next/src/branch/tests/source_layout.rs`
-- `crates/storage-next/src/branch/tests/point_pruning.rs`
-- `crates/storage-next/src/branch/tests/scan_pruning.rs`
-- `crates/storage-next/src/branch/tests/history_pruning.rs`
-- `crates/storage-next/src/branch/tests/inheritance_materialization/validation_fork.rs`
+- `crates/storage/src/testkit/branch_lsm.rs`
+- `crates/storage/src/testkit/branch_lsm/model_store.rs`
+- `crates/storage/src/testkit/branch_lsm/read_model.rs`
+- `crates/storage/src/testkit/branch_lsm/compaction.rs`
+- `crates/storage/tests/branch_lsm_properties.rs`
+- `crates/storage/tests/branch_lsm_closeout.rs`
+- `crates/storage/src/branch/tests/source_layout.rs`
+- `crates/storage/src/branch/tests/point_pruning.rs`
+- `crates/storage/src/branch/tests/scan_pruning.rs`
+- `crates/storage/src/branch/tests/history_pruning.rs`
+- `crates/storage/src/branch/tests/inheritance_materialization/validation_fork.rs`
 
 ## Source Guards
 
@@ -80,7 +80,7 @@ engine and the old cache benchmark for the historical engine.
 New engine:
 
 ```sh
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale -- --scales 100k,1m,5m,10m --engines cache,standard --workloads load-seq,point-latest,point-throughput,scan-prefix,scan-range-throughput --samples 1000 --branch-samples 100 --scan-limit 64 --value-bytes 150 --flush-every 100000
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale -- --scales 100k,1m,5m,10m --engines cache,standard --workloads load-seq,point-latest,point-throughput,scan-prefix,scan-range-throughput --samples 1000 --branch-samples 100 --scan-limit 64 --value-bytes 150 --flush-every 100000
 ```
 
 Old engine:
@@ -127,8 +127,8 @@ The following checked-in reports are historical anchors. They are useful for
 throughput trend comparison, but they predate the derived `source_shape_metrics`
 object added by this closeout slice.
 
-- `benchmarks/results/storage-next-l9/storage-next-l9-scale-2026-06-05T13-19-49Z-12d2790b.json`
-- `benchmarks/results/storage-next-l9/storage-next-l9-scale-2026-06-05T07-13-25Z-12d2790b.json`
+- `benchmarks/results/storage-l9/storage-l9-scale-2026-06-05T13-19-49Z-12d2790b.json`
+- `benchmarks/results/storage-l9/storage-l9-scale-2026-06-05T07-13-25Z-12d2790b.json`
 - `benchmarks/results/storage-old-cache/storage-old-cache-scale-2026-06-05T06-57-50Z-12d2790b.json`
 - `benchmarks/results/storage-old-cache/storage-old-cache-scale-2026-06-05T07-14-14Z-12d2790b.json`
 

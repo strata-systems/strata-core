@@ -12,7 +12,7 @@ normal engineering limit of 1,500 net LOC per slice. If a directory pass would
 touch too many files, split it by subdirectory or ownership category.
 
 Interlock with
-`docs/architecture/cleanup/storage-next-type-proliferation-reduction-plan.md`:
+`docs/architecture/cleanup/storage-type-proliferation-reduction-plan.md`:
 for files scheduled for near-term extraction, write comments on the post-split
 files instead of polishing the pre-split file. In particular, defer detailed
 comments for `branch/state.rs` until the branch-state extraction slices land,
@@ -20,7 +20,7 @@ or make the comments the final step of each extraction slice.
 
 ## Goal
 
-Add useful file-level comments to every Rust file in `crates/storage-next/src`
+Add useful file-level comments to every Rust file in `crates/storage/src`
 so the next developer can quickly understand:
 
 1. what the file owns;
@@ -202,7 +202,7 @@ Create a strictly mechanical inventory of files missing module comments.
 Suggested command:
 
 ```sh
-find crates/storage-next/src -type f -name '*.rs' -print | sort
+find crates/storage/src -type f -name '*.rs' -print | sort
 ```
 
 For each file, record:
@@ -346,7 +346,7 @@ ledger.
 
 ## Acceptance Criteria
 
-1. Every production Rust file under `crates/storage-next/src` starts with a
+1. Every production Rust file under `crates/storage/src` starts with a
    useful `//!` module comment.
 2. Test and testkit files either have `//!` comments or a deliberate exemption
    recorded in the cleanup ledger.

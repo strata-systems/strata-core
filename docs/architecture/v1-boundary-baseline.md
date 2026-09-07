@@ -237,7 +237,7 @@ Examples of current leakage:
 - WAL/write-set encoding still names `EntityRef`.
 - `TxnId` is still imported from core.
 
-V1 storage-next must replace this with row-native storage DTOs and opaque row
+V1 storage must replace this with row-native storage DTOs and opaque row
 bytes at the storage boundary.
 
 ### Engine Is The Current Consolidation Hub
@@ -265,7 +265,7 @@ Representative current public surfaces that V1 must retire or redesign:
 4. `crates/engine/src/database/spec.rs` still defines follower mode.
 5. `crates/engine/src/bundle/` still implements branch bundles.
 
-V1 engine-next should keep engine as the product semantic owner, but reorganize
+V1 engine should keep engine as the product semantic owner, but reorganize
 it around persistence, data capabilities, branch/time, control plane,
 retrieval, command boundary, clone artifacts, and diagnostics.
 
@@ -276,11 +276,11 @@ by the V1 product/architecture documents:
 
 | Surface | Current evidence | V1 disposition |
 |---|---|---|
-| Follower mode | `OpenOptions::follower`, `DatabaseMode::Follower`, CLI `--follower`, `Database::refresh`, follower tests and recovery paths | Remove before or during engine-next cutover. |
+| Follower mode | `OpenOptions::follower`, `DatabaseMode::Follower`, CLI `--follower`, `Database::refresh`, follower tests and recovery paths | Remove before or during engine cutover. |
 | Public transaction sessions | `Database::begin_transaction`, engine `Transaction`, executor transaction outputs/errors | Replace with per-command commits and capability-local batch APIs. |
 | Manual maintenance workflow | executor/compat `flush` and `compact`, engine `Database::flush` and `Database::compact` | Keep maintenance internal/diagnostic, not a default product workflow. |
 | Branch bundles | `crates/engine/src/bundle`, executor branch bundle handlers | Remove in favor of Arrow support and clone artifacts. |
-| Product-shaped storage APIs | storage `Storage`, `VersionedValue`, `TransactionContext` exposed upward | Replace with storage-next L9 boundary and engine persistence adapter. |
+| Product-shaped storage APIs | storage `Storage`, `VersionedValue`, `TransactionContext` exposed upward | Replace with storage L9 boundary and engine persistence adapter. |
 
 ### Executor And CLI Still Mirror Old Surfaces
 
@@ -311,7 +311,7 @@ harden-and-contract work rather than an invasive rewrite.
 Known intelligence boundary debt:
 
 1. Intelligence still consumes core-owned product DTOs directly because those
-   DTOs have not moved to engine-next.
+   DTOs have not moved to engine.
 2. Intelligence-next must consume inference through task contracts and engine
    through named engine surfaces, not through provider internals or storage.
 

@@ -1,6 +1,6 @@
 # L2. Object Layout
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
@@ -152,7 +152,7 @@ the database manifest is an L4/L6 decision.
 retention behavior are owned by L3/L4/L8.
 
 `tmp/<operation-id>/<object-id>` names object-visible temporary objects. L2
-reserves this namespace; L4/L8 define publish and cleanup rules if storage-next
+reserves this namespace; L4/L8 define publish and cleanup rules if storage
 adds object-visible temporary objects. Local filesystem atomic publish scratch
 files are backend-private L1 paths, not L2 `tmp/` objects.
 
@@ -185,7 +185,7 @@ Chosen first-pass encodings:
   constructors reject levels greater than `9999`
 
 L2 owns the string form used in object names even when the ID type itself lives
-in core-next.
+in core.
 
 ## Backend Mappings
 
@@ -287,7 +287,7 @@ Property tests:
 
 ## V1 Minimum
 
-The first storage-next implementation needs:
+The first storage implementation needs:
 
 1. A storage-owned `ObjectName` or equivalent validated type.
 2. Constructors for database manifest, branch catalog manifest, pending release
@@ -321,7 +321,7 @@ Deferred decisions:
 
 ## Open Questions
 
-1. Which ID types and encodings belong in core-next versus storage-next?
+1. Which ID types and encodings belong in core versus storage?
 2. Should local filesystem preserve human-readable names like `wal-000001.seg`
    for debugging, or use the same object names exactly?
 3. Should `tables/<branch-id>/<level>/<table-id>` include a table generation or

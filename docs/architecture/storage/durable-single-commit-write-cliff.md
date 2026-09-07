@@ -13,7 +13,7 @@ Layers touched: [L6 branch LSM runtime](./l6-branch-isolated-lsm-runtime.md),
 ## Summary
 
 Durable writes issued one row per commit (the natural YCSB / autocommit shape)
-collapse on storage-next: throughput falls from ~900k ops/s to tens of ops/s as
+collapse on storage: throughput falls from ~900k ops/s to tens of ops/s as
 the workload proceeds, and at intermediate scales writes are sometimes
 **hard-rejected** with a `LevelZeroTableBacklog` blocking-admission error. The
 same data loaded in batches (1000 rows/commit) runs at full speed.
@@ -35,7 +35,7 @@ the slowdown, and is the subject of the optional fix #3.
 
 > **Note (correction):** an earlier draft of this doc listed a second root
 > cause — "the single global runtime mutex held across flush/compaction I/O."
-> That was an **incorrect inference**. storage-next already runs the table build
+> That was an **incorrect inference**. storage already runs the table build
 > and the manifest fsync *off-lock* (M4P-L8K; see Root cause §3 below). The large
 > `foreground_wait_background_lock` measured pre-fix came from the *volume* of
 > brief metadata lock-holds during the commit-count churn, which fix #1 removed —
@@ -57,7 +57,7 @@ directly.)
   `commit rejected by Blocking storage pressure from LevelZeroTableBacklog`.
   Whether it slows down or hard-rejects depends on the race between L0 creation
   and background compaction, so it is timing-dependent.
-- **Engine surface inherits it.** Through engine-next, YCSB workload A (50%
+- **Engine surface inherits it.** Through engine, YCSB workload A (50%
   update) on durable mode degrades from 124 µs/update at 5k ops to 12.8 ms/update
   at 100k ops (141 ops/s overall). Read-only workload C is identical to cache
   (~990k ops/s) — reads are unaffected; the cliff is write-path only.
@@ -68,10 +68,10 @@ Storage layer (no engine):
 
 ```bash
 # cliffs / hard-rejects
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale -- \
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale -- \
   --scales 100000 --engines standard --workloads load-seq --batch-size 1
 # full speed (batched)
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale -- \
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale -- \
   --scales 100000 --engines standard --workloads load-seq --batch-size 1000
 ```
 
@@ -86,7 +86,7 @@ cargo run --release --manifest-path benchmarks/Cargo.toml --bin engine-ycsb -- \
 
 ### 1. The commit-count checkpoint trigger
 
-`crates/storage-next/src/lifecycle/config.rs`:
+`crates/storage/src/lifecycle/config.rs`:
 
 ```rust
 const DEFAULT_WAL_GROWTH_MAX_BYTES: u64 = 256 * 1024 * 1024;   // 256 MiB
@@ -132,7 +132,7 @@ non-deterministic `LevelZeroTableBacklog` write rejection.
 
 ### 3. The lock-wait was maintenance *volume*, not I/O under the lock
 
-`crates/storage-next/src/api/runtime/background.rs::RuntimeSlot::lock()` is the
+`crates/storage/src/api/runtime/background.rs::RuntimeSlot::lock()` is the
 single `ParkingMutex` around the runtime; it records
 `foreground_wait_background_lock`. It is tempting to conclude commits block
 behind maintenance *I/O* — but they do **not**. The background maintenance round
@@ -179,11 +179,11 @@ flat at ~20 µs; durable mode is `Standard`, which defers fsync).
 
 Both the pre-V1 segmented engine (`crates/storage`) and RocksDB — the LSM the
 pre-V1 engine was modeled on — handle this identical workload without a cliff.
-storage-next diverges on the **flush trigger** (the root cause) and on **overload
+storage diverges on the **flush trigger** (the root cause) and on **overload
 handling** (the robustness gap). On the lock axis it already **matches** the
 references — table build and manifest fsync run off-lock (M4P-L8K).
 
-| Axis | RocksDB (reference) | pre-V1 `crates/storage` | storage-next |
+| Axis | RocksDB (reference) | pre-V1 `crates/storage` | storage |
 |---|---|---|---|
 | Flush trigger | **Size** — `write_buffer_size` (64 MiB) + `max_write_buffer_number` (2); WAL size → CF flush. No commit-count notion. | **Size** — `maybe_rotate_branch` when `active.approx_bytes() >= write_buffer_size`. No commit-count notion. | **Fixed by #1** — size-driven by default; the commit-count trigger is now opt-in. |
 | WAL bound | `max_total_wal_size` → flush oldest CF | flush watermark (data-driven) | byte/segment WAL-growth triggers + segment rolling |
@@ -221,14 +221,14 @@ install results.**
   `AssertHeld` 1145) → `InstallCompactionResults` → `LogAndApply` takes it.
 
 This is the same shape as the pre-V1 engine's `flush_oldest_frozen`, and is
-exactly what storage-next is missing.
+exactly what storage is missing.
 
 **2. Overload throttles writers; it never returns an error.** `DBImpl::WriteImpl`
 → `PreprocessWrite` consults the `WriteController` (`db/write_controller.{h,cc}`)
 and, when behind, calls `DelayWrite`, which *sleeps* the writer proportionally;
 the hard `StopToken` makes the writer *wait*, not fail
 (`db/db_impl/db_impl_write.cc`, `db/column_family.cc::RecalculateWriteStallConditions`).
-Thresholds are two-tier and far higher than storage-next's single hard block:
+Thresholds are two-tier and far higher than storage's single hard block:
 slow at `level0_slowdown_writes_trigger = 20` / `soft_pending_compaction_bytes_limit
 = 64 GiB`; stop at `level0_stop_writes_trigger = 36` / `hard_pending_compaction_bytes_limit
 = 256 GiB`. Flush is size-driven: `write_buffer_size = 64 MiB`,
@@ -305,7 +305,7 @@ by anything in this doc.
 ### Lock-free maintenance install — ALREADY IMPLEMENTED (was "fix #2")
 
 No work needed. An earlier draft planned to release the runtime lock during
-flush/compaction I/O. storage-next already does this: the off-lock publish
+flush/compaction I/O. storage already does this: the off-lock publish
 mechanism (`74e817e0 M4P-L8K`) runs the table build off-lock
 (`api/runtime/maintenance.rs:644`) and the manifest fsync off-lock (`:670`),
 matching RocksDB (`flush_job`/`compaction_job` `Unlock → I/O → Lock → LogAndApply`)
@@ -314,7 +314,7 @@ lock is held only for brief metadata install/record. See Root cause §3.
 
 ### Backpressure — throttle, don't reject (optional, addresses the hard-reject failure mode)
 
-storage-next's overload response is the harshest of the three designs: at 16 L0
+storage's overload response is the harshest of the three designs: at 16 L0
 tables it returns a `LevelZeroTableBacklog` error and aborts the commit, with no
 intermediate slowdown tier. RocksDB never errors on overload — it *throttles*.
 Adopt the `WriteController` model:
@@ -372,7 +372,7 @@ Re-run the reproductions and require:
 
 ## References
 
-- storage-next: `lifecycle/config.rs`, `lifecycle/wal_growth.rs`,
+- storage: `lifecycle/config.rs`, `lifecycle/wal_growth.rs`,
   `lifecycle/durable/maintenance.rs`, `lifecycle/checkpoint.rs`,
   `lifecycle/compaction.rs`, `api/runtime/background.rs`, `branch/config.rs`,
   `lifecycle/budget.rs`.

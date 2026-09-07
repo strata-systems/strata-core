@@ -5,7 +5,7 @@ Status: historical cleanup plan; temporary inventory guard retired
 ## Retirement Note
 
 The generated type-inventory tooling was temporary cleanup scaffolding. It
-helped drive the storage-next type-reduction pass, but it is now retired and
+helped drive the storage type-reduction pass, but it is now retired and
 should not be regenerated for future work.
 
 Future storage cleanup should rely on focused source guards, behavior tests,
@@ -35,7 +35,7 @@ exceed that budget, split the extraction by operation and land multiple
 `CLN-T*` slices rather than opening a single large file-move PR.
 
 Interlock with
-`docs/architecture/cleanup/storage-next-file-comment-rollout-plan.md`: for a
+`docs/architecture/cleanup/storage-file-comment-rollout-plan.md`: for a
 directory that is about to be split or type-reduced, do the type-reduction split
 first, then add or update file comments on the post-split files. Comments may
 be the final step of a split slice; do not write detailed comments for files
@@ -43,11 +43,11 @@ that are scheduled to be split immediately.
 
 ## Goal
 
-Reduce unnecessary struct/enum proliferation in `crates/storage-next` without
+Reduce unnecessary struct/enum proliferation in `crates/storage` without
 weakening storage correctness, recovery evidence, durable format boundaries, or
 public API stability.
 
-The problem is not that storage-next uses typed values. Typed values are
+The problem is not that storage uses typed values. Typed values are
 appropriate when they cross a layer boundary, validate caller input, preserve a
 source error, or record durable/recovery facts. The problem is that too many
 private operation steps have grown boundary-shaped type families:
@@ -123,8 +123,8 @@ Every PR should run the narrow tests for the touched operation plus this common
 verification floor unless the PR description records a narrower rationale:
 
 ```sh
-cargo test -p strata-storage-next
-cargo test -p strata-storage-next --test format_golden
+cargo test -p strata-storage
+cargo test -p strata-storage --test format_golden
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
@@ -205,7 +205,7 @@ source guards and behavior tests.
 
 | Code | Unit | Primary files | Primary action | Expected result |
 |---|---|---|---|---|
-| `CLN-T0` | Inventory baseline | `crates/storage-next/src/**` | Historical: added repeatable inventory tooling during cleanup | Retired after cleanup completion |
+| `CLN-T0` | Inventory baseline | `crates/storage/src/**` | Historical: added repeatable inventory tooling during cleanup | Retired after cleanup completion |
 | `CLN-T1` | Branch facade | `branch/mod.rs` | Remove broad re-exports, delete existing speculative `allow(unused_imports)` blocks as exports disappear, and update call sites to explicit submodule imports | Smaller branch public-in-crate surface |
 | `CLN-T2A` | Branch state extraction: append/rotation | `branch/state.rs` | Move append and active/frozen rotation code into owned modules without semantic changes | First file-size reduction under budget |
 | `CLN-T2B` | Branch state extraction: fork/read hooks | `branch/state.rs` | Move fork and read-facing helper code into owned modules without semantic changes | Branch state ownership gets clearer |

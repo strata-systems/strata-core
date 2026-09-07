@@ -1,6 +1,6 @@
 # Storage-Next Commit Timeline Substrate
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 

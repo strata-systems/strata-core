@@ -1,17 +1,17 @@
 # Engine-Next Error And Diagnostics Contract
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
-This document defines the engine-next error and diagnostics contract.
+This document defines the engine error and diagnostics contract.
 
 The cross-layer error vocabulary lives in
 `docs/architecture/v1-error-and-diagnostics-contract.md`. This document applies
-that vocabulary to engine-next:
+that vocabulary to engine:
 
 1. How engine product failures become stable error statuses.
-2. How storage-next, capability, branch, retrieval, clone, and IPC failures are
+2. How storage, capability, branch, retrieval, clone, and IPC failures are
    mapped.
 3. Which context the engine must attach before an error leaves the engine.
 4. Which current error surfaces are transitional and must not be frozen.
@@ -348,7 +348,7 @@ Target codes:
 | Write stall exceeded budget | `resource_exhausted.write_stall` | `not_started` or `definitely_not_committed` |
 | Post-commit derived update failed | `failed_precondition.derived_update_failed` | `committed_post_commit_failed` |
 
-The exact mapping depends on the storage-next L9 outcome. The implementation
+The exact mapping depends on the storage L9 outcome. The implementation
 must keep phase and commit outcome together so a future maintainer cannot map a
 write-path storage error with a blanket conversion.
 
@@ -524,9 +524,9 @@ track Rust enum variants or parse messages.
 
 ### Engine To Intelligence And Inference
 
-Engine-next should not depend upward on intelligence-next or inference-next.
+Engine-next should not depend upward on intelligence-next or inference.
 Engine-owned retrieval statuses should describe database and derived-state
-availability. Intelligence-next and inference-next own provider execution
+availability. Intelligence-next and inference own provider execution
 failures and map them into the same V1 status contract above engine.
 
 When a public command boundary presents intelligence or inference failures next
@@ -544,7 +544,7 @@ It should not look like storage corruption.
 ## Stable Detail Keys
 
 The exact registry of stable detail keys belongs in the V1 error registry, but
-engine-next should standardize these keys early:
+engine should standardize these keys early:
 
 | Key | Meaning |
 | --- | --- |
@@ -636,7 +636,7 @@ Engine-next error conformance tests should include:
 
 1. Registry tests proving every emitted engine code is registered.
 2. Mapping tests from capability errors to stable statuses.
-3. Mapping tests from storage-next L9 errors to stable engine statuses.
+3. Mapping tests from storage L9 errors to stable engine statuses.
 4. Write-path tests for `not_started`, `definitely_not_committed`,
    `maybe_committed`, and `committed_post_commit_failed`.
 5. Read-only local and IPC write rejection tests.
@@ -683,7 +683,7 @@ This contract is satisfied when:
 Resolve before V1 implementation freezes:
 
 1. What is the final Rust name of the public status-compatible error type?
-2. Does engine-next keep `StrataError` as a compatibility wrapper, or replace it
+2. Does engine keep `StrataError` as a compatibility wrapper, or replace it
    with the new parent type during cutover?
 3. Which detail keys are stable public contract versus best-effort diagnostics?
 4. Idempotency keys for write commands.

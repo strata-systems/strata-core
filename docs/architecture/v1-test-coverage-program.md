@@ -63,7 +63,7 @@ order, the gates, and the ledger.
 Related documents:
 
 1. `docs/architecture/v1-testing-and-conformance-plan.md` — layer test plan (L1-L9, T0-T6 maturity)
-2. `docs/architecture/implementation-plans/storage-testing/README.md` — STH program (SQLite-derived)
+2. `docs/architecture/archive/implementation-plans/storage-testing/README.md` — STH program (SQLite-derived)
 3. `docs/architecture/v1-storage-testing-gold-standard-delta.md` — SQLite delta analysis
 4. `docs/architecture/v1-storage-testing-taxonomy-and-gaps.md` — 12 bug classes
 

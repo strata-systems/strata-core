@@ -1,12 +1,12 @@
 # Engine-Next Product-Pathway Conformance Plan
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
 This document maps Strata V1 product pathways to conformance tests.
 
-The product documents say what users must be able to do. The engine-next
+The product documents say what users must be able to do. The engine
 contracts say which layer owns each behavior. This document defines the
 acceptance bar: which pathway tests must exist before V1 can claim the product
 surface is ready.

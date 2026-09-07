@@ -13,10 +13,10 @@ Related documents:
 1. `docs/architecture/strata-sdk-quality-playbook.md`
 2. `docs/architecture/v1-error-and-diagnostics-contract.md`
 3. `docs/architecture/v1-response-quality-readiness-assessment.md`
-4. `docs/architecture/implementation-plans/v1-response-error-contract-implementation-plan.md`
-5. `docs/architecture/implementation-plans/v1-success-response-contract-implementation-plan.md`
-6. `docs/architecture/implementation-plans/v1-response-contract-completion-implementation-plan.md`
-7. `docs/architecture/implementation-plans/v1-response-contract-completion-test-plan.md`
+4. `docs/architecture/archive/implementation-plans/v1-response-error-contract-implementation-plan.md`
+5. `docs/architecture/archive/implementation-plans/v1-success-response-contract-implementation-plan.md`
+6. `docs/architecture/archive/implementation-plans/v1-response-contract-completion-implementation-plan.md`
+7. `docs/architecture/archive/implementation-plans/v1-response-contract-completion-test-plan.md`
 8. `docs/architecture/v1-public-output-inventory.md`
 
 ## Bottom Line
@@ -85,7 +85,7 @@ It should provide:
 3. durability facts;
 4. ambiguous commit facts on failure;
 5. cursor and row-version facts;
-6. enough structured error detail for engine-next to classify failures.
+6. enough structured error detail for engine to classify failures.
 
 It should not provide:
 

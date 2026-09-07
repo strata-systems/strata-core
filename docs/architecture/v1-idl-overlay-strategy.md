@@ -21,7 +21,7 @@ Implementation and test plans are written separately per slice.
 Strata already has several layers:
 
 ```text
-engine-next APIs
+engine APIs
 executor-next command DTOs
 executor-next IDL overlay metadata
 SDKs / CLI / MCP / docs
@@ -905,7 +905,7 @@ The IDL can drive guard tests:
 1. The IDL is not a replacement for executor-next command DTOs.
 2. The IDL is not a full OpenAPI spec.
 3. The IDL is not a second hand-authored request/response schema.
-4. The IDL should not expose storage-next or engine-next internals.
+4. The IDL should not expose storage or engine internals.
 5. The IDL should not require SDKs to know executor implementation details.
 
 ## Risks

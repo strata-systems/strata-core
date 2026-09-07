@@ -38,7 +38,7 @@ only in M9F/M10D, and M11 readiness merely "compares against threshold policy."
 **M12 is where Strata earns its billion-scale numbers.** It is a performance
 track, not a feature track. It does not add product surface, does not change the
 public engine API, and changes the durable on-disk format only through a gated,
-deliberate re-freeze (see M12I). It revisits storage-next and engine-next
+deliberate re-freeze (see M12I). It revisits storage and engine
 *internals* to meet the non-functional requirements at scale.
 
 Authoritative inputs:

@@ -6,8 +6,8 @@ Date: 2026-06-08
 
 Companion plans:
 
-- `docs/architecture/implementation-plans/M4P/m4p-l5-table-runtime-parity-implementation-plan.md`
-- `docs/architecture/implementation-plans/M4P/m4p-l5-table-runtime-parity-test-plan.md`
+- `docs/architecture/archive/implementation-plans/M4P/m4p-l5-table-runtime-parity-implementation-plan.md`
+- `docs/architecture/archive/implementation-plans/M4P/m4p-l5-table-runtime-parity-test-plan.md`
 
 ## Scope
 
@@ -46,9 +46,9 @@ false-positive paths.
 Verification:
 
 ```sh
-cargo test -p strata-storage-next --locked --features testkit --test table_runtime_properties
-cargo test -p strata-storage-next --locked --test table_runtime_closeout
-cargo test -p strata-storage-next --locked --test table_runtime_source_guard
+cargo test -p strata-storage --locked --features testkit --test table_runtime_properties
+cargo test -p strata-storage --locked --test table_runtime_closeout
+cargo test -p strata-storage --locked --test table_runtime_source_guard
 ```
 
 Result:
@@ -59,7 +59,7 @@ Result:
 
 ## Source Guards
 
-The source guard suite still proves production `crates/storage-next/src/table`
+The source guard suite still proves production `crates/storage/src/table`
 does not import or embed:
 
 1. backend/object/layout/service APIs;
@@ -82,7 +82,7 @@ name.
 Command:
 
 ```sh
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale -- --scales 100k,1m --engines cache,standard --workloads point-throughput --samples 1000 --value-bytes 150
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale -- --scales 100k,1m --engines cache,standard --workloads point-throughput --samples 1000 --value-bytes 150
 ```
 
 Result:
@@ -111,7 +111,7 @@ mutable storage budget
 Command:
 
 ```sh
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale -- --scales 100k,1m --engines cache,standard --workloads scan-prefix,scan-range-throughput --samples 100 --scan-limit 64 --value-bytes 150
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale -- --scales 100k,1m --engines cache,standard --workloads scan-prefix,scan-range-throughput --samples 100 --scan-limit 64 --value-bytes 150
 ```
 
 Result:
@@ -146,12 +146,12 @@ was rerun with `--flush-every 100000`.
 Command:
 
 ```sh
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale -- --scales 1m --engines cache,standard --workloads point-throughput --samples 1000 --value-bytes 150 --flush-every 100000
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale -- --scales 1m --engines cache,standard --workloads point-throughput --samples 1000 --value-bytes 150 --flush-every 100000
 ```
 
 Result file:
 
-- `benchmarks/results/storage-next-l9/storage-next-l9-scale-2026-06-08T02-08-53Z-7d124aeb.json`
+- `benchmarks/results/storage-l9/storage-l9-scale-2026-06-08T02-08-53Z-7d124aeb.json`
 
 Results:
 
@@ -174,12 +174,12 @@ Interpretation:
 Command:
 
 ```sh
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale -- --scales 1m --engines cache,standard --workloads scan-prefix,scan-range-throughput --samples 100 --scan-limit 64 --value-bytes 150 --flush-every 100000
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale -- --scales 1m --engines cache,standard --workloads scan-prefix,scan-range-throughput --samples 100 --scan-limit 64 --value-bytes 150 --flush-every 100000
 ```
 
 Result file:
 
-- `benchmarks/results/storage-next-l9/storage-next-l9-scale-2026-06-08T02-09-28Z-7d124aeb.json`
+- `benchmarks/results/storage-l9/storage-l9-scale-2026-06-08T02-09-28Z-7d124aeb.json`
 
 Results:
 

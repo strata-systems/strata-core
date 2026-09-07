@@ -1,6 +1,18 @@
 # Strata V1 Implementation Roadmap
 
-Status: V1 architecture draft
+> **Historical (#3134, #3154).** V1 shipped; the product is on the 1.2.x line.
+> This roadmap records how the rewrite was structured. Milestone plans live in
+> `archive/implementation-plans/`.
+>
+> **One milestone did not ship: `M8` (intelligence orchestration).** There is no
+> `crates/intelligence`, and `QueryExpander` / `ResultReranker` / `RagGenerator`
+> appear nowhere in `crates/`. M8 has **no public verdict** — it was neither
+> completed nor formally deferred or cut, which is how 1.2.x came to describe a
+> layer that does not exist. That verdict is an open product decision (#3171).
+>
+> Every other milestone (`M1`-`M7`, `M9`-`M10`) is complete.
+
+Status: historical record of the V1 rewrite
 
 ## Purpose
 
@@ -15,8 +27,8 @@ or accidental boundary erosion.
 The roadmap has two jobs:
 
 1. Confirm that the V1 architecture documents form one coherent stack.
-2. Define the order in which `core-next`, `storage-next`, `engine-next`,
-   `inference-next`, `intelligence-next`, executor, CLI, tests, and cutover
+2. Define the order in which `core`, `storage`, `engine`,
+   `inference`, `intelligence-next`, executor, CLI, tests, and cutover
    work should land.
 
 ## Related Documents
@@ -70,37 +82,37 @@ Storage contracts:
 
 Milestone implementation plans:
 
-1. `docs/architecture/implementation-plans/m0-m0t-implementation-plan.md`
-2. `docs/architecture/implementation-plans/m1-m1t-implementation-plan.md`
-3. `docs/architecture/implementation-plans/m2-m2t-implementation-plan.md`
-4. `docs/architecture/implementation-plans/m3-m3t-implementation-plan.md`
-5. `docs/architecture/implementation-plans/m4-m4t-implementation-plan.md`
-6. `docs/architecture/implementation-plans/m5-m5t-implementation-plan.md`
-7. `docs/architecture/implementation-plans/m6-m6t-implementation-plan.md`
-8. `docs/architecture/implementation-plans/m7-m7t-implementation-plan.md`
-9. `docs/architecture/implementation-plans/m8-m8t-implementation-plan.md`
-10. `docs/architecture/implementation-plans/m9-m9t-implementation-plan.md`
-11. `docs/architecture/implementation-plans/m10-m10t-implementation-plan.md`
-12. `docs/architecture/implementation-plans/m11-m11t-implementation-plan.md`
+1. `docs/architecture/archive/implementation-plans/m0-m0t-implementation-plan.md`
+2. `docs/architecture/archive/implementation-plans/m1-m1t-implementation-plan.md`
+3. `docs/architecture/archive/implementation-plans/m2-m2t-implementation-plan.md`
+4. `docs/architecture/archive/implementation-plans/m3-m3t-implementation-plan.md`
+5. `docs/architecture/archive/implementation-plans/m4-m4t-implementation-plan.md`
+6. `docs/architecture/archive/implementation-plans/m5-m5t-implementation-plan.md`
+7. `docs/architecture/archive/implementation-plans/m6-m6t-implementation-plan.md`
+8. `docs/architecture/archive/implementation-plans/m7-m7t-implementation-plan.md`
+9. `docs/architecture/archive/implementation-plans/m8-m8t-implementation-plan.md`
+10. `docs/architecture/archive/implementation-plans/m9-m9t-implementation-plan.md`
+11. `docs/architecture/archive/implementation-plans/m10-m10t-implementation-plan.md`
+12. `docs/architecture/archive/implementation-plans/m11-m11t-implementation-plan.md`
 
 ## Architecture Integration Review
 
 The V1 documents now describe one stack:
 
 ```text
-core-next
-  -> storage-next
-  -> engine-next
+core
+  -> storage
+  -> engine
   -> intelligence-next
   -> executor / cli / SDK / Strata AI
 
 intelligence-next
-  -> inference-next
+  -> inference
 ```
 
 The stack is coherent if these rules remain true during implementation:
 
-1. Only engine-next consumes storage-next directly in normal production code.
+1. Only engine consumes storage directly in normal production code.
 2. Storage-next owns generic persistence mechanics and storage-local recovery
    facts.
 3. Engine-next owns product semantics, data capabilities, branch behavior,
@@ -127,20 +139,20 @@ The current architecture covers the V1 product model as follows:
 
 | Product area | V1 architecture owner | Roadmap dependency |
 |---|---|---|
-| Embedded durable local database | storage-next + engine-next | Storage L1-L9 before engine product cutover |
-| Cache mode | storage-next + engine-next | Storage cache backend, WAL-free commit path, engine parity tests |
-| Standard/always durability | storage-next | Durable commit policy and recovery tests |
-| Read-only open | engine-next over storage-next | Engine open/access-mode tests |
-| IPC same-machine sharing | engine-next command semantics + executor/IPC runtime | Engine command boundary before CLI cutover |
-| Follower mode removal | engine-next cleanup | Guarded during engine cutover |
-| KV/JSON/event/vector/graph capabilities | engine-next | Persistence adapter and capability contracts |
-| Graph relationship layer | engine-next | EntityRef contract, graph capability, reverse maps |
+| Embedded durable local database | storage + engine | Storage L1-L9 before engine product cutover |
+| Cache mode | storage + engine | Storage cache backend, WAL-free commit path, engine parity tests |
+| Standard/always durability | storage | Durable commit policy and recovery tests |
+| Read-only open | engine over storage | Engine open/access-mode tests |
+| IPC same-machine sharing | engine command semantics + executor/IPC runtime | Engine command boundary before CLI cutover |
+| Follower mode removal | engine cleanup | Guarded during engine cutover |
+| KV/JSON/event/vector/graph capabilities | engine | Persistence adapter and capability contracts |
+| Graph relationship layer | engine | EntityRef contract, graph capability, reverse maps |
 | Branching and time travel | storage timeline + engine semantics | Storage commit timeline before branch-from-time |
-| Search/retrieval/RAG substrate | engine-next + intelligence-next + inference-next | Engine retrieval before intelligence stages |
+| Search/retrieval/RAG substrate | engine + intelligence-next + inference | Engine retrieval before intelligence stages |
 | Autoembedding | intelligence-next over engine surfaces | Engine shadow-vector surfaces before intelligence runtime |
-| Runtime resource adaptation | engine-next policy + storage/inference hints | Resource profile implementation before product cutover |
-| Dataset clone artifacts | engine-next + storage bundles | Clone contract before CLI `strata clone` |
-| StrataHub V1 clone/info | engine-next metadata + clone/provenance + CLI/Hub protocol | Clone substrate before M9 Hub integration |
+| Runtime resource adaptation | engine policy + storage/inference hints | Resource profile implementation before product cutover |
+| Dataset clone artifacts | engine + storage bundles | Clone contract before CLI `strata clone` |
+| StrataHub V1 clone/info | engine metadata + clone/provenance + CLI/Hub protocol | Clone substrate before M9 Hub integration |
 
 ## Out Of V1 Scope
 
@@ -158,7 +170,7 @@ post-V1 once V1 engine and CLI APIs are stable.
    post-V1.
 4. Migration tooling for pre-V1 development databases.
 5. OpenAI-compatible on-prem endpoint adapters (vLLM, NIM, Ollama, LM Studio,
-   llama.cpp server). Extension point reserved in inference-next; adapter is
+   llama.cpp server). Extension point reserved in inference; adapter is
    post-V1.
 6. Streaming generation unless explicitly pulled forward by product.
 7. Autosearch optimizer. Substrate is preserved in intelligence-next; the
@@ -231,17 +243,17 @@ Phase 10: Executor, CLI, SDK, tests, benches, and docs cutover
 Phase 11: V1 readiness hardening
 ```
 
-Inference-next can proceed in parallel with storage-next because it does not
+Inference-next can proceed in parallel with storage because it does not
 depend on storage or engine. Intelligence-next should wait for engine surfaces
 to stabilize, but its fake-provider/testkit work can start earlier.
 
 Milestone scheduling is a DAG, not a strict serial chain:
 
 1. `M0` gates the start of planned implementation.
-2. `M1` gates all crates that need core-next atoms.
-3. `M2`, `M3`, and `M4` form the storage-next path.
+2. `M1` gates all crates that need core atoms.
+3. `M2`, `M3`, and `M4` form the storage path.
 4. `M7` may start after `M1` and can run in parallel with `M2` through `M6`.
-5. `M5` depends on enough of `M4` to consume storage-next L9.
+5. `M5` depends on enough of `M4` to consume storage L9.
 6. `M6` depends on `M5`.
 7. `M8` depends on the required engine surfaces from `M6` and the inference
    task contracts from `M7`.
@@ -268,7 +280,7 @@ Examples:
 1. `M1`
    Core-next milestone.
 2. `M1A`
-   First core-next epic.
+   First core epic.
 3. `M1A1`
    First implementation slice inside that epic.
 
@@ -285,7 +297,7 @@ Examples:
 1. `M1T`
    Core-next test track.
 2. `M1TA`
-   First core-next test epic.
+   First core test epic.
 3. `M1TA1`
    First implementation slice inside that test epic.
 
@@ -373,12 +385,12 @@ Goal: make the document set implementation-ready.
 Work:
 
 1. Add this roadmap to the V1 architecture reading path.
-2. Confirm the resolved core-next surface still satisfies storage-next and
-   engine-next implementation plans.
+2. Confirm the resolved core surface still satisfies storage and
+   engine implementation plans.
 3. Mark `next-charter.md` as historical context only wherever needed.
-4. Confirm every engine-next contract listed in `engine-next/README.md` exists
+4. Confirm every engine contract listed in `engine/README.md` exists
    and has no unowned load-bearing decisions.
-5. Confirm storage-next L1-L9 documents agree with the format spec, L9
+5. Confirm storage L1-L9 documents agree with the format spec, L9
    boundary, runtime profiles, errors, and testing plan.
 6. Create `docs/architecture/v1-progress-tracker.md` as the lightweight
    milestone, epic, slice, issue/PR label, and test-track execution ledger.
@@ -398,13 +410,13 @@ Goal: build the smallest shared contract crate.
 
 Work:
 
-1. Create the `core-next` crate skeleton.
+1. Create the `core` crate skeleton.
 2. Add only the agreed cross-layer atoms.
 3. Keep construction explicit and free of filesystem, network, runtime, or
    database behavior.
 4. Add serialization, parse/display, boundary, and property tests for owned
    identifiers and values.
-5. Add dependency guard tests proving core-next has no Strata crate dependency.
+5. Add dependency guard tests proving core has no Strata crate dependency.
 
 Expected contents:
 
@@ -418,7 +430,7 @@ Exit criteria:
 
 1. Public surface fits in one short table.
 2. Every public type has an owner justification.
-3. Storage-next and engine-next can depend on it without inheriting product
+3. Storage-next and engine can depend on it without inheriting product
    policy.
 
 ## Phase 2: Storage-Next Testkit And Crate Skeleton
@@ -427,7 +439,7 @@ Goal: make storage implementation testable before durable behavior lands.
 
 Work:
 
-1. Create `storage-next` crate skeleton using the target crate-shape document.
+1. Create `storage` crate skeleton using the target crate-shape document.
 2. Add crate-level policy, feature gates, and dependency rules.
 3. Build the memory/cache backend skeleton.
 4. Build the local filesystem backend skeleton.
@@ -471,7 +483,7 @@ Exit criteria:
 
 ## Phase 4: Storage-Next Table, Branch, Commit, Recovery, And L9 API
 
-Goal: finish the storage substrate engine-next will consume.
+Goal: finish the storage substrate engine will consume.
 
 Work:
 
@@ -496,16 +508,16 @@ Exit criteria:
    timestamp-to-version substrate needed by engine.
 4. Cache, durable local standard, and durable local always modes have separate
    conformance coverage.
-5. No product data-capability semantics leak into storage-next.
+5. No product data-capability semantics leak into storage.
 
 ## Phase 5: Engine-Next Persistence Adapter And Control Plane
 
-Goal: establish the only normal engine path to storage-next.
+Goal: establish the only normal engine path to storage.
 
 Work:
 
-1. Create the engine-next crate skeleton and target module buckets.
-2. Implement the persistence adapter over storage-next L9.
+1. Create the engine crate skeleton and target module buckets.
+2. Implement the persistence adapter over storage L9.
 3. Implement engine-owned physical key construction and storage-space ID
    routing.
 4. Implement the control-plane layout: global `_system_` branch and
@@ -513,11 +525,11 @@ Work:
 5. Implement runtime resource profile resolution and pass resolved storage
    budgets downward.
 6. Implement engine error mapping from storage diagnostics to product errors.
-7. Add guard tests preventing storage-next imports outside persistence.
+7. Add guard tests preventing storage imports outside persistence.
 
 Exit criteria:
 
-1. Engine-next opens cache and durable local databases through storage-next.
+1. Engine-next opens cache and durable local databases through storage.
 2. Engine-next can read/write storage-shaped rows only through the persistence
    adapter.
 3. Control-plane rows for capability registry, storage-space registry,
@@ -549,7 +561,7 @@ Work:
 
 Exit criteria:
 
-1. Product-pathway conformance tests pass over engine-next for required V1
+1. Product-pathway conformance tests pass over engine for required V1
    pathways.
 2. Engine-next exposes the surfaces intelligence-next requires for
    autoembedding, shadow-vector writes, recipe execution, and derived-state
@@ -566,7 +578,7 @@ depends on it.
 
 Work:
 
-1. Keep inference-next independent of storage, engine, and intelligence.
+1. Keep inference independent of storage, engine, and intelligence.
 2. Add task-specific `Generator`, `Embedder`, and `Reranker` traits.
 3. Add explicit `EmbedRequest`, `EmbedResponse`, `RankRequest`, and
    `RankResponse` DTOs with item-level outcomes.
@@ -589,8 +601,8 @@ Exit criteria:
 
 ## Phase 8: Intelligence-Next Orchestration
 
-Goal: implement model-assisted Strata behavior over engine-next and
-inference-next.
+Goal: implement model-assisted Strata behavior over engine and
+inference.
 
 Work:
 
@@ -669,7 +681,7 @@ Goal: make the V1 integration line ready for promotion without exposing
 
 Work:
 
-1. Cut product crates over to engine-next and intelligence-next APIs on the V1
+1. Cut product crates over to engine and intelligence-next APIs on the V1
    integration branch.
 2. Replace old canonical crate implementations with the new stack within the
    V1 line.
@@ -856,9 +868,9 @@ Before each phase starts, write a short phase implementation plan with:
 6. Known non-goals.
 7. Review checklist.
 
-The milestone plans live under `docs/architecture/implementation-plans/`. Each
+The milestone plans live under `docs/architecture/archive/implementation-plans/`. Each
 plan pairs the implementation track and matching test track, for example
-`docs/architecture/implementation-plans/m4-m4t-implementation-plan.md`.
+`docs/architecture/archive/implementation-plans/m4-m4t-implementation-plan.md`.
 
 The milestone plan should be much smaller than the architecture documents. Its
 job is to keep each implementation slice honest.

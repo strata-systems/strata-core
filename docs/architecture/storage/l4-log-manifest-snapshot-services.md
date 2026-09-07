@@ -1,6 +1,6 @@
 # L4. Log / Manifest / Snapshot Services
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 Depends on:
 
@@ -245,11 +245,11 @@ Current tests already encode many L4 invariants:
 
 ## Storage-Next Implementation Map
 
-M4P-L4A reconciles this architecture document with the storage-next service
+M4P-L4A reconciles this architecture document with the storage service
 layer that exists today. The old-storage references above remain parity
-evidence. The current storage-next implementation lives under
-`crates/storage-next/src/service` and is consumed by lifecycle/recovery code
-under `crates/storage-next/src/lifecycle`.
+evidence. The current storage implementation lives under
+`crates/storage/src/service` and is consumed by lifecycle/recovery code
+under `crates/storage/src/lifecycle`.
 
 | Storage-next service | Current role | L4A inventory status |
 | --- | --- | --- |
@@ -322,7 +322,7 @@ Current L4-like code directly uses:
 - local temp filenames
 
 That is correct for the current local filesystem implementation, but it cannot
-be the storage-next service contract. L4 must express durable publication in
+be the storage service contract. L4 must express durable publication in
 backend terms and let the local filesystem backend implement it with POSIX-like
 steps.
 
@@ -805,12 +805,12 @@ Required test groups:
 
 Fault injection should be service-level rather than scattered across individual
 call sites. The current manifest publish and directory fsync hooks are good
-evidence, but storage-next should generalize them into a backend or publisher
+evidence, but storage should generalize them into a backend or publisher
 fault harness.
 
 ## V1 Minimum
 
-The first storage-next implementation needs:
+The first storage implementation needs:
 
 1. A durable publisher abstraction with local filesystem and cache/browser
    implementations.

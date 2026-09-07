@@ -1,10 +1,10 @@
 # Engine-Next Control-Plane Layout Contract
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
-This document defines the target control-plane layout for engine-next.
+This document defines the target control-plane layout for engine.
 
 The control plane is the engine-owned metadata layer that makes Strata behave
 like one coherent product instead of a collection of ad hoc data structures. It
@@ -158,7 +158,7 @@ that branch identity is discovered through the branch catalog.
 
 The system space is the reserved space named `_system_`.
 
-Every branch has an implicit hidden system space. It is where engine-next stores
+Every branch has an implicit hidden system space. It is where engine stores
 branch-local control rows and branch-local derived-state metadata.
 
 Users must not create, list, select, delete, or write the system space directly.
@@ -780,7 +780,7 @@ Target changes:
     branch identity where exact identity is intended. Public validation may
     continue rejecting all underscore-prefixed branch names.
 
-Because Strata is pre-V1, engine-next does not need to preserve pre-V1
+Because Strata is pre-V1, engine does not need to preserve pre-V1
 development database layouts during normal open. A one-shot developer migration
 tool may be useful, but the V1 runtime should prefer a clean layout over
 compatibility with accidental internal formats.
@@ -804,11 +804,11 @@ Implementation must include tests that prove:
 11. Corrupt derived rows degrade or rebuild according to declared policy.
 12. Upper crates cannot import raw control-plane key helpers in production code.
 13. The persistence adapter is the only normal production path to
-    storage-next for control-plane rows.
+    storage for control-plane rows.
 
 ## Open Questions And Closed V1 Baselines Before Implementation
 
-1. What exact byte encoding will engine-next use for control-plane row keys?
+1. What exact byte encoding will engine use for control-plane row keys?
 2. Which branch-lineage projection, if any, is worth keeping after branch
    control rows become authoritative?
    The storage-space decision is closed: authoritative lineage is `0x30`;
@@ -818,5 +818,5 @@ Implementation must include tests that prove:
 4. Which derived row families, if any, should clone/export include in V1?
 5. What typed diagnostic surface should expose raw control-plane health without
    making `_system_` a user-facing storage concept?
-6. Which current tags/notes APIs are deleted before engine-next and which are
+6. Which current tags/notes APIs are deleted before engine and which are
    left as compatibility residue until the public API cleanup checklist?

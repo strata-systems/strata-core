@@ -1,6 +1,6 @@
 # Strata AI Architecture
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
@@ -9,7 +9,7 @@ the top of the Strata stack and delivers the intelligent-partner
 capabilities the database exposes to users.
 
 `strata-ai` is not a separate product running alongside Strata. It is the
-top-level consumer of `intelligence-next` and `inference-next` that
+top-level consumer of `intelligence-next` and `inference` that
 orchestrates recursive AI analysis over the database, hosts the sandboxed
 execution environment for AI-generated code, manages the system branch
 lifecycle, and brokers multi-model inference across local and remote
@@ -49,17 +49,17 @@ Product direction:
 ## Position In The V1 Stack
 
 ```text
-core-next
-  → storage-next
-  → engine-next
+core
+  → storage
+  → engine
   → intelligence-next → executor / CLI / SDK / strata-ai
-  → inference-next
+  → inference
 ```
 
 `strata-ai` is a consumer at the top of the stack. It must depend on
-`intelligence-next` and `inference-next` and may depend on `engine-next`
+`intelligence-next` and `inference` and may depend on `engine`
 for product surfaces that the intelligence layer does not need to
-abstract. It must not depend on `storage-next` directly. It must not
+abstract. It must not depend on `storage` directly. It must not
 expose its own primitive storage APIs; it consumes them through engine
 surfaces.
 
@@ -80,7 +80,7 @@ harness owns the loop.
 3. Owning the system branch lifecycle: refresh cadence, contents shape,
    accept/reject feedback recording, decay of stale findings.
 4. Brokering multi-model inference: routing each call to the right
-   model and provider through `inference-next` based on per-task
+   model and provider through `inference` based on per-task
    inference topology (local-only, smart-root + cheap-recursive,
    fully-API).
 5. Enforcing the inference budget loop and recording every model call in
@@ -96,13 +96,13 @@ harness owns the loop.
 
 1. **Database semantics.** Branches, commits, time travel, primitive
    operations, ontology storage, and deterministic retrieval are owned by
-   `engine-next`.
+   `engine`.
 2. **Model execution.** Loading models, invoking local inference through
    llama.cpp, calling remote provider HTTP APIs, and managing model
-   artifacts are owned by `inference-next`.
+   artifacts are owned by `inference`.
 3. **Model orchestration contracts.** The `QueryExpander`,
    `ResultReranker`, `RagGenerator`, and embedding traits remain in
-   `engine-next`. `intelligence-next` installs implementations of these
+   `engine`. `intelligence-next` installs implementations of these
    traits per database. `strata-ai` consumes the installed
    implementations through `intelligence-next` rather than reimplementing
    them.
@@ -110,13 +110,13 @@ harness owns the loop.
    surfaces. The Pyodide sandbox sees a typed engine-shaped module, not
    storage internals.
 5. **Provider HTTP.** Any call to OpenAI, Anthropic, Google, or any other
-   provider goes through `inference-next`. `strata-ai` never speaks
+   provider goes through `inference`. `strata-ai` never speaks
    provider protocols directly.
 
 The boundary test: anything that requires AI reasoning, multi-step
 decomposition, or orchestration across model calls is `strata-ai`'s
 responsibility. Anything an embedded application could call through
-engine-next/intelligence-next surfaces without an AI brain in the loop is
+engine/intelligence-next surfaces without an AI brain in the loop is
 not.
 
 ## Deployment Modes
@@ -126,7 +126,7 @@ codebase through compile-time feature gating.
 
 ### Lite
 
-Lite mode strips out `strata-ai`, `inference-next`, the
+Lite mode strips out `strata-ai`, `inference`, the
 intelligence-driven parts of `intelligence-next`, the Pyodide-on-wasmtime
 sandbox, and any model-dependent code paths. What remains is the full
 substrate: five primitives, branches, time travel, ontology storage,
@@ -153,7 +153,7 @@ ingestion-focused replicas in a larger fleet.
 
 ### Full
 
-Full mode includes `strata-ai`, `inference-next`, the complete
+Full mode includes `strata-ai`, `inference`, the complete
 `intelligence-next` surface, the Pyodide-on-wasmtime sandbox, and any
 bundled models the deployment chooses to ship with.
 
@@ -174,14 +174,14 @@ absence of AI code to be physically demonstrable.
 
 ## Multi-Model Broker
 
-`strata-ai` is a model-agnostic broker over `inference-next`. It does
+`strata-ai` is a model-agnostic broker over `inference`. It does
 not pick a model at compile time and does not assume a specific provider
 is available at runtime.
 
 Each analysis task declares its inference topology:
 
 1. **Local-only**: every call routes to a local model via the llama.cpp
-   path in `inference-next`. Required for sensitive data, regulated
+   path in `inference`. Required for sensitive data, regulated
    workloads, air-gapped deployments, and any database policy that
    forbids egress.
 2. **Smart-root + cheap-recursive**: the root model of an RLM call uses
@@ -261,8 +261,8 @@ Lifecycle responsibilities:
 5. Refusing to write findings that violate the configured inference-
    locality or budget policies.
 
-The system branch is durable storage handled by `engine-next` and
-`storage-next`. `strata-ai` writes through engine surfaces; it does not
+The system branch is durable storage handled by `engine` and
+`storage`. `strata-ai` writes through engine surfaces; it does not
 have its own storage path.
 
 ## Curated Prompts, Not Curated Tools
@@ -280,12 +280,12 @@ analyses matter become tomorrow's bottleneck.
 
 ## Non-Goals
 
-1. **No replacement of engine-next surfaces.** Deterministic retrieval,
+1. **No replacement of engine surfaces.** Deterministic retrieval,
    primitive commands, branch operations, and the time-travel API remain
    the source of truth. `strata-ai` adds capabilities; it does not
    replace existing surfaces.
 2. **No direct provider HTTP.** All model calls go through
-   `inference-next`. `strata-ai` does not implement Anthropic, OpenAI,
+   `inference`. `strata-ai` does not implement Anthropic, OpenAI,
    Google, or local model protocols directly.
 3. **No autonomous mutation of user-owned branches.** All system
    proposals land as branches the user explicitly accepts or rejects.

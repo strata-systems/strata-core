@@ -1,11 +1,11 @@
 # Engine-Next Public API And CLI Surface Cleanup Checklist
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
 This document defines the public API and CLI cleanup required before
-engine-next becomes the V1 product surface.
+engine becomes the V1 product surface.
 
 The goal is to keep Strata's public surface aligned with the product model:
 

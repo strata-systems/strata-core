@@ -1,6 +1,6 @@
 # L7. Commit Runtime
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 Depends on:
 
@@ -12,7 +12,7 @@ Consumed by:
 
 - L8. Lifecycle / Recovery / Maintenance
 - [L9. Storage API Boundary](./l9-storage-api-boundary.md)
-- engine-next, through storage's internal commit-batch API
+- engine, through storage's internal commit-batch API
 
 ## Purpose
 
@@ -34,7 +34,7 @@ transaction session.
 The target shape is:
 
 ```text
-engine-next builds semantic operation
+engine builds semantic operation
   |
   v
 storage CommitBatch
@@ -346,7 +346,7 @@ Cross-branch product operations should usually be represented as:
 2. engine computes semantic result,
 3. engine submits one target-branch commit batch.
 
-If storage-next later needs a true multi-branch storage commit, it should be a
+If storage later needs a true multi-branch storage commit, it should be a
 separate design with deterministic branch-lock ordering or a quiesce guard. It
 should not appear accidentally because a caller passed rows from multiple
 branches.
@@ -478,7 +478,7 @@ Storage-next should make the rule explicit:
 5. A durable-but-not-visible commit must not be reported as visible to normal
    reads in the current process.
 
-If storage-next keeps separate per-branch visible versions, L7 must define how
+If storage keeps separate per-branch visible versions, L7 must define how
 global reads and cross-branch operations choose a safe snapshot. If it keeps one
 global visible version, it must preserve the current cross-branch safety
 property without causing unnecessary stalls.
@@ -595,7 +595,7 @@ During WAL replay:
 5. L7 restores visible-version facts only after recovery has installed durable
    rows into L6.
 
-V1 storage-next does not keep durable storage transaction IDs. If a future
+V1 storage does not keep durable storage transaction IDs. If a future
 private optimization reintroduces them, it must also add allocator catch-up
 rules and tests.
 
@@ -744,7 +744,7 @@ Guard tests:
 
 ## V1 Minimum
 
-The first storage-next L7 implementation needs:
+The first storage L7 implementation needs:
 
 1. Internal `CommitBatch`.
 2. Single-branch mutating commit path.
@@ -782,13 +782,13 @@ Not required for V1:
 
 ## Semantic Decisions
 
-These decisions record intentional storage-next differences from old storage.
+These decisions record intentional storage differences from old storage.
 Differential tests should assert the replacement proof below instead of
 weakening the oracle silently.
 
 ### Global Commit Admission
 
-Decision: storage-next currently admits at most one mutating commit globally and
+Decision: storage currently admits at most one mutating commit globally and
 fails fast on contention.
 
 Old behavior: old storage used per-branch commit locks. Same-branch contenders
@@ -817,7 +817,7 @@ Replacement proof:
 
 ### Version Gaps And Visible Tracking
 
-Decision: storage-next allows commit-version gaps after failures that occur
+Decision: storage allows commit-version gaps after failures that occur
 after version allocation but before branch apply and visible publication.
 
 Old behavior: old storage used pending-version tracking to advance visibility
@@ -840,7 +840,7 @@ Replacement proof:
 
 ### Explicit Missing Observed Version
 
-Decision: storage-next represents missing validation facts explicitly instead
+Decision: storage represents missing validation facts explicitly instead
 of using commit version zero as a sentinel.
 
 Old behavior: old read-set validation used version zero to represent a missing
@@ -878,10 +878,10 @@ Replacement proof:
 
 ### Commit Batch Limits
 
-Decision: storage-next enforces explicit per-batch limits for mutations,
+Decision: storage enforces explicit per-batch limits for mutations,
 validation facts, and total commit rows.
 
-Old behavior: old storage did not have the same storage-next V1 limits.
+Old behavior: old storage did not have the same storage V1 limits.
 
 Reason: bounded commit batches keep validation, timeline-row creation, WAL
 payload construction, and branch apply memory predictable.
@@ -904,7 +904,7 @@ Old behavior: old storage commit paths could be reached through multiple cache
 and durable entry points, and internal defaulting could make it unclear whether
 an omitted durability request meant cache mode or the opened durable policy.
 
-Reason: storage-next keeps caller defaults at the API boundary and keeps lower
+Reason: storage keeps caller defaults at the API boundary and keeps lower
 commit execution explicit. Cache runtimes map runtime-default and not-durable
 requests to cache commits. Durable-local standard runtimes map runtime-default
 to standard WAL commits. Durable-local always runtimes map runtime-default to
@@ -949,14 +949,14 @@ Replacement proof:
 
 ### Public Read-Set Facts
 
-Decision: L7 preserves internal read-set and CAS validation, but storage-next
+Decision: L7 preserves internal read-set and CAS validation, but storage
 does not expose public begin/commit/rollback transaction sessions as the V1
 product surface.
 
 Old behavior: old storage had transaction-context APIs that could capture
 read-set and CAS facts.
 
-Reason: storage-next keeps the conflict model as a storage-shaped internal
+Reason: storage keeps the conflict model as a storage-shaped internal
 commit capability. Product transaction sessions, if any, belong above L9.
 The current L9-facing API exposes explicit per-key `CommitCondition` values as
 CAS facts. It does not automatically capture point reads, scans, or history
@@ -979,7 +979,7 @@ L9 handoff:
 Replacement proof:
 
 1. L7 tests directly prove read-set and CAS semantics;
-2. L9 can expose storage-shaped read facts for engine-next without exposing
+2. L9 can expose storage-shaped read facts for engine without exposing
    transaction internals;
 3. API tests prove public conditions are explicit CAS checks and do not capture
    unrelated reads;
@@ -991,7 +991,7 @@ Replacement proof:
 Decision: read-only diagnostics are an explicit L7 diagnostic capability and may
 be disabled by `CommitRuntimeConfig`.
 
-Old behavior: old storage did not expose the same storage-next read-only commit
+Old behavior: old storage did not expose the same storage read-only commit
 diagnostic shape.
 
 Reason: diagnostics are useful for L7/L8/L9 tests and operators, but they must
@@ -1014,11 +1014,11 @@ Replacement proof:
 
 These gates are intentionally measure-first. The baseline measurement on
 2026-06-11 used `benchmarks/src/bin/storage_next_l9_scale.rs` against
-storage-next commit `306b9184`:
+storage commit `306b9184`:
 
 ```text
 cargo run --release --manifest-path benchmarks/Cargo.toml \
-  --bin storage-next-l9-scale -- \
+  --bin storage-l9-scale -- \
   --scales 100k --engines standard --workloads load-seq \
   --batch-size 1000 --value-bytes 64 \
   --root /tmp/strata-l7-gates \
@@ -1046,25 +1046,25 @@ durable WAL encode path directly and showed high reuse.
 ## Open Questions
 
 1. What exact storage-shaped read facts should M4P-L9B expose for future
-   engine-next callers, and which engine adapter emits them?
+   engine callers, and which engine adapter emits them?
 2. Should commit versions remain global, or should storage introduce per-branch
    visible versions while preserving global ordering for history and recovery?
 3. What exact row value representation should `CommitRow` carry: storage
    `Value`, opaque bytes, or an L3-encoded row payload?
 4. Should branch generation guards stay in engine branch-control logic, or move
-   into storage branch metadata once storage-next owns branch lifecycle
+   into storage branch metadata once storage owns branch lifecycle
    mechanics?
 5. How much of the current transaction pool optimization is worth preserving
    once public transaction sessions are removed?
 6. What metrics are stable L7 facts versus L8 health aggregation?
 
-Question 4 is also an engine-next architecture input. Engine-next must decide
-which product branch-generation guarantees it expects storage-next to enforce
+Question 4 is also an engine architecture input. Engine-next must decide
+which product branch-generation guarantees it expects storage to enforce
 mechanically before the L7 implementation plan freezes.
 
 ## Next Step
 
-The next storage-next document should define L8 Lifecycle / Recovery /
+The next storage document should define L8 Lifecycle / Recovery /
 Maintenance. It should explain storage open sequencing, recovery replay,
 checkpoint orchestration, compaction scheduling, retention scheduling,
 quarantine/repair, shutdown, and how L8 consumes L4-L7 without taking ownership

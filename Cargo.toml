@@ -27,8 +27,10 @@ members = [
 [workspace.package]
 version = "1.2.1"
 edition = "2021"
-# Floor set by the stratahub crates (rust-version 1.91), which ride in the
-# default graph via strata-hub.
+# The MSRV PROMISE, verified by the `msrv` CI job on every PR. Floor set by the
+# stratahub crates, which ride in the default graph via strata-hub. Distinct
+# from rust-toolchain.toml's pin, which is what contributors build with — see
+# the note there (#3150).
 rust-version = "1.91"
 authors = ["Strata contributors"]
 license = "Apache-2.0"

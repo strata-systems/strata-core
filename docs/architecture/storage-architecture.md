@@ -1,10 +1,10 @@
 # Storage-Next Architecture
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
-This document defines the conceptual architecture for `storage-next`.
+This document defines the conceptual architecture for `storage`.
 
 It does not define Rust traits, module names, file formats, migration steps, or
 implementation milestones. Its job is to define the storage layers Strata wants
@@ -15,25 +15,25 @@ The current storage crate map is documented in
 is evidence. This document is the target layering model.
 
 Detailed layer documents live under
-[storage-next/](./storage-next/README.md). Those documents refine this map one
+[storage/](./storage/README.md). Those documents refine this map one
 layer at a time.
 
 Cross-cutting implementation guidance lives in
-[storage-next/implementation-patterns.md](./storage-next/implementation-patterns.md).
+[storage/implementation-patterns.md](./storage/implementation-patterns.md).
 That document records the current consistency checkpoint and the repeatable
-type, trait, error, and test patterns storage-next should prefer.
+type, trait, error, and test patterns storage should prefer.
 
 The target crate/module layout and local test harness invocation model live in
-[storage-next/target-crate-shape-and-test-harness.md](./storage-next/target-crate-shape-and-test-harness.md).
+[storage/target-crate-shape-and-test-harness.md](./storage/target-crate-shape-and-test-harness.md).
 The L1-L9 names are conceptual layers, not intended Rust module names.
 
 Durable storage-space allocation and timeline placement are pinned in:
 
-1. [storage-next/storage-space-id-registry.md](./storage-next/storage-space-id-registry.md)
-2. [storage-next/commit-timeline-substrate.md](./storage-next/commit-timeline-substrate.md)
+1. [storage/storage-space-id-registry.md](./storage/storage-space-id-registry.md)
+2. [storage/commit-timeline-substrate.md](./storage/commit-timeline-substrate.md)
 
 Future object-durable and compute/storage separation guardrails live in
-[storage-next/future-object-durable-guardrails.md](./storage-next/future-object-durable-guardrails.md).
+[storage/future-object-durable-guardrails.md](./storage/future-object-durable-guardrails.md).
 That note is not a V1 object-store implementation plan; it records the coupling
 we must avoid while building the embedded-first path.
 
@@ -85,14 +85,14 @@ The important constraints are:
 10. Public transaction commands are not a V1 product requirement.
 11. V1 physical format changes must be explicit and specified.
 12. The same binary must run from constrained edge devices to server-class
-    machines through resolved runtime budgets supplied by engine-next.
+    machines through resolved runtime budgets supplied by engine.
 
 The last point is important. Storage-next should be architected so format and
 backend evolution are possible, but this document does not authorize hidden
 changes to the WAL, manifest, checkpoint, snapshot, or row encodings as a side
 effect of crate cleanup. Format changes need their own design.
 
-Clarification after the L1-L9 pass: storage-next is allowed to define a
+Clarification after the L1-L9 pass: storage is allowed to define a
 storage-row-native V1 format if the row/key/commit architecture requires it.
 That is not incidental churn; it must be written in the storage format spec.
 Because Strata is pre-launch, the default cutover decision is to reject pre-V1
@@ -104,7 +104,7 @@ compatibility.
 The layer documents resolve several choices that were open in the first pass.
 
 1. **Storage modes.**
-   V1 storage-next must implement cache mode and durable local filesystem mode.
+   V1 storage must implement cache mode and durable local filesystem mode.
    Object-store/OpenDAL durability is architecture-aware but not required as a
    production mode in the first rewrite.
 
@@ -159,7 +159,7 @@ The layer documents resolve several choices that were open in the first pass.
    engine-owned product behavior over storage rows and retained history.
 
 10. **Sync.**
-   Sync data movement is not a storage-next layer. V1 storage exposes
+   Sync data movement is not a storage layer. V1 storage exposes
    capability, health, identity, bundle, and clone substrate needed for future
    StrataHub and sync work. A future sync layer must consume engine-owned
    semantics unless a documented diagnostic/migration exception is approved.
@@ -177,7 +177,7 @@ The layer documents resolve several choices that were open in the first pass.
 
 13. **Runtime resource budgets.**
     Storage-next does not detect host hardware or classify devices. Engine-next
-    supplies a resolved storage runtime budget; storage-next owns storage-local
+    supplies a resolved storage runtime budget; storage owns storage-local
     spending across table cache, mutable-table sizing, table output targets,
     compaction rate, pressure facts, and maintenance scheduling.
 
@@ -249,14 +249,14 @@ The scan changes the first-pass layer model in four ways:
 3. Contention profiling, memory stats, pressure, and rate limiting are
    observability/control surfaces that must be designed deliberately.
 4. Follower state paths still exist in current storage layout code, but
-   follower mode is not a storage-next concept.
+   follower mode is not a storage concept.
 
 ## Target Layer Stack
 
-The storage-next stack is ordered from bottom to top:
+The storage stack is ordered from bottom to top:
 
 ```text
-strata-engine-next
+strata-engine
         |
         v
 +------------------------------------------------+
@@ -296,7 +296,7 @@ part of the storage contract.
 
 This is the portability layer.
 
-Detailed design: [storage-next/l1-backend-io.md](./storage-next/l1-backend-io.md).
+Detailed design: [storage/l1-backend-io.md](./storage/l1-backend-io.md).
 
 It owns access to storage backends:
 
@@ -329,14 +329,14 @@ It must not know:
 - engine primitives
 - product policies
 
-The local filesystem provider is the only place storage-next should call
+The local filesystem provider is the only place storage should call
 `std::fs` in non-test code. Other layers should consume this backend interface.
 
 ## L2. Object Layout Layer
 
 This layer maps database-relative concepts to backend object names.
 
-Detailed design: [storage-next/l2-object-layout.md](./storage-next/l2-object-layout.md).
+Detailed design: [storage/l2-object-layout.md](./storage/l2-object-layout.md).
 
 It owns:
 
@@ -363,7 +363,7 @@ Follower mode is not a V1 pathway.
 
 ## L3. Durable Format / Codec Layer
 
-Detailed design: [storage-next/l3-durable-format-codec.md](./storage-next/l3-durable-format-codec.md)
+Detailed design: [storage/l3-durable-format-codec.md](./storage/l3-durable-format-codec.md)
 
 This layer owns bytes.
 
@@ -408,7 +408,7 @@ format or storage-owned payload family.
 
 ## L4. Log / Manifest / Snapshot Services
 
-Detailed design: [storage-next/l4-log-manifest-snapshot-services.md](./storage-next/l4-log-manifest-snapshot-services.md)
+Detailed design: [storage/l4-log-manifest-snapshot-services.md](./storage/l4-log-manifest-snapshot-services.md)
 
 This layer turns backend IO, object layout, and durable byte formats into
 usable durable services.
@@ -444,7 +444,7 @@ backend-backed services over L1/L2.
 
 ## L5. Table Runtime
 
-Detailed design: [storage-next/l5-table-runtime.md](./storage-next/l5-table-runtime.md).
+Detailed design: [storage/l5-table-runtime.md](./storage/l5-table-runtime.md).
 
 This is the table-primitives layer.
 
@@ -516,7 +516,7 @@ table code probing host hardware or using process-global auto-detection.
 ## L6. Branch-Isolated LSM Runtime
 
 Detailed design:
-[storage-next/l6-branch-isolated-lsm-runtime.md](./storage-next/l6-branch-isolated-lsm-runtime.md).
+[storage/l6-branch-isolated-lsm-runtime.md](./storage/l6-branch-isolated-lsm-runtime.md).
 
 This is where Strata's storage identity begins.
 
@@ -614,7 +614,7 @@ transaction product.
 This is the top storage-internal orchestration layer.
 
 Detailed design:
-[storage-next/l8-lifecycle-recovery-maintenance.md](./storage-next/l8-lifecycle-recovery-maintenance.md).
+[storage/l8-lifecycle-recovery-maintenance.md](./storage/l8-lifecycle-recovery-maintenance.md).
 
 It owns:
 
@@ -669,10 +669,10 @@ observable database internals.
 
 ## L9. Storage API Boundary
 
-This is the only normal production surface consumed by engine-next.
+This is the only normal production surface consumed by engine.
 
 Boundary design:
-[storage-next/l9-storage-api-boundary.md](./storage-next/l9-storage-api-boundary.md).
+[storage/l9-storage-api-boundary.md](./storage/l9-storage-api-boundary.md).
 
 It should expose storage capabilities in storage language:
 
@@ -745,7 +745,7 @@ Fault injection must be first-class:
 - process crash between every durable state transition
 
 The test framework should not depend on engine data capability semantics. Engine can
-have its own product-path tests above storage-next.
+have its own product-path tests above storage.
 
 ## Layer Placement Rules
 
@@ -772,7 +772,7 @@ have its own product-path tests above storage-next.
 | `error.rs` | L9/cross-cutting | Storage-local errors should remain storage-owned. |
 | `index.rs` | L5 | Table/index support. |
 | `key_encoding.rs` | L5/L6 | Internal key ordering; branch/version encoding crosses L6. |
-| `layout.rs` | L6/L9 | Physical keyspace; revisit which IDs belong in core-next. |
+| `layout.rs` | L6/L9 | Physical keyspace; revisit which IDs belong in core. |
 | `manifest.rs` | L2/L4/L6/L8 | Segment manifest mixes layout, durable publication, branch/table reachability, and recovery proof. |
 | `memory_stats.rs` | Cross-cutting/L8 | Raw metrics. |
 | `memtable.rs` | L5 | Mutable table. |
@@ -850,23 +850,23 @@ define their meaning.
 
 The L1-L9 pass answered the first-order storage layering questions. The
 remaining inputs should be resolved by the detailed implementation roadmap and
-the engine-next architecture:
+the engine architecture:
 
-1. Which identifiers and version types belong in core-next versus storage-next?
+1. Which identifiers and version types belong in core versus storage?
 2. What is the exact backend capability vocabulary for local FS, memory/cache,
    browser/WASM, and future object/OpenDAL-backed providers?
 3. What exact engine-owned storage-space ID assignments live in
    `0x20..=0xff`?
-4. What is the minimal L9 API engine-next needs for branch/time-travel
+4. What is the minimal L9 API engine needs for branch/time-travel
    mechanics without leaking product branch semantics down?
 5. Which current hardening structs are real implementation contracts and which are
    cleanup-era scaffolding?
 6. Which concurrency testing tool or deterministic scheduler should L7 use?
-7. What exact resolved storage budget shape does engine-next pass through L9?
+7. What exact resolved storage budget shape does engine pass through L9?
 
 ## Next Step
 
-The next document should be the storage-next implementation roadmap. It should
+The next document should be the storage implementation roadmap. It should
 order the work, pair each implementation phase with a concrete test plan, and
 avoid introducing temporary facades that exist only to keep an incomplete crate
 compiling.

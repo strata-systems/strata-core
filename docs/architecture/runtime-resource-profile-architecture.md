@@ -1,6 +1,6 @@
 # Runtime Resource Profile Architecture
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
@@ -247,7 +247,7 @@ Engine-next should own budgets for data capabilities and derived state:
 6. Import/export buffering.
 7. Branch diff and time-travel scan windows.
 
-Engine may pass some of these budgets to intelligence-next or inference-next,
+Engine may pass some of these budgets to intelligence-next or inference,
 but storage must not know what the budgets mean.
 
 ## Profile Examples
@@ -465,7 +465,7 @@ The V1 architecture satisfies this requirement when:
 
 ## Open Questions
 
-These should be resolved during engine-next and storage-next implementation
+These should be resolved during engine and storage implementation
 planning:
 
 1. What exact numeric defaults should embedded, desktop, and server profiles

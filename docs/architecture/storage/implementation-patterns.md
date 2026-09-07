@@ -5,11 +5,11 @@ Status: architecture checkpoint
 ## Purpose
 
 This document records the consistency pass across the V1 product documents,
-high-level V1 architecture, core-next architecture, storage-next layer
+high-level V1 architecture, core architecture, storage layer
 documents, the current storage consumption contract, and the draft storage
 format spec.
 
-It also defines implementation patterns for storage-next. The goal is to avoid
+It also defines implementation patterns for storage. The goal is to avoid
 recreating the current problem: many one-off structs, enums, managers,
 coordinators, and adapters that are individually reasonable but collectively
 hard to understand, test, and evolve.
@@ -24,7 +24,7 @@ The current documents are aligned on the major product and architecture
 decisions:
 
 1. Storage is below engine. Engine-next is the only normal production consumer
-   of storage-next.
+   of storage.
 2. Storage-next owns persistence mechanics, not product semantics.
 3. KV, JSON, events, graph, vectors, search, recipes, RAG, and Strata AI remain
    above storage.
@@ -39,7 +39,7 @@ decisions:
    during normal use.
 10. Public begin/commit/rollback transaction commands are not V1 product
     requirements, but storage still needs an internal commit unit.
-11. The first storage-next pass is an ownership and architecture cleanup, not a
+11. The first storage pass is an ownership and architecture cleanup, not a
     broad physical format redesign.
 12. StrataHub depends on Strata identity, clone, bundle, health, and capability
     surfaces, but Strata storage must not embed StrataHub business logic.
@@ -56,7 +56,7 @@ Two current-code documents need special interpretation:
 
 ## Naming Discipline
 
-New storage-next types should fall into a small set of names. If a proposed
+New storage types should fall into a small set of names. If a proposed
 type does not fit one of these categories, the implementation should justify
 why a new shape is necessary.
 
@@ -106,7 +106,7 @@ Preferred concepts:
 
 Trait guidance:
 
-`Backend` is a real trait boundary because storage-next needs multiple backend
+`Backend` is a real trait boundary because storage needs multiple backend
 families: cache/browser, local filesystem, and future object/OpenDAL-backed
 providers.
 
@@ -336,7 +336,7 @@ Preferred concepts:
 
 Trait guidance:
 
-L9 is the public storage-next boundary consumed by engine-next. It may be a
+L9 is the public storage boundary consumed by engine. It may be a
 trait, a concrete handle, or both. The deciding factor should be testability
 and backend substitution, not symmetry with the old storage crate.
 
@@ -419,17 +419,17 @@ The implementation should preserve the layer order:
 10. Build L8 recovery/maintenance over L4-L7.
 11. Finalize L9 only after the lower layers prove the surface.
 
-`RecoveryHealth`, `DegradationClass`, and `RecoveryFault` are storage-next-owned
+`RecoveryHealth`, `DegradationClass`, and `RecoveryFault` are storage-owned
 V1 recovery facts. See
 `docs/architecture/storage/l8-lifecycle-recovery-maintenance.md` and
 `docs/architecture/core-architecture.md` for the ownership decision.
 
-This order should keep storage-next from growing temporary facades just to make
+This order should keep storage from growing temporary facades just to make
 the architecture compile.
 
 ## Review Checklist
 
-For every new storage-next type or trait, ask:
+For every new storage type or trait, ask:
 
 1. Which layer owns this?
 2. Which layer consumes this?

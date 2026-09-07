@@ -41,8 +41,8 @@ must follow the same action as that module's V1 owner.
 | Area | Default disposition |
 |---|---|
 | Core identifier and public-surface guards | Rewrite into M1/M5/M9 guard tests. |
-| Storage durability, recovery, branch visibility, and segmented-store tests | Rewrite into M3/M4 storage-next conformance, property, and fault tests. |
-| Engine primitive, branch, relationship, versioning, and retrieval tests | Rewrite into M5/M6 engine-next conformance and product-path tests. |
+| Storage durability, recovery, branch visibility, and segmented-store tests | Rewrite into M3/M4 storage conformance, property, and fault tests. |
+| Engine primitive, branch, relationship, versioning, and retrieval tests | Rewrite into M5/M6 engine conformance and product-path tests. |
 | Intelligence search and model-orchestration tests | Rewrite into M8 intelligence-next tests. |
 | Executor, CLI, IPC, and command tests | Rewrite into M9 cutover tests, except removed commands. |
 | Follower mode, branch tags/notes, public transaction sessions, branch bundles, and normal-user maintenance workflows | Delete or archive; V1 guard tests must prove absence. |
@@ -58,9 +58,9 @@ must follow the same action as that module's V1 owner.
 | `tests/common/branching.rs` | shared test support | Branch lifecycle and lineage helpers | Redesign | Rewrite | `M6T` | `M6TA` | none | Helper imports old engine internals and graph DAG names. | Keep intent; rename around V1 branch lifecycle. |
 | `tests/common/mod.rs` | shared test support | Root integration helpers and database fixtures | Redesign | Rewrite | `M6T` | `M6TA` | root fixtures | Helper opens old runtime subsystems directly. | V1 testkit helpers must use product open surfaces. |
 | `tests/core_foundation_surface.rs` | core guard | Core public surface and dependency shape | Required | Rewrite | `M1T` | `M1TA` | none | Core-next surface changes. | Guard new core atoms and no upward dependencies. |
-| `tests/durability/crash_recovery.rs` | durability | Crash recovery across durable transitions | Required | Rewrite | `M4T` | `M4TD` | none | Recovery behavior survives under storage-next. | Move to crash harness/fault-window model. |
+| `tests/durability/crash_recovery.rs` | durability | Crash recovery across durable transitions | Required | Rewrite | `M4T` | `M4TD` | none | Recovery behavior survives under storage. | Move to crash harness/fault-window model. |
 | `tests/durability/cross_primitive_recovery.rs` | durability | Recovery across engine capabilities | Required | Rewrite | `M6T` | `M6TA` | none | Behavior survives but engine/storage boundary changes. | Split storage recovery from engine product replay. |
-| `tests/durability/main.rs` | durability harness | Root durability module harness | Redesign | Rewrite | `M4T` | `M4TA` | durability modules | Harness must match new storage-next tests. | Rename around storage behavior. |
+| `tests/durability/main.rs` | durability harness | Root durability module harness | Redesign | Rewrite | `M4T` | `M4TA` | durability modules | Harness must match new storage tests. | Rename around storage behavior. |
 | `tests/durability/mode_equivalence.rs` | durability | Cache/standard/always mode equivalence | Required | Rewrite | `M4T` | `M4TE` | none | Three durability modes remain. | Cache has no WAL; update assertions. |
 | `tests/durability/recovery_invariants.rs` | durability | Recovery invariant coverage | Required | Rewrite | `M4T` | `M4TD` | none | Invariants survive. | Port to storage health/error contracts. |
 | `tests/durability/snapshot_lifecycle.rs` | durability | Snapshot lifecycle behavior | Required | Rewrite | `M3T` | `M3TD` | none | Snapshot substrate survives with new L3/L4 format. | Golden bytes must be refreshed. |
@@ -73,8 +73,8 @@ must follow the same action as that module's V1 owner.
 | `tests/engine/branch_isolation.rs` | engine branch | Branch isolation behavior | Required | Rewrite | `M6T` | `M6TC` | none | Branch isolation is V1 core product behavior. | Assert through V1 branch API. |
 | `tests/engine/cross_primitive.rs` | engine capabilities | Cross-capability behavior | Required | Rewrite | `M6T` | `M6TA` | none | Cross-capability behavior survives. | Recast as KV-backed capability contract. |
 | `tests/engine/database/durability_modes.rs` | engine database | Engine open behavior for durability modes | Required | Rewrite | `M5T` | `M5TA` | none | Engine lifecycle survives but storage API changes. | Coordinate with M4 durability tests. |
-| `tests/engine/database/lifecycle.rs` | engine database | Database lifecycle behavior | Required | Rewrite | `M5T` | `M5TA` | none | Product open/lifecycle remains. | Use engine-next lifecycle surface. |
-| `tests/engine/database/mod.rs` | engine database harness | Engine database module harness | Redesign | Rewrite | `M5T` | `M5TA` | database modules | Harness must match engine-next crate shape. | No old subsystem construction. |
+| `tests/engine/database/lifecycle.rs` | engine database | Database lifecycle behavior | Required | Rewrite | `M5T` | `M5TA` | none | Product open/lifecycle remains. | Use engine lifecycle surface. |
+| `tests/engine/database/mod.rs` | engine database harness | Engine database module harness | Redesign | Rewrite | `M5T` | `M5TA` | database modules | Harness must match engine crate shape. | No old subsystem construction. |
 | `tests/engine/database/transactions.rs` | engine database | Database transaction behavior | Redesign | Rewrite | `M6T` | `M6TA` | none | Manual transaction sessions are removed. | Keep only atomic write/batch intent. |
 | `tests/engine/main.rs` | engine harness | Root engine module harness | Redesign | Rewrite | `M6T` | `M6TA` | engine modules | Harness must match V1 modules. | Rename behavior-focused modules. |
 | `tests/engine/p0_concurrency.rs` | engine concurrency | Engine concurrency stress | Required | Rewrite | `M10T` | `M10TA` | none | Concurrency remains high-value readiness coverage. | Port to deterministic scheduler where practical. |
@@ -89,7 +89,7 @@ must follow the same action as that module's V1 owner.
 | `tests/engine_consolidation_vector_characterization.rs` | consolidation evidence | Vector behavior after old consolidation | Evidence-only | Archive | none | none | none | Cleanup-era characterization should not constrain V1 shape. | Reuse behavior in M6 tests as needed; do not port follower product-open cases. |
 | `tests/engine_error_surface.rs` | engine guard | Engine error surface | Required | Rewrite | `M5T` | `M5TB` | none | Error types and codes change. | Assert V1 structured diagnostics. |
 | `tests/engine_security_surface.rs` | engine guard | Engine security/public surface | Required | Rewrite | `M5T` | `M5TA` | none | Public surface guard remains. | Remove `OpenOptions::follower` coverage; update to V1 exports and access modes. |
-| `tests/engine_surface_imports.rs` | engine guard | Engine dependency/public import surface | Required | Rewrite | `M5T` | `M5TA` | none | Boundary guard remains. | Update for engine-next modules. |
+| `tests/engine_surface_imports.rs` | engine guard | Engine dependency/public import surface | Required | Rewrite | `M5T` | `M5TA` | none | Boundary guard remains. | Update for engine modules. |
 | `tests/event_runtime_surface.rs` | engine guard | Event runtime public surface | Required | Rewrite | `M6T` | `M6TB` | none | Event capability remains. | Move to capability conformance. |
 | `tests/executor/adversarial.rs` | executor | Command adversarial behavior | Required | Rewrite | `M9T` | `M9TA` | none | Executor remains command boundary. | Delete public transaction-command cases; preserve adversarial command intent. |
 | `tests/executor/branch_invariants.rs` | executor | Branch command invariants | Required | Rewrite | `M9T` | `M9TA` | none | Branch commands remain. | Align with V1 branch semantics. |
@@ -166,12 +166,12 @@ must follow the same action as that module's V1 owner.
 | `tests/intelligence/stress.rs` | intelligence | Intelligence/search stress | Required | Rewrite | `M10T` | `M10TB` | none | Stress belongs in readiness gate. | Port after M8 stabilizes. |
 | `tests/proptest-regressions/branching_adversarial_history.txt` | proptest corpus | Branch history regression seed | Required | Keep | `M6T` | `M6TC` | none | Keep if corresponding property test is ported. | Delete only if property test is deleted. |
 | `tests/proptest-regressions/branching_retention_state_machine.txt` | proptest corpus | Branch retention regression seed | Required | Keep | `M4T` | `M4TC` | none | Keep if corresponding property test is ported. | Delete only if property test is deleted. |
-| `tests/storage/branch_isolation.rs` | storage | Storage branch isolation | Required | Rewrite | `M4T` | `M4TB` | none | Branch-aware storage survives. | Port to storage-next row model. |
-| `tests/storage/main.rs` | storage harness | Storage module harness | Redesign | Rewrite | `M4T` | `M4TA` | storage modules | Harness must match storage-next crate. | Replace old module names. |
+| `tests/storage/branch_isolation.rs` | storage | Storage branch isolation | Required | Rewrite | `M4T` | `M4TB` | none | Branch-aware storage survives. | Port to storage row model. |
+| `tests/storage/main.rs` | storage harness | Storage module harness | Redesign | Rewrite | `M4T` | `M4TA` | storage modules | Harness must match storage crate. | Replace old module names. |
 | `tests/storage/mvcc_invariants.rs` | storage | Version visibility invariants | Required | Rewrite | `M4T` | `M4TC` | none | Commit visibility survives. | Use V1 timeline/version model. |
 | `tests/storage/snapshot_isolation.rs` | storage | Snapshot isolation behavior | Required | Rewrite | `M4T` | `M4TC` | none | Internal isolation remains. | Avoid public transaction wording. |
-| `tests/storage/stress.rs` | storage | Storage stress | Required | Rewrite | `M10T` | `M10TA` | none | Stress belongs in readiness gate. | Port after storage-next completes. |
-| `tests/storage_surface_imports.rs` | boundary guard | Storage import/public surface guard | Required | Rewrite | `M5T` | `M5TA` | none | Boundary guard remains. | Update for storage-next and engine-next. |
+| `tests/storage/stress.rs` | storage | Storage stress | Required | Rewrite | `M10T` | `M10TA` | none | Stress belongs in readiness gate. | Port after storage completes. |
+| `tests/storage_surface_imports.rs` | boundary guard | Storage import/public surface guard | Required | Rewrite | `M5T` | `M5TA` | none | Boundary guard remains. | Update for storage and engine. |
 | `tests/transaction_runtime/cas_operations.rs` | transaction runtime | CAS-like write semantics | Redesign | Rewrite | `M6T` | `M6TA` | none | Public transaction runtime removed; atomic writes remain. | Recast as batch/write semantics. |
 | `tests/transaction_runtime/concurrent_transactions.rs` | transaction runtime | Concurrent commit conflict behavior | Redesign | Rewrite | `M4T` | `M4TC` | none | Internal commit ordering remains. | Move below public transaction surface. |
 | `tests/transaction_runtime/conflict_detection.rs` | transaction runtime | Conflict detection | Redesign | Rewrite | `M4T` | `M4TC` | none | Internal conflict/refusal behavior remains. | Tie to branch generation and visible versions. |
@@ -189,18 +189,18 @@ must follow the same action as that module's V1 owner.
 | path | current_area | behavior | v1_decision | action | target_track | target_epic | fixtures | reason | notes |
 |---|---|---|---|---|---|---|---|---|---|
 | `crates/engine/src/database/tests/checkpoint.rs` | engine inline tests | Checkpoint behavior | Required | Rewrite | `M4T` | `M4TD` | none | Checkpoint mechanics move to storage lifecycle. | Delete follower open/checkpoint cases; public maintenance command path removed. |
-| `crates/engine/src/database/tests/codec.rs` | engine inline tests | Database codec behavior | Required | Rewrite | `M3T` | `M3TA` | none | Durable bytes need new golden coverage. | Delete follower codec cases; move surviving format assertions to storage-next. |
+| `crates/engine/src/database/tests/codec.rs` | engine inline tests | Database codec behavior | Required | Rewrite | `M3T` | `M3TA` | none | Durable bytes need new golden coverage. | Delete follower codec cases; move surviving format assertions to storage. |
 | `crates/engine/src/database/tests/contention.rs` | engine inline tests | Open/contention behavior | Required | Rewrite | `M5T` | `M5TA` | none | Single-writer/IPC behavior survives. | Align with no follower mode. |
 | `crates/engine/src/database/tests/mod.rs` | engine inline harness | Database test harness | Redesign | Rewrite | `M5T` | `M5TA` | database test modules | Harness follows old module shape. | Split by lifecycle/recovery/format. |
 | `crates/engine/src/database/tests/open.rs` | engine inline tests | Database open behavior | Required | Rewrite | `M5T` | `M5TA` | none | Product open survives. | Delete follower open cases; use V1 cache/local/IPC open policy. |
 | `crates/engine/src/database/tests/regressions.rs` | engine inline tests | Mixed recovery/checkpoint/follower regressions | Redesign | Rewrite | `M4T` | `M4TD` | none | Many recovery cases survive; follower cases do not. | Split file; delete follower-specific cases. |
 | `crates/engine/src/database/tests/search_branch_cleanup.rs` | engine inline tests | Search cleanup on branch operations | Required | Rewrite | `M6T` | `M6TE` | none | Derived-state cleanup survives. | Align with retrieval/derived-state contract. |
 | `crates/engine/src/database/tests/shutdown.rs` | engine inline tests | Shutdown behavior | Required | Rewrite | `M5T` | `M5TA` | none | Lifecycle behavior survives. | Delete follower shutdown cases; assert structured errors. |
-| `crates/engine/src/database/tests/snapshot_retention.rs` | engine inline tests | Snapshot retention behavior | Required | Rewrite | `M4T` | `M4TC` | none | Retention survives under storage-next. | Remove public maintenance assumptions. |
+| `crates/engine/src/database/tests/snapshot_retention.rs` | engine inline tests | Snapshot retention behavior | Required | Rewrite | `M4T` | `M4TC` | none | Retention survives under storage. | Remove public maintenance assumptions. |
 | `crates/engine/src/database/tests/transactions.rs` | engine inline tests | Database transaction behavior | Redesign | Rewrite | `M6T` | `M6TA` | none | Public transaction sessions removed; atomic commits remain. | Split surviving internal assertions. |
 | `crates/engine/tests/adversarial_tests.rs` | engine integration | Engine adversarial behavior | Required | Rewrite | `M10T` | `M10TB` | none | High-value hardening. | Port late. |
 | `crates/engine/tests/architecture_doc_truth.rs` | engine docs guard | Architecture doc truth guard | Redesign | Rewrite | `M10T` | `M10TE` | docs | Doc truth remains, doc set changes. | Supports the M10E2 docs/examples audit after V1 docs stabilize. |
-| `crates/engine/tests/branch_id_characterization.rs` | engine integration | BranchId behavior | Required | Rewrite | `M1T` | `M1TA` | none | BranchId moves to core-next. | Port to core atom tests. |
+| `crates/engine/tests/branch_id_characterization.rs` | engine integration | BranchId behavior | Required | Rewrite | `M1T` | `M1TA` | none | BranchId moves to core. | Port to core atom tests. |
 | `crates/engine/tests/branch_isolation_tests.rs` | engine integration | Branch isolation | Required | Rewrite | `M6T` | `M6TC` | none | Product behavior survives. | Use V1 branch API. |
 | `crates/engine/tests/concurrency_tests.rs` | engine integration | Concurrency behavior | Required | Rewrite | `M10T` | `M10TA` | none | Concurrency remains critical. | Prefer deterministic scheduler. |
 | `crates/engine/tests/config_matrix.rs` | engine integration | Configuration matrix | Required | Rewrite | `M5T` | `M5TD` | none | Runtime profiles/config survive. | Align with resource profile contract. |
@@ -216,7 +216,7 @@ must follow the same action as that module's V1 owner.
 | `crates/engine/tests/memory_profiling.rs` | engine integration | Memory profile behavior | Required | Rewrite | `M5T` | `M5TD` | none | Runtime resource profiles are V1 required. | Update thresholds/policy. |
 | `crates/engine/tests/primitives_cross_tests.rs` | engine integration | Cross-primitive capability behavior | Required | Rewrite | `M6T` | `M6TA` | none | Behavior survives. | Use V1 capability contract. |
 | `crates/engine/tests/recovery_parity.rs` | engine integration | Recovery parity | Required | Rewrite | `M4T` | `M4TD` | none | Recovery parity survives. | Delete follower leg; split storage vs engine assertions. |
-| `crates/engine/tests/recovery_storage_policy.rs` | engine integration | Recovery/storage policy | Required | Rewrite | `M5T` | `M5TB` | none | Engine-storage policy boundary survives. | Remove follower-derived expectations; use storage-next error mapping. |
+| `crates/engine/tests/recovery_storage_policy.rs` | engine integration | Recovery/storage policy | Required | Rewrite | `M5T` | `M5TB` | none | Engine-storage policy boundary survives. | Remove follower-derived expectations; use storage error mapping. |
 | `crates/engine/tests/recovery_tests.rs` | engine integration | Recovery behavior | Required | Rewrite | `M4T` | `M4TD` | none | Recovery survives. | Port to storage/engine split. |
 | `crates/engine/tests/robustness_regressions.rs` | engine integration | Robustness regressions | Required | Rewrite | `M10T` | `M10TB` | none | High-value hardening. | Port after V1 surfaces settle. |
 | `crates/engine/tests/surface_regression.rs` | engine integration | Public surface regression | Required | Rewrite | `M5T` | `M5TA` | none | Surface guard survives. | Update to V1 public API. |
@@ -225,7 +225,7 @@ must follow the same action as that module's V1 owner.
 | `crates/intelligence/tests/embed_pipeline_tests.rs` | intelligence crate | Embedding pipeline | Required | Rewrite | `M8T` | `M8TB` | none | Pipeline survives. | Use engine surface consumed contract. |
 | `crates/intelligence/tests/expand_cache_fork_test.rs` | intelligence crate | Expansion cache branch/fork behavior | Required | Rewrite | `M8T` | `M8TD` | none | Expansion cache survives. | Align with derived-state freshness. |
 | `crates/intelligence/tests/generate_lifecycle_tests.rs` | intelligence crate | Generation lifecycle | Required | Rewrite | `M8T` | `M8TA` | none | Generation orchestration survives. | Inference owns provider details. |
-| `crates/storage/src/segmented/tests/basic.rs` | storage inline tests | Segmented-store basics | Required | Rewrite | `M4T` | `M4TA` | none | Table/branch runtime behavior survives. | Rename around storage-next table runtime. |
+| `crates/storage/src/segmented/tests/basic.rs` | storage inline tests | Segmented-store basics | Required | Rewrite | `M4T` | `M4TA` | none | Table/branch runtime behavior survives. | Rename around storage table runtime. |
 | `crates/storage/src/segmented/tests/batch.rs` | storage inline tests | Batch write behavior | Required | Rewrite | `M4T` | `M4TC` | none | Atomic commit batches survive internally. | Align with public batch semantics later. |
 | `crates/storage/src/segmented/tests/compact.rs` | storage inline tests | Compaction behavior | Required | Rewrite | `M4T` | `M4TC` | none | Compaction remains internal maintenance. | No user maintenance command assumptions. |
 | `crates/storage/src/segmented/tests/concurrency.rs` | storage inline tests | Segmented-store concurrency | Required | Rewrite | `M4T` | `M4TC` | none | Concurrency survives. | Use deterministic scheduler where possible. |
@@ -235,7 +235,7 @@ must follow the same action as that module's V1 owner.
 | `crates/storage/src/segmented/tests/leveled.rs` | storage inline tests | Leveled storage behavior | Required | Rewrite | `M4T` | `M4TA` | none | Table runtime survives. | Use V1 table terminology. |
 | `crates/storage/src/segmented/tests/lifecycle.rs` | storage inline tests | Segmented-store lifecycle | Required | Rewrite | `M4T` | `M4TE` | none | Lifecycle survives. | Align cache/standard/always. |
 | `crates/storage/src/segmented/tests/materialize.rs` | storage inline tests | Branch materialization and inherited layers | Required | Rewrite | `M4T` | `M4TB` | none | Branch-aware storage behavior survives. | Split oversized file into focused tests. |
-| `crates/storage/src/segmented/tests/mod.rs` | storage inline harness | Segmented tests harness | Redesign | Rewrite | `M4T` | `M4TA` | segmented modules | Harness must match storage-next modules. | Rename away from old segmented shape if needed. |
+| `crates/storage/src/segmented/tests/mod.rs` | storage inline harness | Segmented tests harness | Redesign | Rewrite | `M4T` | `M4TA` | segmented modules | Harness must match storage modules. | Rename away from old segmented shape if needed. |
 | `crates/storage/src/segmented/tests/post_restart_branch.rs` | storage inline tests | Post-restart branch behavior | Required | Rewrite | `M4T` | `M4TD` | none | Recovery and branch visibility survive. | Use L9 recovery API. |
 | `crates/storage/src/segmented/tests/publish_failures.rs` | storage inline tests | Durable publish failure behavior | Required | Rewrite | `M3T` | `M3TC` | none | Fault windows survive. | Move to L4 durable publisher tests. |
 | `crates/storage/src/segmented/tests/quarantine_reconciliation.rs` | storage inline tests | Quarantine reconciliation | Required | Rewrite | `M4T` | `M4TD` | none | Quarantine/recovery survives. | Align with L8 health output. |
@@ -253,7 +253,7 @@ must follow the same action as that module's V1 owner.
 | `benchmarks/baselines/t1-complete.json` | benchmark baseline | Historical tranche baseline | Evidence-only | Archive | none | none | none | Pre-V1 baseline is evidence only. | V1 thresholds must be re-derived. |
 | `benchmarks/benches/redb_benchmark.rs` | benchmark | redb-style comparison benchmark | Required | Rewrite | `M10T` | `M10TD` | none | Competitive benchmark remains binding. | Update to V1 public API. |
 | `benchmarks/benches/redb_common.rs` | benchmark support | Shared embedded-db comparison helpers | Required | Rewrite | `M10T` | `M10TD` | none | Benchmark helper remains useful. | Update setup and durability knobs. |
-| `benchmarks/benches/wal_latency.rs` | benchmark | WAL latency benchmark | Required | Rewrite | `M10T` | `M10TD` | none | Durable-mode latency remains important. | Move WAL specifics behind storage-next metrics. |
+| `benchmarks/benches/wal_latency.rs` | benchmark | WAL latency benchmark | Required | Rewrite | `M10T` | `M10TD` | none | Durable-mode latency remains important. | Move WAL specifics behind storage metrics. |
 | `benchmarks/benches/ycsb_compare.rs` | benchmark | YCSB comparison benchmark | Required | Rewrite | `M10T` | `M10TD` | none | YCSB regression gate remains useful. | Update to V1 write/read APIs. |
 | `benchmarks/benches/ycsb_workloads.rs` | benchmark support | YCSB workload definitions | Required | Keep | `M10T` | `M10TD` | none | Workload definitions remain reusable. | Review only if API assumptions leak in. |
 | `benchmarks/history/.gitkeep` | benchmark history support | History directory placeholder | Evidence-only | Keep | `M10T` | `M10TD` | none | Directory remains useful. | Support-only file. |

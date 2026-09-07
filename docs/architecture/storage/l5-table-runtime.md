@@ -1,6 +1,6 @@
 # L5. Table Runtime
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 Depends on:
 
@@ -504,7 +504,7 @@ objects and local filesystem-backed objects without changing table algorithms.
 
 ## V1 Minimum
 
-The first storage-next L5 implementation needs:
+The first storage L5 implementation needs:
 
 1. Mutable table with sorted iteration.
 2. Frozen table view.
@@ -536,7 +536,7 @@ It does not need:
    `TableKey` newtype with comparator hooks?
 2. Should row metadata live in the L5 row envelope or in L3-encoded value
    bytes interpreted by L6?
-3. Should the first storage-next implementation preserve the current v7 table
+3. Should the first storage implementation preserve the current v7 table
    bytes exactly, or introduce a new table format version as part of the formal
    storage spec?
 4. Should bloom filters remain table-internal, or can optional sidecars exist

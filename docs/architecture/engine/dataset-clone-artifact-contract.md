@@ -1,10 +1,10 @@
 # Engine-Next Dataset Clone Artifact Contract
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
-This document defines the engine-next contract for portable Strata dataset
+This document defines the engine contract for portable Strata dataset
 artifacts.
 
 The V1 product path is:
@@ -667,7 +667,7 @@ These questions must be answered before artifact implementation is frozen:
    clone?
 7. Should derived state be omitted by default for all public artifacts?
 8. Which provider fetch schemes are in V1 CLI scope?
-9. Does engine-next own URL fetch directly, or does CLI/SDK fetch to a local
+9. Does engine own URL fetch directly, or does CLI/SDK fetch to a local
    artifact first?
 10. What metadata schema should represent license, trust, and PII warnings?
 11. Should a later read-only artifact reader share code with clone validation?

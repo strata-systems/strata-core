@@ -4,7 +4,7 @@ Status: living document
 Re-audited: 2026-06-17 (supersedes the 2026-06-12 snapshot; see "What changed since the last audit")
 Companion to: `docs/architecture/v1-existing-test-inventory-and-porting-plan.md`,
 `docs/architecture/v1-storage-testing-gold-standard-delta.md` (the SQLite/peer
-delta), and `docs/architecture/implementation-plans/storage-testing/` (the STH
+delta), and `docs/architecture/archive/implementation-plans/storage-testing/` (the STH
 execution program)
 
 This is the charter behind the M\*T test tracks. It answers three questions and
@@ -13,7 +13,7 @@ keeps answering them as the system moves:
 1. **Philosophy** — what makes a storage test suite world-class, stated as
    principles a reviewer can hold a PR against.
 2. **The live map** — which *bug classes* exist, how the gold-standard engines
-   cover each, and exactly where storage-next is strong or exposed today.
+   cover each, and exactly where storage is strong or exposed today.
 3. **The discipline** — the operating rules and gates that keep the suite
    world-class instead of merely large, and keep this map from drifting.
 
@@ -26,7 +26,7 @@ standard) and the durability-critical peers — FoundationDB, TigerBeetle, Rocks
 etcd/Antithesis — plus the crash-consistency literature (ALICE/OSDI'14,
 CrashMonkey+ACE/OSDI'18, Pathfinder/OOPSLA'25) and recent DBMS-testing work
 (WriteCheck/PVLDB'25, QPG/ICSE'23), mapped against a full re-audit of the
-storage-next test surface (39 integration targets, 28 fuzz targets, 70 inline
+storage test surface (39 integration targets, 28 fuzz targets, 70 inline
 test modules, 39 golden vectors, the testkit, and the fault seams). The
 SQLite/peer comparison and its prioritized adoptions live in the companion
 gold-standard delta doc.
@@ -101,7 +101,7 @@ shipping any feature**. Storage-next's ratio is **~0.8:1** (~127k lines of test
 to ~158k of source) — healthy for a memory-safe, property-tested Rust core, but
 a reminder that the leverage here is *technique density*, not volume.
 
-## The live map: storage-next today (re-audited 2026-06-17)
+## The live map: storage today (re-audited 2026-06-17)
 
 The honest picture has moved. As of June 12 the system was "strong in
 state-space, near-zero in time, scale, and oracle-verified recovery." It has
@@ -131,7 +131,7 @@ class.
 | 11. Coverage/mutation | ✅ *(was ❌; MC/DC remains headroom)* | STH-7b: nightly coverage job publishes the per-crate table and gates the workspace region floor (73.0%, ratchet-up-only, baseline 73.6% 2026-07-16); per-PR `mutation-on-diff` CI job runs `cargo-mutants` over exactly the lines each PR touches — an un-killed mutant fails the job. Full-tree mutation campaigns and MC/DC on the durable core remain tracked headroom, not claimed |
 | 12. Memory safety | ✅ *(was 🟡)* | `#![deny(unsafe_code)]` + STH-7a nightly lanes: Miri (strict provenance) over core + the storage format layer, ASAN over storage and engine, LSAN leak gates (storage via the `leak_static` registry, engine bare), TSAN over storage. Per-test allocator counters remain headroom; LSAN whole-process leak checking is the shipped leak assertion |
 
-Reading of the map: storage-next has **world-class state-space correctness**
+Reading of the map: storage has **world-class state-space correctness**
 (classes 1, 7, format stability), **now-strong trajectory coverage** (class 8),
 **oracle-verified recovery (4), systematic and resource-exhaustion fault
 injection (5), durability realism via FS-model enumeration (10), and the
@@ -318,7 +318,7 @@ from the live map.
 
 These priorities are executed by the **Storage Testing Hardening (STH)** program —
 a sequenced series of implementation plans, one per gap, each driving a class to
-its exit bar: `docs/architecture/implementation-plans/storage-testing/README.md`.
+its exit bar: `docs/architecture/archive/implementation-plans/storage-testing/README.md`.
 
 **Progress (2026-06):** priorities 1 (class 4), 2 (class 5), and 3 (DST sweep driver,
 class 9) are **done** — the DST also found and drove fixes for two durability bugs and

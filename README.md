@@ -36,7 +36,7 @@ Run an experiment on a fork. Let an agent loose on a branch. Read yesterday's st
 - 🌿 **Branch anything, instantly.** Forks are copy-on-write and constant-time regardless of database size, and isolate *all* data models at once. Compare two branches, then promote one into another with a single atomic merge.
 - ⏳ **Time travel is built in.** Every write gets a version and timestamp. Read any key, document, event range, vector search, or graph *as of* any past moment with `--as-of`.
 - 🧩 **Five data models, one engine.** KV, JSON documents, append-only events, vector search, and property graphs share one storage substrate, one branch model, one history.
-- 📦 **Embedded, like SQLite.** A single binary and a single data directory. Use it as a Rust library, a CLI, or an MCP server. It also runs in the browser via WebAssembly.
+- 📦 **Embedded, like SQLite.** A single binary and a single data directory. Use it as a Rust library, a CLI, or an MCP server. It also runs in the browser via WebAssembly — in volatile cache mode, the same as `--cache`: nothing is persisted (#3151).
 - 🤖 **Agent-native.** `strata mcp serve` exposes the database to Claude, Cursor, or any MCP client. Every command emits clean JSON with `--json`. Events are hash-chained for tamper-evident audit trails.
 - 🛡️ **Durable by default.** Write-ahead log, crash recovery, and explicit durability modes — or run pure in-memory with `--cache` when persistence is noise.
 
@@ -146,7 +146,7 @@ kv.put(KvKey::new("greeting")?, KvValue::new(b"hello".to_vec()))?;
 assert!(kv.get(&KvKey::new("greeting")?)?.is_some());
 ```
 
-Durable databases open the same way with `Database::open_local(path, DurableLocalOpenOptions::new())`. The browser build (`crates/wasm`) exposes the cache-mode engine to JavaScript via WebAssembly.
+Durable databases open the same way with `Database::open_local(path, DurableLocalOpenOptions::new())`. The browser build (`crates/wasm`) exposes the **cache-mode** engine to JavaScript via WebAssembly. Cache mode is volatile by design — no WAL, no manifest, no checkpoints — so a browser database lives only as long as the page.
 
 ## Install
 

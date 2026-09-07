@@ -1,10 +1,10 @@
 # Storage-Next Target Crate Shape And Test Harness
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
-The storage-next architecture is described as L1-L9 because layers are the right
+The storage architecture is described as L1-L9 because layers are the right
 way to reason about responsibility and failure boundaries. The Rust crate should
 not be organized as `l1`, `l2`, `l3`, and so on.
 
@@ -36,17 +36,17 @@ not a Rust API spec. Exact signatures belong in the layer implementation plans.
 
 ## Package Naming
 
-During parallel development, the package may be called `strata-storage-next` and
-live under `crates/storage-next`.
+During parallel development, the package may be called `strata-storage` and
+live under `crates/storage`.
 
 After cutover, the canonical package should be `strata-storage` again. Users
 should not learn a permanent `next` name.
 
-Examples in this document use `strata-storage-next` for clarity. Replace that
+Examples in this document use `strata-storage` for clarity. Replace that
 with `strata-storage` after cutover.
 
 Cutover implies removal, not coexistence: the existing `crates/storage` is
-removed, `crates/storage-next` is renamed to `crates/storage`, and package names
+removed, `crates/storage` is renamed to `crates/storage`, and package names
 return to `strata-storage` in the cutover PR series.
 
 ## Crate Shape Principles
@@ -67,7 +67,7 @@ return to `strata-storage` in the cutover PR series.
 ## Standards Application
 
 This crate-shape document applies
-`docs/architecture/v1-engineering-standards.md` to storage-next.
+`docs/architecture/v1-engineering-standards.md` to storage.
 
 Rules:
 
@@ -78,7 +78,7 @@ Rules:
    `backend`, `object`, `layout`, `row`, `format`, `service`, `table`,
    `branch`, `commit`, `lifecycle`, `observability`, `error`, `config`, `api`,
    `test_support`, and `testkit`.
-3. Temporary `strata-storage-next` and `crates/storage-next` names are
+3. Temporary `strata-storage` and `crates/storage` names are
    build-branch scaffolding only. Cutover removes the suffix; code inside the
    crate should already use permanent domain vocabulary.
 4. Public and crate-wide types should use the standards suffixes such as
@@ -97,7 +97,7 @@ cleanup-era compromises.
 Rules:
 
 1. The crate root should use `#![deny(unsafe_code)]`.
-2. Workspace lints are inherited; storage-next should not add local lint
+2. Workspace lints are inherited; storage should not add local lint
    relaxations unless an implementation plan records the reason.
 3. Public storage APIs must be synchronous and must not expose `async`,
    `Future`, tokio, async-std, or runtime-specific types.
@@ -111,7 +111,7 @@ Rules:
 Target shape:
 
 ```text
-crates/storage-next/
+crates/storage/
   Cargo.toml
   src/
     lib.rs
@@ -552,11 +552,11 @@ This diagram is directional, not literal. Some shared modules sit to the side:
 row, error, config, observability
 ```
 
-`strata-core-next` is the only Strata crate storage-next may depend on. The
+`strata-core` is the only Strata crate storage may depend on. The
 dependency should be added only when implementation code actually needs shared
 identifiers or representation types such as branch IDs, commit versions,
 transaction IDs, timestamps, and transparent newtypes. Storage-next must not
-depend on engine-next or any product crate.
+depend on engine or any product crate.
 
 Allowed cross-links:
 
@@ -577,7 +577,7 @@ Disallowed cross-links:
 4. `commit` must not import engine primitive DTOs.
 5. `lifecycle` must not import executor, CLI, intelligence, inference, IPC, or
    StrataHub code.
-6. Upper crates above engine-next must not import storage-next in normal
+6. Upper crates above engine must not import storage in normal
    production code.
 
 ## Public Surface Shape
@@ -622,7 +622,7 @@ Likely public families:
    - `StorageMetrics`
 
 These names are directional. The implementation plan should keep the final list
-short. The test is whether engine-next can consume storage without importing
+short. The test is whether engine can consume storage without importing
 internal modules.
 
 ## Feature Flags
@@ -853,7 +853,7 @@ targets.
 Golden vectors should live under:
 
 ```text
-crates/storage-next/testdata/goldens/storage-format-v1/
+crates/storage/testdata/goldens/storage-format-v1/
 ```
 
 Guidelines:
@@ -876,10 +876,10 @@ later, but CI policy should be written separately.
 
 ### Fast Storage Check
 
-Run the normal storage-next test set:
+Run the normal storage test set:
 
 ```bash
-cargo test -p strata-storage-next
+cargo test -p strata-storage
 ```
 
 After cutover:
@@ -893,7 +893,7 @@ cargo test -p strata-storage
 Run all non-ignored targets with test features:
 
 ```bash
-cargo test -p strata-storage-next --features testkit,fault-injection --all-targets
+cargo test -p strata-storage --features testkit,fault-injection --all-targets
 ```
 
 ### Backend Conformance
@@ -901,38 +901,38 @@ cargo test -p strata-storage-next --features testkit,fault-injection --all-targe
 Run all backend conformance cases:
 
 ```bash
-cargo test -p strata-storage-next --features testkit --test backend_conformance
+cargo test -p strata-storage --features testkit --test backend_conformance
 ```
 
 Run a specific backend:
 
 ```bash
 STRATA_STORAGE_TEST_BACKEND=memory \
-  cargo test -p strata-storage-next --features testkit --test backend_conformance
+  cargo test -p strata-storage --features testkit --test backend_conformance
 
 STRATA_STORAGE_TEST_BACKEND=localfs \
-  cargo test -p strata-storage-next --features testkit --test backend_conformance
+  cargo test -p strata-storage --features testkit --test backend_conformance
 ```
 
 ### Property Tests
 
-V1 storage-next uses `proptest` for property tests by default. The
+V1 storage uses `proptest` for property tests by default. The
 `PROPTEST_CASES` environment variable is therefore part of the local developer
 workflow unless a later implementation plan deliberately changes frameworks.
 
 Run normal property tests:
 
 ```bash
-cargo test -p strata-storage-next --test object_layout_properties
-cargo test -p strata-storage-next --test table_properties
-cargo test -p strata-storage-next --test branch_lsm_properties
-cargo test -p strata-storage-next --test timeline_properties
+cargo test -p strata-storage --test object_layout_properties
+cargo test -p strata-storage --test table_properties
+cargo test -p strata-storage --test branch_lsm_properties
+cargo test -p strata-storage --test timeline_properties
 ```
 
 Increase generated cases locally:
 
 ```bash
-PROPTEST_CASES=4096 cargo test -p strata-storage-next --test branch_lsm_properties
+PROPTEST_CASES=4096 cargo test -p strata-storage --test branch_lsm_properties
 ```
 
 ### Fault-Window Tests
@@ -940,11 +940,11 @@ PROPTEST_CASES=4096 cargo test -p strata-storage-next --test branch_lsm_properti
 Run deterministic fault-window tests:
 
 ```bash
-cargo test -p strata-storage-next \
+cargo test -p strata-storage \
   --features testkit,fault-injection \
   --test service_fault_windows
 
-cargo test -p strata-storage-next \
+cargo test -p strata-storage \
   --features testkit,fault-injection \
   --test commit_runtime_faults
 ```
@@ -954,7 +954,7 @@ cargo test -p strata-storage-next \
 Crash tests should be ignored by default and run explicitly:
 
 ```bash
-cargo test -p strata-storage-next \
+cargo test -p strata-storage \
   --features testkit,fault-injection \
   --test crash_recovery \
   -- --ignored --test-threads=1 --nocapture
@@ -979,7 +979,7 @@ difference.
 Stress tests should be ignored by default:
 
 ```bash
-cargo test -p strata-storage-next \
+cargo test -p strata-storage \
   --features testkit,fault-injection \
   --test stress \
   -- --ignored --nocapture
@@ -1012,8 +1012,8 @@ The memory/cache backend should compile on `wasm32-unknown-unknown` with local
 filesystem support disabled:
 
 ```bash
-cargo check -p strata-storage-next --no-default-features --target wasm32-unknown-unknown --all-targets
-cargo test -p strata-storage-next --test testkit_boundary localfs_feature_is_rejected_for_wasm_builds
+cargo check -p strata-storage --no-default-features --target wasm32-unknown-unknown --all-targets
+cargo test -p strata-storage --test testkit_boundary localfs_feature_is_rejected_for_wasm_builds
 ```
 
 The V1 gate is compile-only until a wasm test runner is chosen. The important
@@ -1026,14 +1026,14 @@ filesystem backend.
 Default check:
 
 ```bash
-cargo test -p strata-storage-next --test format_golden
+cargo test -p strata-storage --test format_golden
 ```
 
 Regeneration should be explicit. The exact command can be chosen during L3
 implementation. Acceptable first forms:
 
 ```bash
-cargo test -p strata-storage-next --test format_golden -- --ignored --nocapture
+cargo test -p strata-storage --test format_golden -- --ignored --nocapture
 ```
 
 or, if an `xtask` crate is introduced later:
@@ -1114,5 +1114,5 @@ The crate shape is ready for implementation planning when:
 5. The testkit is explicit and unavailable in normal production builds.
 6. Backend conformance, fault-window, crash, fuzz, golden, property, and stress
    tests have documented invocation paths.
-7. No normal production crate above engine-next needs to import storage-next
+7. No normal production crate above engine needs to import storage
    internals.

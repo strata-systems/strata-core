@@ -1,6 +1,6 @@
 # Engine-Next Test Plan
 
-Status: V1 actionable plan (grounded in current `crates/engine-next` source)
+Status: V1 actionable plan (grounded in current `crates/engine` source)
 
 ## 1. Purpose And Relationship To The Conformance Contract
 

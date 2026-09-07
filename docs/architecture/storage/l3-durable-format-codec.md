@@ -1,6 +1,6 @@
 # L3. Durable Format / Codec
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 Draft public spec:
 [../../spec/strata-storage-format-v1.md](../../spec/strata-storage-format-v1.md)
@@ -28,7 +28,7 @@ branch product semantics, or engine data capability semantics.
 
 The first storage rewrite must not hide physical-format changes. Current
 formats are evidence, not compatibility constraints. Strata is pre-launch, so
-storage-next should define the clean V1 stable format rather than preserve
+storage should define the clean V1 stable format rather than preserve
 development-era version numbers or compatibility branches.
 
 ## Format Revision Policy
@@ -152,7 +152,7 @@ Storage-next should preserve the idea of explicit segment headers and framed
 records. Whether the exact bytes remain identical is an implementation
 decision, but any change must be a deliberate format-version decision.
 
-M3C3 implementation note: storage-next keeps the current CRC/framing mechanics
+M3C3 implementation note: storage keeps the current CRC/framing mechanics
 but starts stable V1 WAL segment and inner-record format versions at `1`.
 Pre-launch development segment versions `2` and `3`, and inner-record version
 `2`, are rejected by the normal V1 decoders. Inner WAL records carry
@@ -196,14 +196,14 @@ Current snapshot files provide evidence for:
 Storage-next should keep the distinction between a storage-owned snapshot
 container and the payload meaning inside sections.
 
-M3C4 implementation note: storage-next preserves the proven snapshot container
+M3C4 implementation note: storage preserves the proven snapshot container
 mechanics from current storage: `SNAP` magic, a 64-byte header, codec id bytes
 immediately after the header, repeated section envelopes, and a footer CRC32
 over all bytes before the footer. V1 changes the stable snapshot format version
 to `1`, treats current snapshot format version `2` as pre-V1 development
 evidence, records the recovery watermark as a commit version, and validates
 only mechanical section shape in L3. Primitive snapshot section DTOs are not
-ported into storage-next.
+ported into storage.
 
 The materialized snapshot decoder is intentionally bounded so malformed or
 hostile containers cannot force unbounded payload copies. Large snapshot
@@ -256,7 +256,7 @@ V1 target direction:
    state, but they are not required to recover committed storage rows.
 4. Engine owns any primitive or derived-state decode for opaque sections.
 
-This decision is load-bearing for storage-next. Pulling primitive DTOs into the
+This decision is load-bearing for storage. Pulling primitive DTOs into the
 new storage core would recreate the boundary problem we just removed.
 
 ### Commit Payload And Writeset Encoding
@@ -268,7 +268,7 @@ The current code has two related paths:
 - `durability/payload.rs` encodes `TransactionPayload` as MessagePack over
   storage `Key` and `Value`.
 
-Both are useful evidence. Neither is the ideal storage-next contract.
+Both are useful evidence. Neither is the ideal storage contract.
 
 Storage-next should encode an internal commit unit as storage mechanics:
 
@@ -345,7 +345,7 @@ history, and scans without maintaining separate physical stores for each view.
 
 The target architecture should express this as a storage key/row encoding
 contract, not as a primitive API contract. The current `TypeTag` byte becomes
-an opaque `storage_space_id` in storage-next. Engine assigns stable space ids
+an opaque `storage_space_id` in storage. Engine assigns stable space ids
 for its data capabilities and future extensions; storage may route and order by
 the byte but must not know what product capability it represents.
 
@@ -370,7 +370,7 @@ nonce (12 bytes) || ciphertext + tag
 ```
 
 Current code resolves AES-GCM key material from `STRATA_ENCRYPTION_KEY`. That
-is acceptable evidence for the old implementation, but storage-next should not
+is acceptable evidence for the old implementation, but storage should not
 hide security configuration inside L3. The target design should receive
 resolved codec configuration from open-time configuration. L3 can validate and
 use key material; it should not silently read global process environment as the
@@ -544,7 +544,7 @@ format language.
 ## Testing
 
 L3 is the easiest layer to test hard, so it should become the first place where
-storage-next approaches reference-grade coverage.
+storage approaches reference-grade coverage.
 
 Required test categories:
 
@@ -580,7 +580,7 @@ execution.
 
 ## V1 Minimum
 
-V1 storage-next needs:
+V1 storage needs:
 
 - one documented database codec configuration path
 - identity codec

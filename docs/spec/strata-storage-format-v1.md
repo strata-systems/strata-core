@@ -3,7 +3,7 @@
 Status: Draft / Unstable / Not Yet A Compatibility Promise
 
 Audience: Strata implementers, storage-tool authors, dataset publishers,
-backup/repair tooling authors, and reviewers of the storage-next rewrite.
+backup/repair tooling authors, and reviewers of the storage rewrite.
 
 Related architecture draft:
 [Storage-Next L3. Durable Format / Codec](../architecture/storage/l3-durable-format-codec.md)
@@ -20,7 +20,7 @@ specific implementation commit.
 
 This draft is intentionally written during the L3 architecture pass. It records
 what is already clear, marks provisional areas explicitly, and prevents
-storage-next from accidentally burying format decisions in implementation code.
+storage from accidentally burying format decisions in implementation code.
 
 ## 2. Status And Compatibility
 
@@ -1295,7 +1295,7 @@ These decisions close the first-pass stabilization questions:
 
 ## 24. Drafting Plan
 
-This document should be updated as the storage-next layer documents are
+This document should be updated as the storage layer documents are
 completed:
 
 1. L3 defines durable bytes and codec boundaries.

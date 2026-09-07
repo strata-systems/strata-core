@@ -2,14 +2,14 @@
 
 ## Scope
 
-PERF-I3 restores storage-next scan mechanics to the old storage shape:
+PERF-I3 restores storage scan mechanics to the old storage shape:
 bounded, ordered cursor scans with limit pushdown. This is a targeted serving
 path fix for L9 `scan_prefix` and `scan_range`; it is not an index project and
 not a branch/table rearchitecture.
 
 ## Goal
 
-Make storage-next scans proportional to the returned key window and source
+Make storage scans proportional to the returned key window and source
 count, not proportional to the total rows in the branch.
 
 Required behavior:
@@ -41,7 +41,7 @@ Measured old-cache scan counters:
 | iterator pipeline builds | 100 | 100 |
 | rows yielded | 6,400 | 6,400 |
 
-Measured storage-next scan counters:
+Measured storage scan counters:
 
 | Counter | Prefix | Range |
 | --- | ---: | ---: |
@@ -61,14 +61,14 @@ Conclusion:
 3. The immediate bottleneck is late limit application plus full-source candidate
    collection, compounded by row-proportional read-view capture.
 
-Hot storage-next files:
+Hot storage files:
 
-1. `crates/storage-next/src/api/runtime.rs`
-2. `crates/storage-next/src/branch/read.rs`
-3. `crates/storage-next/src/branch/state/read_hooks.rs`
-4. `crates/storage-next/src/table/cursor.rs`
-5. `crates/storage-next/src/table/mutable.rs`
-6. `crates/storage-next/src/table/reader.rs`
+1. `crates/storage/src/api/runtime.rs`
+2. `crates/storage/src/branch/read.rs`
+3. `crates/storage/src/branch/state/read_hooks.rs`
+4. `crates/storage/src/table/cursor.rs`
+5. `crates/storage/src/table/mutable.rs`
+6. `crates/storage/src/table/reader.rs`
 
 Old mechanics to preserve as the reference:
 
@@ -144,11 +144,11 @@ must not first materialize all candidates in the scan range.
 
 Files:
 
-1. `crates/storage-next/src/table/key.rs`
-2. `crates/storage-next/src/table/mutable.rs`
-3. `crates/storage-next/src/table/reader.rs`
-4. `crates/storage-next/src/table/cursor.rs`
-5. `crates/storage-next/src/observability/perf_trace.rs`
+1. `crates/storage/src/table/key.rs`
+2. `crates/storage/src/table/mutable.rs`
+3. `crates/storage/src/table/reader.rs`
+4. `crates/storage/src/table/cursor.rs`
+5. `crates/storage/src/observability/perf_trace.rs`
 
 Work:
 
@@ -173,8 +173,8 @@ Exit gates:
 
 Files:
 
-1. `crates/storage-next/src/branch/read.rs`
-2. `crates/storage-next/src/branch/state/read_hooks.rs`
+1. `crates/storage/src/branch/read.rs`
+2. `crates/storage/src/branch/state/read_hooks.rs`
 
 Work:
 
@@ -211,8 +211,8 @@ Exit gates:
 
 Files:
 
-1. `crates/storage-next/src/branch/read.rs`
-2. `crates/storage-next/src/table/cursor.rs`
+1. `crates/storage/src/branch/read.rs`
+2. `crates/storage/src/table/cursor.rs`
 
 Work:
 
@@ -247,9 +247,9 @@ Exit gates:
 
 Files:
 
-1. `crates/storage-next/src/api/runtime.rs`
-2. `crates/storage-next/src/lifecycle/cache.rs`
-3. `crates/storage-next/src/lifecycle/durable/bootstrap.rs`
+1. `crates/storage/src/api/runtime.rs`
+2. `crates/storage/src/lifecycle/cache.rs`
+3. `crates/storage/src/lifecycle/durable/bootstrap.rs`
 
 Work:
 
@@ -277,27 +277,27 @@ Exit gates:
 Run the same comparison that identified the issue:
 
 ```sh
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale -- --scales 100k --engines cache --workloads load-seq,scan-prefix,scan-range-throughput --samples 100 --branch-samples 100 --value-bytes 150
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale -- --scales 100k --engines cache --workloads load-seq,scan-prefix,scan-range-throughput --samples 100 --branch-samples 100 --value-bytes 150
 cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-old-cache-scale -- --scales 100k --workloads load-seq,scan-prefix,scan-range-throughput --samples 100 --branch-samples 100 --value-bytes 150
 ```
 
 Also run standard mode to confirm this is not cache-specific:
 
 ```sh
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale -- --scales 100k --engines standard --workloads load-seq,scan-prefix,scan-range-throughput --samples 100 --branch-samples 100 --value-bytes 150
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale -- --scales 100k --engines standard --workloads load-seq,scan-prefix,scan-range-throughput --samples 100 --branch-samples 100 --value-bytes 150
 ```
 
 Required test and check commands:
 
 ```sh
 cargo fmt --all -- --check
-cargo check -p strata-storage-next --features perf-trace
-cargo test -p strata-storage-next --features perf-trace scan
-cargo check --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale
+cargo check -p strata-storage --features perf-trace
+cargo test -p strata-storage --features perf-trace scan
+cargo check --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale
 cargo check --manifest-path benchmarks/Cargo.toml --bin storage-old-cache-scale
 ```
 
-Expected storage-next counters after PERF-I3:
+Expected storage counters after PERF-I3:
 
 1. `read_view_rows_cloned` for L9 scan workloads: zero or not row-proportional.
 2. `read_view_validation_rows_scanned` for L9 scan workloads: zero or not
@@ -330,7 +330,7 @@ Before merging PERF-I3:
 5. Inherited rows are rewritten and fork-capped correctly.
 6. Tombstone and TTL behavior is covered by tests.
 7. Cache and standard modes share the same scan mechanics.
-8. The benchmark rerun includes old-cache and storage-next cache results from
+8. The benchmark rerun includes old-cache and storage cache results from
    the same machine.
 9. The decision report records both throughput/latency and row-work counters.
 

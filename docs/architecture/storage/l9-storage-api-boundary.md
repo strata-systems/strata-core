@@ -15,14 +15,14 @@ Depends on:
 
 Consumed by:
 
-- engine-next
+- engine
 
 ## Purpose
 
-L9 is the only normal production boundary engine-next consumes from
-storage-next.
+L9 is the only normal production boundary engine consumes from
+storage.
 
-Its job is to keep engine-next out of backend IO, object naming, durable byte
+Its job is to keep engine out of backend IO, object naming, durable byte
 formats, WAL internals, manifest internals, table internals, branch-LSM
 internals, commit internals, and lifecycle internals.
 
@@ -33,27 +33,27 @@ after L1-L8. The exact traits, structs, names, and module layout should be
 designed during implementation planning, but they should preserve the ownership
 rules here.
 
-The storage-next reading order intentionally mentions L9 twice: first as an
+The storage reading order intentionally mentions L9 twice: first as an
 early sketch so lower layers know their consumer, and last as this aligned
 boundary after L1-L8 have defined their contracts.
 
 ## Boundary Rule
 
-Engine-next consumes storage-next. Product crates above engine-next do not.
+Engine-next consumes storage. Product crates above engine do not.
 
 Allowed normal production consumer:
 
-- engine-next
+- engine
 
 Allowed exceptions:
 
-- storage-next internals
+- storage internals
 - storage tests
 - storage benches
 - storage fuzz targets
 - storage diagnostic tools
 - migration or verification tools
-- engine-next tests that intentionally characterize storage behavior
+- engine tests that intentionally characterize storage behavior
 
 Not allowed as normal production storage consumers:
 
@@ -65,7 +65,7 @@ Not allowed as normal production storage consumers:
 - Strata AI
 - StrataHub
 
-If an upper layer needs storage-backed behavior, engine-next exposes an
+If an upper layer needs storage-backed behavior, engine exposes an
 engine-owned semantic API.
 
 ## Layer Alignment
@@ -217,7 +217,7 @@ read sets: reads, scans, and history calls performed before a commit are not
 remembered unless the caller supplies an explicit storage fact for each key that
 must be checked.
 
-M4P-L9B may add explicit storage-shaped read facts for engine-next. That surface
+M4P-L9B may add explicit storage-shaped read facts for engine. That surface
 must remain branch-local and storage-key based, and it must map directly to L7
 `CommitReadFact` / `CommitCasFact` without exposing product transaction sessions
 or primitive DTOs. Product transaction/session policy, operation-level write-skew
@@ -559,8 +559,8 @@ boundary:
 - IPC server/client behavior
 - StrataHub behavior
 
-Some of these may exist inside storage-next or in test/diagnostic tooling. They
-should not be normal engine-next production dependencies.
+Some of these may exist inside storage or in test/diagnostic tooling. They
+should not be normal engine production dependencies.
 
 ## Failure Model
 
@@ -629,7 +629,7 @@ The L9 boundary needs contract tests:
     workflows.
 19. Shutdown drains maintenance and releases writer guard/lease.
 20. Fault hooks are unavailable or inert in normal production builds.
-21. Upper crates above engine-next cannot import storage-next in normal
+21. Upper crates above engine cannot import storage in normal
     production code.
 
 ## Current Code Evidence
@@ -653,7 +653,7 @@ evidence, not as a surface to preserve.
 
 ## V1 Minimum
 
-The first storage-next API boundary needs:
+The first storage API boundary needs:
 
 1. Open/create storage runtime from storage plan.
 2. Capability validation before durable side effects.
@@ -686,7 +686,7 @@ The first boundary does not need:
 5. Primitive DTOs.
 6. Follower mode.
 7. StrataHub hooks.
-8. Full final engine-next diagnostic taxonomy.
+8. Full final engine diagnostic taxonomy.
 9. Cross-branch atomic commit batches.
 10. Distributed locks or consensus.
 
@@ -694,13 +694,13 @@ The first boundary does not need:
 
 These should be resolved before implementation planning:
 
-1. Does storage-next expose physical keys as a typed `StorageKey`, opaque byte
+1. Does storage expose physical keys as a typed `StorageKey`, opaque byte
    slices, or both behind constructors?
 2. What exact storage-shaped row representation does `CommitBatch` carry:
    opaque bytes, current `Value`, or an L3 row envelope?
 3. Are maintenance controls exposed as direct methods, a task executor, or a
    typed control plane over L8?
-4. Which raw health facts are stable enough to guarantee to engine-next in V1?
+4. Which raw health facts are stable enough to guarantee to engine in V1?
 5. Does lossy WAL fallback remain a normal open option, or move to diagnostic
    recovery tooling?
 6. How strict should the boundary be about exposing object names in diagnostics
@@ -708,10 +708,10 @@ These should be resolved before implementation planning:
 
 ## Final Alignment Rule
 
-If an engine-next feature needs a storage behavior not listed here, the default
+If an engine feature needs a storage behavior not listed here, the default
 answer is not "reach into a lower storage module." The default answer is:
 
 1. identify the lower-layer mechanic,
 2. decide whether it is genuinely storage-owned,
 3. add the smallest storage-shaped boundary to L9,
-4. keep product meaning in engine-next.
+4. keep product meaning in engine.

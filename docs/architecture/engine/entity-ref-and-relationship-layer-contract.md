@@ -1,10 +1,10 @@
 # Engine-Next EntityRef And Relationship-Layer Contract
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
-This document defines the identity and relationship contract for engine-next.
+This document defines the identity and relationship contract for engine.
 
 Storage-next persists branch-aware MVCC KV rows. Engine-next owns product
 identity. `EntityRef` is the product identity layer that lets engine services,
@@ -56,7 +56,7 @@ clean contract:
    data record variant carries a branch and space. `Branch` is branch-scoped
    but not space-scoped.
 2. `crates/core/src/contract/primitive_type.rs` names these variants
-   `PrimitiveType`. In engine-next language these are product data capability
+   `PrimitiveType`. In engine language these are product data capability
    or control-plane identity kinds, not storage primitives.
 3. Search re-exports `EntityRef` and returns it through search hits. Search
    already uses `EntityRef` as provenance, not as a storage key.
@@ -266,7 +266,7 @@ V1 entity kinds:
 
 `branch` exists because users, diagnostics, and branch workflows need stable
 branch references. It must not be used to justify "branch as a storage
-primitive" in engine-next.
+primitive" in engine.
 
 For V1, `branch` is the only control-plane entity kind this document allows as a
 relationship target. Space records, recipe records, dataset records, projection
@@ -360,7 +360,7 @@ Rules:
 1. The typed `EntityRef` or equivalent structured DTO is authoritative.
 2. URI parsing must reject invalid or ambiguous refs.
 3. URI display must round-trip through the typed model.
-4. URI strings must not be stored as the only form in new engine-next graph
+4. URI strings must not be stored as the only form in new engine graph
    relationship rows.
 5. Current graph `entity_ref: Option<String>` is a migration input, not the V1
    target.
@@ -423,7 +423,7 @@ branch + space + graph + source node + destination node + edge type
 ```
 
 Multiple same-type parallel edges between the same endpoints are not a V1
-identity guarantee unless engine-next introduces an explicit edge id. Any API
+identity guarantee unless engine introduces an explicit edge id. Any API
 that admits duplicate packed adjacency entries must either collapse them into
 the ordinary edge identity or allocate explicit edge ids before those edges
 become user-addressable.
@@ -476,7 +476,7 @@ requested.
 Direct entity-to-entity relationship commands are allowed only as API sugar.
 They must produce graph facts.
 
-If V1 exposes an operation such as "connect entity A to entity B", engine-next
+If V1 exposes an operation such as "connect entity A to entity B", engine
 must define all of these before implementation:
 
 1. Target graph selection.

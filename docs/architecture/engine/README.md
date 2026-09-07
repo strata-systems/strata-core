@@ -1,10 +1,10 @@
 # Engine-Next Architecture Document Index
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
-This directory is the working set for engine-next contracts.
+This directory is the working set for engine contracts.
 
 The high-level engine architecture lives one level up in
 `docs/architecture/engine-architecture.md`. This index lists the follow-up
@@ -61,7 +61,7 @@ Path: `docs/architecture/engine/persistence-adapter-contract.md`
 
 Status: Written.
 
-Purpose: Defines the only normal engine-facing path to storage-next L9:
+Purpose: Defines the only normal engine-facing path to storage L9:
 physical key construction, read forms, commit batches, branch mechanics,
 timeline resolution, snapshot/recovery facts, and error mapping.
 
@@ -153,7 +153,7 @@ Path: `docs/architecture/engine/error-and-diagnostics-contract.md`
 
 Status: Written.
 
-Purpose: Applies the V1 error and diagnostics vocabulary to engine-next:
+Purpose: Applies the V1 error and diagnostics vocabulary to engine:
 product error ownership, storage mapping, capability diagnostics, command/IPC
 status preservation, redaction, cutover requirements, and conformance tests.
 
@@ -163,7 +163,7 @@ Path: `docs/architecture/engine/testing-and-conformance-plan.md`
 
 Status: Written.
 
-Purpose: Defines the engine-side testing strategy over storage-next: reusable
+Purpose: Defines the engine-side testing strategy over storage: reusable
 testkits, fake/faulting persistence, shared data-capability conformance,
 branch/time model tests, command/IPC goldens, clone artifact tests,
 error/status tests, removed-surface guards, and V1 readiness gates.
@@ -174,7 +174,7 @@ Path: `docs/architecture/engine/target-crate-shape-and-test-harness.md`
 
 Status: Written.
 
-Purpose: Defines the target one-crate engine-next module shape, crate-level
+Purpose: Defines the target one-crate engine module shape, crate-level
 policy, domain ownership, test-support/testkit split, and forbidden shapes so
 the implementation does not recreate cleanup-era vocabulary or scattered
 storage access.
