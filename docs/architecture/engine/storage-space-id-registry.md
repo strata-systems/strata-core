@@ -1,11 +1,11 @@
 # Engine-Next Storage-Space ID Registry
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
 This document defines the engine-owned storage-space ID assignments for
-engine-next.
+engine.
 
 Storage-next persists branch-aware MVCC KV rows. The physical row key includes
 an opaque `storage_space_id` byte:
@@ -61,7 +61,7 @@ Current storage uses `TypeTag` as a primitive-shaped byte:
 | `0x06` | JSON |
 | `0x07` | Graph |
 
-That layout is useful evidence, but it is not the V1 target. In storage-next,
+That layout is useful evidence, but it is not the V1 target. In storage,
 `0x01` is reserved by storage for the commit timeline. Engine-owned row spaces
 start at `0x20`.
 
@@ -72,7 +72,7 @@ vocabulary.
 
 ## Allocation Boundary
 
-The storage-next registry owns the global byte split:
+The storage registry owns the global byte split:
 
 | Range | Owner | Meaning |
 |---|---|---|

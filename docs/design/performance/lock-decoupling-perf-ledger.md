@@ -4,7 +4,7 @@ Tracks the durable write-path performance of each M4P-L8I slice so we can tell,
 slice to slice, whether we are improving or regressing. Companion to the
 root-cause in [`durable-background-lock-convoy.md`](./durable-background-lock-convoy.md)
 and the plan in
-[`../../architecture/implementation-plans/M4P/m4p-l8i-runtime-lock-decoupling-implementation-plan.md`](../../architecture/implementation-plans/M4P/m4p-l8i-runtime-lock-decoupling-implementation-plan.md).
+[`../../architecture/archive/implementation-plans/M4P/m4p-l8i-runtime-lock-decoupling-implementation-plan.md`](../../architecture/archive/implementation-plans/M4P/m4p-l8i-runtime-lock-decoupling-implementation-plan.md).
 
 ## Reference config (frozen — every ledger row uses this)
 

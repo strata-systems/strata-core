@@ -903,3 +903,63 @@ fn function_body<'a>(source: &'a str, signature: &str) -> &'a str {
     }
     panic!("unterminated function body `{signature}`");
 }
+
+/// #3134: the pre-M9B crate names must not come back into the docs CLAUDE.md
+/// calls authoritative.
+///
+/// The crates shed their `-next` suffix in M9B (hard rule 43); the docs did
+/// not, and 1,890 stale references survived into 1.2.x — an agent reading
+/// `strata-storage-next` will try to depend on a crate that has not existed
+/// for a year. The archive is deliberately exempt: it is a record of the
+/// rewrite, where the old names are the correct ones.
+#[test]
+fn authoritative_docs_do_not_name_pre_rename_crates() {
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("crate sits under <repo>/crates/engine")
+        .to_path_buf();
+
+    // The paths CLAUDE.md's "Where To Read Before Working On A Slice" points at.
+    let authoritative = [repo.join("docs/architecture"), repo.join("docs/spec")];
+    let stale = ["storage-next", "engine-next", "core-next", "inference-next"];
+
+    let mut offenders = Vec::new();
+    for root in &authoritative {
+        for path in markdown_files(root) {
+            // History keeps its own names.
+            if path.components().any(|p| p.as_os_str() == "archive") {
+                continue;
+            }
+            let text = fs::read_to_string(&path).expect("read doc");
+            for name in stale {
+                if text.contains(name) {
+                    offenders.push(format!("{}: {name}", path.display()));
+                }
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "authoritative docs name crates that were renamed in M9B; use the \
+         shipped names (strata-storage, strata-engine, strata-core, \
+         strata-inference) or move the document to docs/architecture/archive/:\n  {}",
+        offenders.join("\n  ")
+    );
+}
+
+fn markdown_files(root: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let Ok(entries) = fs::read_dir(root) else {
+        return found;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(markdown_files(&path));
+        } else if path.extension().is_some_and(|ext| ext == "md") {
+            found.push(path);
+        }
+    }
+    found
+}

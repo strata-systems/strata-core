@@ -55,10 +55,10 @@ later milestone.
 | Document | Status | Role |
 |---|---|---|
 | `docs/architecture/strata-v1-architecture.md` | Exists | Binding high-level V1 architecture anchor. |
-| `docs/architecture/core-architecture.md` | Exists | Binding core-next architecture. |
-| `docs/architecture/storage-architecture.md` | Exists | Binding storage-next architecture. |
-| `docs/architecture/engine-architecture.md` | Exists | Binding engine-next architecture. |
-| `docs/architecture/inference-architecture.md` | Exists | Binding inference-next architecture. |
+| `docs/architecture/core-architecture.md` | Exists | Binding core architecture. |
+| `docs/architecture/storage-architecture.md` | Exists | Binding storage architecture. |
+| `docs/architecture/engine-architecture.md` | Exists | Binding engine architecture. |
+| `docs/architecture/inference-architecture.md` | Exists | Binding inference architecture. |
 | `docs/architecture/intelligence-architecture.md` | Exists | Binding intelligence-next architecture. |
 | `docs/architecture/stratahub-substrate-architecture.md` | Exists | Binding V1 StrataHub substrate architecture. |
 | `docs/architecture/runtime-resource-profile-architecture.md` | Exists | Binding runtime resource profile architecture. |
@@ -126,17 +126,17 @@ later milestone.
 |---|---|---|
 | `docs/architecture/strata-v1-implementation-roadmap.md` | Exists | Binding milestone roadmap and sequencing. |
 | `docs/architecture/v1-progress-tracker.md` | Exists | Current V1 execution ledger and issue/PR label protocol. |
-| `docs/architecture/implementation-plans/m0-m0t-implementation-plan.md` | Exists | M0 architecture freeze and tracking plan. |
-| `docs/architecture/implementation-plans/m1-m1t-implementation-plan.md` | Exists | M1 core-next implementation plan. |
-| `docs/architecture/implementation-plans/m2-m2t-implementation-plan.md` | Exists | M2 storage backend/object/format foundation plan. |
-| `docs/architecture/implementation-plans/m3-m3t-implementation-plan.md` | Exists | M3 storage durable services plan. |
-| `docs/architecture/implementation-plans/m4-m4t-implementation-plan.md` | Exists | M4 storage table/branch/commit/API plan. |
-| `docs/architecture/implementation-plans/m5-m5t-implementation-plan.md` | Exists | M5 engine foundation plan. |
-| `docs/architecture/implementation-plans/m6-m6t-implementation-plan.md` | Exists | M6 engine capabilities and product surface plan. |
-| `docs/architecture/implementation-plans/m7-m7t-implementation-plan.md` | Exists | M7 inference-next plan. |
-| `docs/architecture/implementation-plans/m8-m8t-implementation-plan.md` | Exists | M8 intelligence-next plan. |
-| `docs/architecture/implementation-plans/m9-m9t-implementation-plan.md` | Exists | M9 executor/CLI/SDK/cutover plan. |
-| `docs/architecture/implementation-plans/m10-m10t-implementation-plan.md` | Exists | M10 V1 readiness and release hardening plan. |
+| `docs/architecture/archive/implementation-plans/m0-m0t-implementation-plan.md` | Exists | M0 architecture freeze and tracking plan. |
+| `docs/architecture/archive/implementation-plans/m1-m1t-implementation-plan.md` | Exists | M1 core implementation plan. |
+| `docs/architecture/archive/implementation-plans/m2-m2t-implementation-plan.md` | Exists | M2 storage backend/object/format foundation plan. |
+| `docs/architecture/archive/implementation-plans/m3-m3t-implementation-plan.md` | Exists | M3 storage durable services plan. |
+| `docs/architecture/archive/implementation-plans/m4-m4t-implementation-plan.md` | Exists | M4 storage table/branch/commit/API plan. |
+| `docs/architecture/archive/implementation-plans/m5-m5t-implementation-plan.md` | Exists | M5 engine foundation plan. |
+| `docs/architecture/archive/implementation-plans/m6-m6t-implementation-plan.md` | Exists | M6 engine capabilities and product surface plan. |
+| `docs/architecture/archive/implementation-plans/m7-m7t-implementation-plan.md` | Exists | M7 inference plan. |
+| `docs/architecture/archive/implementation-plans/m8-m8t-implementation-plan.md` | Exists | M8 intelligence-next plan. |
+| `docs/architecture/archive/implementation-plans/m9-m9t-implementation-plan.md` | Exists | M9 executor/CLI/SDK/cutover plan. |
+| `docs/architecture/archive/implementation-plans/m10-m10t-implementation-plan.md` | Exists | M10 V1 readiness and release hardening plan. |
 
 ## Current-Code Evidence
 

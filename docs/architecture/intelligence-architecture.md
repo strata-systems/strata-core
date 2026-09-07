@@ -1,18 +1,28 @@
-# Intelligence-Next Architecture
+# Intelligence Architecture
 
-Status: V1 architecture draft
+> **Status: DESIGNED, NOT BUILT (#3166, #3171).** There is no
+> `crates/intelligence`. `QueryExpander`, `ResultReranker` and `RagGenerator`
+> appear nowhere in `crates/`. Nothing in this document ships in 1.2.x.
+>
+> **Roadmap milestone M8 is DEFERRED** (decided 2026-09-07, #3171) — deferred,
+> not cut, and with no target release. This document is kept because the design
+> is considered sound and is the starting point if and when the layer is built.
+> It must not be read as a description of the product, and code must not be
+> written against the traits it names.
+
+Status: design only — superseded as a statement of current architecture
 
 ## Purpose
 
 This document defines the target architecture for `intelligence-next`, the
 Strata-aware model orchestration layer.
 
-Intelligence-next sits above engine-next and inference-next:
+Intelligence-next sits above engine and inference:
 
 ```text
-engine-next ----\
+engine ----\
                  -> intelligence-next -> executor / cli / SDK / Strata AI
-inference-next -/
+inference -/
 ```
 
 Engine-next owns database semantics, deterministic retrieval, branches, entity
@@ -40,11 +50,11 @@ Architecture anchors:
 
 Engine contracts consumed by intelligence:
 
-1. [engine-next/retrieval-and-derived-state-contract.md](./engine-next/retrieval-and-derived-state-contract.md)
-2. [engine-next/control-plane-layout-contract.md](./engine-next/control-plane-layout-contract.md)
-3. [engine-next/primitive-implementation-contract.md](./engine-next/primitive-implementation-contract.md)
-4. [engine-next/entity-ref-and-relationship-layer-contract.md](./engine-next/entity-ref-and-relationship-layer-contract.md)
-5. [engine-next/product-pathway-conformance-plan.md](./engine-next/product-pathway-conformance-plan.md)
+1. [engine/retrieval-and-derived-state-contract.md](./engine/retrieval-and-derived-state-contract.md)
+2. [engine/control-plane-layout-contract.md](./engine/control-plane-layout-contract.md)
+3. [engine/primitive-implementation-contract.md](./engine/primitive-implementation-contract.md)
+4. [engine/entity-ref-and-relationship-layer-contract.md](./engine/entity-ref-and-relationship-layer-contract.md)
+5. [engine/product-pathway-conformance-plan.md](./engine/product-pathway-conformance-plan.md)
 
 Product direction:
 
@@ -75,7 +85,7 @@ Intelligence-next exists so Strata can support:
 9. Strata AI workflows that need database context and local model execution.
 
 Intelligence-next should make AI features feel native to Strata without making
-engine-next depend on models or making inference-next know about databases.
+engine depend on models or making inference know about databases.
 
 ## Current Codebase Evidence
 
@@ -165,9 +175,9 @@ Current executor touchpoints:
 
 ## Binding V1 Decisions
 
-1. **Intelligence-next depends on engine-next and inference-next only.**
+1. **Intelligence-next depends on engine and inference only.**
    It may consume engine product APIs and inference model APIs. It must not
-   import storage-next or bypass engine persistence.
+   import storage or bypass engine persistence.
 
 2. **Intelligence-next owns model-dependent Strata behavior.**
    It owns when to call models for embeddings, expansion, reranking, RAG, or
@@ -263,18 +273,18 @@ Current executor touchpoints:
 
 19. **Explicit generation remains a feature-gated product utility.**
     Generation commands are legitimate intelligence operations. They should
-    stay above engine and below command surfaces, use inference-next for model
+    stay above engine and below command surfaces, use inference for model
     execution, and report model/provider diagnostics cleanly.
 
 20. **External on-prem model stacks are post-V1.**
-    Intelligence-next should consume model execution through the inference-next
+    Intelligence-next should consume model execution through the inference
     provider gateway so future vLLM, NIM, Ollama, LM Studio, llama.cpp server,
     and other OpenAI-compatible endpoint adapters do not require intelligence
     rewrites. V1 does not need to ship those adapters.
 
 21. **Provider execution is a solved lower-layer concern.**
     Intelligence-next treats inference providers as opaque executors. It asks
-    inference-next for model outputs, token counts, embeddings, ranking scores,
+    inference for model outputs, token counts, embeddings, ranking scores,
     capability facts, and diagnostics. It must not branch on provider-specific
     transport, endpoint compatibility, tokenization, HTTP shape, native runtime
     details, or model artifact layout.
@@ -332,7 +342,7 @@ Intelligence-next does not own:
 
 ## Engine Surface Consumed
 
-Intelligence-next must consume engine-next through named product/internal
+Intelligence-next must consume engine through named product/internal
 surfaces, never by reaching into storage or private engine tables.
 
 The exact Rust names can be chosen during implementation, but the required
@@ -358,7 +368,7 @@ engine surfaces are:
 10. Diagnostics APIs for publishing stage outcomes, degraded operation facts,
     and rebuild-required status.
 
-These surfaces are engine-next obligations. Intelligence-next may wrap them in
+These surfaces are engine obligations. Intelligence-next may wrap them in
 ergonomic helpers, but it does not define alternative persistence contracts.
 
 ## Target Crate Shape
@@ -434,7 +444,7 @@ Every model-assisted stage should define:
 
 4. Model use:
    provider kind, model spec, elapsed time, token counts where available, and
-   whether network was used. These facts come from inference-next diagnostics;
+   whether network was used. These facts come from inference diagnostics;
    intelligence-next should not inspect provider internals to derive them.
 
 5. Degradation behavior:
@@ -480,7 +490,7 @@ V1 requirements:
 
 The current runtime already queues work, uses the engine scheduler, writes
 shadow vectors with source refs, and exposes status counters. V1 should add a
-clearer derived-state manifest/watermark story through engine-next so users can
+clearer derived-state manifest/watermark story through engine so users can
 tell whether embeddings are fresh, stale, rebuilding, or degraded.
 
 When a cloned dataset references a local embedding model that is missing on the
@@ -722,4 +732,4 @@ The implementation should:
 
 If provider HTTP, llama.cpp pointers, tokenizer internals, model artifact
 verification, provider JSON, or endpoint compatibility logic appear in
-intelligence-next, the design is drifting downward into inference-next.
+intelligence-next, the design is drifting downward into inference.

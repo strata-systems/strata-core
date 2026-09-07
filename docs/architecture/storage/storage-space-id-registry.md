@@ -1,6 +1,6 @@
 # Storage-Next Storage Space ID Registry
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
@@ -55,7 +55,7 @@ spec, and the relevant layer document.
 
 ## Engine-Owned IDs
 
-`0x20..=0xff` belongs to engine-next.
+`0x20..=0xff` belongs to engine.
 
 Engine-next owns:
 
@@ -73,7 +73,7 @@ Engine-owned assignments are documented in
 `docs/architecture/engine/storage-space-id-registry.md`.
 
 Storage-next must not duplicate that registry or map engine-owned bytes to
-product names. Storage validates byte ownership at the range level; engine-next
+product names. Storage validates byte ownership at the range level; engine
 validates whether an engine-owned byte is assigned, known, or compatible with
 the database's persisted engine registry.
 
@@ -88,6 +88,6 @@ the database's persisted engine registry.
 
 ## Open Questions
 
-1. Does storage-next need more than one timeline-related ID, or can timeline
+1. Does storage need more than one timeline-related ID, or can timeline
    key prefixes inside `0x01` cover both timestamp-to-version and
    version-to-timestamp indexes?

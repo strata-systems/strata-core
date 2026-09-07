@@ -8,7 +8,7 @@ This document is the owner for the exact PR sequence that promotes the V1 stack
 from build-branch crates to the canonical Strata crate graph.
 
 The detailed sequence is produced during `M10G`. It is intentionally not fully
-specified before core-next, storage-next, engine-next, inference-next, and
+specified before core, storage, engine, inference, and
 intelligence-next have real crate shapes.
 
 ## Required Content Before M10 Cutover

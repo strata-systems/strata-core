@@ -1,6 +1,6 @@
 # Engine-Next Testing And Conformance Plan
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
@@ -12,7 +12,7 @@ runtime policy, and diagnostics.
 The storage testing plan proves the storage substrate. This document defines
 the engine-side test plan over that substrate:
 
-1. Which test families engine-next needs.
+1. Which test families engine needs.
 2. Which reusable harnesses must exist.
 3. What each engine architecture bucket must prove.
 4. How API, command, CLI, and IPC surfaces stay aligned.
@@ -47,8 +47,8 @@ Read this with:
 
 ## Relationship To Storage Testing
 
-`docs/architecture/v1-testing-and-conformance-plan.md` owns storage-next L1-L9
-testing. This document starts at engine-next.
+`docs/architecture/v1-testing-and-conformance-plan.md` owns storage L1-L9
+testing. This document starts at engine.
 
 Storage tests prove:
 
@@ -71,8 +71,8 @@ Engine tests prove:
 7. Derived-state, retrieval, and recipe behavior.
 8. Runtime, access mode, IPC, clone, and diagnostics behavior.
 
-Engine tests may use storage-next through the persistence adapter. Normal
-engine tests must not reach below storage-next L9 or assert on storage
+Engine tests may use storage through the persistence adapter. Normal
+engine tests must not reach below storage L9 or assert on storage
 implementation internals.
 
 ## Current Code Evidence
@@ -130,7 +130,7 @@ product-pathway conformance
 
 ## Non-Goals
 
-1. This document does not redefine storage-next testing.
+1. This document does not redefine storage testing.
 2. This document does not require hosted StrataHub tests for V1.
 3. This document does not require Strata AI assistant UX tests.
 4. This document does not freeze exact Rust module names.
@@ -180,7 +180,7 @@ Required shared suites:
 7. Derived-state health suite.
 
 Shared suites are the main defense against five different capability styles
-emerging inside engine-next.
+emerging inside engine.
 
 ### Model And Property Tests
 
@@ -362,7 +362,7 @@ The faulting wrapper should inject:
 8. Maintenance failure.
 
 Tests using fake persistence prove engine semantics. Tests using real
-storage-next L9 prove adapter integration.
+storage L9 prove adapter integration.
 
 ### Deterministic Clock And Version Source
 
@@ -507,7 +507,7 @@ Required tests:
 
 Acceptance criteria:
 
-1. API tests do not import storage-next directly.
+1. API tests do not import storage directly.
 2. API errors assert class/code/status fields.
 3. Public transaction-session surface is not a required V1 pathway.
 
@@ -553,7 +553,7 @@ Persistence adapter tests prove the engine/storage boundary.
 
 Required tests:
 
-1. Capability code cannot import storage-next directly in production paths.
+1. Capability code cannot import storage directly in production paths.
 2. Row addresses resolve symbolic storage-space assignments through the
    registry.
 3. Read selectors map to latest, version, timestamp, and history reads.
@@ -578,7 +578,7 @@ Fault tests:
 
 Acceptance criteria:
 
-1. Persistence is the only normal engine bucket that consumes storage-next L9.
+1. Persistence is the only normal engine bucket that consumes storage L9.
 2. Write-path errors do not use lossy blanket conversion.
 3. Storage internals below L9 do not appear in engine tests except adapter
    characterization tests.
@@ -1033,7 +1033,7 @@ A bucket contract is ready when:
 
 ### Implementation Ready
 
-An engine-next implementation phase is ready when:
+An engine implementation phase is ready when:
 
 1. Characterization tests exist for current behavior being ported.
 2. Target conformance tests exist or are written with the implementation.
@@ -1059,7 +1059,7 @@ Before V1 surface freeze:
 
 ## Open Questions
 
-Resolve before engine-next implementation freezes:
+Resolve before engine implementation freezes:
 
 1. What is the exact location and feature gating for the engine testkit?
 2. Property-test framework.

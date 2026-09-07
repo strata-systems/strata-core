@@ -4,7 +4,7 @@ Status: historical cleanup plan; temporary inventory guard retired
 
 ## Context
 
-The first storage-next type cleanup phase established the workflow, split large
+The first storage type cleanup phase established the workflow, split large
 branch-state ownership areas, localized some private helpers, and added
 closeout guards. It did not aggressively reduce the total type count.
 
@@ -97,28 +97,28 @@ Proof merges require extra care:
 Every slice should run focused tests for the touched operation plus:
 
 ```sh
-cargo test -p strata-storage-next --locked --test api_source_guard
-cargo clippy -p strata-storage-next --all-targets --all-features --locked -- -D warnings
+cargo test -p strata-storage --locked --test api_source_guard
+cargo clippy -p strata-storage --all-targets --all-features --locked -- -D warnings
 cargo fmt --all -- --check
 ```
 
 If the slice touches durable format code, also run:
 
 ```sh
-cargo test -p strata-storage-next --locked --test format_golden
+cargo test -p strata-storage --locked --test format_golden
 ```
 
 If the slice touches feature-gated testkit/fault code, also run the relevant
 feature-gated test target explicitly, for example:
 
 ```sh
-cargo test -p strata-storage-next --locked --features testkit --test api_properties
-cargo test -p strata-storage-next --locked --features fault-injection --test api_faults
+cargo test -p strata-storage --locked --features testkit --test api_properties
+cargo test -p strata-storage --locked --features fault-injection --test api_faults
 ```
 
 ## Retired Guard Policy
 
-The temporary inventory guard is no longer part of the storage-next gate. Do
+The temporary inventory guard is no longer part of the storage gate. Do
 not generate new inventory artifacts or update retired closeout ceilings.
 
 For future cleanup slices, keep the same intent through lighter-weight gates:

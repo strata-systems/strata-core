@@ -2,9 +2,9 @@
 
 ## Scope
 
-This report records the proof run for storage-next performance tuning. The goal
+This report records the proof run for storage performance tuning. The goal
 was measurement only: identify whether the current 100K-key regression is caused
-by cache-mode divergence, machine variance, or concrete storage-next hot-path
+by cache-mode divergence, machine variance, or concrete storage hot-path
 work that differs from the old engine.
 
 No serving-path correction was implemented in this phase. The code changes for
@@ -25,14 +25,14 @@ Machine reported by the benchmark:
 Commands:
 
 ```sh
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale -- --scales 100k --engines cache,standard --workloads load-seq,point-throughput,scan-range-throughput --samples 1000 --scan-limit 10 --value-bytes 150
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale -- --scales 100k --engines cache,standard --workloads load-seq,point-throughput,scan-range-throughput --samples 1000 --scan-limit 10 --value-bytes 150
 
 cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-old-cache-scale -- --scales 100k --workloads load-seq,point-throughput,scan-range-throughput --samples 1000 --scan-limit 10 --value-bytes 150
 ```
 
 Result files:
 
-1. `benchmarks/results/storage-next-l9/storage-next-l9-scale-2026-06-03T19-29-51Z-56d9ac5e.json`
+1. `benchmarks/results/storage-l9/storage-l9-scale-2026-06-03T19-29-51Z-56d9ac5e.json`
 2. `benchmarks/results/storage-old-cache/storage-old-cache-scale-2026-06-03T19-30-12Z-56d9ac5e.json`
 
 ## Throughput
@@ -40,10 +40,10 @@ Result files:
 | Engine | Mode | Load | Point latest | Range scan |
 | --- | --- | ---: | ---: | ---: |
 | old storage | cache | 434,758 ops/s | 464,936 ops/s | 88,382 ops/s |
-| storage-next | cache | 35,472 ops/s | 44 ops/s | 22 ops/s |
-| storage-next | standard | 42,838 ops/s | 45 ops/s | 22 ops/s |
+| storage | cache | 35,472 ops/s | 44 ops/s | 22 ops/s |
+| storage | standard | 42,838 ops/s | 45 ops/s | 22 ops/s |
 
-The storage-next cache and standard read results are effectively identical.
+The storage cache and standard read results are effectively identical.
 That rejects cache-mode divergence as the primary explanation for point and
 range scan throughput.
 
@@ -53,8 +53,8 @@ range scan throughput.
 
 | Engine | read views | read-view rows cloned | append staging clones | append staging rows cloned | blind conflict sources |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| storage-next cache | 100 | 4,959,900 | 100 | 4,959,900 | 100 |
-| storage-next standard | 100 | 4,959,900 | 100 | 4,959,900 | 100 |
+| storage cache | 100 | 4,959,900 | 100 | 4,959,900 | 100 |
+| storage standard | 100 | 4,959,900 | 100 | 4,959,900 | 100 |
 
 Finding: blind load commits still build conflict-validation read views, and each
 commit clones the accumulated branch state. Append staging also clones the
@@ -65,8 +65,8 @@ load regression is smaller than the read regression.
 
 | Engine | read views | read-view rows cloned | point rows visited | point candidates | table seeks |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| storage-next cache | 1,000 | 100,200,000 | 100,200,000 | 1,000 | 0 |
-| storage-next standard | 1,000 | 100,200,000 | 100,200,000 | 1,000 | 0 |
+| storage cache | 1,000 | 100,200,000 | 100,200,000 | 1,000 | 0 |
+| storage standard | 1,000 | 100,200,000 | 100,200,000 | 1,000 | 0 |
 
 Finding: every point lookup clones the full read view and linearly visits the
 full table contents. The candidate count is 1,000 for 1,000 lookups, so the
@@ -76,8 +76,8 @@ work is almost entirely locating one row by scanning all rows.
 
 | Engine | read views | read-view rows cloned | scan rows visited | scan candidates materialized | table seeks |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| storage-next cache | 1,000 | 100,200,000 | 100,200,000 | 49,301,780 | 0 |
-| storage-next standard | 1,000 | 100,200,000 | 100,200,000 | 49,301,780 | 0 |
+| storage cache | 1,000 | 100,200,000 | 100,200,000 | 49,301,780 | 0 |
+| storage standard | 1,000 | 100,200,000 | 100,200,000 | 49,301,780 | 0 |
 
 Finding: limit-10 range scans clone the full read view, visit the full table,
 and materialize about 49,302 candidates per scan before the API-level limit is
@@ -150,17 +150,17 @@ Commands run:
 
 ```sh
 cargo fmt --all -- --check
-cargo check --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale
-cargo test -p strata-storage-next --features perf-trace
+cargo check --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale
+cargo test -p strata-storage --features perf-trace
 ```
 
 Results:
 
 1. `cargo fmt --all -- --check` passed after formatting.
-2. `cargo check --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale`
+2. `cargo check --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale`
    passed. The workspace still emits pre-existing warnings from older crates.
-3. `cargo test -p strata-storage-next --features perf-trace` compiled and ran
-   the storage-next suite; 2,623 tests passed, 2 failed, and 2 were ignored. The
+3. `cargo test -p strata-storage --features perf-trace` compiled and ran
+   the storage suite; 2,623 tests passed, 2 failed, and 2 were ignored. The
    two failures were the pre-existing lifecycle compaction tests already known
    outside PERF-P0:
    `lifecycle::tests::compaction::remaining::failed_table_rewrite_attempt_does_not_close_runtime`

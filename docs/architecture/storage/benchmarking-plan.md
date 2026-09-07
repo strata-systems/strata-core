@@ -16,9 +16,9 @@ Depends on:
 
 ## Purpose
 
-This plan defines how storage-next is benchmarked end-to-end and layer-by-layer.
+This plan defines how storage is benchmarked end-to-end and layer-by-layer.
 
-The point of the plan is not to make storage-next "win" comparisons against
+The point of the plan is not to make storage "win" comparisons against
 other KV stores. It is to:
 
 1. Produce absolute baselines for every L9 surface across cache, durable local
@@ -30,7 +30,7 @@ other KV stores. It is to:
 4. Catch performance regressions on PRs, nightly runs, and at release.
 
 The plan tracks the V1 roadmap. Benchmarking infrastructure is scoped to land
-during M9F and M10D, after storage-next is functionally complete.
+during M9F and M10D, after storage is functionally complete.
 
 ## Goals
 
@@ -39,7 +39,7 @@ during M9F and M10D, after storage-next is functionally complete.
    recovery) across cache and durable local modes.
 2. Comparative numbers at the same workloads against redb, fjall, RocksDB, and
    LMDB. Apples-to-apples wherever feasible; apples-to-oranges with explicit
-   disclaimers where storage-next does something the competitor does not.
+   disclaimers where storage does something the competitor does not.
 3. Layer-by-layer percentage of latency spent in L1-L9 per operation, at each
    scale.
 4. **Comprehensive branching characterization.** Branching is Strata's unique
@@ -50,7 +50,7 @@ during M9F and M10D, after storage-next is functionally complete.
    compaction safety, real-world composite patterns, and recovery with branch
    forests up to 100K branches.
 5. Engine + primitive overhead quantification once the same harness runs through
-   engine-next in M10D.
+   engine in M10D.
 6. Stable regression-tracking infrastructure that survives M9 cutover.
 
 ## Non-Goals
@@ -60,9 +60,9 @@ This plan deliberately excludes:
 1. Object-store / OpenDAL / S3 benchmarks. Object durable mode is not V1.
 2. Browser/cache backend benchmarks. The browser path runs the same harness in
    principle but needs a separate WASM-shaped runner.
-3. Multi-process / IPC benchmarks. IPC is engine-next territory and arrives
+3. Multi-process / IPC benchmarks. IPC is engine territory and arrives
    after the storage layer is stable.
-4. Engine-next / intelligence-next / inference-next workloads in this plan.
+4. Engine-next / intelligence-next / inference workloads in this plan.
    Engine and primitive overhead measurement is **the payoff** of the plan, but
    the engine driver lands as a follow-on milestone (M10D) using the same
    harness rather than a new one.
@@ -72,16 +72,16 @@ This plan deliberately excludes:
 ## Scope
 
 The harness benchmarks the L9 surface only. No driver under test calls below
-L9 in storage-next. Competitor drivers call the competitor's equivalent public
+L9 in storage. Competitor drivers call the competitor's equivalent public
 API.
 
-In scope storage-next modes:
+In scope storage modes:
 
 - cache (no durability claim)
 - durable local `standard`
 - durable local `always`
 
-Out of scope storage-next modes:
+Out of scope storage modes:
 
 - object durable candidate
 - any backend that has not declared sufficient capability for the requested
@@ -369,7 +369,7 @@ because the claims depend on it landing earlier than other comparative work.
 | Phase 1 (M5/M6) | Branch operation primitives at 10 / 100 branches, depths 1 - 5. Inherited point reads. Headline fork-latency-by-source-size measurement. |
 | Phase 2 (M9F) | Hierarchy coverage, materialization variants, branch lifecycle pressure. Full branch-count matrix up to 1K. |
 | Phase 3 (M9F - M10D) | Branch-aware correctness/compaction workloads, real-world composite patterns, recovery scaling to 100K branches. |
-| Phase 4 (M10D) | Engine-level branching workloads, once engine-next exposes its branch surface. |
+| Phase 4 (M10D) | Engine-level branching workloads, once engine exposes its branch surface. |
 
 The Phase 1 fork-latency-by-source-size curve is a release-gating result. If
 that curve is not flat, branching is broken and the rest of the suite is
@@ -385,7 +385,7 @@ deferred until it is.
 | LMDB | Read-optimized mmap B-tree, calibrates point-read ceiling | Single-writer, no MVCC versioning |
 
 Every comparison report opens with an explicit semantic-difference disclaimer.
-Where it is meaningful, we also publish a `storage-next-minimal` configuration:
+Where it is meaningful, we also publish a `storage-minimal` configuration:
 single root branch, no forks, version queries disabled at the harness level.
 That is the closest the comparison can get to apples-to-apples and remains
 useful even when the competitor offers no equivalent semantics.
@@ -527,9 +527,9 @@ Artifacts per run:
 
 ## Implementation Shape
 
-New crate: `crates/storage-next-bench/`.
+New crate: `crates/storage-bench/`.
 
-The bench crate is separate from `crates/storage-next/` so its dependency
+The bench crate is separate from `crates/storage/` so its dependency
 graph (criterion, plotters, competitor SDKs) does not poison the lib's
 feature surface.
 
@@ -537,7 +537,7 @@ Crate layout:
 
 - `driver-trait` - generic KV driver trait: open, commit, read latest, read by
   version, read by timestamp, scan, history, branch_fork, materialize, close.
-- `driver-strata` - implements the trait over storage-next's L9.
+- `driver-strata` - implements the trait over storage's L9.
 - `driver-redb`, `driver-fjall`, `driver-rocksdb`, `driver-lmdb` - each behind
   a cargo feature so a single binary can be built per competitor.
 - `workloads` - workload definitions parameterized over the driver trait.
@@ -553,11 +553,11 @@ Tooling:
 
 Instrumentation:
 
-- Layer spans live in the storage-next crates themselves, gated by
+- Layer spans live in the storage crates themselves, gated by
   `--features bench-instrumentation`. The bench harness flips the feature on
-  when invoking storage-next.
+  when invoking storage.
 - Span data is collected via a low-overhead in-process ring buffer drained at
-  end of run. No tracing-crate dependency on the storage-next hot path.
+  end of run. No tracing-crate dependency on the storage hot path.
 
 Output format:
 
@@ -572,10 +572,10 @@ The plan tracks the roadmap. Each phase has a clear entry condition.
 | Phase | When | What |
 | --- | --- | --- |
 | Phase 0 | During M3 / M4 (in progress) | Per-layer micro-benchmarks already attached to slice plans (L3 codec roundtrip, L5 table seek, L4 publish). Do not duplicate. |
-| Phase 1 | M5 / M6 (L9 surface is real) | Build the bench crate, the driver trait, and the storage-next driver. Run end-to-end at 100K / 1M / 10M for durable local modes. **Land the headline fork-latency-by-source-size measurement.** No competitors yet. Validate layer-span instrumentation overhead. |
+| Phase 1 | M5 / M6 (L9 surface is real) | Build the bench crate, the driver trait, and the storage driver. Run end-to-end at 100K / 1M / 10M for durable local modes. **Land the headline fork-latency-by-source-size measurement.** No competitors yet. Validate layer-span instrumentation overhead. |
 | Phase 2 | M9F | Add redb and fjall drivers at all scales up to 100M. Land layer attribution reports. Land hierarchy + materialization + branch-lifecycle suites at up to 1K branches. |
 | Phase 3 | M9F to M10D | Add RocksDB and LMDB drivers. Add 500M and 1B scale runs. Add sustained, recovery, branch-aware compaction, real-world composite, and 100K-branch recovery workloads. |
-| Phase 4 | M10D | Engine-next driver added to the same harness. Same workloads run through engine-next's KV primitive surface. Delta against storage-next quantifies engine + primitive overhead. This is the point of the plan. |
+| Phase 4 | M10D | Engine-next driver added to the same harness. Same workloads run through engine's KV primitive surface. Delta against storage quantifies engine + primitive overhead. This is the point of the plan. |
 
 Phase 4 is intentionally deferred. Storage-next must be fast and well
 characterized before any engine overhead measurement is meaningful.
@@ -587,7 +587,7 @@ Different scales run at different cadences.
 | Tier | Approx duration | Coverage | When |
 | --- | --- | --- | --- |
 | PR-fast | 5 minutes | 100K, point-latest + load-rand + commit + `branch-fork-cold`, cache + durable-standard | Every PR; gates with documented thresholds |
-| Nightly | 3 hours | All workloads at 100K / 1M / 10M, all modes, storage-next + redb; **fork-latency-by-source-size headline curve at 100K / 1M / 10M / 100M source keys** | Nightly schedule; tracks tail latency + fork-latency flatness |
+| Nightly | 3 hours | All workloads at 100K / 1M / 10M, all modes, storage + redb; **fork-latency-by-source-size headline curve at 100K / 1M / 10M / 100M source keys** | Nightly schedule; tracks tail latency + fork-latency flatness |
 | Weekly | 24 hours | All workloads up to 500M, all competitors that support the scale; full branching suite up to 1K branches | Weekly schedule, also pre-release |
 | Quarterly | 3-5 days | 1B sweep, all workloads, all competitors; branching suite at 10K / 100K branches | Manual trigger only; produces canonical published numbers |
 
@@ -615,7 +615,7 @@ tracked over major releases.
    in Phase 1 and accept, sample, or restructure as needed.
 2. Reference rig drift. Numbers move with OS upgrades, NVMe wear, and BIOS
    tuning. The rig spec needs to be a real, maintained document.
-3. Apples-to-apples disclaimers. The semantic differences between storage-next
+3. Apples-to-apples disclaimers. The semantic differences between storage
    and competitors will be misread. The report header must be explicit.
 4. Disk budget for the 1B scale. 64 GB times value-size multiplier times
    competitors times runs is a meaningful storage commitment.
@@ -645,11 +645,11 @@ tracked over major releases.
 
 ## V1 Minimum
 
-The first storage-next bench harness needs:
+The first storage bench harness needs:
 
-1. `crates/storage-next-bench/` with driver trait and storage-next driver.
+1. `crates/storage-bench/` with driver trait and storage driver.
 2. redb driver behind a feature flag.
-3. `bench-instrumentation` feature in storage-next crates with L1-L9 span hooks.
+3. `bench-instrumentation` feature in storage crates with L1-L9 span hooks.
 4. Core KV workloads: `load-seq`, `load-rand`, `point-latest`, `point-version`,
    `scan-prefix`, `history`, `mixed-50r50w`, `recovery-replay`.
 5. **Branching V1 subset:**
@@ -682,7 +682,7 @@ V1 does not require:
 
 A few constraints worth pinning before the first slice opens.
 
-The harness must not call below L9 in storage-next. The whole point of the
+The harness must not call below L9 in storage. The whole point of the
 plan is to characterize what L9 consumers pay. Reaching past L9 produces
 numbers that lie.
 
@@ -700,11 +700,11 @@ wall-clock-driven decisions inside a workload breaks regression tracking.
 
 After this plan is reviewed:
 
-1. Open the M9F slice that builds `crates/storage-next-bench/` and the
-   storage-next driver.
-2. Add the `bench-instrumentation` feature surface to storage-next crates in
+1. Open the M9F slice that builds `crates/storage-bench/` and the
+   storage driver.
+2. Add the `bench-instrumentation` feature surface to storage crates in
    the same slice or the slice immediately following.
 3. Reference rig spec committed to `docs/architecture/storage/bench-rig.md`
    once the hardware is procured.
-4. The engine-next overhead measurement (Phase 4) opens a slice in M10D after
+4. The engine overhead measurement (Phase 4) opens a slice in M10D after
    the storage harness is stable.

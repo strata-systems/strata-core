@@ -130,7 +130,7 @@ fn table_runtime_closeout_porting_log_records_required_evidence() {
     let crate_root = common::crate_root();
     let repo_root = repository_root(&crate_root);
     let porting_log_path = repo_root
-        .join("docs/architecture/implementation-plans")
+        .join("docs/architecture/archive/implementation-plans")
         .join(milestone(4))
         .join(storage_next_layer(5))
         .join(porting_log_file_name(4, 5));

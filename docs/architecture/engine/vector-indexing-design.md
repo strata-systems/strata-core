@@ -2,7 +2,7 @@
 
 **Purpose:** the indexing approach to build into the new architecture. Reference for implementation today; benchmark target after.
 
-**Layer:** vector indexing is an **engine-next capability** layered over the storage substrate — `storage-next` stays semantics-free (see §2.5). Filed under `docs/architecture/engine/`.
+**Layer:** vector indexing is an **engine capability** layered over the storage substrate — `storage` stays semantics-free (see §2.5). Filed under `docs/architecture/engine/`.
 
 ---
 
@@ -53,7 +53,7 @@ The vector index is **not one global structure** — it's a **per-slab derived a
 
 ## 2.5 Who builds the index — the storage/engine boundary
 
-The hard rule (from the architecture): **`storage-next` is semantics-free.** It must not know what a vector is, what HNSW is, or what "recall" means. So the vector index cannot be built *by* storage — even though it lives *in* the slab. Resolve it with one split:
+The hard rule (from the architecture): **`storage` is semantics-free.** It must not know what a vector is, what HNSW is, or what "recall" means. So the vector index cannot be built *by* storage — even though it lives *in* the slab. Resolve it with one split:
 
 > **storage = WHEN · engine = WHAT.**
 
@@ -71,9 +71,9 @@ The hard rule (from the architecture): **`storage-next` is semantics-free.** It 
 - **Branch/MVCC for free.** The hook fires only on **owned-slab** compactions; **inherited** slabs keep their COW-shared index blob — the child never rebuilds them. Identical to how the substrate already treats owned vs. inherited slabs.
 - **The index is pure derived state → never a durability risk.** The slab's vectors are the source of truth; the blob is reconstructible. If a blob is missing/corrupt on recovery, the engine **rebuilds it from the slab** — so the index can only ever cost a one-time rebuild, never data loss.
 
-**What this means for building today** — do **not** put HNSW in `storage-next`. Build two pieces:
-1. **In `storage-next`:** a flush/compaction **lifecycle hook** that (a) emits the input→output slab event with the output's rows and (b) accepts an opaque side-artifact blob to commit atomically with the slab. Generic, semantics-free.
-2. **In `engine-next` (the vector capability):** a subscriber to that hook that owns build/rebuild + query, plus a recovery path that rebuilds a missing blob from the slab.
+**What this means for building today** — do **not** put HNSW in `storage`. Build two pieces:
+1. **In `storage`:** a flush/compaction **lifecycle hook** that (a) emits the input→output slab event with the output's rows and (b) accepts an opaque side-artifact blob to commit atomically with the slab. Generic, semantics-free.
+2. **In `engine` (the vector capability):** a subscriber to that hook that owns build/rebuild + query, plus a recovery path that rebuilds a missing blob from the slab.
 
 The flat-search MVP (build-order step 3) can start engine-side, reading rows through the storage API directly; the hook is what makes index **persistence + rebuild-on-compaction** layering-safe. Wire the hook early so HNSW (step 4) slots in without leaking semantics downward.
 

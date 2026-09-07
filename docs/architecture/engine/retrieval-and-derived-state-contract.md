@@ -1,10 +1,10 @@
 # Engine-Next Retrieval And Derived-State Contract
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
-This document defines the engine-next contract for retrieval, recipes, search
+This document defines the engine contract for retrieval, recipes, search
 indexes, shadow vectors, graph-aware retrieval, derived-state health, rebuild
 behavior, and provenance.
 
@@ -106,7 +106,7 @@ Useful current mechanisms:
 11. Current retrieval already carries `EntityRef`, branch, space, optional
     time ranges, snapshot versions, and stage statistics.
 
-Current weaknesses to correct in engine-next:
+Current weaknesses to correct in engine:
 
 1. Search request fields mix product scope, retrieval knobs, temporal filters,
    and implementation parameters in one shape.
@@ -1075,7 +1075,7 @@ Clone/import behavior:
    part of the artifact.
 6. If imported shadow-vector manifests name a model unavailable on the local
    machine, source rows remain readable. Model-dependent rebuild or retrieval
-   reports the missing model or embedding-unavailable diagnostic; engine-next
+   reports the missing model or embedding-unavailable diagnostic; engine
    must not silently substitute another embedding model for those derived rows.
 
 StrataHub or private hub implementations should be able to report:

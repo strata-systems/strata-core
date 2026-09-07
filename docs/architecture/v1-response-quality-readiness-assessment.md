@@ -9,10 +9,10 @@ Related documents:
 
 1. `docs/architecture/strata-sdk-quality-playbook.md`
 2. `docs/architecture/v1-error-and-diagnostics-contract.md`
-3. `docs/architecture/implementation-plans/v1-response-error-contract-implementation-plan.md`
-4. `docs/architecture/implementation-plans/v1-success-response-contract-implementation-plan.md`
-5. `docs/architecture/implementation-plans/v1-response-contract-completion-implementation-plan.md`
-6. `docs/architecture/implementation-plans/v1-response-contract-completion-test-plan.md`
+3. `docs/architecture/archive/implementation-plans/v1-response-error-contract-implementation-plan.md`
+4. `docs/architecture/archive/implementation-plans/v1-success-response-contract-implementation-plan.md`
+5. `docs/architecture/archive/implementation-plans/v1-response-contract-completion-implementation-plan.md`
+6. `docs/architecture/archive/implementation-plans/v1-response-contract-completion-test-plan.md`
 
 ## Bottom Line
 

@@ -489,10 +489,10 @@ Evidence:
 - The implementation plan states the chosen status as guarded: checkpoints
   defer while a non-seeded branch holds a durable table-manifest base, and the
   per-branch fix is deferred to post-V1 multi-branch durable maintenance
-  (`docs/architecture/implementation-plans/storage-testing/multi-branch-orphaned-delta-recovery-gap.md:3`,
-  `docs/architecture/implementation-plans/storage-testing/multi-branch-orphaned-delta-recovery-gap.md:15`,
-  `docs/architecture/implementation-plans/storage-testing/multi-branch-orphaned-delta-recovery-gap.md:49`,
-  `docs/architecture/implementation-plans/storage-testing/multi-branch-orphaned-delta-recovery-gap.md:80`).
+  (`docs/architecture/archive/implementation-plans/storage-testing/multi-branch-orphaned-delta-recovery-gap.md:3`,
+  `docs/architecture/archive/implementation-plans/storage-testing/multi-branch-orphaned-delta-recovery-gap.md:15`,
+  `docs/architecture/archive/implementation-plans/storage-testing/multi-branch-orphaned-delta-recovery-gap.md:49`,
+  `docs/architecture/archive/implementation-plans/storage-testing/multi-branch-orphaned-delta-recovery-gap.md:80`).
 - `LifecycleCheckpointStatus` has an explicit
   `DeferredNonSeededBranchBase` status
   (`crates/storage/src/lifecycle/checkpoint.rs:56`,

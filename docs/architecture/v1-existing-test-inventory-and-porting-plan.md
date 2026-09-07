@@ -1,6 +1,6 @@
 # V1 Existing Test Inventory And Porting Plan
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
@@ -70,15 +70,15 @@ The current repository contains these major test areas:
 |---|---|---:|---|
 | Root intelligence tests | `tests/intelligence/` | 30 files | Keep or rewrite into `M8T`; many are product-path evidence. |
 | Root integration tests | `tests/integration/` | 22 files | Keep or rewrite into `M5T`, `M6T`, and `M9T`. |
-| Root engine tests | `tests/engine/` | 19 files | Rewrite into engine-next conformance tests; delete removed-surface tests. |
+| Root engine tests | `tests/engine/` | 19 files | Rewrite into engine conformance tests; delete removed-surface tests. |
 | Root executor tests | `tests/executor/` | 13 files | Rewrite into `M9T` command/API tests. |
 | Root transaction runtime tests | `tests/transaction_runtime/` | 11 files | Mostly archive/rewrite; public manual transaction sessions are removed. |
 | Root durability tests | `tests/durability/` | 8 files | Strong keep/rewrite candidates for `M3T` and `M4T`. |
-| Root storage tests | `tests/storage/` | 5 files | Rewrite into storage-next L5-L9 conformance/property tests. |
+| Root storage tests | `tests/storage/` | 5 files | Rewrite into storage L5-L9 conformance/property tests. |
 | Shared root fixtures | `tests/fixtures/` | 7 files | Keep only if the V1 pathway still needs them. Legacy branch bundle fixtures likely delete/archive. |
 | Engine crate integration tests | `crates/engine/tests/` | 23 files | Rewrite into `M5T` and `M6T`, plus archive characterization tests. |
-| Engine inline database tests | `crates/engine/src/database/tests/` | 10 files | Rewrite into engine-next lifecycle/open/recovery tests. |
-| Storage segmented tests | `crates/storage/src/segmented/tests/` | 15 files | High-value evidence for storage-next L5-L8, but likely rewritten against new names/contracts. |
+| Engine inline database tests | `crates/engine/src/database/tests/` | 10 files | Rewrite into engine lifecycle/open/recovery tests. |
+| Storage segmented tests | `crates/storage/src/segmented/tests/` | 15 files | High-value evidence for storage L5-L8, but likely rewritten against new names/contracts. |
 | Intelligence crate tests | `crates/intelligence/tests/` | 4 files | Keep/rewrite into `M8T`. |
 | Benchmarks | `benchmarks/`, `crates/engine/benches/` | multiple benches and baselines | Carry into M10 performance gate after benchmark policy is refreshed. |
 | Proptest regressions | `tests/proptest-regressions/`, `crates/storage/proptest-regressions/` | regression corpora | Keep if corresponding property tests survive. |
@@ -265,7 +265,7 @@ Likely sources:
 
 V1 test focus:
 
-1. Persistence adapter uses storage-next L9 only.
+1. Persistence adapter uses storage L9 only.
 2. Storage error mapping.
 3. Storage-space registry validation.
 4. `_system_` branch and system-space layout.
@@ -405,7 +405,7 @@ Example:
 | path | behavior | v1_decision | action | target_track | reason |
 |---|---|---|---|---|---|
 | `crates/engine/tests/follower_tests.rs` | follower open/refresh behavior | Remove | Delete | none | Follower mode is not a V1 product path. |
-| `tests/durability/wal_lifecycle.rs` | WAL lifecycle behavior | Required | Rewrite | `M3T` | Behavior survives, but storage-next owns WAL service. |
+| `tests/durability/wal_lifecycle.rs` | WAL lifecycle behavior | Required | Rewrite | `M3T` | Behavior survives, but storage owns WAL service. |
 | `tests/executor/session_transactions.rs` | public transaction commands | Remove/Redesign | Archive or Delete | none | Public manual transaction sessions are removed; internal commit tests move to storage/engine tracks. |
 
 ## Archive Policy

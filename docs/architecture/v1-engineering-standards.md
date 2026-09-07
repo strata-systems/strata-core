@@ -1,6 +1,6 @@
 # Strata V1 Engineering Standards
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 

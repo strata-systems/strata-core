@@ -360,10 +360,10 @@ language-specific repos for distribution.**
 strata-core/                          # primary development repo
 ├── idl/strata.yml                    # the canonical IDL
 ├── crates/
-│   ├── storage-next/                 # core
-│   ├── engine-next/
+│   ├── storage/                 # core
+│   ├── engine/
 │   ├── intelligence-next/
-│   ├── inference-next/
+│   ├── inference/
 │   ├── agent-next/
 │   ├── mcp-server/                   # generated from IDL
 │   ├── strata-cli/                   # generated from IDL

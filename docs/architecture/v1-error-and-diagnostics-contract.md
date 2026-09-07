@@ -1,6 +1,6 @@
 # Strata V1 Error And Diagnostics Contract
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
@@ -51,7 +51,7 @@ target contract.
 1. This document does not freeze exact Rust enum variants.
 2. This document does not define a wire protocol.
 3. This document does not require numeric error codes for V1.
-4. This document does not put a universal database error in `core-next`.
+4. This document does not put a universal database error in `core`.
 5. This document does not make display strings compatibility contracts.
 6. This document does not require every internal helper to define its own error
    enum.
@@ -104,8 +104,8 @@ Core-next must not own:
 6. A global database error taxonomy.
 
 Core-next may eventually own a tiny shared representation type only if both
-storage-next and engine-next must serialize the exact same value across a lower
-boundary. The default is to keep broad error vocabulary out of core-next.
+storage and engine must serialize the exact same value across a lower
+boundary. The default is to keep broad error vocabulary out of core.
 
 ### Storage-Next
 
@@ -147,7 +147,7 @@ Storage-next must not decide:
 4. Whether a product command should retry.
 5. Whether old pre-V1 databases should be migrated.
 
-Storage-next should expose enough structured facts for engine-next to make those
+Storage-next should expose enough structured facts for engine to make those
 decisions.
 
 ### Engine-Next
@@ -200,7 +200,7 @@ Inference-next owns provider and model execution errors:
 8. Local runtime failure.
 
 Inference-next should not define database semantics. Intelligence-next or
-engine-next decides how provider failures affect a product command.
+engine decides how provider failures affect a product command.
 
 ### Executor, IPC, CLI, SDK, And Strata AI
 
@@ -364,7 +364,7 @@ Examples:
    socket state usually needs to change before retrying.
 4. `ambiguous_commit.wal_publish` uses `unknown` by default in V1. It may use
    `idempotent_only` only if the specific command has an idempotency key or is
-   otherwise proven idempotent by engine-next.
+   otherwise proven idempotent by engine.
 5. `internal.engine_invariant` uses `unknown`.
 
 ### Commit Outcome
@@ -660,8 +660,8 @@ The testing and conformance plan must include these error tests.
 ### Error Surface Contract Tests
 
 Every public error type must have an exhaustive per-variant contract test that
-asserts the layer-owned half of the Stripe-grade surface. For storage-next this
-is `crates/storage-next/tests/api_error_contract.rs`:
+asserts the layer-owned half of the Stripe-grade surface. For storage this
+is `crates/storage/tests/api_error_contract.rs`:
 
 1. A fixture samples every variant; a count backstop plus the lib's exhaustive
    `code()`/`class()`/`remediation()`/`Display` matches force a new variant to be

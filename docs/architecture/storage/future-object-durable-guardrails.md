@@ -10,7 +10,7 @@ storage, horizontally scalable compute, and compute nodes that can attach to and
 detach from durable storage independently.
 
 This document is not an implementation plan for that future mode. It records
-the structural constraints storage-next should preserve while building the V1
+the structural constraints storage should preserve while building the V1
 embedded path, so V1 code does not accidentally couple compute lifecycles to
 today's local durable object layout.
 
@@ -21,7 +21,7 @@ today's local durable object layout.
   era.
 - Do not delay durable-local implementation waiting for object-store WAL,
   leasing, or manifest-fencing designs.
-- Do not expose object-store details to engine-next as a shortcut.
+- Do not expose object-store details to engine as a shortcut.
 
 ## Core Guardrail
 
@@ -126,7 +126,7 @@ code does not make them impossible.
 
 When adding M4-L9 code, treat these as review blockers:
 
-- Does engine-next import an L1-L4 object/service type for normal production
+- Does engine import an L1-L4 object/service type for normal production
   behavior?
 - Does a public or engine-facing API expose local paths, WAL offsets, segment
   filenames, fsync/rename facts, or backend provider details as required inputs?

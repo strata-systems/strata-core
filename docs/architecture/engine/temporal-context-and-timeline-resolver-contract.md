@@ -1,13 +1,13 @@
 # Engine-Next Temporal Context And Timeline Resolver Contract
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
-This document defines the engine-next contract for temporal reads, retained
+This document defines the engine contract for temporal reads, retained
 history, timeline resolution, and time-travel product behavior.
 
-Strata's storage-next layer owns generic branch timelines: commit versions,
+Strata's storage layer owns generic branch timelines: commit versions,
 commit timestamps, retention bounds, and the mapping from timestamp to retained
 commit frontier. Engine-next owns the product meaning of those facts:
 
@@ -99,7 +99,7 @@ owned by one engine concept.
 9. Search handlers combine `as_of`, diff, time range, and history enrichment,
    but they do not share a first-class temporal context with KV/JSON/vector.
 10. Storage currently supports timestamp-bounded reads and scans, but the
-    storage-next design adds an explicit per-branch commit timeline so whole
+    storage design adds an explicit per-branch commit timeline so whole
     branch operations can resolve timestamps to versions without scanning rows.
 
 The target is not to rename these pieces. The target is to make the shared
@@ -122,7 +122,7 @@ A commit timestamp is the timestamp attached to a commit in the branch timeline.
 
 Storage-next is responsible for making commit timestamps monotonic enough for
 timestamp resolution within a branch. If the physical clock repeats or moves
-backward, storage-next must still expose deterministic ordering through the
+backward, storage must still expose deterministic ordering through the
 commit version tie-breaker.
 
 ### Temporal Selector
@@ -272,7 +272,7 @@ vocabulary maps to version/history behavior, not timestamp behavior.
 
 ### 2. Commit Version Is The Authoritative Frontier
 
-Timestamp selectors must resolve to a commit version before engine-next performs
+Timestamp selectors must resolve to a commit version before engine performs
 multi-row, cross-capability, branch, restore, or retrieval operations.
 
 Single-row reads may use storage timestamp helpers internally only if the
@@ -283,7 +283,7 @@ timeline resolution first.
 ### 3. Current Is A Temporal Selector
 
 `current` is not an implicit escape hatch. For any operation that reads more
-than one row, more than one capability, or more than one branch, engine-next must
+than one row, more than one capability, or more than one branch, engine must
 resolve current state once per branch at operation start and use that fixed
 frontier for the operation.
 
@@ -369,7 +369,7 @@ The engine must distinguish at least:
 Tombstones and TTL must be evaluated against the selected temporal frontier, not
 against wall-clock time at query execution.
 
-For version selectors, engine-next must resolve the selected commit version to
+For version selectors, engine must resolve the selected commit version to
 its commit timestamp before evaluating TTL or returning temporal metadata.
 
 If a record existed at the selected frontier but has since expired or been
@@ -720,7 +720,7 @@ engine to change the V1 temporal model.
 
 ## Conformance Tests
 
-The engine-next test suite must include:
+The engine test suite must include:
 
 1. `as_of` is timestamp-only across KV, JSON, event, vector, graph, search, and
    branch diff surfaces that support it. The one documented exception is event's

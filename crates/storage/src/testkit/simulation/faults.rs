@@ -584,7 +584,7 @@ mod tests {
     use crate::testkit::TestkitError;
 
     /// Regression for a silent durability bug the STH-4 DST surfaced (see
-    /// `docs/architecture/implementation-plans/storage-testing/sth-4-finding-checkpoint-flush-publish-fault.md`):
+    /// `docs/architecture/archive/implementation-plans/storage-testing/sth-4-finding-checkpoint-flush-publish-fault.md`):
     /// a `PublishObject` `NoSpace` fault during a batched `[Checkpoint, Flush]` drain left
     /// the flush's L0 table installed in-memory with its manifest unpublished, while the
     /// checkpoint still advanced the WAL-replay floor past those rows — so a clean strict
@@ -863,7 +863,7 @@ mod tests {
     }
 
     /// Regression for a power-loss recovery gap the STH-4 DST surfaced (see
-    /// `docs/architecture/implementation-plans/storage-testing/sth-4-finding-splitrename-power-loss-gap.md`):
+    /// `docs/architecture/archive/implementation-plans/storage-testing/sth-4-finding-splitrename-power-loss-gap.md`):
     /// under Standard durability, a `SplitRename` crash that drops the table-manifest
     /// base of a *delta* checkpoint leaves recovery installing the orphaned delta (only
     /// the post-flush commit) — a non-prefix `Gap` — instead of falling back to a clean

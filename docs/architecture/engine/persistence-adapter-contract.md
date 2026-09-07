@@ -1,13 +1,13 @@
 # Engine-Next Persistence Adapter Contract
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
 This document defines the engine-owned persistence adapter contract.
 
-The persistence adapter is the only normal production path from engine-next to
-storage-next L9. It turns engine product intent into storage-shaped rows and
+The persistence adapter is the only normal production path from engine to
+storage L9. It turns engine product intent into storage-shaped rows and
 turns storage-shaped facts back into engine diagnostics and raw row results.
 
 It exists to keep these boundaries intact:
@@ -15,7 +15,7 @@ It exists to keep these boundaries intact:
 ```text
 capability, branch, retrieval, orchestration, control plane
   -> persistence adapter
-  -> storage-next L9
+  -> storage L9
 ```
 
 not:
@@ -89,7 +89,7 @@ every subsystem learns how to talk to storage
 
 ### Persistence Adapter
 
-The persistence adapter is the engine service that consumes storage-next L9.
+The persistence adapter is the engine service that consumes storage L9.
 
 It owns:
 
@@ -124,7 +124,7 @@ It does not expose raw storage-space numeric IDs to capability code.
 
 The adapter resolves the symbolic storage-space assignment through the engine
 storage-space ID registry, then constructs the physical key expected by
-storage-next.
+storage.
 
 Capabilities define how branch and space participate in product identity. The
 adapter requires explicit branch and space fields and encodes them into the
@@ -220,9 +220,9 @@ reinterpret storage uncertainty as success.
 
 ## Binding Decisions
 
-1. **Only persistence imports storage-next in normal production engine code.**
+1. **Only persistence imports storage in normal production engine code.**
    Data capabilities, branch workflows, retrieval, orchestration, API, and IPC
-   should not call storage-next L9 directly.
+   should not call storage L9 directly.
 
 2. **Capability code owns key and value semantics, not physical storage keys.**
    A capability may encode its capability-local key bytes and value bytes. The
@@ -285,7 +285,7 @@ Runtime owns product open policy:
 4. User-facing recovery policy.
 5. StrataHub or Strata AI behavior.
 
-The adapter consumes the runtime-resolved storage facts and calls storage-next
+The adapter consumes the runtime-resolved storage facts and calls storage
 L9 for:
 
 1. Open or create storage with storage mode, durability policy, codec config,
@@ -320,7 +320,7 @@ product operation
   -> row mutations
   -> commit plan
   -> persistence adapter
-  -> storage-next commit batch
+  -> storage commit batch
   -> commit outcome
   -> diagnostics and post-commit hooks
 ```
@@ -363,7 +363,7 @@ The normal read path is:
 product read
   -> capability resolves row address
   -> persistence adapter applies read selector
-  -> storage-next returns storage row bytes and metadata
+  -> storage returns storage row bytes and metadata
   -> capability decodes value bytes
   -> product result or diagnostic
 ```
@@ -400,7 +400,7 @@ that touches more than one row, such as scans, relationship resolution,
 retrieval, compare, or branch-from-time, the adapter must resolve the requested
 timestamp once per branch into a retained version frontier before issuing row
 reads or scans. The same frontier must be used for every row in that logical
-operation unless storage-next exposes an atomic timestamp selector with the same
+operation unless storage exposes an atomic timestamp selector with the same
 guarantee.
 
 The adapter must also hold a storage read view, retention pin, snapshot guard,
@@ -569,8 +569,8 @@ Error mapping rules:
 
 Engine-next production code outside the persistence bucket must not:
 
-1. Import storage-next L9 directly.
-2. Import storage-next internals below L9.
+1. Import storage L9 directly.
+2. Import storage internals below L9.
 3. Construct physical storage keys directly.
 4. Use raw numeric engine storage-space IDs outside the central registry.
 5. Decide storage durability behavior.
@@ -664,7 +664,7 @@ Adapter conformance tests should prove:
 
 For V1, the minimum acceptable implementation is:
 
-1. One normal production storage-facing adapter inside engine-next.
+1. One normal production storage-facing adapter inside engine.
 2. Capability code emits row addresses, value bytes, and row mutations instead
    of physical storage keys.
 3. The adapter consumes the storage-space ID registry and centralizes raw IDs.

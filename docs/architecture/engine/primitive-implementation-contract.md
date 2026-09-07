@@ -1,6 +1,6 @@
 # Engine-Next Data Capability Implementation Contract
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
@@ -20,7 +20,7 @@ to the target model: Strata stores branch-aware, versioned `Key`/`Value` rows,
 and higher-level capabilities encode their semantics into row keys, row values,
 indexes, and derived state.
 
-The goal is to prevent engine-next from becoming five unrelated mini-engines.
+The goal is to prevent engine from becoming five unrelated mini-engines.
 Each capability has different product semantics, but every capability should
 map those semantics onto the same architectural shape:
 
@@ -32,7 +32,7 @@ product operation
   -> row-family and value encoding
   -> internal commit batch
   -> persistence adapter
-  -> storage-next L9
+  -> storage L9
 ```
 
 Storage remains data-capability agnostic. Storage sees physical keys, opaque
@@ -198,7 +198,7 @@ storage to understand product capability semantics.
 
 12. **Persistence is the only normal storage-facing path.**
     Capability production code should use the engine persistence adapter. It
-    should not import storage-next internals directly.
+    should not import storage internals directly.
 
 ## Capability Anatomy
 
@@ -579,7 +579,7 @@ Capability-specific conformance:
 5. Graph node, edge, ontology, traversal, relationship, and analytics behavior.
 
 Tests must not rely on storage internals except through the engine persistence
-test double or storage-next integration tests.
+test double or storage integration tests.
 
 ## Capability-Specific Direction
 

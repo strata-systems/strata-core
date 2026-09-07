@@ -1,6 +1,6 @@
 # StrataHub Substrate Architecture
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
@@ -224,7 +224,7 @@ data and must not interpret it.
 ### Account And Organization Identity
 
 Account, user, team, and organization identity are hub provider concepts. They
-must not appear in storage-next and should enter engine only through explicit
+must not appear in storage and should enter engine only through explicit
 provider configuration or product metadata.
 
 ## Clone Artifact Model
@@ -271,7 +271,7 @@ The normal clone flow is:
 
 2. Fetch artifact.
    Fetching belongs to CLI, SDK, or a future data-movement layer above engine,
-   not to storage-next.
+   not to storage.
 
 3. Validate artifact.
    Validate bundle identity, format, checksums, capabilities, branch metadata,
@@ -335,7 +335,7 @@ If added later, auto-sync should:
    organization policy.
 7. Never upload secrets or excluded data by default.
 
-Auto-sync should not become a background thread inside storage-next.
+Auto-sync should not become a background thread inside storage.
 
 ## Fleet Metadata Model
 
@@ -434,7 +434,7 @@ Hub behavior is optional product behavior layered over normal engine APIs.
 Core-next should not absorb hub concepts unless a later document proves they
 are true cross-layer contracts.
 
-Likely core-next candidates:
+Likely core candidates:
 
 1. `BranchId`
 2. `CommitVersion`
@@ -453,7 +453,7 @@ Likely engine-owned concepts:
 7. Fleet report shape
 
 The burden of proof should remain high. Hub convenience should not turn
-core-next into a product metadata crate.
+core into a product metadata crate.
 
 ## CLI, SDK, IPC, And Strata AI
 
@@ -527,7 +527,7 @@ Required test families:
 7. Network-disabled mode rejects remote clone/sync/register with stable errors.
 8. Fake provider tests exercise idempotent publish and ambiguous publish
    outcomes without a real StrataHub service.
-9. Storage tests prove no hub concepts enter storage-next.
+9. Storage tests prove no hub concepts enter storage.
 10. Engine tests prove provider failures map to product errors without storage
     leakage.
 
@@ -551,7 +551,7 @@ The substrate is adequate when:
 
 ## Open Questions
 
-These questions should be resolved before V1 format and engine-next freeze:
+These questions should be resolved before V1 format and engine freeze:
 
 1. What exact artifact family does `.strata` name: full database bundle,
    dataset release, backup bundle, branch-scoped release, or a manifest that

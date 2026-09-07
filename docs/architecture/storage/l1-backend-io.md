@@ -1,10 +1,10 @@
 # L1. Backend IO
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
-Backend IO is the portability layer for storage-next.
+Backend IO is the portability layer for storage.
 
 It exists so the rest of storage can be written against Strata's own object IO
 contract instead of local filesystem assumptions. The first implementation must
@@ -88,7 +88,7 @@ V1 minimum:
 - no multi-process or cross-tab correctness claim
 
 This backend is allowed to be cache-mode only. It does not need IndexedDB or
-durable browser storage in the first storage-next rewrite.
+durable browser storage in the first storage rewrite.
 
 `read_range` should be implemented directly over the in-memory object bytes.
 Keeping range reads in the cache backend gives L5 one table-read contract across
@@ -298,12 +298,12 @@ equivalent.
 
 ## Public Runtime Shape
 
-The storage-facing backend API should not leak an async runtime to engine-next
+The storage-facing backend API should not leak an async runtime to engine
 or upper storage layers.
 
 Adapters may use backend-specific internals. If a future OpenDAL adapter needs
 async internally, that runtime choice must remain inside the adapter or behind a
-feature-gated implementation detail. The storage-next contract should stay
+feature-gated implementation detail. The storage contract should stay
 embeddable and runtime-neutral.
 
 ## Testing Requirements
@@ -341,7 +341,7 @@ durable mode is complete, it should run capability and unsupported-mode tests.
 
 ## V1 Minimum
 
-The first storage-next implementation needs:
+The first storage implementation needs:
 
 1. A backend trait or equivalent backend contract.
 2. A memory/cache backend.

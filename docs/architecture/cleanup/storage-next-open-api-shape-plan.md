@@ -4,7 +4,7 @@ Status: draft cleanup plan
 
 ## Context
 
-Before `CLN3-O4`, `storage-next` treated
+Before `CLN3-O4`, `storage` treated
 `StorageOpenOptions::default()` as cache mode:
 
 ```rust
@@ -217,7 +217,7 @@ This slice should not change behavior.
 
 ### `CLN3-O3`: Remove Default From Open Call Sites
 
-Replace `StorageOpenOptions::default()` in storage-next tests and docs with
+Replace `StorageOpenOptions::default()` in storage tests and docs with
 explicit mode constructors.
 
 Allowed replacements:
@@ -240,7 +240,7 @@ Chosen final state:
 // no impl Default for StorageOpenOptions
 ```
 
-`CLN3-O4` removes the implementation outright because storage-next call sites
+`CLN3-O4` removes the implementation outright because storage call sites
 are explicit after `CLN3-O3`.
 
 If removing `Default` creates too much external churn for the current release,
@@ -262,15 +262,15 @@ examples and production call sites until the implementation can be removed.
 Update the engine-facing open path so native Strata databases use durable local
 by default.
 
-`CLN3-O5` implements the storage-next side of this boundary by adding
+`CLN3-O5` implements the storage side of this boundary by adding
 `StorageRuntime::open_local(root)` and
 `StorageRuntime::open_durable_local(root, policy)`. These helpers construct and
 own the local backend inside the storage runtime, so callers that have a native
 database directory can open durable-local storage directly. They never fall
 back to cache mode; builds without `localfs` return an explicit unsupported
 capability error. The old `strata-engine` crate still uses the pre-V1 storage
-crate, so product cutover to storage-next remains owned by the later
-engine-next milestones.
+crate, so product cutover to storage remains owned by the later
+engine milestones.
 
 Expected product rule:
 
@@ -281,7 +281,7 @@ Expected product rule:
    unsupported capability error;
 4. never silently downgrade from durable local to cache.
 
-This slice may touch engine-next or higher-level product contracts, so it
+This slice may touch engine or higher-level product contracts, so it
 should be separate from low-level storage API cleanup.
 
 ### `CLN3-O6`: Source Guards And Documentation Closeout
@@ -294,7 +294,7 @@ Add guard coverage after the migration:
 4. docs showing ephemeral open only as explicit volatile storage;
 5. tests for `open_local` failure when `localfs` is unavailable, if applicable.
 
-`CLN3-O6` closes the storage-next side by documenting durable-local native
+`CLN3-O6` closes the storage side by documenting durable-local native
 opens before explicit ephemeral opens in the crate/API rustdoc, guarding
 production source against `StorageOpenOptions::default()` open paths, and
 guarding API source against silent durable-to-cache fallback wording. The
@@ -319,25 +319,25 @@ This avoids mixing API introduction with breaking call-site churn.
 Every slice should run:
 
 ```sh
-cargo check -p strata-storage-next --locked
-cargo check -p strata-storage-next --locked --no-default-features
-cargo clippy -p strata-storage-next --all-targets --all-features --locked -- -D warnings
+cargo check -p strata-storage --locked
+cargo check -p strata-storage --locked --no-default-features
+cargo clippy -p strata-storage --all-targets --all-features --locked -- -D warnings
 cargo fmt --all -- --check
 ```
 
 If the slice changes public API surface or source guards, also run:
 
 ```sh
-cargo test -p strata-storage-next --locked --test api_source_guard
-cargo test -p strata-storage-next --locked --test api_conformance
+cargo test -p strata-storage --locked --test api_source_guard
+cargo test -p strata-storage --locked --test api_conformance
 ```
 
 If the slice changes durable local open behavior, also run focused durable
 tests under the default `localfs` feature:
 
 ```sh
-cargo test -p strata-storage-next --locked --lib api::tests::diagnostics
-cargo test -p strata-storage-next --locked --lib api::tests::maintenance
+cargo test -p strata-storage --locked --lib api::tests::diagnostics
+cargo test -p strata-storage --locked --lib api::tests::maintenance
 ```
 
 If the slice changes no-default-features behavior, add or run a focused

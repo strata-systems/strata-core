@@ -6,7 +6,7 @@ PERF-P2 was a benchmark-local spike only. It did not change the production
 serving path.
 
 The spike measured the two proven point-read costs independently on the same
-100K-key storage-next table shape from PERF-P0:
+100K-key storage table shape from PERF-P0:
 
 1. current read-view capture plus current point candidate scan;
 2. current read-view capture plus direct ordered-key point seek;
@@ -19,12 +19,12 @@ small combined point-read correction.
 ## Command
 
 ```sh
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-point-spike -- --scale 100k --samples 1000 --value-bytes 150
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-point-spike -- --scale 100k --samples 1000 --value-bytes 150
 ```
 
 Result file:
 
-`benchmarks/results/storage-next-point-spike-2026-06-03T20-00-44Z-56d9ac5e.json`
+`benchmarks/results/storage-point-spike-2026-06-03T20-00-44Z-56d9ac5e.json`
 
 The synthetic branch held 100,200 rows: 100,000 user rows plus two timeline rows
 for each of the 100 load batches.
@@ -44,7 +44,7 @@ All cases found all 1,000 sampled rows.
 
 The isolated seek change is not enough. It cuts point row visits from
 100,200,000 to 1,000, but throughput remains effectively at the original
-storage-next point-read level because every lookup still clones the full read
+storage point-read level because every lookup still clones the full read
 view.
 
 The isolated borrowed-view change is also not enough. It removes all read-view

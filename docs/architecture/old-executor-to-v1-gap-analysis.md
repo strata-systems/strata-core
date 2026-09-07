@@ -53,7 +53,7 @@ There are additional old executor families that are not present in V1:
 5. old public admin/maintenance controls;
 6. tags and notes attached to branch versions.
 
-Most of these are not executor-only gaps. The current `engine-next` either does
+Most of these are not executor-only gaps. The current `engine` either does
 not expose the underlying API yet, or has guard tests that intentionally keep the
 old surface out.
 
@@ -274,7 +274,7 @@ Related old branch annotation commands missing from V1:
 
 This is not just executor wiring. The old executor called branch APIs such as
 diff, merge, merge-base, revert, cherry-pick, and bundle import/export on the old
-engine. The current `engine-next` branch API does not expose equivalent product
+engine. The current `engine` branch API does not expose equivalent product
 operations yet.
 
 Recommended restoration scope:
@@ -362,7 +362,7 @@ Recommended disposition:
 
 1. keep out of V1 core;
 2. revisit after ontology and the search/query layer are settled;
-3. decide whether analytics belongs in `engine-next`, a query layer, or an
+3. decide whether analytics belongs in `engine`, a query layer, or an
    optional analysis crate.
 
 ### 4. Search, Retrieval, And Recipes
@@ -398,7 +398,7 @@ Recommended restoration scope:
 
 1. define the search/query product surface first;
 2. define recipe storage separately from primitive core rows;
-3. wire inference providers through `inference-next`;
+3. wire inference providers through `inference`;
 4. reuse vector indexing where appropriate;
 5. add shadow-vector behavior only after the base search layer is stable.
 
@@ -533,7 +533,7 @@ Recommended near-term order:
 
 Every restored old feature should pass this checklist:
 
-1. The engine-next API exists and owns the behavior.
+1. The engine API exists and owns the behavior.
 2. The executor command is a thin command boundary, not a reimplementation.
 3. The response shape follows the V1 response/error contract.
 4. Branch, space, timestamp, and durability behavior are specified.

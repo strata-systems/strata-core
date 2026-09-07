@@ -1,6 +1,6 @@
 # Strata V1 Architecture
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Introduction
 
@@ -13,13 +13,13 @@ historical crate boundaries by inertia. The architecture should be simple to
 explain:
 
 ```text
-core-next -> storage-next -> engine-next -> intelligence-next -> executor / cli / SDK / Strata AI
-                                      intelligence-next -> inference-next
+core -> storage -> engine -> intelligence-next -> executor / cli / SDK / Strata AI
+                                      intelligence-next -> inference
 ```
 
-Only engine-next consumes storage-next directly in normal production code.
+Only engine consumes storage directly in normal production code.
 Intelligence-next consumes engine-owned database behavior and inference-owned
-model/provider behavior. Everything above engine-next uses engine-owned product
+model/provider behavior. Everything above engine uses engine-owned product
 APIs, intelligence APIs, SDK APIs, or the serializable command boundary.
 
 This document is the high-level architecture anchor for V1. It defines the
@@ -135,13 +135,13 @@ The architecture exists to satisfy these product constraints:
 ## Binding V1 Architecture Decisions
 
 These decisions resolve the older `next-charter.md` direction where it conflicts
-with the product requirements and storage-next layer documents.
+with the product requirements and storage layer documents.
 
 1. Durable local filesystem is the reference durable backend.
    Object storage and OpenDAL remain architecture-aware substrate work, but V1
    does not make S3-like object durability the canonical first implementation.
    V1 work must still preserve the future compute/storage separation guardrails
-   in `storage-next/future-object-durable-guardrails.md`: engine-next attaches
+   in `storage/future-object-durable-guardrails.md`: engine attaches
    through L9/L8/L7 storage runtime contracts, not through WAL, manifest, table,
    object layout, or backend publish primitives.
 
@@ -161,7 +161,7 @@ with the product requirements and storage-next layer documents.
 4. Commit timestamps and the commit timeline are storage-native V1 substrate.
    Storage-next should stamp every committed batch with one commit timestamp,
    persist a per-branch commit-version-to-timestamp timeline, and expose
-   timestamp-to-version resolution facts to engine-next. Engine owns the product
+   timestamp-to-version resolution facts to engine. Engine owns the product
    UX for `as_of`, branch-from-time, and timeline explanations.
 
 5. Cache mode has no durable storage services.
@@ -181,7 +181,7 @@ with the product requirements and storage-next layer documents.
    capability identities are engine-owned. Storage sees physical keys, opaque
    storage space IDs, row values, and commit metadata.
 
-8. The storage-next cutover is a canonical replacement, not a permanent
+8. The storage cutover is a canonical replacement, not a permanent
    parallel product.
    `*-next` names describe the design and build phase. The cutover plan must
    describe how the new crates become canonical and how old crates are retired.
@@ -292,16 +292,16 @@ conformance, fuzzing, or product-path tests is not acceptable.
 The V1 target graph is:
 
 ```text
-strata-core-next
+strata-core
         |
         v
-strata-storage-next
+strata-storage
         |
         v
-strata-engine-next
+strata-engine
         |
         v
-strata-intelligence-next ----> strata-inference-next
+strata-intelligence-next ----> strata-inference
         |
         +--> strata-executor
         +--> strata-cli
@@ -311,18 +311,18 @@ strata-intelligence-next ----> strata-inference-next
 
 Rules:
 
-1. `storage-next` may depend on `core-next`.
-2. `engine-next` may depend on `storage-next` and `core-next`.
-3. `intelligence-next` may depend on `engine-next`, `core-next`, and
-   `inference-next`.
-4. Product crates above engine must not depend on `storage-next`.
-5. `inference-next` must not depend on `engine-next` or `storage-next`.
+1. `storage` may depend on `core`.
+2. `engine` may depend on `storage` and `core`.
+3. `intelligence-next` may depend on `engine`, `core`, and
+   `inference`.
+4. Product crates above engine must not depend on `storage`.
+5. `inference` must not depend on `engine` or `storage`.
 6. Executor, CLI, SDK surfaces, and Strata AI consume engine and intelligence
    APIs rather than storage APIs.
 7. Optional provider/runtime features must be feature-gated and observable.
 
-The names `core-next`, `storage-next`, `engine-next`, `intelligence-next`, and
-`inference-next` describe the design phase. Once the new architecture becomes
+The names `core`, `storage`, `engine`, `intelligence-next`, and
+`inference` describe the design phase. Once the new architecture becomes
 canonical, the crates should shed the `next` suffix rather than preserve
 permanent parallel names.
 
@@ -754,10 +754,10 @@ surface with clear gating.
 The next phase should proceed in documents before code:
 
 1. Freeze this high-level architecture draft.
-2. Write `core-next` architecture.
-3. Write `storage-next` architecture.
-4. Write `engine-next` architecture.
-5. Write `inference-next` architecture.
+2. Write `core` architecture.
+3. Write `storage` architecture.
+4. Write `engine` architecture.
+5. Write `inference` architecture.
 6. Write `intelligence-next` architecture.
 7. Write the backend capability and conformance contract.
 8. Write the IPC runtime contract.
@@ -773,7 +773,7 @@ normal names again. Users should not learn that an internal rewrite happened.
 
 Expected cutover sequence:
 
-1. Build `core-next`, `storage-next`, and `engine-next` in parallel with the
+1. Build `core`, `storage`, and `engine` in parallel with the
    current crates while their contracts are still changing.
 2. Keep product crates on the current canonical crates until the new stack can
    satisfy the required V1 pathways and conformance tests.
@@ -791,7 +791,7 @@ Expected cutover sequence:
    normal product open. Silent best-effort reopen is not a cutover policy.
 7. Move storage recovery health ownership deliberately. Current engine D4
    surface types such as `RecoveryHealth`, `DegradationClass`, and
-   `RecoveryFault` become storage-next-owned V1 recovery facts; engine-next may
+   `RecoveryFault` become storage-owned V1 recovery facts; engine may
    re-export or wrap them, but storage owns the source definitions.
 
 ## Non-Goals

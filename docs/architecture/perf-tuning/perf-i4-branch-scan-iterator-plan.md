@@ -2,7 +2,7 @@
 
 ## Scope
 
-PERF-I4 ports the old storage scan methodology into storage-next's branch scan
+PERF-I4 ports the old storage scan methodology into storage's branch scan
 path. The goal is to replace the remaining per-row generic branch merge loop
 with a seekable iterator pipeline that caches current source state, groups one
 physical key at a time, and stops when the public scan limit is satisfied.
@@ -16,7 +16,7 @@ too expensive.
 
 ## Evidence
 
-Latest storage-next cache runs use public L9 APIs, 64-byte values, 100 scan
+Latest storage cache runs use public L9 APIs, 64-byte values, 100 scan
 samples, and scan limit 64.
 
 | Scale | Load shape | Scan sources | Logical key encodes | Scan elapsed | Scan throughput |
@@ -25,7 +25,7 @@ samples, and scan limit 64.
 | 250K | flush every 100K rows | 3 | 44,800 | ~8.12 ms | ~12.3K ops/s |
 | 1M | flush every 100K rows | 11 | 134,400 | ~16.27 ms | ~6.1K ops/s |
 
-At 1M, storage-next still returns only 6,400 visible rows, but scans perform
+At 1M, storage still returns only 6,400 visible rows, but scans perform
 1,100 cursor seeks and 134,400 logical key encodes. The hot phases are:
 
 1. source setup: ~2.36 ms;
@@ -139,8 +139,8 @@ before implementation if a slice grows beyond that.
 
 Files:
 
-1. `crates/storage-next/src/branch/read.rs`
-2. `crates/storage-next/src/branch/tests` or the closest existing branch-read
+1. `crates/storage/src/branch/read.rs`
+2. `crates/storage/src/branch/tests` or the closest existing branch-read
    test module
 
 Work:
@@ -164,10 +164,10 @@ Exit gates:
 
 Files:
 
-1. `crates/storage-next/src/branch/read.rs` or new
-   `crates/storage-next/src/branch/scan.rs`
-2. `crates/storage-next/src/branch/mod.rs`
-3. `crates/storage-next/src/observability/perf_trace.rs`
+1. `crates/storage/src/branch/read.rs` or new
+   `crates/storage/src/branch/scan.rs`
+2. `crates/storage/src/branch/mod.rs`
+3. `crates/storage/src/observability/perf_trace.rs`
 
 Work:
 
@@ -190,7 +190,7 @@ Exit gates:
 
 Files:
 
-1. `crates/storage-next/src/branch/read.rs` or new branch scan module
+1. `crates/storage/src/branch/read.rs` or new branch scan module
 
 Work:
 
@@ -206,14 +206,14 @@ Exit gates:
    returned row.
 2. 100K active-only scan approaches old-cache order of magnitude without
    changing returned rows.
-3. `cargo test -p strata-storage-next --lib --features perf-trace branch`.
+3. `cargo test -p strata-storage --lib --features perf-trace branch`.
 
 ### PERF-I4D: Multi-Source Heap Merge Path
 
 Files:
 
-1. `crates/storage-next/src/branch/read.rs` or new branch scan module
-2. `crates/storage-next/src/table/cursor.rs` only if a small cursor helper is
+1. `crates/storage/src/branch/read.rs` or new branch scan module
+2. `crates/storage/src/table/cursor.rs` only if a small cursor helper is
    needed
 
 Work:
@@ -237,7 +237,7 @@ Exit gates:
 
 Files:
 
-1. `crates/storage-next/src/api/runtime.rs`
+1. `crates/storage/src/api/runtime.rs`
 2. `benchmarks/src/bin/storage_next_l9_scale.rs`
 3. `docs/architecture/perf-tuning/perf-p2-point-read-isolation-report.md` or a
    new scan closeout report
@@ -258,8 +258,8 @@ Work:
 Exit gates:
 
 1. `cargo fmt --all -- --check`
-2. `cargo check -p strata-storage-next --features perf-trace`
-3. `cargo check --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale`
+2. `cargo check -p strata-storage --features perf-trace`
+3. `cargo check --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale`
 4. targeted branch read tests
 5. same-result scan parity tests
 6. benchmark report shows whether the source-count regression is resolved
@@ -277,7 +277,7 @@ Stop and reassess if any of these happen:
 
 ## Expected Result
 
-After PERF-I4, storage-next scan cost should scale primarily with:
+After PERF-I4, storage scan cost should scale primarily with:
 
 1. number of rows returned;
 2. number of sources that actually overlap the scan bounds;

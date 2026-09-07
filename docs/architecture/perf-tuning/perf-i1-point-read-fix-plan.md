@@ -2,7 +2,7 @@
 
 ## Goal
 
-Restore storage-next point-read mechanics to the old storage shape:
+Restore storage point-read mechanics to the old storage shape:
 
 1. do not deep-clone every branch row for one point lookup;
 2. do not scan every branch row to find one physical key;
@@ -54,7 +54,7 @@ Out of scope:
 
 ## Architecture Rules
 
-PERF-I1 must not create a parallel point-read product inside storage-next. The
+PERF-I1 must not create a parallel point-read product inside storage. The
 fix has to preserve one semantic model with multiple source adapters.
 
 Required shape:
@@ -83,9 +83,9 @@ Promote the benchmark-only seek helper into normal table code.
 
 Files:
 
-1. `crates/storage-next/src/table/mutable.rs`
-2. `crates/storage-next/src/table/reader.rs`
-3. `crates/storage-next/src/table/mod.rs`
+1. `crates/storage/src/table/mutable.rs`
+2. `crates/storage/src/table/reader.rs`
+3. `crates/storage/src/table/mod.rs`
 
 Work:
 
@@ -112,8 +112,8 @@ Add a point-only borrowed read path on `BranchLocalState`.
 
 Files:
 
-1. `crates/storage-next/src/branch/state/read_hooks.rs`
-2. `crates/storage-next/src/branch/read.rs`
+1. `crates/storage/src/branch/state/read_hooks.rs`
+2. `crates/storage/src/branch/read.rs`
 
 Work:
 
@@ -155,9 +155,9 @@ Route only L9 point reads to the borrowed seek path.
 
 Files:
 
-1. `crates/storage-next/src/api/runtime.rs`
-2. `crates/storage-next/src/lifecycle/cache.rs`
-3. `crates/storage-next/src/lifecycle/durable/bootstrap.rs`
+1. `crates/storage/src/api/runtime.rs`
+2. `crates/storage/src/lifecycle/cache.rs`
+3. `crates/storage/src/lifecycle/durable/bootstrap.rs`
 
 Work:
 
@@ -192,11 +192,11 @@ Commands:
 
 ```sh
 cargo fmt --all -- --check
-cargo check --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale
-cargo check --manifest-path benchmarks/Cargo.toml --bin storage-next-point-spike
-cargo test -p strata-storage-next --features perf-trace
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale -- --scales 100k --engines cache,standard --workloads point-throughput --samples 1000 --value-bytes 150
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-point-spike -- --scale 100k --samples 1000 --value-bytes 150
+cargo check --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale
+cargo check --manifest-path benchmarks/Cargo.toml --bin storage-point-spike
+cargo test -p strata-storage --features perf-trace
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale -- --scales 100k --engines cache,standard --workloads point-throughput --samples 1000 --value-bytes 150
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-point-spike -- --scale 100k --samples 1000 --value-bytes 150
 ```
 
 Expected production counters after PERF-I1:

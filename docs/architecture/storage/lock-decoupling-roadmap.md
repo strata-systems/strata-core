@@ -1,7 +1,7 @@
 # Storage-next lock-decoupling roadmap — RETIRED
 
 **Retired 2026-06-30. Superseded by the authoritative plan:**
-`docs/architecture/implementation-plans/M4P/m4p-l8i-runtime-lock-decoupling-implementation-plan.md`
+`docs/architecture/archive/implementation-plans/M4P/m4p-l8i-runtime-lock-decoupling-implementation-plan.md`
 
 This draft was written before discovering M4P-L8I and largely duplicated it — less
 completely (it missed **Group B: WAL fsync off the commit lock**, L8I's single biggest

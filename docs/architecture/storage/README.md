@@ -1,10 +1,10 @@
 # Storage-Next Layer Documents
 
-Status: V1 architecture draft index
+Status: current — describes shipped 1.2.x behaviour (#3134) index
 
 ## Purpose
 
-This directory contains concrete design notes for each storage-next layer.
+This directory contains concrete design notes for each storage layer.
 
 The top-level map lives in
 [../storage-architecture.md](../storage-architecture.md). That file
@@ -37,8 +37,8 @@ Recommended order:
 17. [Test Density Roadmap](./test-density-roadmap.md)
 
 The ordering is deliberate. Backend IO and object layout determine whether the
-rest of storage-next is genuinely portable. The initial storage API boundary
-gives engine-next a target, and the final alignment pass folds in the L3-L8
+rest of storage is genuinely portable. The initial storage API boundary
+gives engine a target, and the final alignment pass folds in the L3-L8
 layer contracts. The target crate-shape document translates those conceptual
 layers into domain modules and reusable test harnesses; the implementation
 should not create `l1`, `l2`, or `l3` Rust modules. The storage-space and
@@ -75,7 +75,7 @@ requirement, or upper-layer contract.
 
 ## Backend Forcing Set
 
-The first storage-next implementation must prove two backend shapes:
+The first storage implementation must prove two backend shapes:
 
 1. Browser/cache backend for live demos and WASM-oriented development.
 2. Local filesystem backend as the durable reference backend.

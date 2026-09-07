@@ -1,10 +1,10 @@
 # Storage-Next Test Density Roadmap
 
-Status: V1 discipline draft, scoped initially to storage-next
+Status: V1 discipline draft, scoped initially to storage
 
 ## Purpose
 
-This document defines what it would take for storage-next testing to go from
+This document defines what it would take for storage testing to go from
 "adequate-for-V1-milestone" to SQLite-grade, and the tiers in between.
 
 The trigger for this roadmap was an honest reassessment of M3 completion. The
@@ -12,7 +12,7 @@ M3 audit concluded that L1-L4 had ~1.06x test-to-production LOC ratio and
 called the result "reference-grade." That framing was overconfident. SQLite
 runs at roughly 600x test-to-production LOC with continuous fuzzing, 100%
 branch coverage, IO error injection at every syscall, and 25 years of soak.
-Strata-storage-next is not in that league and pretending it is helps nobody.
+Strata-storage is not in that league and pretending it is helps nobody.
 
 This roadmap exists so:
 
@@ -20,7 +20,7 @@ This roadmap exists so:
    declaring "reference-grade" once and moving on.
 2. We have a shared language for what each tier of test density means and what
    gating infrastructure it requires.
-3. Other crates (core-next, engine-next, intelligence-next, inference-next)
+3. Other crates (core, engine, intelligence-next, inference)
    can adopt the same tier model when they reach M3-equivalent maturity.
 4. Future Strata reviewers can see the gap to SQLite as a concrete, planned
    workstream rather than an aspiration.
@@ -50,7 +50,7 @@ Every tier from T1 upward should be characterized by at least:
 | **Distinct fault-window scenarios** | Service-publish, IO-error, OOM, crash-point combinations exercised | Directly measures the failure surface area covered. |
 | **Anomaly-test coverage** | Randomized crash/error injection across the codebase vs scripted at known points | T1-T3 use scripted; T4 randomizes across every syscall. |
 | **Platform coverage** | CI lanes (Linux, macOS, Windows, BSD, etc.) | Cross-platform branches that aren't tested are tested by reviewers, badly. |
-| **Differential testing** | Same workload against storage-next and a reference (redb, RocksDB, LMDB) with agreement asserted | Catches behavioral divergence that unit tests miss. |
+| **Differential testing** | Same workload against storage and a reference (redb, RocksDB, LMDB) with agreement asserted | Catches behavioral divergence that unit tests miss. |
 | **Long-soak duration** | Continuous mutation+retention+recovery run length without failure | Catches leaks, retention debt, recovery state corruption. |
 | **Mutation testing kill rate** | Percentage of artificially introduced bugs the test suite catches | Detects test theater (high coverage, low assertiveness). |
 
@@ -88,7 +88,7 @@ commit. Format won't drift silently. Service contracts are tested."
 - Mutation testing
 - Long-soak runs
 
-**Where storage-next L1-L4 is right now.** Exit criteria for M3 already met
+**Where storage L1-L4 is right now.** Exit criteria for M3 already met
 this bar.
 
 ### T2 — Hardened (target: ~5x LOC ratio)
@@ -99,7 +99,7 @@ Recovery and fault paths exercised. Branch coverage is measured and gated."
 **Mandatory additions over T1:**
 
 - **Branch coverage measured every PR.** llvm-cov or tarpaulin in CI, gate
-  starts at 85% on storage-next core code, excluding tests and testkit.
+  starts at 85% on storage core code, excluding tests and testkit.
 - **Continuous fuzzing.** Each fuzz target gets dedicated compute, on the order
   of hours per target per week. Crashes flow to issues automatically.
 - **IO error injection at every L1 backend operation,** not just publish.
@@ -137,7 +137,7 @@ cross-validated against reference storage engines."
 
 **Mandatory additions over T2:**
 
-- **Differential testing harness.** Same KV workload routed through storage-next
+- **Differential testing harness.** Same KV workload routed through storage
   L9 and through a reference KV (redb for B-tree, RocksDB or fjall for LSM)
   with agreement asserted on results, ordering, and visibility. Differential
   testing is one of the highest-yield bug-finding techniques available.
@@ -156,7 +156,7 @@ cross-validated against reference storage engines."
   that explores schedule interleavings systematically (loom or shuttle for
   Rust). Critical for the WAL writer, commit runtime, and lifecycle.
 - **Performance regression suite.** Separate from correctness, but required at
-  T3 because performance regressions are bugs. See the storage-next benchmark
+  T3 because performance regressions are bugs. See the storage benchmark
   plan; T3 implies the bench harness is operational and PR-gated.
 - **Cross-version compatibility tests.** Format-v1 bytes produced by today's
   code must be readable by future code. The format-frozen contract demands
@@ -178,7 +178,7 @@ cross-validated against reference storage engines."
 
 **Mandatory additions over T3:**
 
-- **100% branch coverage gate** on storage-next core. No exceptions; uncovered
+- **100% branch coverage gate** on storage core. No exceptions; uncovered
   branches must be deleted, marked unreachable with a typed panic-free
   sentinel, or have a test.
 - **OSS-fuzz-equivalent continuous fuzzing compute.** Dedicated infrastructure,
@@ -256,7 +256,7 @@ test-investment-as-product discipline that produced SQLite.
 | Tier | CI gate |
 | --- | --- |
 | T1 | Unit + property + fuzz-once + golden conformance + cache-absence + crash-recovery harness must pass on every PR. Workspace dependency-direction guard enforced. |
-| T2 | T1 + branch coverage ≥ 85% on storage-next core + Windows CI lane + nightly long-soak (1 hour) + continuous-fuzz crash gate. Test-density metrics published per build. |
+| T2 | T1 + branch coverage ≥ 85% on storage core + Windows CI lane + nightly long-soak (1 hour) + continuous-fuzz crash gate. Test-density metrics published per build. |
 | T3 | T2 + branch coverage ≥ 95% + differential-test agreement gate + recipe-driven corpus runs weekly + mutation-test kill rate ≥ 90% + perf regression gate + cross-version goldens enforced. |
 | T4 | T3 + branch coverage = 100% + continuous fuzzing on dedicated infra + multi-CPU CI matrix + power-loss simulation gate + formal-model refinement check on every PR + reliability-stat reporting. |
 
@@ -285,15 +285,15 @@ Each Strata crate runs its own test density assessment when it reaches
 M3-equivalent maturity. The tier definitions in this doc are intended as a
 template:
 
-- **core-next** is small enough that T2 should already be achievable.
-- **engine-next** will likely sit at T1 through M5-M6, with a stretch goal
+- **core** is small enough that T2 should already be achievable.
+- **engine** will likely sit at T1 through M5-M6, with a stretch goal
   toward T2 before M9 cutover. Engine cross-validation against intelligence
   and inference belongs in T3.
 - **intelligence-next** has different testing concerns (stochastic outputs,
   model-dependent reranking, prompt-injection coverage) that need a separate
   tier definition. This roadmap is the structural template; the categories
   differ.
-- **inference-next** lives outside the storage substrate but should adopt the
+- **inference** lives outside the storage substrate but should adopt the
   same fuzz-target / continuous-fuzz / mutation-test discipline once provider
   trait surfaces stabilize.
 
@@ -304,7 +304,7 @@ metric values for each. Tracking that lives outside this document.
 
 Two simple recurring artifacts:
 
-1. **A storage-next test-density dashboard** updated nightly: LOC ratio,
+1. **A storage test-density dashboard** updated nightly: LOC ratio,
    branch coverage, fuzz target count + corpus size, distinct property
    invariants, distinct fault-window scenarios, soak runtime, mutation kill
    rate (when T3+), differential-test agreement rate (T3+). Published as a

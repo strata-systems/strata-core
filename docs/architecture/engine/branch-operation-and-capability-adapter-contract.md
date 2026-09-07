@@ -1,10 +1,10 @@
 # Engine-Next Branch Operation And Capability Adapter Contract
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
-This document defines how engine-next owns branch workflows and how data
+This document defines how engine owns branch workflows and how data
 capabilities participate in those workflows.
 
 Branches are database workspaces and timelines. Storage-next supplies generic
@@ -238,7 +238,7 @@ Derived rows must not silently merge as user-authored source rows.
 
 2. **Persistence is the only storage path.**
    Branch workflows use the persistence adapter for branch mechanics, row scans,
-   timeline frontiers, and commit plans. Branch code must not import storage-next
+   timeline frontiers, and commit plans. Branch code must not import storage
    internals or construct physical keys directly.
 
 3. **Capabilities interpret their own rows.**
@@ -796,7 +796,7 @@ Display output must follow the V1 redaction rules.
 
 Branch workflow production code must not:
 
-1. Import storage-next directly.
+1. Import storage directly.
 2. Construct physical storage keys directly.
 3. Use raw numeric storage-space IDs outside the registry/persistence boundary.
 4. Decode capability values without going through the owning capability adapter.

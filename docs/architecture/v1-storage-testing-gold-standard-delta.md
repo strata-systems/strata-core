@@ -3,7 +3,7 @@
 Status: living document
 Date: 2026-06-17
 Companion to: `v1-storage-testing-taxonomy-and-gaps.md` (the charter) and
-`implementation-plans/storage-testing/` (the STH program)
+`archive/implementation-plans/storage-testing/` (the STH program)
 
 Purpose: learn everything actionable from SQLite — the most thoroughly documented
 testing program in the field — and from the durability-critical peers, then state

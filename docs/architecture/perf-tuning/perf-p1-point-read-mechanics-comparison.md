@@ -3,7 +3,7 @@
 ## Scope
 
 This note compares the old storage engine's point-read mechanics against
-storage-next after the PERF-P0 counter run. The goal is to decide the next
+storage after the PERF-P0 counter run. The goal is to decide the next
 measurement or correction step without turning performance tuning into another
 architecture rewrite.
 
@@ -16,10 +16,10 @@ PERF-P0 measured the 100K-key workload on the same local machine:
 | Engine | Mode | Load | Point latest | Range scan |
 | --- | --- | ---: | ---: | ---: |
 | old storage | cache | 434,758 ops/s | 464,936 ops/s | 88,382 ops/s |
-| storage-next | cache | 35,472 ops/s | 44 ops/s | 22 ops/s |
-| storage-next | standard | 42,838 ops/s | 45 ops/s | 22 ops/s |
+| storage | cache | 35,472 ops/s | 44 ops/s | 22 ops/s |
+| storage | standard | 42,838 ops/s | 45 ops/s | 22 ops/s |
 
-For 1,000 storage-next point reads at 100K keys, PERF-P0 recorded:
+For 1,000 storage point reads at 100K keys, PERF-P0 recorded:
 
 | Counter | Cache | Standard |
 | --- | ---: | ---: |
@@ -75,32 +75,32 @@ active memtable, frozen memtables, segment version, and inherited layers
 Storage-next kept the same internal-key ordering foundation. `encode_internal_key`
 appends the bitwise inverse commit version in big-endian order, so ordinary
 ascending byte order returns newest commit versions first for the same physical
-key (`crates/storage-next/src/format/key.rs:36`).
+key (`crates/storage/src/format/key.rs:36`).
 
 The table layer also has ordered storage:
 
 1. `MutableTable` stores rows in `BTreeMap<TableInternalKeyBytes, TableRow>`
-   (`crates/storage-next/src/table/mutable.rs:47`).
-2. `FrozenTable` uses the same shape (`crates/storage-next/src/table/mutable.rs:149`).
+   (`crates/storage/src/table/mutable.rs:47`).
+2. `FrozenTable` uses the same shape (`crates/storage/src/table/mutable.rs:149`).
 3. `ImmutableTableReader` stores sorted rows and supports binary search for exact
-   internal keys (`crates/storage-next/src/table/reader.rs:126`).
-4. Table cursors support binary seek (`crates/storage-next/src/table/cursor.rs:14`).
+   internal keys (`crates/storage/src/table/reader.rs:126`).
+4. Table cursors support binary seek (`crates/storage/src/table/cursor.rs:14`).
 
 But the current branch read path does not use that ordering for point reads.
 `BranchReadView::point_candidates` scans each source with `iter().filter(...)`
-and clones each matching row (`crates/storage-next/src/branch/read.rs:889`).
+and clones each matching row (`crates/storage/src/branch/read.rs:889`).
 Inherited point candidates do the same over inherited owned tables
-(`crates/storage-next/src/branch/read.rs:993`).
+(`crates/storage/src/branch/read.rs:993`).
 
 `BranchReadView` is owned, not pinned. It stores `MutableTable`, `Vec<FrozenTable>`,
-owned levels, and inherited layers by value (`crates/storage-next/src/branch/read.rs:659`).
+owned levels, and inherited layers by value (`crates/storage/src/branch/read.rs:659`).
 `BranchLocalState::capture_read_view` constructs it by cloning active, frozen,
-owned, and inherited sources (`crates/storage-next/src/branch/state/read_hooks.rs:216`).
+owned, and inherited sources (`crates/storage/src/branch/state/read_hooks.rs:216`).
 
 For durable/flushed tables there is an additional old-vs-new gap:
 `ImmutableTableReader::open_source` reads every data block and decodes all rows
-into memory at open time (`crates/storage-next/src/table/reader.rs:93`,
-`crates/storage-next/src/table/reader.rs:277`). The old segment reader loaded
+into memory at open time (`crates/storage/src/table/reader.rs:93`,
+`crates/storage/src/table/reader.rs:277`). The old segment reader loaded
 metadata and used bloom/index/block-cache reads on demand.
 
 ## Interpretation
@@ -176,7 +176,7 @@ Cons:
 Do not start a broad production correction yet.
 
 The right next step is a narrow PERF-P2 spike that runs old-style point lookup on
-storage-next table data and measures the two costs independently:
+storage table data and measures the two costs independently:
 
 1. current read-view capture plus current point candidate scan;
 2. current read-view capture plus direct ordered-key point seek;

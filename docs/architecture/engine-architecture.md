@@ -1,10 +1,10 @@
 # Engine-Next Architecture
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
-This document defines the conceptual architecture for `engine-next`.
+This document defines the conceptual architecture for `engine`.
 
 It does not define Rust traits, module names, migration steps, API syntax, or
 implementation milestones. Its job is to define the engine buckets Strata wants
@@ -40,11 +40,11 @@ Architecture anchors:
 1. [strata-v1-architecture.md](./strata-v1-architecture.md)
 2. [core-architecture.md](./core-architecture.md)
 3. [storage-architecture.md](./storage-architecture.md)
-4. [storage-next/l9-storage-api-boundary.md](./storage-next/l9-storage-api-boundary.md)
-5. [engine-next/README.md](./engine-next/README.md)
-6. [engine-next/primitive-implementation-contract.md](./engine-next/primitive-implementation-contract.md)
-7. [engine-next/entity-ref-and-relationship-layer-contract.md](./engine-next/entity-ref-and-relationship-layer-contract.md)
-8. [engine-next/storage-space-id-registry.md](./engine-next/storage-space-id-registry.md)
+4. [storage/l9-storage-api-boundary.md](./storage/l9-storage-api-boundary.md)
+5. [engine/README.md](./engine/README.md)
+6. [engine/primitive-implementation-contract.md](./engine/primitive-implementation-contract.md)
+7. [engine/entity-ref-and-relationship-layer-contract.md](./engine/entity-ref-and-relationship-layer-contract.md)
+8. [engine/storage-space-id-registry.md](./engine/storage-space-id-registry.md)
 9. [stratahub-substrate-architecture.md](./stratahub-substrate-architecture.md)
 10. [runtime-resource-profile-architecture.md](./runtime-resource-profile-architecture.md)
 11. [v1-error-and-diagnostics-contract.md](./v1-error-and-diagnostics-contract.md)
@@ -75,7 +75,7 @@ The important constraints are:
 
 1. Strata is embedded first.
 2. Durable local filesystem is the reference durable backend through
-   storage-next.
+   storage.
 3. Cache mode is explicit and non-durable.
 4. Cache mode supports the full V1 product API and pathway matrix; durability
    is the only product difference.
@@ -128,7 +128,7 @@ These decisions pin the first-pass engine direction.
    state status, policies, and job metadata.
 
 5. **Persistence is the only normal storage-facing bucket.**
-   Engine-next should concentrate storage-next imports behind a persistence
+   Engine-next should concentrate storage imports behind a persistence
    adapter. Other buckets should use engine-owned key, row, batch, read, write,
    and timeline abstractions rather than importing storage internals directly.
 
@@ -176,7 +176,7 @@ These decisions pin the first-pass engine direction.
     format/layout error unless a specific implementation plan later approves a
     one-off developer conversion utility.
 
-14. **Intelligence-next and inference-next are sequenced after engine-next.**
+14. **Intelligence-next and inference are sequenced after engine.**
     Semantic search, RAG, query expansion, reranking, generation, and model
     management pathways that need provider execution depend on those follow-up
     architecture documents.
@@ -286,7 +286,7 @@ The scan changes the naive first-pass model in six ways:
 
 ## Target Bucket Graph
 
-The engine-next buckets are conceptual architecture buckets, not required Rust
+The engine buckets are conceptual architecture buckets, not required Rust
 module names.
 
 ```text
@@ -307,7 +307,7 @@ strata-intelligence-next / executor / cli / SDK / Strata AI
 +------------------------------------------------+
         |
         v
-strata-storage-next L9
+strata-storage L9
 ```
 
 Diagnostics cuts across every bucket:
@@ -649,7 +649,7 @@ path already meets the same quality bar.
 3. A data capability may maintain derived runtime state if it declares rebuild and
    health behavior.
 4. A data capability must not call sibling capability internals.
-5. A data capability must not import storage-next directly except through
+5. A data capability must not import storage directly except through
    persistence adapter types explicitly approved for row encoding.
 6. A data capability must not hide cross-capability behavior in its own CRUD
    methods.
@@ -849,7 +849,7 @@ Current evidence:
 
 ## Persistence Bucket
 
-Persistence is the engine-owned adapter over storage-next L9.
+Persistence is the engine-owned adapter over storage L9.
 
 It owns:
 
@@ -859,7 +859,7 @@ It owns:
 - value codec dispatch for capability rows where centralized
 - `EntityRef` to row-key/value encoding helpers
 - storage read/write adapters
-- latest/version/timestamp/history reads over storage-next
+- latest/version/timestamp/history reads over storage
 - branch physical operation adapters
 - storage timeline resolution adapters
 - snapshot collect and decode adapters
@@ -875,7 +875,7 @@ It must not own:
 - WAL/manifest/table implementation details
 - product branch merge policy
 
-Only persistence should normally import storage-next in production engine code.
+Only persistence should normally import storage in production engine code.
 Temporary exceptions during migration must be documented and removed.
 
 Current evidence:
@@ -892,7 +892,7 @@ Target direction:
 ```text
 data capability/branch/retrieval/orchestration
   -> engine persistence contract
-  -> storage-next L9
+  -> storage L9
 ```
 
 not:
@@ -976,7 +976,7 @@ Current evidence:
 
 ## Target Dependency Rules
 
-1. API may call runtime and product services. It must not call storage-next.
+1. API may call runtime and product services. It must not call storage.
 2. Runtime may coordinate commit, branch, control plane, orchestration,
    retrieval, persistence, and diagnostics.
 3. Commit may use persistence and diagnostics. It must not know data capability
@@ -993,7 +993,7 @@ Current evidence:
    row semantics directly.
 8. Retrieval may use data capability search/text/vector/graph adapters, control
    plane recipes/manifests, persistence read contracts, and diagnostics.
-9. Persistence may use storage-next L9 and core-next. It must not call upper
+9. Persistence may use storage L9 and core. It must not call upper
    product code.
 10. Diagnostics may consume facts from every bucket but should avoid becoming a
     hidden control path.
@@ -1013,7 +1013,7 @@ Engine-next must be designed so each bucket has direct tests:
 7. Control-plane branch/global metadata tests.
 8. Orchestration projection and rebuild tests.
 9. Retrieval temporal/index compatibility tests.
-10. Persistence adapter tests against storage-next L9 test doubles.
+10. Persistence adapter tests against storage L9 test doubles.
 11. Diagnostics and error-status tests.
 12. End-to-end product pathway tests over engine APIs.
 
@@ -1148,14 +1148,14 @@ does not make the lower-layer fact an engine implementation detail.
 ## Follow-Up Documents
 
 The first-pass engine architecture is now supported by the contract index in
-[engine-next/README.md](./engine-next/README.md).
+[engine/README.md](./engine/README.md).
 
 That index owns the detailed contracts for data capabilities, EntityRef,
 storage-space IDs, persistence, branch operations, temporal context, control
 plane, retrieval, IPC, clone artifacts, public surface cleanup, product-pathway
 conformance, errors, testing, and target crate shape.
 
-The remaining architecture sequence after engine-next is:
+The remaining architecture sequence after engine is:
 
 1. Final public API and CLI implementation plans.
 

@@ -1,6 +1,6 @@
 # L6. Branch-Isolated LSM Runtime
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 Depends on:
 
@@ -352,7 +352,7 @@ Target rules:
    and values.
 
 The current `TypeTag` byte is a storage-family routing fact today. In
-storage-next it becomes an opaque engine-supplied `storage_space_id`. Storage
+storage it becomes an opaque engine-supplied `storage_space_id`. Storage
 may route, sort, and scan by that byte. It must not know whether the byte means
 KV, JSON, events, graph, vectors, search, system rows, or a future engine
 capability.
@@ -831,7 +831,7 @@ graph, vector, search, event, or engine branch workflow semantics.
 
 ## V1 Minimum
 
-The first storage-next L6 implementation needs:
+The first storage L6 implementation needs:
 
 1. Branch-local active/frozen table ownership.
 2. Branch-local immutable table level ownership.
@@ -865,7 +865,7 @@ It does not need:
 
 ## Open Questions
 
-1. Does storage-next keep the current physical key shape exactly, or introduce a
+1. Does storage keep the current physical key shape exactly, or introduce a
    new row-key envelope in the storage format spec?
 2. What exact commit-version allocation API should L7 expose to L6 mutation
    paths?
@@ -884,7 +884,7 @@ It does not need:
 
 ## Next Step
 
-After L6 and L7, the next storage-next document should define L8 Lifecycle /
+After L6 and L7, the next storage document should define L8 Lifecycle /
 Recovery / Maintenance. That document should explain how storage opens,
 recovers, checkpoints, schedules compaction and retention, repairs or
 quarantines damaged state, and shuts down while consuming L4-L7 through their

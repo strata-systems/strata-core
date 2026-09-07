@@ -1,10 +1,10 @@
 # Engine-Next Target Crate Shape And Test Harness
 
-Status: V1 architecture draft
+Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
-The engine-next architecture is organized around buckets: API, runtime, commit,
+The engine architecture is organized around buckets: API, runtime, commit,
 branch, data capability, control plane, orchestration, retrieval, persistence,
 diagnostics, IPC, and data movement. The Rust crate should not be organized as
 milestone names or historical migrated modules.
@@ -24,14 +24,14 @@ not a Rust API spec. Exact signatures belong in implementation plans.
 
 ## Package Naming
 
-During parallel development, the package may be called `strata-engine-next` and
-live under `crates/engine-next`.
+During parallel development, the package may be called `strata-engine` and
+live under `crates/engine`.
 
 After cutover, the canonical package should be `strata-engine` again. Users
 should not learn a permanent `next` name.
 
 Cutover implies removal, not coexistence: the existing `crates/engine` is
-removed or archived, `crates/engine-next` is renamed to `crates/engine`, and
+removed or archived, `crates/engine` is renamed to `crates/engine`, and
 package names return to `strata-engine` in the cutover PR series.
 
 ## Crate Shape Principles
@@ -50,7 +50,7 @@ package names return to `strata-engine` in the cutover PR series.
 ## Standards Application
 
 This crate-shape document applies
-`docs/architecture/v1-engineering-standards.md` to engine-next.
+`docs/architecture/v1-engineering-standards.md` to engine.
 
 Rules:
 
@@ -61,7 +61,7 @@ Rules:
    `api`, `runtime`, `commit`, `branch`, `data`, `entity`, `control`,
    `orchestration`, `retrieval`, `persistence`, `diagnostics`, `command`,
    `clone`, `config`, `test_support`, and `testkit`.
-3. Temporary `strata-engine-next` and `crates/engine-next` names are
+3. Temporary `strata-engine` and `crates/engine` names are
    build-branch scaffolding only. Cutover removes the suffix; code inside the
    crate should already use permanent domain vocabulary.
 4. New public or crate-wide concepts should fit the standards suffixes such as
@@ -84,7 +84,7 @@ Rules:
 3. Public database APIs are synchronous unless a later product architecture
    explicitly introduces async.
 4. Panics are bugs. Product failures return typed statuses.
-5. Production code above `persistence/` must not import storage-next directly.
+5. Production code above `persistence/` must not import storage directly.
 6. No executor-facing engine API should expose subsystem-instantiation hooks.
 7. Optional model/provider work must be explicit and feature-gated.
 
@@ -93,7 +93,7 @@ Rules:
 Target shape:
 
 ```text
-crates/engine-next/
+crates/engine/
   Cargo.toml
   src/
     lib.rs
@@ -267,7 +267,7 @@ This module should keep the concept set small and align with
 ### `command`
 
 Serializable command classification and command-boundary DTOs when those live
-inside engine-next.
+inside engine.
 
 Owns read/write/maintenance classification, access-mode requirements, command
 schema versioning facts, and command error status mapping. Executor/CLI may

@@ -2,7 +2,7 @@
 
 ## Scope
 
-PERF-I2B replaces the runtime duplicate mutation check in storage-next with a
+PERF-I2B replaces the runtime duplicate mutation check in storage with a
 non-quadratic implementation. This is a targeted load-path correction, not a
 storage architecture change.
 
@@ -32,10 +32,10 @@ Latest 100K sequential cache-load comparison, 1,000 mutations per batch,
 
 | Engine | Throughput | Elapsed |
 | --- | ---: | ---: |
-| storage-next cache | 184,936 ops/s | 540.73 ms |
+| storage cache | 184,936 ops/s | 540.73 ms |
 | old cache | 486,861 ops/s | 205.40 ms |
 
-Measured storage-next load counters:
+Measured storage load counters:
 
 | Counter | Value |
 | --- | ---: |
@@ -70,7 +70,7 @@ Conclusion:
 
 Hot file:
 
-`crates/storage-next/src/commit/batch.rs`
+`crates/storage/src/commit/batch.rs`
 
 Hot helper:
 
@@ -159,8 +159,8 @@ indices and choosing the smallest later duplicate index before returning.
 
 Files:
 
-1. `crates/storage-next/src/commit/batch.rs`
-2. `crates/storage-next/src/commit/tests/batch.rs`
+1. `crates/storage/src/commit/batch.rs`
+2. `crates/storage/src/commit/tests/batch.rs`
 
 Work:
 
@@ -178,8 +178,8 @@ Existing duplicate mutation tests pass before the implementation change.
 
 Files:
 
-1. `crates/storage-next/src/commit/batch.rs`
-2. `crates/storage-next/src/observability/perf_trace.rs`
+1. `crates/storage/src/commit/batch.rs`
+2. `crates/storage/src/observability/perf_trace.rs`
 
 Work:
 
@@ -204,16 +204,16 @@ Run:
 
 ```sh
 cargo fmt --all -- --check
-cargo check -p strata-storage-next --features perf-trace
-cargo test -p strata-storage-next --lib --features perf-trace duplicate_mutation
-cargo test -p strata-storage-next --lib --features perf-trace conflict
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale -- --scales 100k --engines cache --workloads load-seq --samples 1000 --value-bytes 150
+cargo check -p strata-storage --features perf-trace
+cargo test -p strata-storage --lib --features perf-trace duplicate_mutation
+cargo test -p strata-storage --lib --features perf-trace conflict
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale -- --scales 100k --engines cache --workloads load-seq --samples 1000 --value-bytes 150
 cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-old-cache-scale -- --scales 100k --workloads load-seq --samples 1000 --value-bytes 150
 ```
 
-Record the new storage-next result JSON and compare against the current result:
+Record the new storage result JSON and compare against the current result:
 
-`benchmarks/results/storage-next-l9/storage-next-l9-scale-2026-06-04T20-52-59Z-6e4ccce4.json`
+`benchmarks/results/storage-l9/storage-l9-scale-2026-06-04T20-52-59Z-6e4ccce4.json`
 
 Also keep the old-cache comparison result:
 
@@ -227,7 +227,7 @@ Proceed only if the fix moves the measured bottleneck:
    per user mutation row, about 100,000 checks for this benchmark;
 2. runtime validation time drops by at least 10x, from about 392 ms to under
    40 ms for the 100K cache load;
-3. storage-next cache load improves materially, with an initial target of at
+3. storage cache load improves materially, with an initial target of at
    least 350K ops/s or commit-call time below 250 ms;
 4. if throughput improves by less than 25%, stop and profile again before
    implementing any further load-path changes.
@@ -251,12 +251,12 @@ PERF-I2B is complete when:
 2. runtime duplicate validation is non-quadratic;
 3. the 100K cache load benchmark is rerun;
 4. the decision gates are recorded in the perf-tuning notes;
-5. any remaining storage-next vs old-cache gap has a fresh profile before the
+5. any remaining storage vs old-cache gap has a fresh profile before the
    next implementation plan is written.
 
 ## Implementation Result
 
-Implemented on the `perf/storage-next-traces-fixes` branch.
+Implemented on the `perf/storage-traces-fixes` branch.
 
 Storage-next 100K cache load after the runtime duplicate-check fix:
 
@@ -272,12 +272,12 @@ Same-session old-cache comparison:
 
 | Engine | Throughput | Elapsed | Commit Call Time |
 | --- | ---: | ---: | ---: |
-| storage-next cache | 705,607 ops/s | 141.72 ms | 118.25 ms |
+| storage cache | 705,607 ops/s | 141.72 ms | 118.25 ms |
 | old cache | 494,481 ops/s | 202.23 ms | 181.67 ms |
 
 Benchmark artifacts:
 
-1. `benchmarks/results/storage-next-l9/storage-next-l9-scale-2026-06-04T21-13-37Z-6e4ccce4.json`
+1. `benchmarks/results/storage-l9/storage-l9-scale-2026-06-04T21-13-37Z-6e4ccce4.json`
 2. `benchmarks/results/storage-old-cache/storage-old-cache-scale-2026-06-04T21-13-48Z-6e4ccce4.json`
 
 Decision:

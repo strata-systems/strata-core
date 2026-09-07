@@ -1,3 +1,17 @@
+# What DEVELOPERS build and test with. This is not the compatibility promise —
+# see `rust-version` in Cargo.toml for that. The two differ on purpose (#3150):
+#
+#   rust-version = "1.91"   the MSRV PROMISE to users. CI verifies it on every
+#                           PR (`msrv` job: rust-toolchain@1.91, then
+#                           `cargo check --locked --workspace`), lib and bin
+#                           targets only — MSRV is a promise about what users
+#                           COMPILE, not about running our test suite.
+#   channel = "1.94.1"      what this repo's contributors use, so lints and
+#                           formatting are reproducible across machines.
+#
+# A user on 1.91 can build Strata. A contributor on 1.91 may not be able to run
+# the tests. Both statements are intended.
+
 [toolchain]
 channel = "1.94.1"
 components = ["rustfmt", "clippy"]

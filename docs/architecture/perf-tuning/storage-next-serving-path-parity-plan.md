@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Restore storage-next serving-path performance to match the old storage engine's
+Restore storage serving-path performance to match the old storage engine's
 implementation model while keeping the L9 public storage APIs. The current
 100K-key benchmark results show a systemic regression in both cache and
 standard modes, but the active work in this plan is proof and measurement only.
@@ -26,8 +26,8 @@ The working baseline from recent local runs:
 | Engine | Mode | Scale | Load | Point latest | Range scan |
 | --- | --- | ---: | ---: | ---: | ---: |
 | old storage | cache | 100K | ~493K ops/s | ~583K ops/s | ~88K ops/s |
-| storage-next | cache | 100K | ~35K ops/s | ~45 ops/s | ~22 ops/s |
-| storage-next | standard | 100K | ~35K ops/s | ~48 ops/s | ~22 ops/s |
+| storage | cache | 100K | ~35K ops/s | ~45 ops/s | ~22 ops/s |
+| storage | standard | 100K | ~35K ops/s | ~48 ops/s | ~22 ops/s |
 
 The standard-mode result confirms the regression is not caused by cache-mode
 divergence alone. The likely shared causes are branch snapshot cloning,
@@ -82,7 +82,7 @@ with a short decision note that states:
 
 ### PERF-P0A: Counter Audit
 
-Identify the smallest set of counters needed to prove whether storage-next is
+Identify the smallest set of counters needed to prove whether storage is
 doing materially more work than the old engine on the hot paths.
 
 Counters to confirm or add:
@@ -107,8 +107,8 @@ Run the current implementation with counters before changing serving behavior.
 
 Required runs:
 
-1. storage-next cache at 100K keys;
-2. storage-next standard at 100K keys;
+1. storage cache at 100K keys;
+2. storage standard at 100K keys;
 3. old storage cache at 100K keys, where comparable counters or proxy metrics
    are available.
 
@@ -301,7 +301,7 @@ materialization on point and bounded range reads.
 
 Scope:
 
-1. Compare storage-next immutable table readers against the old segment reader's
+1. Compare storage immutable table readers against the old segment reader's
    bloom/index/block-cache model.
 2. Preserve current durable object format for the first pass if possible.
 3. If the current format cannot support lazy serving, document the exact format
@@ -379,8 +379,8 @@ Every promoted correction slice must satisfy these gates:
 
 1. `cargo fmt --all -- --check`
 2. `cargo clippy --workspace --all-targets -- -D warnings`
-3. `cargo test -p strata-storage-next`
-4. `cargo test -p strata-storage-next --test format_goldens`
+3. `cargo test -p strata-storage`
+4. `cargo test -p strata-storage --test format_goldens`
 5. Any localfs-specific tests touched by the slice with `--features localfs`
 6. 100K benchmark rerun for any slice that changes commit, read, scan, table, or
    branch snapshot code
