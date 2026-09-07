@@ -697,3 +697,97 @@ fn remote_on_a_never_cloned_database_reports_null_origin() {
         stdout(&human)
     );
 }
+
+/// #3112 S5: the loop the whole epic exists to enable — read history, take a
+/// date off a row, hand it straight back as a read bound.
+///
+/// This is an end-to-end test through the real binary on purpose. The two
+/// halves live in different places (formatting on the way out, parsing on the
+/// way in) and each is individually correct in unit tests; only running them
+/// against each other proves the date a user actually sees is a date the tool
+/// actually accepts.
+///
+/// It also pins the precision contract. An earlier build printed milliseconds,
+/// which looked fine and round-tripped to the commit BEFORE the one it came
+/// from — a silently wrong read rather than an error.
+#[test]
+fn a_date_printed_by_history_reads_back_the_value_from_that_commit() {
+    let dir = tempfile::tempdir().expect("tmp");
+    let db = dir.path().join("db");
+    let db = db.to_str().expect("utf8 path");
+
+    assert!(strata(&[db, "kv", "put", "k", "one"]).status.success());
+    // Separate the commits in wall-clock time so each is individually
+    // addressable by date.
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    assert!(strata(&[db, "kv", "put", "k", "two"]).status.success());
+
+    let history = stdout(&strata(&[db, "kv", "history", "k"]));
+    let oldest = history
+        .lines()
+        .rfind(|line| !line.trim().is_empty())
+        .expect("history has an oldest row");
+    let row: serde_json::Value = serde_json::from_str(oldest).expect("history row is JSON");
+    let printed = row["committed_at"]
+        .as_str()
+        .expect("human output renders committed_at as a date string");
+
+    // It reads as a date, not as a raw number.
+    assert!(
+        printed.contains('-') && printed.contains(':'),
+        "expected a rendered date, got {printed}"
+    );
+
+    // And handing it straight back reaches that commit's value.
+    let read_back = strata(&[db, "kv", "get", "k", "--as-of-time", printed]);
+    assert!(
+        read_back.status.success(),
+        "reading at a printed date failed: {}",
+        stderr(&read_back)
+    );
+    assert_eq!(
+        stdout(&read_back).trim(),
+        "one",
+        "the date from the oldest row must read that row's value, not a \
+         neighbouring commit's"
+    );
+
+    // Current state is still the newer value, so the read above was genuine
+    // time travel rather than a plain read.
+    assert_eq!(stdout(&strata(&[db, "kv", "get", "k"])).trim(), "two");
+}
+
+/// The two clocks stay mutually exclusive through the CLI, and an unparseable
+/// date is refused with a message that shows a spelling that works.
+#[test]
+fn the_cli_refuses_both_clocks_and_explains_an_unparseable_date() {
+    let dir = tempfile::tempdir().expect("tmp");
+    let db = dir.path().join("db");
+    let db = db.to_str().expect("utf8 path");
+    assert!(strata(&[db, "kv", "put", "k", "v"]).status.success());
+
+    let both = strata(&[
+        db,
+        "kv",
+        "get",
+        "k",
+        "--as-of",
+        "3",
+        "--as-of-time",
+        "2026-09-05 15:00",
+    ]);
+    assert!(!both.status.success(), "supplying both clocks must fail");
+    assert!(
+        stderr(&both).contains("as_of_conflict"),
+        "expected the mutual-exclusion error: {}",
+        stderr(&both)
+    );
+
+    let bad = strata(&[db, "kv", "get", "k", "--as-of-time", "yesterday"]);
+    assert!(!bad.status.success(), "an unparseable date must fail");
+    let message = stderr(&bad);
+    assert!(
+        message.contains("2026-09-05"),
+        "the refusal must show a working spelling: {message}"
+    );
+}

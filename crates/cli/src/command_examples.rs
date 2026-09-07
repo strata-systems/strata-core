@@ -116,7 +116,16 @@ fn mask_volatile(value: &mut Value, variant: u8) {
     match value {
         Value::Object(map) => {
             for (key, child) in map.iter_mut() {
-                if VOLATILE_FIELDS.contains(&key.as_str()) {
+                if key == "committed_at" {
+                    // #3112 S5: human rendering turns an instant into a LOCAL
+                    // date, so a numeric sentinel here would bake the capturing
+                    // machine's time zone into a committed file — and render
+                    // the epoch as a 1969 date, the very symptom this epic
+                    // exists to remove. `null` is already the wire's own
+                    // "unknown", is machine-independent, and passes through
+                    // rendering untouched.
+                    *child = Value::Null;
+                } else if VOLATILE_FIELDS.contains(&key.as_str()) {
                     mask_leaf(child, variant);
                 } else {
                     mask_volatile(child, variant);

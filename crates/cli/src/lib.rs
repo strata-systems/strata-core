@@ -51,6 +51,7 @@ mod repl;
 mod uninstall;
 #[cfg(feature = "native")]
 mod update;
+mod wall_clock;
 
 #[cfg(feature = "native")]
 use context::CommandContext;
@@ -942,6 +943,9 @@ fn branch_command(command: BranchCommand) -> Result<Command, CliError> {
             (None, None) | (Some(_), Some(_)) => Command::BranchForkCurrent { source, branch },
         },
         BranchCommand::Delete { branch } => Command::BranchDelete { branch },
+        // #3112 S5: `branch diff` reaches a different wire field
+        // (`at_timestamp`, not `as_of`), so it has no `as_of_time` counterpart
+        // to offer yet — giving it one is a wire change, not a CLI change.
         BranchCommand::Diff {
             branch_a,
             branch_b,
@@ -995,6 +999,20 @@ fn space_command(command: SpaceCommand, scope: &Scope) -> Command {
     }
 }
 
+/// #3112 S5: parses `--as-of-time` into the UTC epoch microseconds the wire
+/// carries. Refusals name a working spelling rather than just rejecting.
+///
+/// Ungated: the command mappings that call it are compiled for the browser
+/// target too, where a `--as-of-time` value still has to become an instant.
+fn as_of_time_micros(input: Option<&str>) -> Result<Option<u64>, CliError> {
+    input
+        .map(|text| {
+            crate::wall_clock::parse_instant(text)
+                .map_err(|reason| CliError::usage(format!("invalid --as-of-time: {reason}")))
+        })
+        .transpose()
+}
+
 fn kv_command(command: KvCommand, scope: &Scope) -> Result<Command, CliError> {
     Ok(match command {
         KvCommand::Put { key, value, file } => Command::KvPut {
@@ -1003,12 +1021,16 @@ fn kv_command(command: KvCommand, scope: &Scope) -> Result<Command, CliError> {
             key: bytes(key),
             value: bytes_argument(value.as_deref(), file.as_ref())?,
         },
-        KvCommand::Get { key, as_of } => Command::KvGet {
+        KvCommand::Get {
+            key,
+            as_of,
+            as_of_time,
+        } => Command::KvGet {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
             key: bytes(key),
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         KvCommand::Delete { key } => Command::KvDelete {
             branch: scope.branch.clone(),
@@ -1020,6 +1042,7 @@ fn kv_command(command: KvCommand, scope: &Scope) -> Result<Command, CliError> {
             cursor,
             limit,
             as_of,
+            as_of_time,
         } => Command::KvList {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
@@ -1027,7 +1050,7 @@ fn kv_command(command: KvCommand, scope: &Scope) -> Result<Command, CliError> {
             cursor: cursor.as_deref().map(cursor_argument).transpose()?,
             limit,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         KvCommand::Scan {
             start,
@@ -1086,13 +1109,18 @@ fn json_command(command: JsonCommand, scope: &Scope) -> Result<Command, CliError
             path,
             value: parse_relaxed_json_argument(value.as_deref(), file.as_ref(), "json value")?,
         },
-        JsonCommand::Get { key, path, as_of } => Command::JsonGet {
+        JsonCommand::Get {
+            key,
+            path,
+            as_of,
+            as_of_time,
+        } => Command::JsonGet {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
             key,
             path,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         JsonCommand::Delete { key, path } => Command::JsonDelete {
             branch: scope.branch.clone(),
@@ -1105,6 +1133,7 @@ fn json_command(command: JsonCommand, scope: &Scope) -> Result<Command, CliError
             cursor,
             limit,
             as_of,
+            as_of_time,
         } => Command::JsonList {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
@@ -1112,7 +1141,7 @@ fn json_command(command: JsonCommand, scope: &Scope) -> Result<Command, CliError
             cursor,
             limit,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         JsonCommand::Scan {
             start,
@@ -1206,13 +1235,14 @@ fn vector_command(command: VectorCommand, scope: &Scope) -> Result<Command, CliE
             collection,
             key,
             as_of,
+            as_of_time,
         } => Command::VectorGet {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
             collection,
             key,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         VectorCommand::History { collection, key } => Command::VectorHistory {
             branch: scope.branch.clone(),
@@ -1296,6 +1326,7 @@ fn vector_command(command: VectorCommand, scope: &Scope) -> Result<Command, CliE
             filter,
             filter_file,
             as_of,
+            as_of_time,
             diagnostics,
         } => {
             let command_filter =
@@ -1309,7 +1340,7 @@ fn vector_command(command: VectorCommand, scope: &Scope) -> Result<Command, CliE
                     k,
                     filter: command_filter,
                     as_of,
-                    as_of_time: None,
+                    as_of_time: as_of_time_micros(as_of_time.as_deref())?,
                 }
             } else {
                 Command::VectorQuery {
@@ -1320,7 +1351,7 @@ fn vector_command(command: VectorCommand, scope: &Scope) -> Result<Command, CliE
                     k,
                     filter: command_filter,
                     as_of,
-                    as_of_time: None,
+                    as_of_time: as_of_time_micros(as_of_time.as_deref())?,
                 }
             }
         }
@@ -1370,6 +1401,8 @@ fn vector_collection_command(command: VectorCollectionCommand, scope: &Scope) ->
     }
 }
 
+// A flat command-mapping table, like its vector/graph/json siblings.
+#[allow(clippy::too_many_lines)]
 fn event_command(command: EventCommand, scope: &Scope) -> Result<Command, CliError> {
     Ok(match command {
         EventCommand::Append {
@@ -1382,29 +1415,34 @@ fn event_command(command: EventCommand, scope: &Scope) -> Result<Command, CliErr
             event_type,
             payload: parse_json_argument(payload.as_deref(), file.as_ref(), "event payload")?,
         },
-        EventCommand::Get { sequence, as_of } => Command::EventGet {
+        EventCommand::Get {
+            sequence,
+            as_of,
+            as_of_time,
+        } => Command::EventGet {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
             sequence,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         EventCommand::Exists { sequence } => Command::EventExists {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
             sequence,
         },
-        EventCommand::Count { as_of } => Command::EventCount {
+        EventCommand::Count { as_of, as_of_time } => Command::EventCount {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         EventCommand::List {
             event_type,
             limit,
             after_sequence,
             as_of,
+            as_of_time,
         } => Command::EventList {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
@@ -1412,19 +1450,20 @@ fn event_command(command: EventCommand, scope: &Scope) -> Result<Command, CliErr
             limit,
             after_sequence,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
-        EventCommand::Types { as_of } => Command::EventListTypes {
+        EventCommand::Types { as_of, as_of_time } => Command::EventListTypes {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         EventCommand::ByType {
             event_type,
             limit,
             after_sequence,
             as_of,
+            as_of_time,
         } => Command::EventList {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
@@ -1432,7 +1471,7 @@ fn event_command(command: EventCommand, scope: &Scope) -> Result<Command, CliErr
             limit,
             after_sequence,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         EventCommand::Range {
             start_seq,
@@ -1488,20 +1527,25 @@ fn graph_command(command: GraphCommand, scope: &Scope) -> Result<Command, CliErr
             cursor,
             limit,
             as_of,
+            as_of_time,
         } => Command::GraphList {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
             cursor,
             limit,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
-        GraphCommand::Meta { graph, as_of } => Command::GraphGetMeta {
+        GraphCommand::Meta {
+            graph,
+            as_of,
+            as_of_time,
+        } => Command::GraphGetMeta {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
             graph,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         GraphCommand::AddNode {
             graph,
@@ -1526,13 +1570,14 @@ fn graph_command(command: GraphCommand, scope: &Scope) -> Result<Command, CliErr
             graph,
             node_id,
             as_of,
+            as_of_time,
         } => Command::GraphGetNode {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
             graph,
             node_id,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         GraphCommand::RemoveNode { graph, node_id } => Command::GraphRemoveNode {
             branch: scope.branch.clone(),
@@ -1546,6 +1591,7 @@ fn graph_command(command: GraphCommand, scope: &Scope) -> Result<Command, CliErr
             cursor,
             limit,
             as_of,
+            as_of_time,
         } => Command::GraphListNodes {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
@@ -1554,7 +1600,7 @@ fn graph_command(command: GraphCommand, scope: &Scope) -> Result<Command, CliErr
             cursor,
             limit,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         GraphCommand::Sample { graph, count } => Command::GraphSample {
             branch: scope.branch.clone(),
@@ -1590,6 +1636,7 @@ fn graph_command(command: GraphCommand, scope: &Scope) -> Result<Command, CliErr
             edge_type,
             dst,
             as_of,
+            as_of_time,
         } => Command::GraphGetEdge {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
@@ -1598,7 +1645,7 @@ fn graph_command(command: GraphCommand, scope: &Scope) -> Result<Command, CliErr
             edge_type,
             dst,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         GraphCommand::RemoveEdge {
             graph,
@@ -1621,6 +1668,7 @@ fn graph_command(command: GraphCommand, scope: &Scope) -> Result<Command, CliErr
             cursor,
             limit,
             as_of,
+            as_of_time,
         } => Command::GraphNeighbors {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
@@ -1631,7 +1679,7 @@ fn graph_command(command: GraphCommand, scope: &Scope) -> Result<Command, CliErr
             cursor,
             limit,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         GraphCommand::NodesByType {
             graph,
@@ -1639,6 +1687,7 @@ fn graph_command(command: GraphCommand, scope: &Scope) -> Result<Command, CliErr
             cursor,
             limit,
             as_of,
+            as_of_time,
         } => Command::GraphNodesByType {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
@@ -1647,30 +1696,39 @@ fn graph_command(command: GraphCommand, scope: &Scope) -> Result<Command, CliErr
             cursor,
             limit,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         GraphCommand::Ontology(args) => graph_ontology_command(args.command, scope)?,
-        GraphCommand::Wcc { graph, as_of } => Command::GraphWcc {
+        GraphCommand::Wcc {
+            graph,
+            as_of,
+            as_of_time,
+        } => Command::GraphWcc {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
             graph,
             budget: None,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
-        GraphCommand::Lcc { graph, as_of } => Command::GraphLcc {
+        GraphCommand::Lcc {
+            graph,
+            as_of,
+            as_of_time,
+        } => Command::GraphLcc {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
             graph,
             budget: None,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         GraphCommand::Sssp {
             graph,
             source,
             direction,
             as_of,
+            as_of_time,
         } => Command::GraphSssp {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
@@ -1679,7 +1737,7 @@ fn graph_command(command: GraphCommand, scope: &Scope) -> Result<Command, CliErr
             direction: Some(direction.into()),
             budget: None,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         GraphCommand::Pagerank {
             graph,
@@ -1688,6 +1746,7 @@ fn graph_command(command: GraphCommand, scope: &Scope) -> Result<Command, CliErr
             tolerance,
             personalization,
             as_of,
+            as_of_time,
         } => Command::GraphPagerank {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
@@ -1701,13 +1760,14 @@ fn graph_command(command: GraphCommand, scope: &Scope) -> Result<Command, CliErr
                 .transpose()?,
             budget: None,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         GraphCommand::Cdlp {
             graph,
             max_iterations,
             direction,
             as_of,
+            as_of_time,
         } => Command::GraphCdlp {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
@@ -1716,7 +1776,7 @@ fn graph_command(command: GraphCommand, scope: &Scope) -> Result<Command, CliErr
             direction: Some(direction.into()),
             budget: None,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
         GraphCommand::BulkInsert {
             graph,
@@ -1748,6 +1808,7 @@ fn graph_command(command: GraphCommand, scope: &Scope) -> Result<Command, CliErr
             edge_types,
             direction,
             as_of,
+            as_of_time,
         } => Command::GraphBfs {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
@@ -1763,7 +1824,7 @@ fn graph_command(command: GraphCommand, scope: &Scope) -> Result<Command, CliErr
             direction: Some(direction.into()),
             budget: None,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
     })
 }
@@ -1836,19 +1897,27 @@ fn graph_ontology_command(
             space: scope.space.clone(),
             graph,
         },
-        GraphOntologyCommand::Get { graph, as_of } => Command::GraphGetOntology {
+        GraphOntologyCommand::Get {
+            graph,
+            as_of,
+            as_of_time,
+        } => Command::GraphGetOntology {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
             graph,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
-        GraphOntologyCommand::Summary { graph, as_of } => Command::GraphOntologySummary {
+        GraphOntologyCommand::Summary {
+            graph,
+            as_of,
+            as_of_time,
+        } => Command::GraphOntologySummary {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
             graph,
             as_of,
-            as_of_time: None,
+            as_of_time: as_of_time_micros(as_of_time.as_deref())?,
         },
     })
 }

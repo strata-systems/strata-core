@@ -27,6 +27,10 @@ pub fn output_to_string(output: &Output, format: Format) -> Result<String, CliEr
     // JSON and pretty formats stay wire-true (base64).
     if matches!(format, Format::Human | Format::Raw) {
         humanize_kv_bytes(output, &mut value);
+        // #3112 S5: a wall-clock instant is only useful to a reader as a date.
+        // JSON and pretty stay wire-true (raw epoch micros) so machine
+        // consumers keep an unambiguous number.
+        humanize_committed_at(&mut value);
     }
     value_to_string(&value, format)
 }
@@ -875,6 +879,32 @@ fn human_error_line(value: &Value) -> String {
         rendered.push_str(docs);
     }
     rendered
+}
+
+/// #3112 S5: renders every `committed_at` in an envelope as a local date-time
+/// with its offset.
+///
+/// Recurses because instants appear at several depths — on a write ack's
+/// commit receipt, and on every row of a history list. Only this one field is
+/// touched, and only for human-facing formats; anything that is not a number
+/// is left exactly as it is, so an already-formatted or absent value passes
+/// through untouched.
+fn humanize_committed_at(value: &mut Value) {
+    match value {
+        Value::Object(fields) => {
+            for (key, child) in fields.iter_mut() {
+                if key == "committed_at" {
+                    if let Some(micros) = child.as_u64() {
+                        *child = Value::String(crate::wall_clock::format_instant(micros));
+                    }
+                } else {
+                    humanize_committed_at(child);
+                }
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(humanize_committed_at),
+        _ => {}
+    }
 }
 
 #[cfg(test)]
