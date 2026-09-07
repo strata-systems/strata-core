@@ -1,6 +1,7 @@
 //! Adapter from engine persistence plans to the storage crate.
 
 use std::path::PathBuf;
+use std::sync::{Mutex, MutexGuard};
 
 use strata_core::BranchId;
 use strata_core::{CommitVersion, Timestamp};
@@ -141,12 +142,15 @@ pub(crate) struct StoragePersistence {
     durable: bool,
     /// Armed by artifact import replay: the NEXT commit is stamped with
     /// this timestamp (consumed exactly once). See `crate::artifact`.
-    replay_commit_timestamp: Option<Timestamp>,
+    ///
+    /// Behind a lock so `commit` can consume it through `&self` (#3126).
+    /// Arming stays `&mut self` deliberately — see `arm_replay_commit_timestamp`.
+    replay_commit_timestamp: Mutex<Option<Timestamp>>,
     /// Held during multi-branch import setup: any commit without a one-shot
     /// replay timestamp (branch and space bookkeeping) is stamped with this
     /// value so structural writes never advance the floor past the content
     /// that replays next. Not consumed; cleared explicitly. See #3070.
-    replay_structural_timestamp: Option<Timestamp>,
+    replay_structural_timestamp: Mutex<Option<Timestamp>>,
     #[cfg(any(test, feature = "testkit"))]
     faults: FaultSchedule,
     #[cfg(any(test, feature = "testkit"))]
@@ -378,6 +382,16 @@ impl PersistenceImmutableSource {
     }
 }
 
+/// Borrows a replay-timestamp cell, recovering from poisoning.
+///
+/// The cell holds an `Option<Timestamp>` and no invariant a panic could break,
+/// so a panicking caller must not make replay permanently unusable for the rest
+/// of the process.
+fn replay(cell: &Mutex<Option<Timestamp>>) -> MutexGuard<'_, Option<Timestamp>> {
+    cell.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 impl StoragePersistence {
     #[cfg(test)]
     pub(crate) fn open(
@@ -431,8 +445,8 @@ impl StoragePersistence {
             Self {
                 runtime,
                 durable,
-                replay_commit_timestamp: None,
-                replay_structural_timestamp: None,
+                replay_commit_timestamp: Mutex::new(None),
+                replay_structural_timestamp: Mutex::new(None),
                 #[cfg(any(test, feature = "testkit"))]
                 faults: FaultSchedule::default(),
                 #[cfg(any(test, feature = "testkit"))]
@@ -680,17 +694,31 @@ impl StoragePersistence {
 
     /// Arms the next commit with an explicit replay timestamp (consumed
     /// exactly once by [`Self::commit`]).
+    ///
+    /// **`&mut self` is deliberate, not a technical requirement.** The field is
+    /// behind a lock, so `&self` would compile. But this is *ambient* state
+    /// consumed by whichever commit happens next, and once `commit` takes
+    /// `&self` (#3126) a concurrent writer could consume a timestamp armed for
+    /// someone else. Requiring exclusivity to arm means replay state can only
+    /// be established by a holder that excludes all other writers — which is
+    /// exactly what `Database::import_branch_artifact(&mut self, …)` is.
+    ///
+    /// If this ever needs to be armed without exclusivity, the honest fix is to
+    /// thread the timestamp through the commit call rather than to relax this
+    /// signature.
     pub(crate) fn arm_replay_commit_timestamp(&mut self, timestamp: Timestamp) {
-        self.replay_commit_timestamp = Some(timestamp);
+        *replay(&self.replay_commit_timestamp) = Some(timestamp);
     }
 
     /// Holds (or clears with `None`) the structural replay timestamp used for
     /// import setup commits that carry no one-shot timestamp. See #3070.
+    ///
+    /// `&mut self` for the same reason as [`Self::arm_replay_commit_timestamp`].
     pub(crate) fn set_replay_structural_timestamp(&mut self, timestamp: Option<Timestamp>) {
-        self.replay_structural_timestamp = timestamp;
+        *replay(&self.replay_structural_timestamp) = timestamp;
     }
 
-    pub(crate) fn commit(&mut self, plan: &CommitPlan) -> EngineResult<CommitOutcome> {
+    pub(crate) fn commit(&self, plan: &CommitPlan) -> EngineResult<CommitOutcome> {
         self.guard_fault(FaultOp::Commit)?;
         let mut mutations = Vec::with_capacity(plan.mutations().len());
         for mutation in plan.mutations() {
@@ -700,10 +728,9 @@ impl StoragePersistence {
         // structural timestamp (branch/space setup during import) keeps those
         // bookkeeping commits from advancing the floor past the content that
         // replays next. Neither set ⇒ ordinary generated allocation. See #3070.
-        let replay_timestamp = self
-            .replay_commit_timestamp
+        let replay_timestamp = replay(&self.replay_commit_timestamp)
             .take()
-            .or(self.replay_structural_timestamp);
+            .or_else(|| *replay(&self.replay_structural_timestamp));
         let mut options = CommitOptions::default();
         if let Some(generation) = plan.expected_generation() {
             options = options.with_expected_generation(StorageBranchGeneration::new(generation));
