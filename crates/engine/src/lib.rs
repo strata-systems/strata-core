@@ -24,6 +24,16 @@ pub mod test_support;
 #[cfg(any(test, feature = "testkit"))]
 pub mod testkit;
 
+/// Core value types that appear in this crate's public API.
+///
+/// A write acknowledgement hands back a [`CommitVersion`] and a [`Timestamp`];
+/// a branch resolves to a [`BranchId`]. They are defined in `strata-core`, and
+/// are re-exported here so a caller can name the type of their own result
+/// without taking a second dependency (#3190).
+pub use strata_core::{
+    BranchId, BranchIdError, CommitVersion, ParseCommitVersionError, ParseTimestampError, Timestamp,
+};
+
 pub use api::{
     error_code_registry_entries, error_code_registry_entry, AdminCapabilitySummary,
     AdminConfigSummary, AdminDatabaseInfo, AdminDescribeSummary, AdminGraphSummary,
