@@ -23,6 +23,7 @@ use strata_executor::ipc::{Connection, SessionAccess};
 #[cfg(feature = "native")]
 use strata_executor::{Executor, IpcMode};
 
+#[cfg(feature = "native")]
 mod agents;
 #[cfg(test)]
 mod arg_spec;
@@ -50,7 +51,6 @@ mod repl;
 mod uninstall;
 #[cfg(feature = "native")]
 mod update;
-#[cfg(feature = "native")]
 mod wall_clock;
 
 #[cfg(feature = "native")]
@@ -123,17 +123,6 @@ where
 /// command); this applies the session scope and serves stdio until the
 /// client closes stdin.
 #[cfg(feature = "native")]
-/// #3112 S5: parses `--as-of-time` into the UTC epoch microseconds the wire
-/// carries. Refusals name a working spelling rather than just rejecting.
-fn as_of_time_micros(input: Option<&str>) -> Result<Option<u64>, CliError> {
-    input
-        .map(|text| {
-            crate::wall_clock::parse_instant(text)
-                .map_err(|reason| CliError::usage(format!("invalid --as-of-time: {reason}")))
-        })
-        .transpose()
-}
-
 fn serve_mcp(connection: Connection, context: &CommandContext) -> Result<i32, CliError> {
     let scope = context.scope_with_overrides(None, None);
     if let Some(branch) = scope.branch.as_deref() {
@@ -1008,6 +997,20 @@ fn space_command(command: SpaceCommand, scope: &Scope) -> Command {
             force,
         },
     }
+}
+
+/// #3112 S5: parses `--as-of-time` into the UTC epoch microseconds the wire
+/// carries. Refusals name a working spelling rather than just rejecting.
+///
+/// Ungated: the command mappings that call it are compiled for the browser
+/// target too, where a `--as-of-time` value still has to become an instant.
+fn as_of_time_micros(input: Option<&str>) -> Result<Option<u64>, CliError> {
+    input
+        .map(|text| {
+            crate::wall_clock::parse_instant(text)
+                .map_err(|reason| CliError::usage(format!("invalid --as-of-time: {reason}")))
+        })
+        .transpose()
 }
 
 fn kv_command(command: KvCommand, scope: &Scope) -> Result<Command, CliError> {
