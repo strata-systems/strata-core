@@ -418,6 +418,7 @@ fn print_inference_models(data: &Value, out: &mut String) {
         line!(out, "(none)");
         return;
     }
+    let mut unavailable = 0usize;
     for item in items {
         let text = |key: &str| {
             item.get(key)
@@ -425,10 +426,19 @@ fn print_inference_models(data: &Value, out: &mut String) {
                 .unwrap_or("-")
                 .to_owned()
         };
-        let local = if item.get("is_local").and_then(Value::as_bool) == Some(true) {
-            "local"
-        } else {
-            "remote"
+        // #3124: the old column showed `is_local`, which is about the file on
+        // disk, and read as "you can use this". A released binary reports the
+        // file present for eleven models it cannot load. Report what the user
+        // can actually do instead.
+        let downloaded = item.get("is_local").and_then(Value::as_bool) == Some(true);
+        let runnable = item.get("runnable").and_then(Value::as_bool) != Some(false);
+        let status = match (runnable, downloaded) {
+            (false, _) => {
+                unavailable += 1;
+                "unavailable"
+            }
+            (true, true) => "ready",
+            (true, false) => "not downloaded",
         };
         let size = item.get("size_bytes").and_then(Value::as_u64).map_or_else(
             || "-".to_owned(),
@@ -441,8 +451,16 @@ fn print_inference_models(data: &Value, out: &mut String) {
             text("task"),
             text("architecture"),
             text("default_quant"),
-            local,
+            status,
             size
+        );
+    }
+    if unavailable > 0 {
+        line!(
+            out,
+            "\n{unavailable} model(s) unavailable: this build cannot run local \
+             models. Add them with `strata inference install-local`, or use a \
+             cloud model (`openai:`, `google:`, `anthropic:`)."
         );
     }
 }
@@ -1500,14 +1518,76 @@ mod tests {
             "type": "inference_models",
             "data": { "items": [{
                 "name": "m", "task": "chat", "architecture": "llama",
-                "default_quant": "q4", "is_local": true, "size_bytes": 1_048_576
+                "default_quant": "q4", "is_local": true, "runnable": true,
+                "size_bytes": 1_048_576
             }] }
         });
-        assert_eq!(human(&list), "m\tchat\tllama\tq4\tlocal\t1.0 MB\n");
+        assert_eq!(human(&list), "m\tchat\tllama\tq4\tready\t1.0 MB\n");
         let none = json!({ "type": "inference_models", "data": { "items": [] } });
         assert_eq!(human(&none), "(none)\n");
         let nil = json!({ "type": "inference_models", "data": {} });
         assert_eq!(human(&nil), "(nil)\n");
+    }
+
+    /// #3124: a released binary lists models it cannot load. The row must say
+    /// so, and the footer must name both ways forward.
+    #[test]
+    fn human_inference_models_marks_what_this_build_cannot_run() {
+        let list = json!({
+            "type": "inference_models",
+            "data": { "items": [
+                {
+                    "name": "miniLM", "task": "embed", "architecture": "bert",
+                    "default_quant": "f16", "is_local": true, "runnable": false,
+                    "size_bytes": 1_048_576
+                },
+                {
+                    "name": "gpt2", "task": "generate", "architecture": "gpt2",
+                    "default_quant": "q8_0", "is_local": false, "runnable": false,
+                    "size_bytes": 2_097_152
+                }
+            ] }
+        });
+        let rendered = human(&list);
+        // The file being present must not read as "usable".
+        assert!(
+            rendered.contains("miniLM\tembed\tbert\tf16\tunavailable\t1.0 MB"),
+            "a downloaded but unrunnable model must still read unavailable: {rendered}"
+        );
+        assert!(rendered.contains("2 model(s) unavailable"));
+        assert!(rendered.contains("strata inference install-local"));
+        assert!(
+            rendered.contains("openai:"),
+            "the footer names the no-rebuild path"
+        );
+    }
+
+    /// A build that can run local models says nothing about unavailability, and
+    /// distinguishes downloaded from not.
+    #[test]
+    fn human_inference_models_separates_ready_from_not_downloaded() {
+        let list = json!({
+            "type": "inference_models",
+            "data": { "items": [
+                {
+                    "name": "here", "task": "embed", "architecture": "bert",
+                    "default_quant": "f16", "is_local": true, "runnable": true,
+                    "size_bytes": 1_048_576
+                },
+                {
+                    "name": "absent", "task": "embed", "architecture": "bert",
+                    "default_quant": "f16", "is_local": false, "runnable": true,
+                    "size_bytes": 1_048_576
+                }
+            ] }
+        });
+        let rendered = human(&list);
+        assert!(rendered.contains("here\tembed\tbert\tf16\tready\t1.0 MB"));
+        assert!(rendered.contains("absent\tembed\tbert\tf16\tnot downloaded\t1.0 MB"));
+        assert!(
+            !rendered.contains("unavailable"),
+            "nothing is unavailable in a build that can run them: {rendered}"
+        );
     }
 
     #[test]

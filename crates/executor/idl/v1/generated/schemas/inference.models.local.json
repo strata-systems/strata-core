@@ -22,7 +22,7 @@
           "type": "string"
         },
         "is_local": {
-          "description": "Whether the model artifact is present locally.",
+          "description": "Whether the model artifact is present locally.\n\nThis is about the *file*, not about whether it can be run: a released\nbinary reports `is_local: true` for models it cannot load. Check\n`runnable` for that (#3124).",
           "type": "boolean"
         },
         "local_path": {
@@ -35,6 +35,10 @@
         "name": {
           "description": "Stable model catalog name.",
           "type": "string"
+        },
+        "runnable": {
+          "description": "Whether **this binary** can execute this model.\n\nEvery model in this catalog runs through the local provider, so this is\nfalse in any build without the `local` feature — which is every released\nbinary. Build from source with `--features inference-local` to change\nit, or use a cloud provider.",
+          "type": "boolean"
         },
         "size_bytes": {
           "description": "Approximate model artifact size in bytes.",
@@ -54,6 +58,7 @@
         "default_quant",
         "embedding_dim",
         "is_local",
+        "runnable",
         "size_bytes",
         "hf_repo"
       ],

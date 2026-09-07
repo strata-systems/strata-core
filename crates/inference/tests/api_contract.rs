@@ -114,6 +114,7 @@ fn diagnostics_dtos_round_trip_without_provider_payloads() {
         default_quant: "f16".to_owned(),
         embedding_dim: 384,
         is_local: false,
+        runnable: false,
         local_path: None,
         size_bytes: 45_000_000,
         hf_repo: "stratalab-org/all-MiniLM-L6-v2-GGUF".to_owned(),

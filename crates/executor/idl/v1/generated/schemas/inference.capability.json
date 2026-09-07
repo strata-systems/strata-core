@@ -4,19 +4,19 @@
       "description": "Provider/model capability facts.",
       "properties": {
         "can_embed": {
-          "description": "Whether embedding is supported.",
+          "description": "Whether **this binary** can embed with this model right now.",
           "type": "boolean"
         },
         "can_generate": {
-          "description": "Whether generation is supported.",
+          "description": "Whether **this binary** can generate with this model right now.\n\nFalse when the provider's feature is compiled out, even for a model\nthat inherently generates — see `provider_feature_enabled` for why. The\nmodel's own task is in the catalog (`inference models list`).",
           "type": "boolean"
         },
         "can_rank": {
-          "description": "Whether ranking is supported.",
+          "description": "Whether **this binary** can rank with this model right now.",
           "type": "boolean"
         },
         "can_tokenize": {
-          "description": "Whether tokenization is supported.",
+          "description": "Whether **this binary** can tokenize with this model right now.",
           "type": "boolean"
         },
         "embedding_dim": {

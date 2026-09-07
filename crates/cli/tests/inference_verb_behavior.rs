@@ -106,12 +106,32 @@ fn capability_reports_static_facts_for_cloud_and_local_specs() {
     assert_eq!(cloud["data"]["can_generate"], true);
     assert_eq!(cloud["data"]["supports_tools"], true);
 
-    // A local embedding spec: no key, no network, tokenizes, fixed dimension.
+    // A local embedding spec: no key, no network, fixed dimension — and, in this
+    // build, nothing it can actually do.
+    //
+    // #3124 renegotiated what `can_*` means. It used to report what the MODEL
+    // supports, which made this test assert `can_embed: true` in a test binary
+    // built without `inference-local` — pinning the exact contradiction the
+    // issue reported, where `can_embed: true` sat beside
+    // `provider_feature_enabled: false`. It now reports what THIS BINARY can do,
+    // so the flags follow the feature and the model's own shape stays visible
+    // through `embedding_dim` and the catalog's task.
     let local = inference(&home, &db, &["capability", "miniLM"]);
     assert_eq!(local["data"]["provider"], "local");
     assert_eq!(local["data"]["requires_api_key"], false);
     assert_eq!(local["data"]["requires_network"], false);
-    assert_eq!(local["data"]["can_embed"], true);
-    assert_eq!(local["data"]["can_tokenize"], true);
+    assert_eq!(
+        local["data"]["can_embed"],
+        cfg!(feature = "inference-local")
+    );
+    assert_eq!(
+        local["data"]["can_tokenize"],
+        cfg!(feature = "inference-local")
+    );
+    assert_eq!(
+        local["data"]["provider_feature_enabled"],
+        cfg!(feature = "inference-local"),
+        "the two fields must now agree rather than contradict"
+    );
     assert_eq!(local["data"]["embedding_dim"], 384);
 }

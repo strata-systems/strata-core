@@ -121,12 +121,25 @@ Skills that teach agents this whole surface — usage, branching, time travel �
 `npx skills add stratalab/strata-agent-skills`, or `/plugin marketplace add stratalab/strata-agent-skills`
 in Claude Code. The same repo carries the one-command workspace setup (CLI + MCP + skills).
 
-Model execution is in the box too — run local GGUF models or call cloud providers for embeddings and generation:
+Model execution is in the box too — embeddings and generation, from the same binary:
 
 ```bash
-strata inference models list
-strata inference embed <model> "how do branches work?"
-strata inference generate <model> "summarize this changelog"
+export OPENAI_API_KEY=...                                  # or ANTHROPIC_API_KEY, GOOGLE_API_KEY
+strata inference embed openai:text-embedding-3-small "how do branches work?"
+strata inference generate openai:gpt-4o-mini "summarize this changelog"
+```
+
+**Released binaries run cloud models, not local ones.** Local GGUF execution
+means a vendored llama.cpp and cmake, which would turn a 12 MB download into a
+far larger one for a capability most users never ask for — so it is opt-in.
+`strata inference models list` shows the local catalog and marks every entry
+`unavailable` in a build that cannot run it. To get local execution, build with
+the feature:
+
+```bash
+cargo install --path crates/cli --features inference-local
+strata inference models pull miniLM      # models live in ~/.strata/models,
+strata inference embed miniLM "..."      # shared by every database
 ```
 
 ## Use it as a library

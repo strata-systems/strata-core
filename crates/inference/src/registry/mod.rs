@@ -99,7 +99,18 @@ pub struct ModelInfo {
     /// Embedding dimension, or zero for non-embedding models.
     pub embedding_dim: usize,
     /// Whether the model artifact is present locally.
+    ///
+    /// This is about the *file*, not about whether it can be run: a released
+    /// binary reports `is_local: true` for models it cannot load. Check
+    /// `runnable` for that (#3124).
     pub is_local: bool,
+    /// Whether **this binary** can execute this model.
+    ///
+    /// Every model in this catalog runs through the local provider, so this is
+    /// false in any build without the `local` feature — which is every released
+    /// binary. Build from source with `--features inference-local` to change
+    /// it, or use a cloud provider.
+    pub runnable: bool,
     /// Local GGUF path when present.
     pub local_path: Option<PathBuf>,
     /// Approximate model artifact size in bytes.
@@ -377,6 +388,9 @@ impl ModelRegistry {
             default_quant: entry.default_quant.to_string(),
             embedding_dim: entry.embedding_dim,
             is_local,
+            // Every catalog model runs through the local provider, so what
+            // decides runnability is whether this binary has it compiled in.
+            runnable: cfg!(feature = "local"),
             local_path: if is_local { Some(path) } else { None },
             size_bytes: variant.size_bytes,
             hf_repo: entry.hf_repo.to_string(),

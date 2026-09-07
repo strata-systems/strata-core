@@ -86,13 +86,17 @@ pub struct InferenceCapability {
     pub provider: ProviderKind,
     /// Model name or path after provider parsing.
     pub model: String,
-    /// Whether generation is supported.
+    /// Whether **this binary** can generate with this model right now.
+    ///
+    /// False when the provider's feature is compiled out, even for a model
+    /// that inherently generates — see `provider_feature_enabled` for why. The
+    /// model's own task is in the catalog (`inference models list`).
     pub can_generate: bool,
-    /// Whether tokenization is supported.
+    /// Whether **this binary** can tokenize with this model right now.
     pub can_tokenize: bool,
-    /// Whether embedding is supported.
+    /// Whether **this binary** can embed with this model right now.
     pub can_embed: bool,
-    /// Whether ranking is supported.
+    /// Whether **this binary** can rank with this model right now.
     pub can_rank: bool,
     /// Whether the operation requires network access.
     pub requires_network: bool,
@@ -274,9 +278,7 @@ impl InferenceRuntime {
         #[cfg(not(feature = "download"))]
         {
             let _ = model;
-            Err(InferenceError::NotSupported(
-                "model download requires the download feature".to_owned(),
-            ))
+            Err(download_feature_unavailable())
         }
     }
 
@@ -295,12 +297,23 @@ impl InferenceRuntime {
         Ok(InferenceCapability {
             provider,
             model,
-            can_generate: provider != ProviderKind::Local || task != Some(ModelTask::Embed),
-            can_tokenize: provider == ProviderKind::Local,
-            can_embed: provider == ProviderKind::OpenAI
+            // #3124: `can_*` answers "can THIS BINARY do this, now" — not
+            // "does the model support it". The two diverge whenever a provider
+            // feature is compiled out, and a released binary has `local` off:
+            // reporting `can_embed: true` beside `provider_feature_enabled:
+            // false` made every caller responsible for ANDing the two, and the
+            // more prominent field was the wrong one. What the model inherently
+            // is stays discoverable through the catalog's `task`.
+            can_generate: (provider != ProviderKind::Local || task != Some(ModelTask::Embed))
+                && generation_provider_feature_enabled(provider),
+            can_tokenize: provider == ProviderKind::Local && cfg!(feature = "local"),
+            can_embed: (provider == ProviderKind::OpenAI
                 || provider == ProviderKind::Google
-                || task == Some(ModelTask::Embed),
-            can_rank: provider == ProviderKind::Local && task == Some(ModelTask::Rank),
+                || task == Some(ModelTask::Embed))
+                && embedding_provider_feature_enabled_for_capability(provider),
+            can_rank: provider == ProviderKind::Local
+                && task == Some(ModelTask::Rank)
+                && cfg!(feature = "local"),
             requires_network: provider != ProviderKind::Local,
             requires_api_key: provider != ProviderKind::Local,
             provider_feature_enabled: generation_provider_feature_enabled(provider)
@@ -487,9 +500,7 @@ impl InferenceRuntime {
         #[cfg(not(feature = "local"))]
         {
             let _ = (model_spec, text, add_special);
-            Err(InferenceError::NotSupported(
-                "tokenization requires the local feature".to_owned(),
-            ))
+            Err(local_feature_unavailable("tokenization"))
         }
     }
 
@@ -505,9 +516,7 @@ impl InferenceRuntime {
         #[cfg(not(feature = "local"))]
         {
             let _ = (model_spec, ids);
-            Err(InferenceError::NotSupported(
-                "detokenization requires the local feature".to_owned(),
-            ))
+            Err(local_feature_unavailable("detokenization"))
         }
     }
 
@@ -529,9 +538,7 @@ impl InferenceRuntime {
                 }
                 #[cfg(not(feature = "local"))]
                 {
-                    return Err(InferenceError::NotSupported(
-                        "local embedding requires the local feature".to_owned(),
-                    ));
+                    return Err(local_feature_unavailable("local embedding"));
                 }
             }
 
@@ -582,9 +589,7 @@ impl InferenceRuntime {
                 }
                 #[cfg(not(feature = "local"))]
                 {
-                    return Err(InferenceError::NotSupported(
-                        "local embedding requires the local feature".to_owned(),
-                    ));
+                    return Err(local_feature_unavailable("local embedding"));
                 }
             } else {
                 if !self.config.network_enabled {
@@ -647,9 +652,7 @@ impl InferenceRuntime {
         #[cfg(not(feature = "local"))]
         {
             let _ = (model_spec, request);
-            Err(InferenceError::NotSupported(
-                "ranking requires the local feature".to_owned(),
-            ))
+            Err(local_feature_unavailable("ranking"))
         }
     }
 
@@ -856,9 +859,7 @@ impl InferenceRuntime {
         #[cfg(not(feature = "local"))]
         {
             let _ = (model, config);
-            Err(InferenceError::NotSupported(
-                "local generation requires the local feature".to_owned(),
-            ))
+            Err(local_feature_unavailable("local generation"))
         }
     }
 
@@ -1067,6 +1068,42 @@ fn remove_matching<T>(map: &mut HashMap<String, T>, model_spec: Option<&str>) ->
     }
 }
 
+/// One phrasing for "this binary was not built with local model execution".
+///
+/// #3124: seven sites each said it differently ("tokenization requires the
+/// local feature", "local embedding requires the local feature", …) and none
+/// said what to do about it. A refusal a user cannot act on is a dead end, and
+/// this is the most common refusal a released binary produces.
+///
+/// **The wording is load-bearing.** `InferenceError::code()` classifies
+/// `NotSupported` by substring-matching this message: "provider" would make it
+/// `inference.unsupported_provider` and "download" would make it
+/// `inference.download_disabled`, instead of the `inference.unsupported_operation`
+/// these paths have always returned. `inference_refusals_keep_their_codes`
+/// pins that. See the systemic issue on message-derived error codes.
+pub(crate) fn local_feature_unavailable(operation: &str) -> InferenceError {
+    InferenceError::NotSupported(format!(
+        "{operation} needs local model execution, which released binaries do \
+         not include. Build from source with `cargo install --path crates/cli \
+         --features inference-local`, or use a cloud model by prefixing the \
+         name (`openai:`, `google:`, `anthropic:`)."
+    ))
+}
+
+/// One phrasing for "this binary was not built with model downloading".
+///
+/// Must contain "download" and must not contain "provider" — see
+/// [`local_feature_unavailable`] on why the wording is load-bearing.
+pub(crate) fn download_feature_unavailable() -> InferenceError {
+    InferenceError::NotSupported(
+        "model download is not built into this binary. Build from source with \
+         `cargo install --path crates/cli --features inference-local`, or fetch \
+         the GGUF file yourself into the models directory (`strata inference \
+         models list` shows the expected repository and file name)."
+            .to_owned(),
+    )
+}
+
 fn embedding_provider_feature_enabled_for_capability(provider: ProviderKind) -> bool {
     match provider {
         ProviderKind::Local => cfg!(feature = "local"),
@@ -1092,8 +1129,12 @@ mod tests {
         let runtime = InferenceRuntime::default();
         let capability = runtime.capability("local:miniLM").expect("capability");
         assert_eq!(capability.provider, ProviderKind::Local);
-        assert!(capability.can_embed);
-        assert!(capability.can_tokenize);
+        // #3124: `can_*` reports what THIS BINARY can do, so these follow the
+        // feature rather than the model's declared task. The model's own shape
+        // stays visible through `embedding_dim`.
+        assert_eq!(capability.can_embed, cfg!(feature = "local"));
+        assert_eq!(capability.can_tokenize, cfg!(feature = "local"));
+        assert_eq!(capability.provider_feature_enabled, cfg!(feature = "local"));
         assert!(!capability.requires_api_key);
         assert_eq!(capability.embedding_dim, 384);
     }
