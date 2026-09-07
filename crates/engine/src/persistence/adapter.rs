@@ -449,7 +449,7 @@ impl StoragePersistence {
     /// Returns an injected fault for `op` as a mapped engine error, if a test
     /// armed one.
     #[cfg(any(test, feature = "testkit"))]
-    fn guard_fault(&mut self, op: FaultOp) -> EngineResult<()> {
+    fn guard_fault(&self, op: FaultOp) -> EngineResult<()> {
         if let Some(error) = self.faults.take(op) {
             return Err(map_storage_error(error));
         }
@@ -468,7 +468,7 @@ impl StoragePersistence {
 
     /// Arms a storage fault that fires after `skip` matching persistence calls.
     #[cfg(any(test, feature = "testkit"))]
-    pub(crate) fn arm_storage_fault(&mut self, op: FaultOp, kind: StorageFaultKind, skip: usize) {
+    pub(crate) fn arm_storage_fault(&self, op: FaultOp, kind: StorageFaultKind, skip: usize) {
         self.faults.arm(op, kind, skip);
     }
 
@@ -476,18 +476,13 @@ impl StoragePersistence {
     /// returns (after `skip` matching reads pass). The read still succeeds; its
     /// rows come back corrupted, so the engine's decoders run on the real path.
     #[cfg(any(test, feature = "testkit"))]
-    pub(crate) fn arm_row_corruption(
-        &mut self,
-        op: FaultOp,
-        corruption: RowCorruption,
-        skip: usize,
-    ) {
+    pub(crate) fn arm_row_corruption(&self, op: FaultOp, corruption: RowCorruption, skip: usize) {
         self.corruption.arm(op, corruption, skip);
     }
 
     /// Applies an armed corruption to a batch of just-read rows, if one is due.
     #[cfg(any(test, feature = "testkit"))]
-    fn corrupt_rows(&mut self, op: FaultOp, rows: &mut [PersistenceReadRow]) {
+    fn corrupt_rows(&self, op: FaultOp, rows: &mut [PersistenceReadRow]) {
         if let Some(corruption) = self.corruption.take(op) {
             for row in rows.iter_mut() {
                 corruption.apply(&mut row.key, &mut row.value);
@@ -524,7 +519,7 @@ impl StoragePersistence {
         }
     }
 
-    pub(crate) fn branch_exists(&mut self, branch_id: BranchId) -> EngineResult<bool> {
+    pub(crate) fn branch_exists(&self, branch_id: BranchId) -> EngineResult<bool> {
         let request = BranchRequest::new(branch_id, BranchAction::Describe, None);
         match self.runtime.branch(&request) {
             Ok(outcome) => Ok(outcome
@@ -548,7 +543,7 @@ impl StoragePersistence {
     }
 
     pub(crate) fn describe_branch(
-        &mut self,
+        &self,
         branch_id: BranchId,
     ) -> EngineResult<PersistenceBranchSummary> {
         let outcome = self.branch_action(branch_id, BranchAction::Describe, None)?;
@@ -562,7 +557,7 @@ impl StoragePersistence {
     /// commit landed before a crash: a version higher than the pre-promote
     /// baseline means the data committed and the merge edge should be finalized.
     pub(crate) fn branch_timeline_head(
-        &mut self,
+        &self,
         branch_id: BranchId,
     ) -> EngineResult<(Option<CommitVersion>, Option<Timestamp>)> {
         let outcome = self
@@ -582,7 +577,7 @@ impl StoragePersistence {
     /// visibility at the frontier, tombstone and TTL handling) is inherited
     /// rather than restated, so the two forms cannot drift apart.
     pub(crate) fn resolve_wall_clock(
-        &mut self,
+        &self,
         branch_id: BranchId,
         instant: Timestamp,
     ) -> EngineResult<Timestamp> {
@@ -601,7 +596,7 @@ impl StoragePersistence {
     /// rather than failing: the history row is exact either way, and a date
     /// the branch cannot vouch for is better shown as absent than guessed.
     pub(crate) fn committed_at_for_versions(
-        &mut self,
+        &self,
         branch_id: BranchId,
         versions: &[CommitVersion],
     ) -> EngineResult<Vec<Option<Timestamp>>> {
@@ -666,8 +661,13 @@ impl StoragePersistence {
         )
     }
 
+    /// #3156: `&self` because that is what it honestly is — the only reason it
+    /// ever took `&mut` was the test-only `guard_fault`, and the storage call
+    /// beneath it is `&self`. The branch *mutation* entry points above keep
+    /// `&mut self` for now: relaxing writes is a separate change with its own
+    /// reviewer question, and a `&mut self` caller may call a `&self` method.
     fn branch_action(
-        &mut self,
+        &self,
         branch_id: BranchId,
         action: BranchAction,
         generation: Option<StorageBranchGeneration>,
@@ -737,7 +737,7 @@ impl StoragePersistence {
     }
 
     pub(crate) fn read(
-        &mut self,
+        &self,
         address: RowAddress,
         selector: ReadSelector,
     ) -> EngineResult<Option<Vec<u8>>> {
@@ -748,7 +748,7 @@ impl StoragePersistence {
     }
 
     pub(crate) fn read_row(
-        &mut self,
+        &self,
         address: RowAddress,
         selector: ReadSelector,
     ) -> EngineResult<Option<PersistenceReadRow>> {
@@ -767,7 +767,7 @@ impl StoragePersistence {
     }
 
     pub(crate) fn read_history(
-        &mut self,
+        &self,
         address: &RowAddress,
         include_tombstones: bool,
     ) -> EngineResult<Vec<PersistenceReadRow>> {
@@ -790,7 +790,7 @@ impl StoragePersistence {
     }
 
     pub(crate) fn scan_prefix(
-        &mut self,
+        &self,
         branch_id: BranchId,
         row_class: RowClass,
         prefix: Vec<u8>,
@@ -804,7 +804,7 @@ impl StoragePersistence {
     /// `after_version` — i.e. the "active delta" written after a watermark. Lets a caller that
     /// already holds covering index artifacts skip re-reading the sealed rows.
     pub(crate) fn scan_prefix_after_version(
-        &mut self,
+        &self,
         branch_id: BranchId,
         row_class: RowClass,
         prefix: Vec<u8>,
@@ -823,7 +823,7 @@ impl StoragePersistence {
     }
 
     fn scan_prefix_inner(
-        &mut self,
+        &self,
         branch_id: BranchId,
         row_class: RowClass,
         prefix: Vec<u8>,
@@ -857,7 +857,7 @@ impl StoragePersistence {
     }
 
     pub(crate) fn scan_range(
-        &mut self,
+        &self,
         branch_id: BranchId,
         row_class: RowClass,
         start: Option<Vec<u8>>,
@@ -886,7 +886,7 @@ impl StoragePersistence {
     }
 
     pub(crate) fn scan_immutable_sources(
-        &mut self,
+        &self,
         branch_id: BranchId,
         row_class: RowClass,
         start: Option<Vec<u8>>,
