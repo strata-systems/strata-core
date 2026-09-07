@@ -23,8 +23,20 @@ pub use injection::{RowCorruption, StorageFaultKind};
 
 #[cfg(any(test, feature = "testkit"))]
 mod injection {
+    use std::sync::{Mutex, MutexGuard};
+
     use strata_core::BranchId;
     use strata_storage::api::{StorageApiError, StorageApiLowerLayer};
+
+    /// Borrows a schedule's entries, recovering from poisoning.
+    ///
+    /// A test that panics mid-operation must not make the schedule
+    /// permanently unusable for the rest of the run — the schedule holds no
+    /// invariant a panic could break, only a pending-work list.
+    fn entries<T>(lock: &Mutex<Vec<T>>) -> MutexGuard<'_, Vec<T>> {
+        lock.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 
     use super::FaultOp;
 
@@ -91,15 +103,23 @@ mod injection {
     }
 
     /// FIFO schedule of pending faults, matched and consumed per operation.
+    ///
+    /// Interior mutability so arming and consuming take `&self` (#3156). The
+    /// engine's read path is `&self`, and this test-only hook is the only
+    /// reason it ever needed `&mut` — the production build's `guard_fault` has
+    /// always been `&self` and a no-op. A `Mutex` rather than a `RefCell`
+    /// because the same hook must survive the multi-threaded reader tests that
+    /// a shared read path exists to enable; the lock cost is irrelevant in a
+    /// schedule that only exists under `cfg(test)`.
     #[derive(Default)]
     pub(crate) struct FaultSchedule {
-        entries: Vec<ScheduledFault>,
+        entries: Mutex<Vec<ScheduledFault>>,
     }
 
     impl FaultSchedule {
         /// Arms a fault that fires after `skip` matching operations pass.
-        pub(crate) fn arm(&mut self, op: FaultOp, kind: StorageFaultKind, skip: usize) {
-            self.entries.push(ScheduledFault {
+        pub(crate) fn arm(&self, op: FaultOp, kind: StorageFaultKind, skip: usize) {
+            entries(&self.entries).push(ScheduledFault {
                 op,
                 error: kind.into_storage_error(),
                 skip,
@@ -108,13 +128,14 @@ mod injection {
 
         /// Returns the fault for `op` if one is due, letting `skip` occurrences
         /// pass through to real storage first.
-        pub(crate) fn take(&mut self, op: FaultOp) -> Option<StorageApiError> {
-            let position = self.entries.iter().position(|entry| entry.op == op)?;
-            if self.entries[position].skip > 0 {
-                self.entries[position].skip -= 1;
+        pub(crate) fn take(&self, op: FaultOp) -> Option<StorageApiError> {
+            let mut entries = entries(&self.entries);
+            let position = entries.iter().position(|entry| entry.op == op)?;
+            if entries[position].skip > 0 {
+                entries[position].skip -= 1;
                 return None;
             }
-            Some(self.entries.remove(position).error)
+            Some(entries.remove(position).error)
         }
     }
 
@@ -160,13 +181,13 @@ mod injection {
     /// operation exactly like [`FaultSchedule`].
     #[derive(Default)]
     pub(crate) struct CorruptionSchedule {
-        entries: Vec<ScheduledCorruption>,
+        entries: Mutex<Vec<ScheduledCorruption>>,
     }
 
     impl CorruptionSchedule {
         /// Arms a corruption that fires after `skip` matching operations pass.
-        pub(crate) fn arm(&mut self, op: FaultOp, corruption: RowCorruption, skip: usize) {
-            self.entries.push(ScheduledCorruption {
+        pub(crate) fn arm(&self, op: FaultOp, corruption: RowCorruption, skip: usize) {
+            entries(&self.entries).push(ScheduledCorruption {
                 op,
                 corruption,
                 skip,
@@ -175,13 +196,14 @@ mod injection {
 
         /// Returns the corruption for `op` if one is due, letting `skip`
         /// occurrences pass through uncorrupted first.
-        pub(crate) fn take(&mut self, op: FaultOp) -> Option<RowCorruption> {
-            let position = self.entries.iter().position(|entry| entry.op == op)?;
-            if self.entries[position].skip > 0 {
-                self.entries[position].skip -= 1;
+        pub(crate) fn take(&self, op: FaultOp) -> Option<RowCorruption> {
+            let mut entries = entries(&self.entries);
+            let position = entries.iter().position(|entry| entry.op == op)?;
+            if entries[position].skip > 0 {
+                entries[position].skip -= 1;
                 return None;
             }
-            Some(self.entries.remove(position).corruption)
+            Some(entries.remove(position).corruption)
         }
     }
 }
