@@ -544,7 +544,7 @@
   "command": "kv.batch_put",
   "request": {
     "additionalProperties": false,
-    "description": "Writes multiple KV entries in one engine commit.",
+    "description": "Writes multiple KV entries in one engine commit.\n\n# Guaranteed semantics\n\n- **Atomic across the batch.** Every entry lands in one engine commit\n  and shares its version. There is no partial batch to detect or undo:\n  readers see all of it or none of it.\n- **Duplicate keys are refused.** Two entries with the same key fail the\n  whole batch with `invalid_argument.engine.kv_batch_duplicate_key`, and\n  nothing is written — including the entries that were not duplicated.\n  The batch is a set of keys, not a sequence of writes to replay.\n- **An empty batch is refused** with `invalid_argument.engine.kv_batch`.",
     "properties": {
       "branch": {
         "description": "Target branch. Defaults to the executor handle branch.",

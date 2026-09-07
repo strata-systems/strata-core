@@ -11,7 +11,7 @@
   "command": "kv.list",
   "request": {
     "additionalProperties": false,
-    "description": "Lists KV keys.",
+    "description": "Lists KV keys.\n\n# Guaranteed semantics\n\n- **Ordered by key.** Pages come back in ascending byte order, and a\n  cursor resumes strictly after the last key of the previous page.\n- **Latest per page, not a snapshot.** Each page reads the branch as it\n  is when that page is fetched, so a write landing between two pages can\n  appear in the later one. For a listing that cannot shift underneath\n  you, pass `as_of` (or `as_of_time`) and keep it fixed across every\n  page: each page then reads the same point on the timeline.",
     "properties": {
       "as_of": {
         "description": "Read as of a position on the logical commit timeline — the\n`timestamp` from `history` output, not the `version`, and never a\ncalendar date. To read as of a real time, use `as_of_time` instead.",

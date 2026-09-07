@@ -11,7 +11,7 @@
   "command": "kv.exists",
   "request": {
     "additionalProperties": false,
-    "description": "Checks one key for existence.",
+    "description": "Checks one key for existence.\n\n# Guaranteed semantics\n\n- **Existence is about the latest version.** A key that was deleted does\n  not exist here, even though `history` still returns what it held.\n- **A key holding an empty value exists.** Empty is a value, not\n  absence.",
     "properties": {
       "branch": {
         "description": "Target branch. Defaults to the executor handle branch.",

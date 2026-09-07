@@ -528,7 +528,7 @@
   "command": "kv.batch_delete",
   "request": {
     "additionalProperties": false,
-    "description": "Deletes multiple KV entries in one engine commit.",
+    "description": "Deletes multiple KV entries in one engine commit.\n\n# Guaranteed semantics\n\n- **Atomic across the batch.** Whatever the batch removes, it removes\n  in one engine commit.\n- **Only what existed is committed.** Keys that were not there are\n  reported `false` and cost nothing. If none of the keys existed there\n  is nothing to commit, and the result carries no commit at all.\n- **Duplicate keys are refused** with\n  `invalid_argument.engine.kv_batch_duplicate_key`, and an empty batch\n  with `invalid_argument.engine.kv_batch`. In both cases nothing is\n  written.",
     "properties": {
       "branch": {
         "description": "Target branch. Defaults to the executor handle branch.",

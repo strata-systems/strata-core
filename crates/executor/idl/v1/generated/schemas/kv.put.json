@@ -139,7 +139,7 @@
   "command": "kv.put",
   "request": {
     "additionalProperties": false,
-    "description": "Writes one KV entry.\n\n# Guaranteed semantics\n\n- **Atomic per key.** The write is a single engine commit: it either\n  applies fully (value plus a new commit version) or not at all. No\n  reader ever observes a partial or torn value.\n- **Read-after-write visibility.** Once the command returns success,\n  every subsequent read through any handle of the same database\n  observes this write (or a newer one) — including immediately, from\n  the handle that issued it. Acknowledged writes are never\n  transiently invisible.",
+    "description": "Writes one KV entry.\n\n# Guaranteed semantics\n\n- **Atomic per key.** The write is a single engine commit: it either\n  applies fully (value plus a new commit version) or not at all. No\n  reader ever observes a partial or torn value.\n- **Read-after-write visibility.** Once the command returns success,\n  every subsequent read through any handle of the same database\n  observes this write (or a newer one) — including immediately, from\n  the handle that issued it. Acknowledged writes are never\n  transiently invisible.\n- **Shapes.** A key is any non-empty byte string; a value is any byte\n  string, including empty — an empty value is a present entry, not an\n  absent one. Neither carries an engine length limit; the durable row\n  format caps each at 4 GiB. In practice the database's memory budget\n  is the binding limit long before that, and cache mode holds\n  everything resident.",
     "properties": {
       "branch": {
         "description": "Target branch. Defaults to the executor handle branch.",

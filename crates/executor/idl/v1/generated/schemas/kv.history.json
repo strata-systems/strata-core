@@ -71,7 +71,7 @@
   "command": "kv.history",
   "request": {
     "additionalProperties": false,
-    "description": "Reads full version history for one key.",
+    "description": "Reads full version history for one key.\n\n# Guaranteed semantics\n\n- **Every version, including the deletes.** History reports each commit\n  that touched the key, so a key that reads as absent now still returns\n  the versions it held before.\n- **Scoped to one key.** The cost follows that key's own version count,\n  not the size of the database or of the space.\n- **Both clocks.** Each row carries the logical `version` and\n  `timestamp` of its commit and the wall-clock `committed_at` instant —\n  the values `as_of` and `as_of_time` respectively expect.",
     "properties": {
       "branch": {
         "description": "Target branch. Defaults to the executor handle branch.",

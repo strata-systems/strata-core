@@ -139,7 +139,7 @@
   "command": "kv.delete",
   "request": {
     "additionalProperties": false,
-    "description": "Deletes one KV entry.",
+    "description": "Deletes one KV entry.\n\n# Guaranteed semantics\n\n- **Deleting what is not there succeeds.** The result reports\n  `deleted: false` and **no commit is made** — the branch is untouched\n  and its version does not move. Callers that expect a version back\n  from every delete must handle its absence.\n- **History survives.** Delete writes a tombstone; it does not erase\n  past versions. `history`, and any read at an earlier point, still\n  return what the key held before.",
     "properties": {
       "branch": {
         "description": "Target branch. Defaults to the executor handle branch.",
