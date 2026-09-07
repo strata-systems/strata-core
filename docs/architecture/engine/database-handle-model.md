@@ -154,33 +154,51 @@ Also a widening. No caller breaks.
 ```rust
 // before
 pub fn kv(&mut self, branch: BranchName, space: ProductSpace) -> EngineResult<KvService<'_>>
-// after
+// after — note the parameters are UNCHANGED
+pub fn kv(&self, branch: BranchName, space: ProductSpace) -> EngineResult<KvService<'_>>
+```
+
+`KvService<'a>` changes from `&'a mut StoragePersistence` to `&'a`, and likewise
+for its json/event/graph/vector siblings. `ControlPlane` goes behind a `RwLock`
+(branch mutation is rare, reads are frequent). `KvService` already uses
+`control` only for `require_healthy()` and a branch lookup — both `&self`
+operations — so nothing there resists the change.
+
+**This is the user-visible step, and it breaks no caller.** Keeping the owned
+`BranchName`/`ProductSpace` parameters is deliberate: it means the whole
+concurrency benefit — several services held at once, readers not queueing
+behind writers — arrives without anyone having to touch a call site.
+
+### Step 4 — Services borrow their names
+
+*Retires #3191. Breaking.*
+
+```rust
 pub fn kv(&self, branch: &BranchName, space: &ProductSpace) -> EngineResult<KvService<'_>>
 ```
 
-`KvService<'a>` changes from `&'a mut StoragePersistence` to `&'a`. `ControlPlane`
-goes behind a `RwLock` (branch mutation is rare; reads are frequent).
+A per-call clone of two values that never change for the session. This is the
+527-call-site sweep, and it is deliberately last: it is pure ergonomics, it is
+the only breaking change in the sequence, and step 3 already delivered the
+capability. If the churn is judged not worth it, this step can simply be
+dropped without losing anything won above.
 
-**This is the breaking step.** Callers passing owned `BranchName`/`ProductSpace`
-must pass references. That is the 527-call-site sweep, and it is why this step
-is separated from 1 and 2 rather than bundled with them.
-
-### Step 4 — Establish and test `Database: Send + Sync`
+### Step 5 — Establish and test `Database: Send + Sync`
 
 *Completes #3126's product claim.*
 
 Steps 1–3 make the *borrow checker* permit concurrent use. They do not by
 themselves prove the type is thread-safe. This step adds the `static_assertions`
-bounds, resolves whatever is not `Sync` (the `RwLock` from step 3 and any
-remaining `RefCell` from steps 1–2 will need `parking_lot` equivalents once
-threads are real), and lands a test that actually commits on twenty branches
+bounds, resolves whatever is not `Sync` (H1 already used
+`std::sync::Mutex` rather than `RefCell` precisely so this step has nothing to
+undo; the `RwLock` from step 3 is the remaining question), and lands a test that actually commits on twenty branches
 from twenty threads.
 
 **This is where the throughput claim gets earned or withdrawn.** Storage has BS5
 group-commit benchmarks; the engine layer has none. No parallel-throughput claim
 should reach the README before this step measures one.
 
-### Step 5 — Cross-capability atomic commit is a separate design
+### Step 6 — Cross-capability atomic commit is a separate design
 
 *#3127 is not a handle problem.*
 
@@ -190,7 +208,7 @@ Making the handle shared does not make them atomic.
 
 This needs its own design covering how a plan composes mutations from several
 capabilities, which layer owns that composition, and how it interacts with
-per-capability derived state. Recommend: after steps 1–4 land, informed by what
+per-capability derived state. Recommend: after steps 1–5 land, informed by what
 they reveal about where plans are assembled.
 
 The same is true of **#3128** (library-opened databases hosting IPC), **#3131**
