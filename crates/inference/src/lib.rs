@@ -389,7 +389,11 @@ pub fn parse_model_spec(spec: &str) -> Result<(ProviderKind, String), InferenceE
 }
 
 /// Environment variable name for a provider's API key.
-#[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
+///
+/// Not gated on the cloud features: `status` reports every provider, including
+/// the ones this build cannot call, and naming the variable is exactly how it
+/// says what a caller would need to set. A pure name mapping with no
+/// dependencies, so there is nothing to gate.
 pub(crate) fn api_key_env_var(provider: ProviderKind) -> &'static str {
     match provider {
         ProviderKind::Anthropic => "ANTHROPIC_API_KEY",

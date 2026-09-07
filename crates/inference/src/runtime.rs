@@ -25,12 +25,14 @@ use crate::{
 
 #[cfg(any(feature = "openai", feature = "google"))]
 use crate::embedding_provider_feature_enabled;
+#[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
 use crate::error::ProviderFailure;
 
 #[cfg(any(feature = "openai", feature = "google"))]
 use crate::InferenceEngine;
 
-#[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
+// Ungated: `status` names every provider's key variable, including for
+// providers this build cannot call — that is how it says what to set.
 use crate::api_key_env_var;
 
 #[cfg(any(
