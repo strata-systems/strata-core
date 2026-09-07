@@ -15,6 +15,33 @@ use super::{
     VectorIndexQueryResult, VectorMetadataFilter, DEFAULT_VECTOR_LIST_LIMIT,
 };
 
+/// Whether a text is being stored or searched with (D10).
+///
+/// Instruction-tuned embedders emit different vectors for the same words
+/// depending on the role, so this has to be said rather than defaulted. It was
+/// a `&'static str` matched inside `embed_text_with`, which put a real decision
+/// inside glue that no CI lane can execute — the mutation gate found it by
+/// deleting the query arm and nothing failed.
+#[cfg(feature = "inference")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum EmbedPurpose {
+    /// Text being stored in the collection.
+    Document,
+    /// Text being searched with.
+    Query,
+}
+
+#[cfg(feature = "inference")]
+impl EmbedPurpose {
+    /// The provider-facing input role.
+    pub(super) fn input_type(self) -> strata_inference::InputType {
+        match self {
+            Self::Document => strata_inference::InputType::Document,
+            Self::Query => strata_inference::InputType::Query,
+        }
+    }
+}
+
 impl Executor {
     pub(super) fn execute_vector_create_collection(
         &mut self,
@@ -156,7 +183,7 @@ impl Executor {
         space: Option<&str>,
         collection: &EngineVectorCollectionName,
         text: String,
-        input_type: &'static str,
+        purpose: EmbedPurpose,
     ) -> ExecutorResult<Vec<f64>> {
         let model = {
             let mut service = self.vector_service(branch, space)?;
@@ -179,7 +206,7 @@ impl Executor {
                 ),
             ));
         };
-        self.embed_text_with(&model, text, input_type)
+        self.embed_text_with(&model, text, purpose)
     }
 
     #[cfg(feature = "inference")]
@@ -187,9 +214,9 @@ impl Executor {
         &mut self,
         model: &str,
         text: String,
-        input_type: &'static str,
+        purpose: EmbedPurpose,
     ) -> ExecutorResult<Vec<f64>> {
-        use strata_inference::{EmbedInput, EmbeddingsRequest, InputType};
+        use strata_inference::{EmbedInput, EmbeddingsRequest};
 
         let request = EmbeddingsRequest {
             input: EmbedInput::One(text),
@@ -197,11 +224,10 @@ impl Executor {
             normalize: None,
             // Instruction-tuned embedders produce different vectors for a
             // stored document and a search query; saying which this is stops
-            // that difference from being silent.
-            input_type: Some(match input_type {
-                "query" => InputType::Query,
-                _ => InputType::Document,
-            }),
+            // that difference from being silent. The mapping is a pure
+            // function with a truth table — inside this method it was a
+            // decision buried in glue that CI cannot execute.
+            input_type: Some(purpose.input_type()),
             instruction: None,
         };
         let response = self.inference.embeddings(model, &request)?;
@@ -220,9 +246,9 @@ impl Executor {
         &mut self,
         model: &str,
         text: String,
-        input_type: &'static str,
+        purpose: EmbedPurpose,
     ) -> ExecutorResult<Vec<f64>> {
-        let _ = (model, text, input_type);
+        let _ = (model, text, purpose);
         Err(ExecutorError::invalid_input(
             "inference.unsupported_operation",
             "this build has no inference support, so `text` cannot be embedded; \
@@ -243,7 +269,13 @@ impl Executor {
         let collection = vector_collection(collection)?;
         let key = vector_key(key)?;
         let vector = resolve_vector_or_text(vector, text, |text| {
-            self.embed_with_collection_model(branch, space, &collection, text, "document")
+            self.embed_with_collection_model(
+                branch,
+                space,
+                &collection,
+                text,
+                EmbedPurpose::Document,
+            )
         })?;
         let embedding = vector_embedding(vector)?;
         let metadata = optional_vector_metadata(metadata)?;
@@ -504,7 +536,7 @@ impl Executor {
         // caller never has to know which model wrote the collection — and
         // cannot pick the wrong one.
         let query = resolve_vector_or_text(query, text, |text| {
-            self.embed_with_collection_model(branch, space, &collection, text, "query")
+            self.embed_with_collection_model(branch, space, &collection, text, EmbedPurpose::Query)
         })?;
         let query = query_embedding(query)?;
         let k = required_usize(
@@ -726,5 +758,29 @@ impl Executor {
         Ok(Output::VectorBatchDeleteResults(
             finish_vector_batch_results(results),
         ))
+    }
+}
+
+#[cfg(all(test, feature = "inference"))]
+mod embed_purpose_tests {
+    use super::EmbedPurpose;
+    use strata_inference::InputType;
+
+    /// The document/query distinction, which the mutation gate caught as
+    /// untested: deleting the query arm changed nothing observable, because
+    /// the only test that reaches this code needs a real model and so cannot
+    /// run in CI.
+    ///
+    /// Storing and searching must NOT map to the same role — that is the whole
+    /// reason the parameter exists.
+    #[test]
+    fn storing_and_searching_map_to_different_roles() {
+        assert_eq!(EmbedPurpose::Document.input_type(), InputType::Document);
+        assert_eq!(EmbedPurpose::Query.input_type(), InputType::Query);
+        assert_ne!(
+            EmbedPurpose::Document.input_type(),
+            EmbedPurpose::Query.input_type(),
+            "collapsing these would silently embed queries as documents"
+        );
     }
 }
