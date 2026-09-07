@@ -647,10 +647,17 @@ pub(crate) enum KvCommand {
         key: String,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Delete one key.
     #[command(alias = "del")]
@@ -671,10 +678,17 @@ pub(crate) enum KvCommand {
         limit: Option<u64>,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Scan rows.
     Scan {
@@ -746,10 +760,17 @@ pub(crate) enum JsonCommand {
         path: String,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Delete a JSON path.
     #[command(alias = "del")]
@@ -772,10 +793,17 @@ pub(crate) enum JsonCommand {
         limit: Option<u64>,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Scan JSON documents (keys and values).
     Scan {
@@ -908,10 +936,17 @@ pub(crate) enum VectorCommand {
         key: String,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Read vector history.
     History {
@@ -1011,10 +1046,17 @@ pub(crate) enum VectorCommand {
         filter_file: Option<PathBuf>,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
         /// Include vector index diagnostics.
         #[arg(long)]
         diagnostics: bool,
@@ -1128,10 +1170,17 @@ pub(crate) enum EventCommand {
         sequence: u64,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Check event existence.
     Exists {
@@ -1142,10 +1191,17 @@ pub(crate) enum EventCommand {
     Count {
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// List events.
     List {
@@ -1160,19 +1216,33 @@ pub(crate) enum EventCommand {
         after_sequence: Option<u64>,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// List event types.
     Types {
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// List events by type.
     ByType {
@@ -1186,10 +1256,17 @@ pub(crate) enum EventCommand {
         after_sequence: Option<u64>,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Read an event sequence range.
     Range {
@@ -1279,10 +1356,17 @@ pub(crate) enum GraphCommand {
         limit: Option<u64>,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Read graph metadata.
     Meta {
@@ -1290,10 +1374,17 @@ pub(crate) enum GraphCommand {
         graph: String,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Add or replace a node.
     AddNode {
@@ -1319,10 +1410,17 @@ pub(crate) enum GraphCommand {
         node_id: String,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Remove a node.
     RemoveNode {
@@ -1346,10 +1444,17 @@ pub(crate) enum GraphCommand {
         limit: Option<u64>,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Sample graph nodes.
     Sample {
@@ -1391,10 +1496,17 @@ pub(crate) enum GraphCommand {
         dst: String,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Remove an edge.
     RemoveEdge {
@@ -1427,10 +1539,17 @@ pub(crate) enum GraphCommand {
         limit: Option<u64>,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// List nodes declaring an object type.
     NodesByType {
@@ -1446,10 +1565,17 @@ pub(crate) enum GraphCommand {
         limit: Option<u64>,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Graph ontology commands.
     Ontology(GraphOntologyArgs),
@@ -1459,10 +1585,17 @@ pub(crate) enum GraphCommand {
         graph: String,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Compute local clustering coefficients.
     Lcc {
@@ -1470,10 +1603,17 @@ pub(crate) enum GraphCommand {
         graph: String,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Compute shortest-path distances from a source node.
     Sssp {
@@ -1486,10 +1626,17 @@ pub(crate) enum GraphCommand {
         direction: CliGraphDirection,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Compute pagerank importance scores, optionally personalized.
     Pagerank {
@@ -1509,10 +1656,17 @@ pub(crate) enum GraphCommand {
         personalization: Option<String>,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Detect communities via label propagation.
     Cdlp {
@@ -1526,10 +1680,17 @@ pub(crate) enum GraphCommand {
         direction: CliGraphDirection,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Ingest nodes and edges from JSON in chunked commits.
     BulkInsert {
@@ -1565,10 +1726,17 @@ pub(crate) enum GraphCommand {
         direction: CliGraphDirection,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
 }
 
@@ -1641,10 +1809,17 @@ pub(crate) enum GraphOntologyCommand {
         graph: String,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
     /// Read the ontology with per-type usage counts.
     Summary {
@@ -1652,10 +1827,17 @@ pub(crate) enum GraphOntologyCommand {
         graph: String,
         /// Read as of a position on the logical commit timeline: the
         /// `timestamp` from `history` output, not the `version`. This is a
-        /// per-commit counter, never a calendar date — for when a change
-        /// actually happened, see `committed_at` in `history` output.
+        /// per-commit counter, never a calendar date — to read as of a real
+        /// time, use `--as-of-time`.
         #[arg(long)]
         as_of: Option<u64>,
+        /// Read as of a real time: a date (`2026-09-05`), a date and time
+        /// (`2026-09-05 15:00`), an offset-bearing timestamp
+        /// (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without
+        /// an offset is read in local time. Resolves to the commit at or
+        /// before that moment. Cannot be combined with `--as-of`.
+        #[arg(long, value_name = "TIME")]
+        as_of_time: Option<String>,
     },
 }
 

@@ -192,13 +192,15 @@
       "flags": {
         "after_sequence": "after-sequence",
         "as_of": "as-of",
+        "as_of_time": "as-of-time",
         "limit": "limit"
       }
     },
     "event count": {
       "positionals": [],
       "flags": {
-        "as_of": "as-of"
+        "as_of": "as-of",
+        "as_of_time": "as-of-time"
       }
     },
     "event exists": {
@@ -212,7 +214,8 @@
         "sequence"
       ],
       "flags": {
-        "as_of": "as-of"
+        "as_of": "as-of",
+        "as_of_time": "as-of-time"
       }
     },
     "event list": {
@@ -220,6 +223,7 @@
       "flags": {
         "after_sequence": "after-sequence",
         "as_of": "as-of",
+        "as_of_time": "as-of-time",
         "event_type": "event-type",
         "limit": "limit"
       }
@@ -249,7 +253,8 @@
     "event types": {
       "positionals": [],
       "flags": {
-        "as_of": "as-of"
+        "as_of": "as-of",
+        "as_of_time": "as-of-time"
       }
     },
     "event verify-chain": {
@@ -287,6 +292,7 @@
       ],
       "flags": {
         "as_of": "as-of",
+        "as_of_time": "as-of-time",
         "direction": "direction",
         "edge_types": "edge-type",
         "max_depth": "max-depth",
@@ -309,6 +315,7 @@
       ],
       "flags": {
         "as_of": "as-of",
+        "as_of_time": "as-of-time",
         "direction": "direction",
         "max_iterations": "max-iterations"
       }
@@ -333,7 +340,8 @@
         "dst"
       ],
       "flags": {
-        "as_of": "as-of"
+        "as_of": "as-of",
+        "as_of_time": "as-of-time"
       }
     },
     "graph get-node": {
@@ -342,7 +350,8 @@
         "node_id"
       ],
       "flags": {
-        "as_of": "as-of"
+        "as_of": "as-of",
+        "as_of_time": "as-of-time"
       }
     },
     "graph lcc": {
@@ -350,13 +359,15 @@
         "graph"
       ],
       "flags": {
-        "as_of": "as-of"
+        "as_of": "as-of",
+        "as_of_time": "as-of-time"
       }
     },
     "graph list": {
       "positionals": [],
       "flags": {
         "as_of": "as-of",
+        "as_of_time": "as-of-time",
         "cursor": "cursor",
         "limit": "limit"
       }
@@ -367,6 +378,7 @@
       ],
       "flags": {
         "as_of": "as-of",
+        "as_of_time": "as-of-time",
         "cursor": "cursor",
         "limit": "limit",
         "prefix": "prefix"
@@ -377,7 +389,8 @@
         "graph"
       ],
       "flags": {
-        "as_of": "as-of"
+        "as_of": "as-of",
+        "as_of_time": "as-of-time"
       }
     },
     "graph neighbors": {
@@ -387,6 +400,7 @@
       ],
       "flags": {
         "as_of": "as-of",
+        "as_of_time": "as-of-time",
         "cursor": "cursor",
         "direction": "direction",
         "edge_type": "edge-type",
@@ -400,6 +414,7 @@
       ],
       "flags": {
         "as_of": "as-of",
+        "as_of_time": "as-of-time",
         "cursor": "cursor",
         "limit": "limit"
       }
@@ -452,7 +467,8 @@
         "graph"
       ],
       "flags": {
-        "as_of": "as-of"
+        "as_of": "as-of",
+        "as_of_time": "as-of-time"
       }
     },
     "graph ontology summary": {
@@ -460,7 +476,8 @@
         "graph"
       ],
       "flags": {
-        "as_of": "as-of"
+        "as_of": "as-of",
+        "as_of_time": "as-of-time"
       }
     },
     "graph pagerank": {
@@ -469,6 +486,7 @@
       ],
       "flags": {
         "as_of": "as-of",
+        "as_of_time": "as-of-time",
         "damping": "damping",
         "max_iterations": "max-iterations",
         "personalization": "personalization",
@@ -506,6 +524,7 @@
       ],
       "flags": {
         "as_of": "as-of",
+        "as_of_time": "as-of-time",
         "direction": "direction"
       }
     },
@@ -514,7 +533,8 @@
         "graph"
       ],
       "flags": {
-        "as_of": "as-of"
+        "as_of": "as-of",
+        "as_of_time": "as-of-time"
       }
     },
     "health": {
@@ -705,7 +725,8 @@
         "path"
       ],
       "flags": {
-        "as_of": "as-of"
+        "as_of": "as-of",
+        "as_of_time": "as-of-time"
       }
     },
     "json history": {
@@ -737,6 +758,7 @@
       "positionals": [],
       "flags": {
         "as_of": "as-of",
+        "as_of_time": "as-of-time",
         "cursor": "cursor",
         "limit": "limit",
         "prefix": "prefix"
@@ -790,7 +812,8 @@
         "key"
       ],
       "flags": {
-        "as_of": "as-of"
+        "as_of": "as-of",
+        "as_of_time": "as-of-time"
       }
     },
     "kv history": {
@@ -803,6 +826,7 @@
       "positionals": [],
       "flags": {
         "as_of": "as-of",
+        "as_of_time": "as-of-time",
         "cursor": "cursor",
         "limit": "limit",
         "prefix": "prefix"
@@ -959,7 +983,8 @@
         "key"
       ],
       "flags": {
-        "as_of": "as-of"
+        "as_of": "as-of",
+        "as_of_time": "as-of-time"
       }
     },
     "vector history": {
@@ -986,6 +1011,7 @@
       ],
       "flags": {
         "as_of": "as-of",
+        "as_of_time": "as-of-time",
         "diagnostics": "diagnostics",
         "file": "file",
         "filter": "filter",
