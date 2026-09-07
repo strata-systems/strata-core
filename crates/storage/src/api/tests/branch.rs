@@ -1051,8 +1051,19 @@ fn drain_cancels_branch_scoped_compaction_enqueued_before_the_branch_was_deleted
     // table-object retention that follows a completed task) that land after the
     // drain's queue snapshot — drain to a fixed point before judging the queue.
     // Every round still requires no Failed outcome and a silent failure ring.
+    // #3182: the round count used to be a flat 5, which conflated "still
+    // draining" with "churning" — the two states the assertion below claims to
+    // tell apart. A drain that was legitimately still making progress on its
+    // fifth round failed the test. Drain to an actual fixed point instead:
+    // keep going while the queue is shrinking, and stop early only when it
+    // stops shrinking, which is the churn this is meant to catch. The outer
+    // bound is a safety net against an infinite loop, not the real condition.
+    let safety_rounds = 64;
+    let stalled_rounds_before_giving_up = 3;
     let mut pending = usize::MAX;
-    for _ in 0..5 {
+    let mut previous = usize::MAX;
+    let mut stalled = 0;
+    for _ in 0..safety_rounds {
         let drain = runtime
             .drain_maintenance()
             .expect("draining a stale branch-scoped task must not fail the drain");
@@ -1075,10 +1086,22 @@ fn drain_cancels_branch_scoped_compaction_enqueued_before_the_branch_was_deleted
         if pending == 0 {
             break;
         }
+        // Shrinking is progress; not shrinking, repeatedly, is churn.
+        if pending < previous {
+            stalled = 0;
+        } else {
+            stalled += 1;
+            if stalled >= stalled_rounds_before_giving_up {
+                break;
+            }
+        }
+        previous = pending;
     }
     assert_eq!(
         pending, 0,
-        "the queue must drain to a fixed point: the stale tasks are consumed, not churning",
+        "the queue must drain to a fixed point: the stale tasks are consumed, \
+         not churning. {pending} task(s) still queued after the count stopped \
+         falling, so this is churn rather than slow progress",
     );
 }
 
