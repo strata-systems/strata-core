@@ -17,6 +17,7 @@ impl Executor {
             collection: collection.into(),
             dimension,
             metric,
+            embedding_model: None,
         })
     }
 

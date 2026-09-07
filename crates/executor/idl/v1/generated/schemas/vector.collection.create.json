@@ -13,6 +13,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "embedding_model": {
+          "description": "The model that produced this collection's vectors, when recorded (D9).\n\nAbsent for collections created before provenance existed, and for any\ncreated without one. Those accept vectors from any model, so nothing\ncan check that a query is comparable with what is stored.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "metric": {
           "$ref": "#/$defs/VectorDistanceMetric"
         },
@@ -72,6 +79,13 @@
         "format": "uint64",
         "minimum": 0,
         "type": "integer"
+      },
+      "embedding_model": {
+        "description": "The model that will produce this collection's vectors (D9).\n\nRecording it lets Strata refuse a query embedded with a different\nmodel — the failure dimension cannot catch, since two models at the\nsame width return neighbours that are ranked and meaningless. It is\nalso what `--text` needs, to know which model to call.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "metric": {
         "$ref": "#/$defs/VectorDistanceMetric",

@@ -15,6 +15,7 @@ pub(super) fn vector_collection_commands() -> Vec<Command> {
             collection: "docs".to_owned(),
             dimension: 2,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         },
         Command::VectorDeleteCollection {
             branch: None,
@@ -185,6 +186,7 @@ pub(super) fn vector_round_trip_edge_commands() -> Vec<Command> {
             collection: "cosine".to_owned(),
             dimension: 3,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         },
         Command::VectorCreateCollection {
             branch: None,
@@ -192,6 +194,7 @@ pub(super) fn vector_round_trip_edge_commands() -> Vec<Command> {
             collection: "euclidean".to_owned(),
             dimension: 3,
             metric: VectorDistanceMetric::Euclidean,
+            embedding_model: None,
         },
         Command::VectorCreateCollection {
             branch: None,
@@ -199,6 +202,7 @@ pub(super) fn vector_round_trip_edge_commands() -> Vec<Command> {
             collection: "dot".to_owned(),
             dimension: 3,
             metric: VectorDistanceMetric::DotProduct,
+            embedding_model: None,
         },
         Command::VectorUpsert {
             branch: Some("feature".to_owned()),

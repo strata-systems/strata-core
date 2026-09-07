@@ -86,6 +86,7 @@ fn run_metric(
             collection: collection.to_owned(),
             dimension: DIMENSION as u64,
             metric,
+            embedding_model: None,
         })
         .expect("collection creates");
     for (index, vector) in base.iter().enumerate() {

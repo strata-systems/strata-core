@@ -75,6 +75,7 @@ fn vector_facade_matches_explicit_commands() {
             collection: "docs".to_owned(),
             dimension: 2,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         }
     );
     assert_facade_matches!(

@@ -293,6 +293,7 @@ fn branch_diff_reports_vector_changes() {
             collection: "emb".to_owned(),
             dimension: 2,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         })
         .expect("create collection");
     executor

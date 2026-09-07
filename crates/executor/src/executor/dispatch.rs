@@ -321,12 +321,14 @@ impl Executor {
                 collection,
                 dimension,
                 metric,
+                embedding_model,
             } => self.execute_vector_create_collection(
                 branch.as_deref(),
                 space.as_deref(),
                 collection,
                 dimension,
                 metric,
+                embedding_model,
             ),
             Command::VectorDeleteCollection {
                 branch,

@@ -869,6 +869,14 @@ pub enum Command {
         dimension: u64,
         /// Distance metric.
         metric: VectorDistanceMetric,
+        /// The model that will produce this collection's vectors (D9).
+        ///
+        /// Recording it lets Strata refuse a query embedded with a different
+        /// model — the failure dimension cannot catch, since two models at the
+        /// same width return neighbours that are ranked and meaningless. It is
+        /// also what `--text` needs, to know which model to call.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        embedding_model: Option<String>,
     },
     /// Deletes a vector collection.
     VectorDeleteCollection {

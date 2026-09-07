@@ -164,6 +164,7 @@ fn vector_history_dates_every_row_with_its_own_commits_instant() {
             collection: "c".to_owned(),
             dimension: 2,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         })
         .expect("collection created");
     let upsert = |vector: Vec<f64>| Command::VectorUpsert {

@@ -25,6 +25,7 @@ fn vector_upsert_rejects_a_subnormal_embedding_instead_of_storing_zeros() {
             collection: "docs".to_owned(),
             dimension: 3,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         })
         .expect("collection create succeeds");
 
@@ -81,6 +82,7 @@ fn vector_upsert_rejects_non_object_metadata_instead_of_storing_it_unfilterable(
             collection: "docs".to_owned(),
             dimension: 2,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         })
         .expect("collection create succeeds");
 
@@ -131,6 +133,7 @@ fn vector_query_rejects_a_subnormal_query_vector_instead_of_searching_zeros() {
             collection: "docs".to_owned(),
             dimension: 3,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         })
         .expect("collection create succeeds");
     let seed: Command = serde_json::from_str(
@@ -191,6 +194,7 @@ fn vector_batch_get_reports_missing_keys_as_misses() {
             collection: "docs".to_owned(),
             dimension: 2,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         })
         .expect("create collection");
     executor
@@ -243,6 +247,7 @@ fn vector_batch_exists_reports_present_and_absent_keys() {
             collection: "docs".to_owned(),
             dimension: 2,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         })
         .expect("create collection");
     executor
@@ -541,6 +546,7 @@ fn vector_mapping_collection_commands() -> Vec<Command> {
             collection: "other".to_owned(),
             dimension: 2,
             metric: VectorDistanceMetric::DotProduct,
+            embedding_model: None,
         },
         Command::VectorDeleteCollection {
             branch: None,
@@ -733,6 +739,7 @@ fn invalid_input_vector_commands() -> Vec<Command> {
             collection: "bad/name".to_owned(),
             dimension: 2,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         },
         Command::VectorCreateCollection {
             branch: None,
@@ -740,6 +747,7 @@ fn invalid_input_vector_commands() -> Vec<Command> {
             collection: "zero".to_owned(),
             dimension: 0,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         },
         Command::VectorUpsert {
             branch: None,
@@ -928,6 +936,7 @@ fn assert_vector_collection_and_empty_batch_edges(executor: &mut Executor) {
             collection: "cosine".to_owned(),
             dimension: 2,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         })
         .expect_err("duplicate collection fails");
     assert_eq!(duplicate.class(), ExecutorErrorClass::Conflict);
@@ -1955,6 +1964,7 @@ fn create_collection_in(
             collection: collection.to_owned(),
             dimension: 2,
             metric,
+            embedding_model: None,
         })
         .expect("collection create succeeds");
 }
@@ -2454,6 +2464,7 @@ fn vector_scan_returns_ordered_rows_and_paginates_honestly() {
             collection: "docs".to_owned(),
             dimension: 2,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         })
         .expect("create collection succeeds");
     for i in 0u8..6 {

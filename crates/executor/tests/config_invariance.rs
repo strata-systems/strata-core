@@ -319,6 +319,7 @@ fn seed_fixtures(executor: &mut Executor) {
             collection: "vecs".to_owned(),
             dimension: 8,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         })
         .expect("collection creates");
     executor

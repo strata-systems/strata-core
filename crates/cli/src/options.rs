@@ -1096,6 +1096,14 @@ pub(crate) enum VectorCollectionCommand {
         /// Distance metric.
         #[arg(long, value_enum, default_value_t = CliVectorMetric::Cosine)]
         metric: CliVectorMetric,
+        /// Model that produces this collection's vectors, e.g. `miniLM` or
+        /// `openai:text-embedding-3-small`.
+        ///
+        /// Recording it lets Strata refuse a query embedded with a different
+        /// model. Two models at the same width otherwise return neighbours
+        /// that are ranked and meaningless.
+        #[arg(long)]
+        embedding_model: Option<String>,
     },
     /// Delete a collection.
     #[command(alias = "del")]

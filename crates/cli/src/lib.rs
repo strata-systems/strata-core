@@ -1550,12 +1550,14 @@ fn vector_collection_command(command: VectorCollectionCommand, scope: &Scope) ->
             collection,
             dimension,
             metric,
+            embedding_model,
         } => Command::VectorCreateCollection {
             branch: scope.branch.clone(),
             space: scope.space.clone(),
             collection,
             dimension,
             metric: metric.into(),
+            embedding_model,
         },
         VectorCollectionCommand::Delete { collection } => Command::VectorDeleteCollection {
             branch: scope.branch.clone(),

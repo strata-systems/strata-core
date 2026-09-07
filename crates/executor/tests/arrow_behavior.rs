@@ -724,6 +724,7 @@ fn vector_export_import_round_trip_preserves_metadata_without_leaking_internals(
             collection: "docs_roundtrip".to_owned(),
             dimension: 2,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         })
         .expect("second collection create succeeds");
     executor
@@ -1809,6 +1810,7 @@ fn create_docs_collection(executor: &mut Executor) {
             collection: "docs".to_owned(),
             dimension: 2,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         })
         .expect("collection create succeeds");
 }

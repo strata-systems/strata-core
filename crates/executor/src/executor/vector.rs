@@ -9,9 +9,9 @@ use super::{
     vector_collection, vector_collection_info, vector_dimension_mismatch_error, vector_embedding,
     vector_filter, vector_history_result, vector_index_diagnostics, vector_key,
     vector_key_page_output, vector_match, vector_metadata_patch, vector_upsert_entry,
-    vector_versioned_data, vector_write_output, BatchVectorEntry, EngineVectorConfig, Executor,
-    ExecutorError, ExecutorResult, Maybe, Output, PageInfo, VectorDistanceMetric,
-    VectorIndexQueryResult, VectorMetadataFilter, DEFAULT_VECTOR_LIST_LIMIT,
+    vector_versioned_data, vector_write_output, BatchVectorEntry, EngineEmbeddingModelId,
+    EngineVectorConfig, Executor, ExecutorError, ExecutorResult, Maybe, Output, PageInfo,
+    VectorDistanceMetric, VectorIndexQueryResult, VectorMetadataFilter, DEFAULT_VECTOR_LIST_LIMIT,
 };
 
 impl Executor {
@@ -22,6 +22,7 @@ impl Executor {
         collection: String,
         dimension: u64,
         metric: VectorDistanceMetric,
+        embedding_model: Option<String>,
     ) -> ExecutorResult<Output> {
         let collection = vector_collection(collection)?;
         let config = EngineVectorConfig::new(
@@ -32,6 +33,12 @@ impl Executor {
             )?,
             engine_vector_metric(metric),
         )?;
+        // Engine validates the identifier's shape; it cannot check the model
+        // exists, because it never speaks to a provider (hard rules 2-3).
+        let config = match embedding_model {
+            Some(model) => config.with_embedding_model(EngineEmbeddingModelId::new(model)?),
+            None => config,
+        };
         let mut service = self.vector_service(branch, space)?;
         Ok(Output::VectorCollectionList {
             items: vec![vector_collection_info(

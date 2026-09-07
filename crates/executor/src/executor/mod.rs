@@ -21,7 +21,7 @@ use strata_engine::{
     DatabaseOpenTarget as EngineDatabaseOpenTarget,
     DerivedStateDisposition as EngineDerivedStateDisposition,
     DerivedStateReport as EngineDerivedStateReport, DurableLocalOpenOptions,
-    EventAppendOutcome as EngineEventAppendOutcome,
+    EmbeddingModelId as EngineEmbeddingModelId, EventAppendOutcome as EngineEventAppendOutcome,
     EventBatchAppendEntry as EngineEventBatchAppendEntry,
     EventBatchAppendItemOutcome as EngineEventBatchAppendItemOutcome,
     EventChainVerification as EngineEventChainVerification, EventPayload as EngineEventPayload,

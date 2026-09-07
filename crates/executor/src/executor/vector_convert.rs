@@ -123,6 +123,11 @@ pub(super) fn vector_collection_info(
         output_vector_metric(info.config().metric()),
         info.count(),
     )
+    .with_embedding_model(
+        info.config()
+            .embedding_model()
+            .map(|model| model.as_str().to_owned()),
+    )
 }
 
 pub(super) fn require_vector_collection_info(

@@ -60,6 +60,7 @@ fn create_collection(executor: &mut Executor, name: &str, dimension: u64) {
             collection: name.to_owned(),
             dimension,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         })
         .expect("collection creates");
 }
