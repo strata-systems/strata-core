@@ -328,7 +328,7 @@ Exit criteria:
 
 ### 3. Normalize Batch Item Failures
 
-Status: implemented for executor-next batch item result types. Existing message
+Status: implemented for executor batch item result types. Existing message
 accessors remain for compatibility, serialized item failures now carry public
 error status, and successful batch items serialize explicit `error: null`.
 
@@ -380,7 +380,7 @@ Exit criteria:
 
 ### 6. Add Full Response Golden Snapshots
 
-Status: implemented for executor-next representative response families.
+Status: implemented for executor representative response families.
 
 For every command family, add stable JSON snapshots for:
 

@@ -24,7 +24,7 @@ budget, closes, times a cold reopen, and asserts `lazy_full_materialization == 0
 `table_reader_opens > 0`, and open ≤ 1 s.
 
 ```bash
-cargo test -p strata-storage-next --features perf-trace --release \
+cargo test -p strata-storage --features perf-trace --release \
   api::tests::disk_resident_reads::durable_exit_gate_100m_on_8gib_budget \
   -- --ignored --nocapture
 ```
@@ -47,7 +47,7 @@ emits `db_open_after_load_ms` + the fast-open counters (`reopen_table_reader_ope
 default (part of the workload set) for durable engines; the cache engine skips it.
 
 ```bash
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale -- \
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale -- \
   --scales 100m --engines standard --memory-budget 8g
 ```
 
@@ -68,7 +68,7 @@ cargo run --release --manifest-path benchmarks/Cargo.toml --bin regression -- --
 #   check a later HEAD against it (thresholds: 5% throughput / 5% p50 / 10% tail).
 
 # the l9 scoreboard at 10M (fresh open) for the load/read cells:
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale -- \
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale -- \
   --scales 10m --engines standard
 ```
 
@@ -85,10 +85,10 @@ A/B is the L0-compaction bin at two settings:
 ```bash
 # serial (control):
 STRATA_SUBCOMPACTIONS=1 cargo run --release --manifest-path benchmarks/Cargo.toml \
-  --bin storage-next-l0-compact
+  --bin storage-l0-compact
 # parallel fan-out (treatment):
 STRATA_SUBCOMPACTIONS=4 cargo run --release --manifest-path benchmarks/Cargo.toml \
-  --bin storage-next-l0-compact
+  --bin storage-l0-compact
 ```
 
 Read `mb_per_s` from each. Verdict: does the fan-out win now that compaction is I/O-bound

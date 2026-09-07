@@ -1,4 +1,4 @@
-# Engine-Next Persistence Adapter Contract
+# Engine Persistence Adapter Contract
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
@@ -25,7 +25,7 @@ capability, branch, retrieval, orchestration, control plane
   -> storage keys, storage-space bytes, commit batches, LSM/storage internals
 ```
 
-Storage-next persists branch-aware MVCC KV rows. Engine-next owns product
+Storage persists branch-aware MVCC KV rows. Engine owns product
 meaning. The persistence adapter is the firewall between those two facts.
 
 ## Related Documents
@@ -73,7 +73,7 @@ directly in many engine locations:
 That direct access was useful while making the existing engine work. It should
 not be the target architecture.
 
-Engine-next should preserve the good part of the current design:
+Engine should preserve the good part of the current design:
 
 ```text
 all product data eventually becomes branch-aware versioned rows
@@ -410,7 +410,7 @@ the operation finishes.
 
 ## Temporal Context
 
-Storage-next owns the generic commit timeline substrate. Engine-next owns
+Storage owns the generic commit timeline substrate. Engine owns
 product time-travel behavior.
 
 The persistence adapter consumes storage timeline resolution for:
@@ -567,7 +567,7 @@ Error mapping rules:
 
 ## Forbidden Dependencies And Shortcuts
 
-Engine-next production code outside the persistence bucket must not:
+Engine production code outside the persistence bucket must not:
 
 1. Import storage L9 directly.
 2. Import storage internals below L9.
@@ -636,7 +636,7 @@ Adapter conformance tests should prove:
    document are conceptual, not final type names.
 
 2. Storage key type.
-   Storage-next L9 still needs to decide whether it exposes typed storage keys,
+   Storage L9 still needs to decide whether it exposes typed storage keys,
    opaque key bytes behind constructors, or both. The adapter must consume
    whichever shape L9 stabilizes.
 

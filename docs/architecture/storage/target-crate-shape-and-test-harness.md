@@ -1,4 +1,4 @@
-# Storage-Next Target Crate Shape And Test Harness
+# Storage Target Crate Shape And Test Harness
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
@@ -91,7 +91,7 @@ Rules:
 
 ## Crate-Level Policy
 
-Storage-next should start with strict crate-level policy rather than inheriting
+Storage should start with strict crate-level policy rather than inheriting
 cleanup-era compromises.
 
 Rules:
@@ -555,7 +555,7 @@ row, error, config, observability
 `strata-core` is the only Strata crate storage may depend on. The
 dependency should be added only when implementation code actually needs shared
 identifiers or representation types such as branch IDs, commit versions,
-transaction IDs, timestamps, and transparent newtypes. Storage-next must not
+transaction IDs, timestamps, and transparent newtypes. Storage must not
 depend on engine or any product crate.
 
 Allowed cross-links:
@@ -666,7 +666,7 @@ Avoid:
 
 ## Test Harness Shape
 
-Storage-next should use three test harness scopes.
+Storage should use three test harness scopes.
 
 ### Private Unit Test Support
 
@@ -722,7 +722,7 @@ Rules:
 1. It must be clearly named `testkit`.
 2. It must be unavailable in normal production builds.
 3. It must not become a second storage API.
-4. Engine-next may use it only in tests or fault-injection builds.
+4. Engine may use it only in tests or fault-injection builds.
 5. Any helper needed in production should move into a real storage module with a
    documented owner.
 6. Public testkit items should be `#[doc(hidden)]`.
@@ -802,7 +802,7 @@ cross-module contracts visible and invokable.
 
 ## Fuzz Target Shape
 
-Storage-next owns a `fuzz/` package with targets named by byte-oriented durable
+Storage owns a `fuzz/` package with targets named by byte-oriented durable
 input or scripted service family, not layer number.
 
 Current durable-format targets:
@@ -1064,7 +1064,7 @@ Tests should print the seed, backend, and temp directory when a failure occurs.
 ## Benchmark Boundary
 
 Performance benchmarks remain governed by the workspace benchmark harness,
-currently the separate benchmarks workspace/package. Storage-next should not add
+currently the separate benchmarks workspace/package. Storage should not add
 its own `benches/` directory until a focused benchmark plan exists. Existing
 project benchmark obligations, including comparison and workload benchmarks
 called out by repo policy, remain binding unless that policy is updated.

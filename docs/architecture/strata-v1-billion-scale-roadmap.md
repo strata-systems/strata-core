@@ -160,7 +160,7 @@ from flat size-tiered segments, `mmap`, and an O(N) block cache. Its epics 19–
 *built* leveled compaction, ArcSwap versioning, sharded caches, blooms, restart
 points, and dynamic level sizing from nothing.
 
-**V1 already has all of that.** Storage-next ships leveled compaction (8 levels,
+**V1 already has all of that.** Storage ships leveled compaction (8 levels,
 ×10 growth), versioned segments, a manifest with per-segment level tracking, a
 block cache, and bloom filters — by construction, from M3/M4. Re-implementing the
 old epics would be wasted motion.

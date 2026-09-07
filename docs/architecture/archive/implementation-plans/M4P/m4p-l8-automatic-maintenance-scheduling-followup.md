@@ -7,7 +7,7 @@ Related docs:
 1. `docs/architecture/implementation-plans/M4P/README.md`
 2. `docs/architecture/implementation-plans/M4/L8/l8k-compaction-materialization-scheduling-implementation-plan.md`
 3. `docs/architecture/implementation-plans/M4/L8/l8k-compaction-materialization-scheduling-test-plan.md`
-4. `docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`
+4. `docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`
 5. `docs/architecture/implementation-plans/M4P/m4p-l6j-l0-l7-compaction-closure-implementation-plan.md`
 6. `docs/architecture/implementation-plans/M4P/m4p-l6l-branch-read-hot-path-implementation-plan.md`
 

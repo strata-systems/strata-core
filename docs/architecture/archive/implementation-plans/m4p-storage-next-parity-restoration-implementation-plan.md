@@ -16,8 +16,8 @@ to add benchmark-only shortcuts.
 
 ## Inputs
 
-1. `docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`
-2. `docs/architecture/perf-tuning/storage-next-serving-path-parity-plan.md`
+1. `docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`
+2. `docs/architecture/perf-tuning/storage-serving-path-parity-plan.md`
 3. `docs/architecture/storage/l1-backend-io.md`
 4. `docs/architecture/storage/l2-object-layout.md`
 5. `docs/architecture/storage/l3-durable-format-codec.md`
@@ -40,10 +40,10 @@ optional background reading.
 
 Required audit references:
 
-1. `docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`,
+1. `docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`,
    especially the L1-L9 layer audit, Restoration Source Map, Audit Matrix, and
    Final Parity Matrix sections.
-2. `docs/architecture/perf-tuning/storage-next-serving-path-parity-plan.md`,
+2. `docs/architecture/perf-tuning/storage-serving-path-parity-plan.md`,
    especially the old invariants, proof slices, proof acceptance gates, and
    correction acceptance gates.
 3. Supporting perf evidence under `docs/architecture/perf-tuning/perf-p*.md`

@@ -1,4 +1,4 @@
-# Storage-Next Test Density Roadmap
+# Storage Test Density Roadmap
 
 Status: V1 discipline draft, scoped initially to storage
 
@@ -20,7 +20,7 @@ This roadmap exists so:
    declaring "reference-grade" once and moving on.
 2. We have a shared language for what each tier of test density means and what
    gating infrastructure it requires.
-3. Other crates (core, engine, intelligence-next, inference)
+3. Other crates (core, engine, intelligence, inference)
    can adopt the same tier model when they reach M3-equivalent maturity.
 4. Future Strata reviewers can see the gap to SQLite as a concrete, planned
    workstream rather than an aspiration.
@@ -143,7 +143,7 @@ cross-validated against reference storage engines."
   testing is one of the highest-yield bug-finding techniques available.
 - **Recipe-driven random workload corpus.** SQLite's SLT-equivalent: a grammar
   that generates random (workload, expected outcome) pairs, run continuously.
-  Storage-next's grammar covers branch fork, write, scan, history, fork-at-
+  Storage's grammar covers branch fork, write, scan, history, fork-at-
   history, retention, recovery, materialization.
 - **Multi-day long-soak runs.** The 1-hour T2 soak grows to days. Production-
   representative workload mixtures. Coverage of every L4 service operation
@@ -186,7 +186,7 @@ cross-validated against reference storage engines."
   continuously at parallelism that competes with the codebase's growth rate.
 - **Anomaly testing fires at every syscall, every test iteration.** SQLite's
   approach: every IO operation has a fault counter; tests run in N parallel
-  passes, each forcing failure at IO operation k. Storage-next adapts this to
+  passes, each forcing failure at IO operation k. Storage adapts this to
   the backend trait.
 - **OOM injection at every allocation site,** not just service-level. Same
   approach as syscall anomaly testing, applied to allocations.
@@ -279,7 +279,7 @@ A few things stay explicitly out of scope even at T4:
    definitions). LOC ratio is a *coarse* metric; declarative code dilutes it
    without changing real coverage.
 
-## Adoption Beyond Storage-Next
+## Adoption Beyond Storage
 
 Each Strata crate runs its own test density assessment when it reaches
 M3-equivalent maturity. The tier definitions in this doc are intended as a
@@ -289,7 +289,7 @@ template:
 - **engine** will likely sit at T1 through M5-M6, with a stretch goal
   toward T2 before M9 cutover. Engine cross-validation against intelligence
   and inference belongs in T3.
-- **intelligence-next** has different testing concerns (stochastic outputs,
+- **intelligence** has different testing concerns (stochastic outputs,
   model-dependent reranking, prompt-injection coverage) that need a separate
   tier definition. This roadmap is the structural template; the categories
   differ.

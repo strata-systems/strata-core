@@ -91,7 +91,7 @@ snapshot. Known follow-ups: in-flight-output registry (reclaim during sustained 
 recovered-reader sharing across fork children (reopen ≤ 1 s at high fan-out),
 deleted-branch manifest cleanup, tombstone-only quarantine staging.
 
-## Write-scaling baseline (BS5.0, dev box, `storage-next-concurrent-writers` defaults: batch 10 × 16 B, 3 s windows)
+## Write-scaling baseline (BS5.0, dev box, `storage-concurrent-writers` defaults: batch 10 × 16 B, 3 s windows)
 
 The BS5 instrument's control capture — commits/s by writer-thread count on one shared
 `&runtime`. The milestone's exit gates move these curves (Always ≥4× at 4 threads via group
@@ -240,7 +240,7 @@ mode comes from the open summary.
 
 ## V1 end-to-end baseline (2026-07-07, dev box, post-merge `d5f50899`, engine-level)
 
-First end-to-end numbers on the v1 line (engine-next `Database` API; bench harness with
+First end-to-end numbers on the v1 line (engine `Database` API; bench harness with
 the jemalloc pin). YCSB: 100K records, 100K ops, 1KB values, 8GiB budget. Run throughput
 (ops/s):
 
@@ -256,7 +256,7 @@ the jemalloc pin). YCSB: 100K records, 100K ops, 1KB values, 8GiB budget. Run th
 engine-kv-scale (1M × 64B): load 437K/332K rows/s (cache/durable); point reads 865K/14.5K
 ops/s (durable p50 42.6µs = cold block reads); scans 9.0K/3.1K ops/s.
 engine-vector-indexing (10K × d64): writes 130–160K ops/s; HNSW query p50 ~10–13ms.
-storage-next-l9 10M standard: load-seq 260K rows/s; point-latest 2,245 ops/s p50 491µs
+storage-l9 10M standard: load-seq 260K rows/s; point-latest 2,245 ops/s p50 491µs
 and fork p50 72.8ms / p95 2.7s — both measured against live post-load compaction debt;
 reopen-after-load 15.78s (8,947 reader opens, 78K data-block reads — needs its own
 investigation against the BS4.5b fast-open expectation).
@@ -509,7 +509,7 @@ load abort (observed twice: NonZeroLevel pre-demotion, L0 post-demotion).
 ## T4 attribution + allocator-linkage caveat (2026-07-07 evening, v2 branch)
 
 **Evidence-base caveat:** every engine-level bench bin except
-`storage-next-concurrent-writers` was silently running GLIBC MALLOC — the jemalloc
+`storage-concurrent-writers` was silently running GLIBC MALLOC — the jemalloc
 `#[global_allocator]` lives in the benchmark lib crate and unreferenced libs don't
 link. All engine-ycsb rows above (three-ways, stall investigations) are glibc-measured:
 internally consistent (deltas stand), absolute values carry the confound. Fixed on the
@@ -687,7 +687,7 @@ Results (10M durable): **A 3,059 / 2,926 ops/s** (was 746–1,696; update p99 44
 **4.2–5.2ms**, pacing sleeps 101.7s → 18.5–24.3s, maxes 1.7–2.8s bounded);
 **B 5,903 — best on record** (zero pacing delays, rate rode the 16MiB/s ceiling,
 update max 692ms, zero wall episodes). Floor events 17–50 per A run show the brake
-engaging only near the wall, as designed. Saturation gate (post-commit, same night): `storage-next-concurrent-writers` at
+engaging only near the wall, as designed. Saturation gate (post-commit, same night): `storage-concurrent-writers` at
 default budgets — **PASS**. Standard shared 33.3–34.2K at 1/4/8T (BS5 family ~35K),
 per-writer 8T 45.7K with tight fairness (16.8–17.3K/writer); Always 158/551/1,046 at
 1/4/8T (BS5 gate family: 159/553/1,117); **zero stalls, no hangs, no watchdog
@@ -1019,7 +1019,7 @@ medians of 3:
   260-300K target with h at 0.94: projected mean ≈ 0.94x3.5 + 0.06x~120 ≈
   10.5us ≈ 95K without the floor fixed; **the miss-floor anatomy is
   therefore on C3's critical path**, not optional.
-- Pre-existing (NOT this slice): 14 storage-next lib tests fail under
+- Pre-existing (NOT this slice): 14 storage lib tests fail under
   `--features perf-trace` at the C1 baseline too (commit/api perf-count
   asserts); tracked for a separate fix.
 
@@ -1378,7 +1378,7 @@ both the post-fork write and the fork-time unsealed slice);
 `fork_with_unsealed_rows_builds_a_cow_child` (1 inherited layer + child
 L0 slice); `fork_of_an_all_unsealed_source_stays_eager`. Battery: lib
 default 3361 / perf-trace 3558 green, all-targets + clippy clean on both
-feature sets, format goldens, engine-next, e2e 17/17.
+feature sets, format goldens, engine, e2e 17/17.
 
 Shelf: fork-of-fork (sources WITH inherited layers) still takes the eager
 path — needs layer-chain composition, separate slice.
@@ -1578,7 +1578,7 @@ case (rolls -> crash before checkpoint -> reopen resumes at tail, strict
 order preserved). 5 service-level tests (stale-seed floor resume + fresh
 roll, deleted-seed no-resurrection, seed-above-max, torn tail, retention
 boundary). Battery: lib 3367/3564 both feature sets, all-targets,
-goldens, clippy 0/0, engine-next 22/22, e2e 17/17. Real-world proof:
+goldens, clippy 0/0, engine 22/22, e2e 17/17. Real-world proof:
 the matrix night's exact failing sequence (10M x 100B shared store:
 load+C -> reopen B (25K updates) -> reopen A (250K RMW-class updates) ->
 reopen C) now runs end to end. Rider: engine-ycsb closes the database

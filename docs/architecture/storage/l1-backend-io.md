@@ -123,7 +123,7 @@ This backend is the correctness baseline for durable local databases.
 The OpenDAL/object backend is a design constraint, not a first-rewrite
 requirement.
 
-Storage-next should not bake in assumptions that make OpenDAL/S3 impossible,
+Storage should not bake in assumptions that make OpenDAL/S3 impossible,
 but the first implementation may ship without any OpenDAL code. If an OpenDAL
 adapter is added early, its minimum is:
 

@@ -83,9 +83,9 @@ small repeatable contract.
 
 ## Layer Ownership
 
-### Core-Next
+### Core
 
-Core-next should own only type-local validation and parse errors for core-owned
+Core should own only type-local validation and parse errors for core-owned
 types.
 
 Examples:
@@ -94,7 +94,7 @@ Examples:
 2. Invalid timestamp representation, if timestamp parsing is core-owned.
 3. Invalid transparent newtype representation.
 
-Core-next must not own:
+Core must not own:
 
 1. `StrataError`.
 2. `StorageError`.
@@ -103,13 +103,13 @@ Core-next must not own:
 5. Search, graph, vector, intelligence, or inference errors.
 6. A global database error taxonomy.
 
-Core-next may eventually own a tiny shared representation type only if both
+Core may eventually own a tiny shared representation type only if both
 storage and engine must serialize the exact same value across a lower
 boundary. The default is to keep broad error vocabulary out of core.
 
-### Storage-Next
+### Storage
 
-Storage-next owns mechanical persistence failures.
+Storage owns mechanical persistence failures.
 
 Storage errors may describe:
 
@@ -139,7 +139,7 @@ Storage errors may describe:
 24. Maintenance failed.
 25. Internal storage invariant violation.
 
-Storage-next must not decide:
+Storage must not decide:
 
 1. Whether a failure is a user-facing product error.
 2. How to phrase the error for CLI or SDK users.
@@ -147,12 +147,12 @@ Storage-next must not decide:
 4. Whether a product command should retry.
 5. Whether old pre-V1 databases should be migrated.
 
-Storage-next should expose enough structured facts for engine to make those
+Storage should expose enough structured facts for engine to make those
 decisions.
 
-### Engine-Next
+### Engine
 
-Engine-next owns the parent database error.
+Engine owns the parent database error.
 
 Engine errors represent product and database semantics:
 
@@ -169,12 +169,12 @@ Engine errors represent product and database semantics:
 11. Search/index/model availability failures translated into database terms.
 12. Internal engine invariant violations.
 
-Engine-next is the first layer allowed to turn storage mechanics into product
+Engine is the first layer allowed to turn storage mechanics into product
 meaning.
 
-### Intelligence-Next
+### Intelligence
 
-Intelligence-next owns retrieval orchestration errors:
+Intelligence owns retrieval orchestration errors:
 
 1. Recipe validation failures.
 2. Query expansion failures.
@@ -186,9 +186,9 @@ Intelligence-next owns retrieval orchestration errors:
 It should translate engine and inference errors without hiding their code,
 class, retryability, or commit outcome.
 
-### Inference-Next
+### Inference
 
-Inference-next owns provider and model execution errors:
+Inference owns provider and model execution errors:
 
 1. Provider unavailable.
 2. Model not installed or not configured.
@@ -199,7 +199,7 @@ Inference-next owns provider and model execution errors:
 7. Provider response invalid.
 8. Local runtime failure.
 
-Inference-next should not define database semantics. Intelligence-next or
+Inference should not define database semantics. Intelligence or
 engine decides how provider failures affect a product command.
 
 ### Executor, IPC, CLI, SDK, And Strata AI
@@ -315,12 +315,12 @@ field.
    registered.
 3. **Human-readable message** — owned in two parts. The failing layer (e.g.
    storage) produces a *mechanical* message describing the technical failure.
-   Engine-next and the SDK produce the *user-facing* message. Storage-next must
+   Engine and the SDK produce the *user-facing* message. Storage must
    not phrase for end users (see Layer Ownership).
 4. **Suggested fix (remediation)** — owned in two parts. The failing layer
    produces a *mechanical remediation hint* (`StorageApiError::remediation()`):
    a storage/engine instruction, never product or end-user phrasing, never
-   secrets. Engine-next/SDK translate it into user-facing guidance.
+   secrets. Engine/SDK translate it into user-facing guidance.
 5. **Reference ID** — an opaque token that ties a user-visible error to internal
    logs. It is **assigned at the boundary/log sink, not at error construction**,
    from an injected id source (the same injectable-source discipline as the
@@ -336,9 +336,9 @@ field.
 
 Layer responsibilities for the surface:
 
-1. Storage-next owns fields 1, 2, the mechanical half of 3, and the mechanical
+1. Storage owns fields 1, 2, the mechanical half of 3, and the mechanical
    half of 4. It owns no reference id, no doc URL, and no user-facing phrasing.
-2. Engine-next composes product meaning: user-facing message and suggested fix.
+2. Engine composes product meaning: user-facing message and suggested fix.
 3. The boundary (command/IPC/SDK/CLI status renderer) assigns the reference id,
    derives the doc link from the code, and emits the full six-field status.
 
@@ -760,10 +760,10 @@ where format readers need deterministic failure behavior.
 
 This contract is satisfied when:
 
-1. Core-next contains no broad database error.
-2. Storage-next exposes mechanical storage errors with source chains and
+1. Core contains no broad database error.
+2. Storage exposes mechanical storage errors with source chains and
    structured facts.
-3. Engine-next owns the parent product database error.
+3. Engine owns the parent product database error.
 4. Executor, IPC, CLI, SDK, and Strata AI consume stable statuses instead of
    parsing messages.
 5. Every public failure has a stable class and code.

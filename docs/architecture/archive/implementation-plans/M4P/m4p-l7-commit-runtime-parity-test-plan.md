@@ -13,7 +13,7 @@ Architecture context:
 `docs/architecture/storage/l7-commit-runtime.md`
 
 Audit context:
-`docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`
+`docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`
 
 ## Goal
 

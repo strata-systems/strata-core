@@ -1,4 +1,4 @@
-# Storage-Next Test Harnesses
+# Storage Test Harnesses
 
 This directory contains the integration harness entry points for storage.
 The harnesses stay outside the production API surface and reach crate-private

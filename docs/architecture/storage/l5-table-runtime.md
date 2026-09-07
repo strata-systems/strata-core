@@ -29,12 +29,12 @@ forest.
 
 ## Core Decision
 
-Storage-next should treat table runtime as a reusable mechanical layer, not as
+Storage should treat table runtime as a reusable mechanical layer, not as
 the storage engine.
 
 The current `SegmentedStore` mixes table mechanics with branch ownership,
 commit application, materialization, manifest publication, recovery facts, and
-maintenance control. Storage-next should split that center of gravity:
+maintenance control. Storage should split that center of gravity:
 
 ```text
 L5: build/read/compact sorted tables
@@ -173,7 +173,7 @@ Current roles:
   `RewritingIterator`, which are L6 visibility/COW behavior.
 - `seekable.rs`: seekable cursor stack plus MVCC and inherited-layer wrappers.
 
-Storage-next should preserve the raw merge/seek cursor mechanics in L5 and move
+Storage should preserve the raw merge/seek cursor mechanics in L5 and move
 MVCC latest selection, fork-version filtering, and branch key rewriting to L6.
 
 ### Mixed L5/L6/L7/L8 Files
@@ -195,7 +195,7 @@ Current roles:
   level selection, branch state mutation, manifest publication, and maintenance
   policy.
 
-Storage-next should extract policy-free table algorithms from these files and
+Storage should extract policy-free table algorithms from these files and
 leave branch topology, commit visibility, recovery, retention, and scheduling
 to L6-L8.
 
@@ -212,7 +212,7 @@ Current important facts:
 - `segmented/compaction.rs` mixes table compaction algorithms with branch-level
   level selection and state mutation.
 
-Storage-next should keep the valuable table algorithms but move branch,
+Storage should keep the valuable table algorithms but move branch,
 visibility, scheduling, and publication decisions to their owning layers.
 
 ## Table Key Model
@@ -220,7 +220,7 @@ visibility, scheduling, and publication decisions to their owning layers.
 L5 works with ordered table-key bytes.
 
 The current key encoding includes branch ID, space, type tag, user key, and a
-descending commit-version suffix. Storage-next renames the type-tag position to
+descending commit-version suffix. Storage renames the type-tag position to
 an opaque storage space id. That ordering is a good current design, but its
 meaning belongs partly to L6.
 
@@ -306,7 +306,7 @@ L5 should not own:
 - deletion or quarantine policy
 
 Current `KVSegment` uses local file handles and path hashes for cache keys.
-Storage-next should replace that with object-backed table readers and stable
+Storage should replace that with object-backed table readers and stable
 table object identities supplied by L4/L6. Cache keys should not depend on
 local filesystem paths as the only durable identity.
 
@@ -473,7 +473,7 @@ L5 errors should be typed around table mechanics:
 - compaction output validation failure
 
 L5 should not report product errors. L8 may decide that a corrupt table should
-be quarantined. Engine-next may decide how to describe that to a user.
+be quarantined. Engine may decide how to describe that to a user.
 
 ## Testing Requirements
 

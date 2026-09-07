@@ -13,12 +13,12 @@ historical crate boundaries by inertia. The architecture should be simple to
 explain:
 
 ```text
-core -> storage -> engine -> intelligence-next -> executor / cli / SDK / Strata AI
-                                      intelligence-next -> inference
+core -> storage -> engine -> intelligence -> executor / cli / SDK / Strata AI
+                                      intelligence -> inference
 ```
 
 Only engine consumes storage directly in normal production code.
-Intelligence-next consumes engine-owned database behavior and inference-owned
+Intelligence consumes engine-owned database behavior and inference-owned
 model/provider behavior. Everything above engine uses engine-owned product
 APIs, intelligence APIs, SDK APIs, or the serializable command boundary.
 
@@ -120,7 +120,7 @@ The architecture exists to satisfy these product constraints:
 
 12. V1 format changes must be explicit.
     The high-level architecture does not authorize hidden byte-format churn as
-    a side effect of crate cleanup. Storage-next may intentionally introduce a
+    a side effect of crate cleanup. Storage may intentionally introduce a
     row-native format revision where the storage architecture requires it, but
     that must be specified in the storage format spec. Because Strata is
     pre-launch, the default cutover policy is clear rejection of pre-V1
@@ -159,7 +159,7 @@ with the product requirements and storage layer documents.
    merge design.
 
 4. Commit timestamps and the commit timeline are storage-native V1 substrate.
-   Storage-next should stamp every committed batch with one commit timestamp,
+   Storage should stamp every committed batch with one commit timestamp,
    persist a per-branch commit-version-to-timestamp timeline, and expose
    timestamp-to-version resolution facts to engine. Engine owns the product
    UX for `as_of`, branch-from-time, and timeline explanations.
@@ -190,8 +190,8 @@ with the product requirements and storage layer documents.
    open path.
 
 9. Runtime resource profiles are engine-owned policy.
-   Engine-next owns host probing, profile classification, explicit override
-   precedence, product-wide budget allocation, and diagnostics. Storage-next
+   Engine owns host probing, profile classification, explicit override
+   precedence, product-wide budget allocation, and diagnostics. Storage
    receives resolved storage budgets and owns storage-local spending.
 
 ## Architecture Principles
@@ -301,7 +301,7 @@ strata-storage
 strata-engine
         |
         v
-strata-intelligence-next ----> strata-inference
+strata-intelligence ----> strata-inference
         |
         +--> strata-executor
         +--> strata-cli
@@ -313,7 +313,7 @@ Rules:
 
 1. `storage` may depend on `core`.
 2. `engine` may depend on `storage` and `core`.
-3. `intelligence-next` may depend on `engine`, `core`, and
+3. `intelligence` may depend on `engine`, `core`, and
    `inference`.
 4. Product crates above engine must not depend on `storage`.
 5. `inference` must not depend on `engine` or `storage`.
@@ -321,14 +321,14 @@ Rules:
    APIs rather than storage APIs.
 7. Optional provider/runtime features must be feature-gated and observable.
 
-The names `core`, `storage`, `engine`, `intelligence-next`, and
+The names `core`, `storage`, `engine`, `intelligence`, and
 `inference` describe the design phase. Once the new architecture becomes
 canonical, the crates should shed the `next` suffix rather than preserve
 permanent parallel names.
 
-## Core-Next Responsibility
+## Core Responsibility
 
-Core-next is the smallest shared contract layer.
+Core is the smallest shared contract layer.
 
 It should define:
 
@@ -347,12 +347,12 @@ It should avoid:
 5. Data capability objects.
 6. Generic helper sprawl.
 
-Core-next must justify every public type by naming which lower layers need the
+Core must justify every public type by naming which lower layers need the
 same concept and why the concept is not owned more cleanly by storage or engine.
 
-## Storage-Next Responsibility
+## Storage Responsibility
 
-Storage-next is the persistence substrate.
+Storage is the persistence substrate.
 
 It must provide:
 
@@ -380,12 +380,12 @@ It must not provide:
 6. Recipe, model, RAG, or Strata AI behavior.
 7. Public product errors.
 
-Storage-next may expose storage-local diagnostics and fault-injection surfaces,
+Storage may expose storage-local diagnostics and fault-injection surfaces,
 but those are not automatically product APIs.
 
-## Engine-Next Responsibility
+## Engine Responsibility
 
-Engine-next is the database semantics layer.
+Engine is the database semantics layer.
 
 It must provide:
 
@@ -406,12 +406,12 @@ It must provide:
 8. Engine-owned public errors and diagnostics.
 9. The serializable command boundary used by CLI, IPC, tests, and agents.
 
-Engine-next must hide storage mechanics above engine unless a storage fact is
+Engine must hide storage mechanics above engine unless a storage fact is
 intentionally converted into an engine-owned public diagnostic.
 
-## Intelligence-Next Responsibility
+## Intelligence Responsibility
 
-Intelligence-next is the database-aware AI and retrieval orchestration layer. It
+Intelligence is the database-aware AI and retrieval orchestration layer. It
 depends on engine for database state and on inference for model/provider
 execution.
 
@@ -437,9 +437,9 @@ Intelligence features may be optional or feature-gated, but the architecture
 must treat the layer as part of the V1 product stack so retrieval and Strata AI
 do not get mischaracterized as external add-ons.
 
-## Inference-Next Responsibility
+## Inference Responsibility
 
-Inference-next is the model and provider execution layer. It is not a database
+Inference is the model and provider execution layer. It is not a database
 layer.
 
 It should provide:
@@ -459,7 +459,7 @@ It must not provide:
 4. Database lifecycle behavior.
 5. Implicit network calls without explicit configuration or user action.
 
-Inference-next may be consumed by intelligence and by explicitly documented
+Inference may be consumed by intelligence and by explicitly documented
 model-management product surfaces. It must remain independent of storage and
 durability correctness.
 
@@ -758,7 +758,7 @@ The next phase should proceed in documents before code:
 3. Write `storage` architecture.
 4. Write `engine` architecture.
 5. Write `inference` architecture.
-6. Write `intelligence-next` architecture.
+6. Write `intelligence` architecture.
 7. Write the backend capability and conformance contract.
 8. Write the IPC runtime contract.
 9. Write the testing and conformance plan.

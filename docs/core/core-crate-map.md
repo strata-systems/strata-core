@@ -9,7 +9,7 @@ target design. The target V1 boundary is defined by
 `docs/architecture/core-architecture.md`.
 
 The current crate is already much smaller than the historical cleanup-era core
-surface, but it is still not automatically the V1 answer. Core-next must keep
+surface, but it is still not automatically the V1 answer. Core must keep
 only the shared vocabulary that lower and higher layers genuinely need to agree
 on.
 
@@ -65,11 +65,11 @@ Current contract subtree:
 
 V1 ownership notes:
 
-- `BranchId` remains a strong core-next candidate.
-- `CommitVersion` remains a strong core-next candidate.
-- `TxnId` defaults to storage-next ownership because public manual transaction
+- `BranchId` remains a strong core candidate.
+- `CommitVersion` remains a strong core candidate.
+- `TxnId` defaults to storage ownership because public manual transaction
   sessions are removed.
-- `BranchId::from_user_name` includes branch-name policy. Core-next may keep
+- `BranchId::from_user_name` includes branch-name policy. Core may keep
   the stable identity representation, but name-to-id derivation defaults to
   engine policy unless V1 explicitly keeps the current derivation as a durable
   compatibility fact.
@@ -82,7 +82,7 @@ of the reserved default-branch sentinel.
 V1 ownership note:
 
 - The helper is branch-name policy, not foundational identity. It defaults to
-  engine-next unless a lower layer needs to reject the sentinel before engine
+  engine unless a lower layer needs to reject the sentinel before engine
   opens.
 
 ### `error.rs`
@@ -91,7 +91,7 @@ V1 ownership note:
 
 V1 ownership note:
 
-- This matches the target direction: core-next should not own the database-wide
+- This matches the target direction: core should not own the database-wide
   error model. Storage, engine, inference, intelligence, executor, and CLI own
   their own boundary errors.
 
@@ -112,10 +112,10 @@ It also owns value equality and convenience accessors.
 
 V1 ownership note:
 
-- The V1 architecture currently defaults the product value model to engine-next.
-  Storage-next stores opaque row bytes and must not inspect product value
-  semantics. Move `Value` down to core-next only if storage-next, engine-next,
-  intelligence-next, and external SDKs all need the exact same Rust-owned value
+- The V1 architecture currently defaults the product value model to engine.
+  Storage stores opaque row bytes and must not inspect product value
+  semantics. Move `Value` down to core only if storage, engine,
+  intelligence, and external SDKs all need the exact same Rust-owned value
   contract.
 
 ### `contract/entity_ref.rs`
@@ -126,8 +126,8 @@ fields.
 
 V1 ownership note:
 
-- Entity references are product-level addresses. They default to engine-next.
-  Storage-next should not persist `EntityRef` directly in commit payloads or row
+- Entity references are product-level addresses. They default to engine.
+  Storage should not persist `EntityRef` directly in commit payloads or row
   keys.
 
 ### `contract/primitive_type.rs`
@@ -136,8 +136,8 @@ V1 ownership note:
 
 V1 ownership note:
 
-- Engine-next owns product capability taxonomy.
-- Storage-next owns opaque storage-space IDs and durable section IDs.
+- Engine owns product capability taxonomy.
+- Storage owns opaque storage-space IDs and durable section IDs.
 - Do not use `PrimitiveType` as a storage routing contract in V1.
 
 ### `contract/timestamp.rs`
@@ -147,10 +147,10 @@ helpers.
 
 V1 ownership note:
 
-- The representation is a core-next candidate because storage timeline rows,
+- The representation is a core candidate because storage timeline rows,
   engine time travel, and product metadata all need to agree on durable time
   encoding.
-- Clock acquisition does not belong in core-next.
+- Clock acquisition does not belong in core.
 
 ### `contract/version.rs`
 
@@ -159,7 +159,7 @@ sequence, and counter forms.
 
 V1 ownership note:
 
-- Product-facing version labels default to engine-next.
+- Product-facing version labels default to engine.
 - The lower shared MVCC token is `CommitVersion`.
 
 ### `contract/versioned.rs` And `contract/versioned_history.rs`
@@ -172,8 +172,8 @@ These modules currently define product read-result wrappers:
 
 V1 ownership note:
 
-- These default to engine-next because they are product API result shapes.
-  Storage-next should expose storage rows and timeline facts instead of
+- These default to engine because they are product API result shapes.
+  Storage should expose storage rows and timeline facts instead of
   product-shaped result DTOs.
 
 ### `contract/branch_name.rs`
@@ -182,15 +182,15 @@ V1 ownership note:
 
 V1 ownership note:
 
-- This is a possible core-next type if multiple public layers need the same
+- This is a possible core type if multiple public layers need the same
   validated name contract.
-- Branch creation policy still belongs in engine-next.
+- Branch creation policy still belongs in engine.
 
 ## Current Takeaway
 
 The current crate has three categories:
 
-1. likely core-next atoms: `BranchId`, `CommitVersion`, and possibly
+1. likely core atoms: `BranchId`, `CommitVersion`, and possibly
    `Timestamp` / `BranchName`
 2. engine/product vocabulary that should probably move up: `Value`, `EntityRef`,
    `PrimitiveType`, `Version`, `Versioned`, and `VersionedHistory`

@@ -9,10 +9,10 @@ Related compaction-shape test plan:
 `docs/architecture/implementation-plans/M4P/m4p-l6j-l0-l7-compaction-closure-test-plan.md`
 
 Audit context:
-`docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`
+`docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`
 
 Serving-path context:
-`docs/architecture/perf-tuning/storage-next-serving-path-parity-plan.md`
+`docs/architecture/perf-tuning/storage-serving-path-parity-plan.md`
 
 ## Objective
 

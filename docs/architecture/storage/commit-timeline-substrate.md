@@ -1,4 +1,4 @@
-# Storage-Next Commit Timeline Substrate
+# Storage Commit Timeline Substrate
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
@@ -10,8 +10,8 @@ the only lookup structure: resolving "latest commit at or before time T on
 branch B" by scanning row chains would be too expensive and would depend on
 which keys happen to exist.
 
-Storage-next therefore owns a generic per-branch commit timeline substrate.
-Engine-next owns the product commands and explanations built on top of it:
+Storage therefore owns a generic per-branch commit timeline substrate.
+Engine owns the product commands and explanations built on top of it:
 `as_of`, timeline scrub, branch-from-time, and retained-history diagnostics.
 
 ## Binding Decision
@@ -120,7 +120,7 @@ Required storage-facing operations:
 4. Report whether a timestamp miss is before history, after latest, or inside a
    pruned gap.
 
-Engine-next uses those facts to implement product `as_of`, scrub, and
+Engine uses those facts to implement product `as_of`, scrub, and
 branch-from-time behavior.
 
 ## Testing Requirements

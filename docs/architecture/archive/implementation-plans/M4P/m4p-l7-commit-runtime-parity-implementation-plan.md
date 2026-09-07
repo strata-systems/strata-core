@@ -16,10 +16,10 @@ Timeline context:
 `docs/architecture/storage/commit-timeline-substrate.md`
 
 Audit context:
-`docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`
+`docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`
 
 Serving-path context:
-`docs/architecture/perf-tuning/storage-next-serving-path-parity-plan.md`
+`docs/architecture/perf-tuning/storage-serving-path-parity-plan.md`
 
 ## Objective
 
@@ -38,7 +38,7 @@ or engine-specific side effects.
 ## Audit Findings
 
 Primary audit section:
-`docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`,
+`docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`,
 `### L7. Commit Runtime`.
 
 Important current reality: storage-next's unresolved-durable gate also

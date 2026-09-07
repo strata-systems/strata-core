@@ -9,7 +9,7 @@ the top of the Strata stack and delivers the intelligent-partner
 capabilities the database exposes to users.
 
 `strata-ai` is not a separate product running alongside Strata. It is the
-top-level consumer of `intelligence-next` and `inference` that
+top-level consumer of `intelligence` and `inference` that
 orchestrates recursive AI analysis over the database, hosts the sandboxed
 execution environment for AI-generated code, manages the system branch
 lifecycle, and brokers multi-model inference across local and remote
@@ -52,12 +52,12 @@ Product direction:
 core
   → storage
   → engine
-  → intelligence-next → executor / CLI / SDK / strata-ai
+  → intelligence → executor / CLI / SDK / strata-ai
   → inference
 ```
 
 `strata-ai` is a consumer at the top of the stack. It must depend on
-`intelligence-next` and `inference` and may depend on `engine`
+`intelligence` and `inference` and may depend on `engine`
 for product surfaces that the intelligence layer does not need to
 abstract. It must not depend on `storage` directly. It must not
 expose its own primitive storage APIs; it consumes them through engine
@@ -102,9 +102,9 @@ harness owns the loop.
    artifacts are owned by `inference`.
 3. **Model orchestration contracts.** The `QueryExpander`,
    `ResultReranker`, `RagGenerator`, and embedding traits remain in
-   `engine`. `intelligence-next` installs implementations of these
+   `engine`. `intelligence` installs implementations of these
    traits per database. `strata-ai` consumes the installed
-   implementations through `intelligence-next` rather than reimplementing
+   implementations through `intelligence` rather than reimplementing
    them.
 4. **Storage primitives.** All reads and writes go through engine
    surfaces. The Pyodide sandbox sees a typed engine-shaped module, not
@@ -116,7 +116,7 @@ harness owns the loop.
 The boundary test: anything that requires AI reasoning, multi-step
 decomposition, or orchestration across model calls is `strata-ai`'s
 responsibility. Anything an embedded application could call through
-engine/intelligence-next surfaces without an AI brain in the loop is
+engine/intelligence surfaces without an AI brain in the loop is
 not.
 
 ## Deployment Modes
@@ -127,7 +127,7 @@ codebase through compile-time feature gating.
 ### Lite
 
 Lite mode strips out `strata-ai`, `inference`, the
-intelligence-driven parts of `intelligence-next`, the Pyodide-on-wasmtime
+intelligence-driven parts of `intelligence`, the Pyodide-on-wasmtime
 sandbox, and any model-dependent code paths. What remains is the full
 substrate: five primitives, branches, time travel, ontology storage,
 deterministic retrieval, durable services, and the engine surfaces that
@@ -154,7 +154,7 @@ ingestion-focused replicas in a larger fleet.
 ### Full
 
 Full mode includes `strata-ai`, `inference`, the complete
-`intelligence-next` surface, the Pyodide-on-wasmtime sandbox, and any
+`intelligence` surface, the Pyodide-on-wasmtime sandbox, and any
 bundled models the deployment chooses to ship with.
 
 Full mode must:

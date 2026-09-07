@@ -59,8 +59,8 @@ diagnostics.
 
 ## Architecture Buckets
 
-This document uses the target buckets from `engine-next` and the target layers
-from `storage-next`.
+This document uses the target buckets from `engine` and the target layers
+from `storage`.
 
 Engine buckets:
 
@@ -126,7 +126,7 @@ Storage layers:
 | Branch lifecycle | Required | Supported by engine Branch plus storage L6/L7/L9 mechanics. | Branch operation contract and capability adapters. |
 | Compare and promote | Required | Supported by engine Branch over capability branch adapters and storage history. | Capability compare/promote contracts. |
 | Copy (cherry-pick) and undo (revert) | Deferred to post-V1 | Designed in the branch-operation contract but not shipped in V1; absence guarded by `branch_merge_absence.rs`. | Capability copy/revert contracts, post-V1. |
-| Tags and notes | Remove before V1 | Deferred or removed. Engine-next does not assume them as core. | Remove or mark legacy before V1. |
+| Tags and notes | Remove before V1 | Deferred or removed. Engine does not assume them as core. | Remove or mark legacy before V1. |
 | Spaces | Required | Supported by engine API/Data Capability/Control Plane and capability row encoding. | Space naming/reserved-space contract. |
 | Atomic commit substrate | Required | Supported internally by engine Commit and storage L7. | Public batch/write semantics replacing public transaction sessions. |
 | Public transaction commands | Remove or redesign | Deferred or removed. Architecture keeps internal commit machinery only. | Remove public begin/commit/rollback path. |
@@ -223,9 +223,9 @@ No V1 required pathway currently lacks an architecture owner.
 
 The target architecture is equipped to support the V1 product model because:
 
-1. Storage-next owns generic persistence mechanics and commit timeline
+1. Storage owns generic persistence mechanics and commit timeline
    substrate without product capability knowledge.
-2. Engine-next owns product semantics: data capabilities, branch behavior, retrieval,
+2. Engine owns product semantics: data capabilities, branch behavior, retrieval,
    orchestration, IPC command semantics, diagnostics, and data movement.
 3. Intelligence/inference remain above engine for model execution, so search
    and generation features do not corrupt the database boundary.

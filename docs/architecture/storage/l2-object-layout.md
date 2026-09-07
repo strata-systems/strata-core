@@ -14,7 +14,7 @@ L2 owns names, not bytes and not policy.
 
 ## Core Decision
 
-Storage-next should have one canonical object namespace that works for:
+Storage should have one canonical object namespace that works for:
 
 1. Browser/cache backend.
 2. Local filesystem backend.
@@ -245,7 +245,7 @@ Current names include:
 - `follower_state.json`
 - `follower_audit.log`
 
-Storage-next should not preserve `follower_state.json` or
+Storage should not preserve `follower_state.json` or
 `follower_audit.log`. Follower mode is not a V1 product path.
 
 The current names are useful evidence, not binding target names.

@@ -69,7 +69,7 @@ current PR can violate — there is nothing to violate.
 1. Only engine imports storage, and only inside `persistence/`.
 2. Engine never imports intelligence or inference.
 3. Inference imports nothing from the Strata workspace.
-4. Intelligence-next imports engine and inference only.
+4. Intelligence imports engine and inference only.
 5. Executor and CLI consume intelligence; never import inference directly.
 6. The dependency DAG is enforced by a workspace guard test on every PR.
 
@@ -157,7 +157,7 @@ Milestones:
 | M5 | Engine persistence adapter and control plane |
 | M6 | Engine product semantics |
 | M7 | Inference hardening |
-| M8 | Intelligence-next orchestration |
+| M8 | Intelligence orchestration |
 | M9 | Executor, CLI, SDK, tests, benches, docs cutover |
 | M10 | V1 readiness hardening |
 

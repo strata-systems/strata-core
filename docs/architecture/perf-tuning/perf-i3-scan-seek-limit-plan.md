@@ -27,7 +27,7 @@ Required behavior:
 
 Latest 100K-key cache scan comparison, 100 samples, limit 64, 150-byte values:
 
-| Workload | Old cache | Storage-next cache |
+| Workload | Old cache | Storage cache |
 | --- | ---: | ---: |
 | scan-prefix | p50 42.83 us, 22,831 ops/s | p50 29.80 ms, 34 ops/s |
 | scan-range-throughput | 23,675 ops/s | 20 ops/s |
@@ -56,7 +56,7 @@ Conclusion:
 
 1. Old storage performs one seek per scan and yields exactly `limit * samples`
    rows.
-2. Storage-next captures a full read view for each scan and walks the whole
+2. Storage captures a full read view for each scan and walks the whole
    branch before applying the L9 result limit.
 3. The immediate bottleneck is late limit application plus full-source candidate
    collection, compounded by row-proportional read-view capture.

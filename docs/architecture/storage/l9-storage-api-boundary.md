@@ -39,7 +39,7 @@ boundary after L1-L8 have defined their contracts.
 
 ## Boundary Rule
 
-Engine-next consumes storage. Product crates above engine do not.
+Engine consumes storage. Product crates above engine do not.
 
 Allowed normal production consumer:
 
@@ -86,7 +86,7 @@ below it.
 
 ## Core Boundary Principle
 
-Storage-next may expose:
+Storage may expose:
 
 - storage modes and backend capability facts
 - physical or storage-shaped keys
@@ -102,7 +102,7 @@ Storage-next may expose:
 - raw health and metrics facts
 - test/fault hooks behind test or feature gates
 
-Storage-next must not expose product semantics:
+Storage must not expose product semantics:
 
 - JSON path behavior
 - event-chain meaning
@@ -123,7 +123,7 @@ uses conceptual names, not final Rust names.
 
 ### Open / Create
 
-Storage-next should expose a storage open/create operation shaped around L8
+Storage should expose a storage open/create operation shaped around L8
 `StorageOpenPlan`.
 
 Inputs:
@@ -152,7 +152,7 @@ creating durable objects.
 
 ### Open Outcome
 
-Storage-next should return an L8-shaped `StorageOpenOutcome`.
+Storage should return an L8-shaped `StorageOpenOutcome`.
 
 The outcome should report raw storage facts:
 
@@ -171,7 +171,7 @@ The outcome should report raw storage facts:
 - maintenance state
 - raw warnings
 
-Engine-next decides whether those facts become public diagnostics, open
+Engine decides whether those facts become public diagnostics, open
 failures, warnings, or Strata AI explanations.
 
 ### Capability Validation
@@ -195,7 +195,7 @@ recovery work begins.
 
 ### Commit Batch
 
-Storage-next should expose an internal `CommitBatch` from L7.
+Storage should expose an internal `CommitBatch` from L7.
 
 The commit unit should support:
 
@@ -234,7 +234,7 @@ The commit unit must not contain:
 - WAL record bytes
 - table object names
 
-Storage-next should not expose public begin/commit/rollback sessions. Engine
+Storage should not expose public begin/commit/rollback sessions. Engine
 may group product operations into a storage commit batch, but users should not
 manage storage transactions directly.
 
@@ -254,11 +254,11 @@ Commit should return storage-shaped facts:
 - write-stall or backpressure facts if applicable
 - durable-but-not-visible classification if WAL succeeded but apply failed
 
-Engine-next owns product error mapping and public guarantees.
+Engine owns product error mapping and public guarantees.
 
 ### Read Latest
 
-Storage-next should expose latest visible read by physical or storage-shaped
+Storage should expose latest visible read by physical or storage-shaped
 key. This is the storage mechanic behind product `get`.
 
 Inputs:
@@ -273,11 +273,11 @@ Result:
 - commit timestamp
 - tombstone/absence semantics
 
-Engine-next interprets the value.
+Engine interprets the value.
 
 ### Read By Version
 
-Storage-next should expose version-bounded reads by physical or storage-shaped
+Storage should expose version-bounded reads by physical or storage-shaped
 key. This is the storage mechanic behind product `getv`.
 
 Inputs:
@@ -291,7 +291,7 @@ logical key are adjacent and sorted newest-first by commit version.
 
 ### Read By Timestamp
 
-Storage-next should expose timestamp-bounded reads by physical or
+Storage should expose timestamp-bounded reads by physical or
 storage-shaped key. This is the storage mechanic behind product `as_of`.
 
 Inputs:
@@ -304,18 +304,18 @@ Timestamp-bounded reads are not the same thing as version-bounded reads. The
 API should name this directly and should not use `as_of` to mean commit-version
 visibility.
 
-Engine-next owns product time-travel commands, branch-from-history behavior,
+Engine owns product time-travel commands, branch-from-history behavior,
 timestamp resolution rules, and user-facing diagnostics.
 
-Storage-next also owns the generic per-branch commit timeline that resolves
-timestamps to retained commit versions. Engine-next owns product commands such
+Storage also owns the generic per-branch commit timeline that resolves
+timestamps to retained commit versions. Engine owns product commands such
 as `as_of`, timeline scrub, and branch-from-time. The physical timeline is
 stored as storage-owned system rows under `storage_space_id = 0x01`; L9 exposes
 resolution methods and retained-history facts rather than raw timeline rows.
 
 ### Scan Physical Key Range / Prefix
 
-Storage-next should expose bounded scans by physical key range or prefix.
+Storage should expose bounded scans by physical key range or prefix.
 
 Inputs:
 
@@ -330,7 +330,7 @@ The result should be storage-shaped rows in deterministic order.
 
 ### Read History
 
-Storage-next should expose per-key retained version history. This is the
+Storage should expose per-key retained version history. This is the
 storage mechanic behind product `history`.
 
 Inputs:
@@ -341,12 +341,12 @@ Inputs:
 - before version or timestamp where supported
 
 Storage history is physical value history over the same versioned row chain
-used by latest, version-bounded, and timestamp-bounded reads. Engine-next owns
+used by latest, version-bounded, and timestamp-bounded reads. Engine owns
 semantic history presentation.
 
 ### Unified Versioned Row Model
 
-Storage-next should not maintain separate physical stores for latest, `getv`,
+Storage should not maintain separate physical stores for latest, `getv`,
 `as_of`, and history.
 
 The target model is one ordered version chain per physical key:
@@ -368,7 +368,7 @@ ordering, not from side pointers, latest tables, or separate history stores.
 
 ### Branch Storage Mechanics
 
-Storage-next should expose generic branch mechanics backed by the
+Storage should expose generic branch mechanics backed by the
 branch-isolated LSM runtime:
 
 - create empty branch storage state
@@ -380,7 +380,7 @@ branch-isolated LSM runtime:
 - clear/delete branch storage state with appropriate reachability safety
 - return raw branch-storage facts
 
-Storage-next must not expose product branch workflows:
+Storage must not expose product branch workflows:
 
 - merge
 - cherry-pick
@@ -391,12 +391,12 @@ Storage-next must not expose product branch workflows:
 - primitive-aware diff
 - graph-aware diff
 
-Engine-next implements product branch behavior by reading and writing
+Engine implements product branch behavior by reading and writing
 storage-shaped rows through storage mechanics.
 
 ### Checkpoint Boundary
 
-Storage-next should expose a checkpoint operation, but the content boundary
+Storage should expose a checkpoint operation, but the content boundary
 must remain primitive-neutral.
 
 Storage owns:
@@ -411,7 +411,7 @@ Storage owns:
 - snapshot retention/pruning trigger
 - raw checkpoint outcome
 
-Engine-next owns:
+Engine owns:
 
 - optional derived-state checkpoint sections
 - optional derived-state install or rebuild policy during recovery
@@ -426,7 +426,7 @@ event/search DTOs.
 
 ### Recovery Boundary
 
-Storage-next should expose recovery facts primarily through open outcome and
+Storage should expose recovery facts primarily through open outcome and
 health APIs.
 
 Recovery facts should include:
@@ -440,12 +440,12 @@ Recovery facts should include:
 - fatal corruption
 - recovered version/transaction allocator facts
 
-Storage classifies recovery health. Engine-next decides whether a degraded
+Storage classifies recovery health. Engine decides whether a degraded
 outcome is accepted, rejected, or rendered as a diagnostic.
 
 ### Maintenance Boundary
 
-Storage-next should expose storage maintenance controls and facts without
+Storage should expose storage maintenance controls and facts without
 making maintenance a normal user workflow.
 
 Expected controls:
@@ -469,12 +469,12 @@ Expected automatic internals:
 - purge safe quarantine inventory
 - clean temporary objects
 
-Engine-next may trigger lifecycle hooks, but product users should not need to
+Engine may trigger lifecycle hooks, but product users should not need to
 run flush, compact, checkpoint, prune, or repair during normal use.
 
 ### Shutdown / Close
 
-Storage-next should expose a safe close operation.
+Storage should expose a safe close operation.
 
 Close may:
 
@@ -487,7 +487,7 @@ Close may:
 - release writer guard or backend lease
 - return raw close facts
 
-Engine-next wraps close with product handle shutdown, IPC shutdown, primitive
+Engine wraps close with product handle shutdown, IPC shutdown, primitive
 freeze hooks, registry release, and public error mapping.
 
 Close should be idempotent after successful close and retryable after timeout
@@ -495,7 +495,7 @@ or hook-independent storage failure where safe.
 
 ### Health / Metrics
 
-Storage-next should expose raw facts such as:
+Storage should expose raw facts such as:
 
 - backend capability facts
 - selected storage mode
@@ -513,12 +513,12 @@ Storage-next should expose raw facts such as:
 - approximate memory use
 - resolved storage runtime budget facts
 
-Engine-next decides which facts become public diagnostics, CLI output, Strata
+Engine decides which facts become public diagnostics, CLI output, Strata
 AI explanations, or future StrataHub telemetry.
 
 ### Fault / Test Hooks
 
-Storage-next should provide test-only or feature-gated hooks for:
+Storage should provide test-only or feature-gated hooks for:
 
 - backend failures
 - publish failures
@@ -535,7 +535,7 @@ These hooks are not product APIs.
 
 ## Do Not Expose
 
-Storage-next should not expose these details through the normal engine
+Storage should not expose these details through the normal engine
 boundary:
 
 - provider-specific handles after open
@@ -601,7 +601,7 @@ Expected categories:
 - close timeout
 - internal invariant violation
 
-Engine-next maps these into public errors and diagnostics.
+Engine maps these into public errors and diagnostics.
 
 ## Testing Requirements
 
@@ -648,7 +648,7 @@ Current evidence lives in:
 - `docs/storage/v1-storage-consumption-contract.md`
 
 The current consumption contract is intentionally large because it documents
-the post-consolidation engine/storage boundary. Storage-next should use it as
+the post-consolidation engine/storage boundary. Storage should use it as
 evidence, not as a surface to preserve.
 
 ## V1 Minimum

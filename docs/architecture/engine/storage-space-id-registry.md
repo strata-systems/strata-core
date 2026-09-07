@@ -1,4 +1,4 @@
-# Engine-Next Storage-Space ID Registry
+# Engine Storage-Space ID Registry
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
@@ -7,7 +7,7 @@ Status: current — describes shipped 1.2.x behaviour (#3134)
 This document defines the engine-owned storage-space ID assignments for
 engine.
 
-Storage-next persists branch-aware MVCC KV rows. The physical row key includes
+Storage persists branch-aware MVCC KV rows. The physical row key includes
 an opaque `storage_space_id` byte:
 
 ```text
@@ -76,12 +76,12 @@ The storage registry owns the global byte split:
 
 | Range | Owner | Meaning |
 |---|---|---|
-| `0x00` | Storage-next | Invalid sentinel. |
-| `0x01` | Storage-next | Commit timeline rows. |
-| `0x02..=0x1f` | Storage-next | Reserved for storage-internal rows. |
-| `0x20..=0xff` | Engine-next | Engine-owned product and derived rows. |
+| `0x00` | Storage | Invalid sentinel. |
+| `0x01` | Storage | Commit timeline rows. |
+| `0x02..=0x1f` | Storage | Reserved for storage-internal rows. |
+| `0x20..=0xff` | Engine | Engine-owned product and derived rows. |
 
-Engine-next must not write storage-owned IDs. Storage-next must reject
+Engine must not write storage-owned IDs. Storage must reject
 engine-supplied commit rows that use storage-owned IDs.
 
 ## Design Rules
@@ -90,7 +90,7 @@ engine-supplied commit rows that use storage-owned IDs.
 
 A storage-space ID is not a class hierarchy. It is a durable partitioning byte.
 
-Engine-next should create a new ID only when rows need a materially different:
+Engine should create a new ID only when rows need a materially different:
 
 1. Source-of-truth status.
 2. Rebuild behavior.
@@ -265,10 +265,10 @@ Examples:
 
 ## Registry Persistence
 
-Engine-next should persist the active registry in engine control rows so a
+Engine should persist the active registry in engine control rows so a
 database can validate that the compiled engine agrees with the durable layout.
 
-`0x32` is the bootstrap control ID for the registry itself. Engine-next must know
+`0x32` is the bootstrap control ID for the registry itself. Engine must know
 this ID from the compiled V1 format seed before it can read the persisted
 registry. The persisted registry validates the rest of the active assignment
 table and confirms that `0x32` still means registry/control layout. It does not

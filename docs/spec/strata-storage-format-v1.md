@@ -6,7 +6,7 @@ Audience: Strata implementers, storage-tool authors, dataset publishers,
 backup/repair tooling authors, and reviewers of the storage rewrite.
 
 Related architecture draft:
-[Storage-Next L3. Durable Format / Codec](../architecture/storage/l3-durable-format-codec.md)
+[Storage L3. Durable Format / Codec](../architecture/storage/l3-durable-format-codec.md)
 
 ## 1. Purpose
 

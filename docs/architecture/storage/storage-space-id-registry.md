@@ -1,10 +1,10 @@
-# Storage-Next Storage Space ID Registry
+# Storage Storage Space ID Registry
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
-Storage-next replaces primitive-aware `TypeTag` ownership with an opaque
+Storage replaces primitive-aware `TypeTag` ownership with an opaque
 `storage_space_id` byte in physical row keys. Storage may route, order, and
 compact by this byte, but it must not know whether an engine-owned value means
 KV, JSON, event, graph, vector, search, recipe state, or a future capability.
@@ -18,14 +18,14 @@ The V1 durable keyspace reserves the byte as follows:
 
 | Range | Owner | Meaning |
 | --- | --- | --- |
-| `0x00` | Storage-next | Invalid sentinel. Must not appear in durable user rows. |
-| `0x01` | Storage-next | Commit timeline rows. |
-| `0x02..=0x1f` | Storage-next | Reserved for future storage-internal row families. |
-| `0x20..=0xff` | Engine-next | Engine-owned product/data-capability row families. |
+| `0x00` | Storage | Invalid sentinel. Must not appear in durable user rows. |
+| `0x01` | Storage | Commit timeline rows. |
+| `0x02..=0x1f` | Storage | Reserved for future storage-internal row families. |
+| `0x20..=0xff` | Engine | Engine-owned product/data-capability row families. |
 
-Storage-next must reject engine-supplied rows that use storage-reserved IDs.
+Storage must reject engine-supplied rows that use storage-reserved IDs.
 
-Engine-next must publish its own product-space assignment registry before V1
+Engine must publish its own product-space assignment registry before V1
 format freeze. That registry is the durable compatibility contract for product
 capabilities above storage.
 
@@ -57,7 +57,7 @@ spec, and the relevant layer document.
 
 `0x20..=0xff` belongs to engine.
 
-Engine-next owns:
+Engine owns:
 
 1. Stable byte assignments for KV, JSON, events, graph relationships, vectors,
    search substrate rows, recipes, intelligence substrate rows, and future
@@ -65,14 +65,14 @@ Engine-next owns:
 2. Any reverse maps needed to recover product references from storage rows.
 3. Product compatibility rules when assignments change before V1 freeze.
 
-Storage-next treats these bytes as opaque ordering and routing facts.
+Storage treats these bytes as opaque ordering and routing facts.
 
 ## Engine Registry
 
 Engine-owned assignments are documented in
 `docs/architecture/engine/storage-space-id-registry.md`.
 
-Storage-next must not duplicate that registry or map engine-owned bytes to
+Storage must not duplicate that registry or map engine-owned bytes to
 product names. Storage validates byte ownership at the range level; engine
 validates whether an engine-owned byte is assigned, known, or compatible with
 the database's persisted engine registry.
@@ -81,7 +81,7 @@ the database's persisted engine registry.
 
 1. Storage rejects storage-reserved IDs in engine-supplied commit rows.
 2. Storage system rows use only storage-owned IDs.
-3. Engine-next registry tests prove no duplicate product-space assignments.
+3. Engine registry tests prove no duplicate product-space assignments.
 4. Durable-format tests include at least one storage-owned row family and one
    engine-owned row family.
 5. Fuzz tests reject `0x00` and other invalid key encodings.

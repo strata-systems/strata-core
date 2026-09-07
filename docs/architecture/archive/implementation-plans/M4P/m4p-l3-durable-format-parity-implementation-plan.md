@@ -29,7 +29,7 @@ durable table/WAL/snapshot format changes.
 ## Audit Finding References
 
 Primary audit source:
-`docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`
+`docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`
 
 Relevant sections:
 
@@ -60,7 +60,7 @@ Supporting architecture:
 
 Performance context:
 
-1. `docs/architecture/perf-tuning/storage-next-serving-path-parity-plan.md`
+1. `docs/architecture/perf-tuning/storage-serving-path-parity-plan.md`
 2. `docs/architecture/perf-tuning/perf-i1-point-read-fix-plan.md`
 3. `docs/architecture/perf-tuning/perf-i4-branch-scan-iterator-plan.md`
 

@@ -67,7 +67,7 @@ timing goes through the existing `MaintenanceClock` abstraction; (b) `arc-swap`/
 wasm-safe (BS2 is fine); (c) **existing debt**: the committed subcompaction fan-out uses
 `std::thread::scope` unconditionally (`lifecycle/rewrite_publication.rs`) — would panic on
 wasm if reached; fixed in BS3.1 (gap G23); (d) standing gate: `cargo check
---target wasm32-unknown-unknown --no-default-features -p strata-storage-next` added to the
+--target wasm32-unknown-unknown --no-default-features -p strata-storage` added to the
 milestone gates from BS1 on.
 
 **C2 — Cache mode is untouched.** Cache mode (no WAL/manifest/snapshot/durable objects;
@@ -140,7 +140,7 @@ Every known gap, with its evidence and its home milestone. "Done" = landed this 
 
 Naming: `BS{n}` milestones; slices within each get `BS{n}.{k}` codes in the per-milestone
 implementation plans (written when the milestone starts). Every milestone ships behind the
-standing gates: full storage-next suite (recovery oracle + fault sweep + simulation), clippy
+standing gates: full storage suite (recovery oracle + fault sweep + simulation), clippy
 `-D warnings`, fmt, and a scoreboard run showing its target cells moved without regressing
 others (n≥9 for crawl-class metrics; load throughput is the stable signal).
 
@@ -376,7 +376,7 @@ BS1 (O(1) writes)  ──►  BS2 (lock-free reads)  ──►  BS3 (compaction/
 - **Methodology** (hard-learned this branch): control-first A/B on one binary via env gates;
   n≥9 interleaved for crawl-class metrics; load throughput as the stable signal; falsify
   before celebrating; measurement probes are temporary and stripped before commit.
-- **Correctness** (every slice): full storage-next suite — recovery oracle, fault sweep,
+- **Correctness** (every slice): full storage suite — recovery oracle, fault sweep,
   simulation faults — plus milestone-specific gates (BS2: snapshot-lifetime stress; BS4:
   golden vectors + crash-recovery byte-identity across the filter-frame extension).
 

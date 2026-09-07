@@ -3,7 +3,7 @@
 ## Purpose
 
 This document records the feature gap between the last old executor surface and
-the current V1 `executor-next` surface after the old crates were removed from
+the current V1 `executor` surface after the old crates were removed from
 the workspace.
 
 The goal is not to restore every old command. The goal is to avoid losing
@@ -19,7 +19,7 @@ intentional product capabilities by accident, and to separate:
 The old executor inventory is recovered from git history:
 
 - old surface: `cb01f0dd:crates/executor/src/command.rs`
-- current surface: `crates/executor-next/src/command.rs`
+- current surface: `crates/executor/src/command.rs`
 
 At the old inventory point, the executor exposed 153 command variants. The
 current V1 executor exposes 103 command variants. That raw count overstates the

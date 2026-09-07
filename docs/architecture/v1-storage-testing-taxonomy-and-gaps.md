@@ -97,7 +97,7 @@ each needing a different technique.
 
 Two cultural facts worth internalizing: SQLite's test-to-source ratio is
 **~590:1**, and RocksDB treats "extend the stress test" as a **required part of
-shipping any feature**. Storage-next's ratio is **~0.8:1** (~127k lines of test
+shipping any feature**. Storage's ratio is **~0.8:1** (~127k lines of test
 to ~158k of source) — healthy for a memory-safe, property-tested Rust core, but
 a reminder that the leverage here is *technique density*, not volume.
 
@@ -211,7 +211,7 @@ else reaches, and makes every failure replay exactly. It is normally a
 near-impossible retrofit, because it requires *all* nondeterminism behind
 swappable abstractions.
 
-Storage-next now satisfies the preconditions **by construction**, verified
+Storage now satisfies the preconditions **by construction**, verified
 against the current tree:
 
 - **I/O** is behind the `Backend` trait.

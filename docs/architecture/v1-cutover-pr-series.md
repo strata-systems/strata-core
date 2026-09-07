@@ -9,7 +9,7 @@ from build-branch crates to the canonical Strata crate graph.
 
 The detailed sequence is produced during `M10G`. It is intentionally not fully
 specified before core, storage, engine, inference, and
-intelligence-next have real crate shapes.
+intelligence have real crate shapes.
 
 ## Required Content Before M10 Cutover
 

@@ -477,13 +477,13 @@ serve at least these expectations:
 
 Future architecture work should follow these implications:
 
-1. Storage-next should be a world-class persistence substrate, not a
+1. Storage should be a world-class persistence substrate, not a
    data-capability-aware product engine.
-2. Engine-next should own product semantics: branches, data capabilities,
+2. Engine should own product semantics: branches, data capabilities,
    versioning, time travel, retrieval behavior, lifecycle orchestration, and
    user-facing errors.
-3. Core-next should define shared vocabulary and contracts that genuinely
-   belong below both storage-next and engine-next.
+3. Core should define shared vocabulary and contracts that genuinely
+   belong below both storage and engine.
 4. Executor, intelligence, inference, and CLI should be shaped after the V1
    product model is stable.
 5. Production code above engine should not access storage directly unless there
@@ -522,5 +522,5 @@ Strata V1 is ready when:
 6. CLI and SDK surfaces match the product model.
 7. Search, graph, vector, and intelligence features expose honest availability
    and failure behavior.
-8. The architecture can support storage-next, engine-next, and core-next without
+8. The architecture can support storage, engine, and core without
    preserving historical crate boundaries by inertia.

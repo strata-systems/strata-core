@@ -11,8 +11,8 @@ Test methodology:
 
 Required audit sources:
 
-1. `docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`
-2. `docs/architecture/perf-tuning/storage-next-serving-path-parity-plan.md`
+1. `docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`
+2. `docs/architecture/perf-tuning/storage-serving-path-parity-plan.md`
 
 Supporting perf evidence:
 

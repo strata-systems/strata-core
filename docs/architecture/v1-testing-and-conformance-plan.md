@@ -63,7 +63,7 @@ Performance regression benchmarks remain binding where CLAUDE.md or the current
 project rules require them. This plan does not redefine thresholds; a benchmark
 plan should rederive storage thresholds once the new architecture exists.
 
-Engine-next product-path tests are out of scope until the engine
+Engine product-path tests are out of scope until the engine
 architecture exists. This plan covers storage conformance and identifies
 where engine should later add product-path tests over L9.
 
@@ -204,7 +204,7 @@ Integration tests prove layers compose correctly:
 3. L5-L6 reads over mutable, frozen, immutable, and inherited tables.
 4. L7-L8 recovery replay and allocator catch-up.
 5. L8-L9 open, close, maintenance, health, and fault hook behavior.
-6. Engine-next product pathways over the L9 boundary.
+6. Engine product pathways over the L9 boundary.
 
 Integration tests should still use storage-shaped rows unless they are
 explicitly engine product tests.
@@ -230,7 +230,7 @@ The first storage implementation should build test infrastructure early.
 
 ### Testkit Crate Or Module
 
-Storage-next should have a reusable testkit for:
+Storage should have a reusable testkit for:
 
 1. Backend conformance.
 2. Faulting backend wrapper.
@@ -627,7 +627,7 @@ Property/fuzz tests:
 Acceptance criteria:
 
 1. Public transaction sessions are not required.
-2. Engine-next does not import WAL record structs or transaction internals.
+2. Engine does not import WAL record structs or transaction internals.
 3. L7 tests use storage-shaped rows.
 4. Ambiguous commit and durable-but-not-visible states are first-class test
    outcomes.
@@ -731,7 +731,7 @@ Boundary conformance tests:
 Error conformance tests:
 
 1. Storage boundary errors expose storage-local categories.
-2. Engine-next maps storage errors into product errors explicitly.
+2. Engine maps storage errors into product errors explicitly.
 3. No storage error exposes JSON, graph, vector, search, recipe, IPC, or Strata
    AI semantics.
 4. Error codes, retry policy, and commit outcomes match
@@ -882,4 +882,4 @@ This top-level plan is sufficient when:
    paths and never claimed by cache mode.
 5. Error tests are tied to the V1 error and diagnostics contract.
 6. Test infrastructure is treated as a first-class implementation deliverable.
-7. Engine-next can later add product-path tests without reaching around L9.
+7. Engine can later add product-path tests without reaching around L9.

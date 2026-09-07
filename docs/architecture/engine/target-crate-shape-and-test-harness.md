@@ -1,4 +1,4 @@
-# Engine-Next Target Crate Shape And Test Harness
+# Engine Target Crate Shape And Test Harness
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
@@ -78,7 +78,7 @@ Rules:
 
 Rules:
 
-1. Engine-next should use `#![deny(unsafe_code)]` unless an implementation plan
+1. Engine should use `#![deny(unsafe_code)]` unless an implementation plan
    records a narrow exception.
 2. Workspace lints are inherited; local relaxations require a written reason.
 3. Public database APIs are synchronous unless a later product architecture
@@ -157,11 +157,11 @@ modules are engine product domains, and the test targets are harness families.
 ### `api`
 
 Executor-facing engine contract and engine DTOs. This module is exported for
-executor-next and internal harnesses, but it is not the final public product API
+executor and internal harnesses, but it is not the final public product API
 layer.
 
 Owns open options, handle shape, engine data capability handles, branch/time
-DTOs, health DTOs, and engine errors consumed by executor-next.
+DTOs, health DTOs, and engine errors consumed by executor.
 
 Must not own storage keys, WAL/manifest/checkpoint DTOs, data capability
 internals, background job internals, executor command DTOs, SDK DTOs, CLI DTOs,
@@ -292,7 +292,7 @@ storage/backend decisions.
 
 ## Test Harness Shape
 
-Engine-next should provide two test-support levels:
+Engine should provide two test-support levels:
 
 1. `test_support/`: crate-private helpers for unit tests.
 2. `testkit/`: feature-gated cross-crate harness for integration and product
@@ -316,7 +316,7 @@ Required harnesses:
 
 ## Forbidden Shapes
 
-Engine-next should not introduce:
+Engine should not introduce:
 
 1. `graph/`, `vector/`, or `search/` as top-level peer crates or top-level
    architecture buckets.
@@ -339,7 +339,7 @@ and search into `retrieval/`.
 
 This document is satisfied when:
 
-1. Engine-next implementation plans use this domain-shaped crate tree.
+1. Engine implementation plans use this domain-shaped crate tree.
 2. Every new public module has a product or architecture reason.
 3. Data capabilities share the same implementation pattern.
 4. Persistence is the only normal storage-facing path.

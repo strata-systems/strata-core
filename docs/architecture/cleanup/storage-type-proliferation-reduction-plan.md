@@ -1,4 +1,4 @@
-# Storage-Next Type Proliferation Reduction Plan
+# Storage Type Proliferation Reduction Plan
 
 Status: historical cleanup plan; temporary inventory guard retired
 

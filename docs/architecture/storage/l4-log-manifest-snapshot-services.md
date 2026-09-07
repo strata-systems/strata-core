@@ -45,7 +45,7 @@ conditional object-store publication.
 
 ## Core Decision
 
-Storage-next needs a durable service layer, not scattered helper functions.
+Storage needs a durable service layer, not scattered helper functions.
 
 The current code repeats the same durable-publish pattern in several places:
 
@@ -58,7 +58,7 @@ fsync parent directory
 
 That pattern appears in database MANIFEST writes, snapshot writes, branch/table
 manifest writes, quarantine manifest writes, and table file construction.
-Storage-next should make this a first-class L4 service over L1 backend
+Storage should make this a first-class L4 service over L1 backend
 capabilities.
 
 The local filesystem backend can still implement L1 publish with temp files,
@@ -211,7 +211,7 @@ Current table manifest facts:
 - `crates/storage/src/segmented/quarantine_protocol.rs`
 
 Quarantine policy belongs mostly to L8, but the current code is important L4
-evidence because it repeats the durable-publish idiom. Storage-next should not
+evidence because it repeats the durable-publish idiom. Storage should not
 copy this pattern again. Quarantine should consume the same L4 publish service
 as manifests and table objects.
 
@@ -243,7 +243,7 @@ Current tests already encode many L4 invariants:
 - codec-aware WAL paths are required for encrypted WALs
 - WAL truncation does not remove active or uncovered segments
 
-## Storage-Next Implementation Map
+## Storage Implementation Map
 
 M4P-L4A reconciles this architecture document with the storage service
 layer that exists today. The old-storage references above remain parity
@@ -251,7 +251,7 @@ evidence. The current storage implementation lives under
 `crates/storage/src/service` and is consumed by lifecycle/recovery code
 under `crates/storage/src/lifecycle`.
 
-| Storage-next service | Current role | L4A inventory status |
+| Storage service | Current role | L4A inventory status |
 | --- | --- | --- |
 | `service/publish.rs` | Shared object publication wrapper over L1 backend publish modes. It enforces durable publish/sync capabilities before durable create/replace and validates visible durable outcomes. | Covered by the durable publisher transition rows below. |
 | `service/wal.rs` | WAL segment creation/open, append, force, read, latest-tail repair, retention delete, growth facts, and optional sidecar cleanup. | Covered by WAL create, append, repair, and retention rows. |
@@ -265,7 +265,7 @@ under `crates/storage/src/lifecycle`.
 
 The current topology is intentionally different from old storage. Old storage
 used branch-local `segments.manifest` files as the dominant durable table
-source of truth. Storage-next splits durable state across database manifest,
+source of truth. Storage splits durable state across database manifest,
 branch catalog, per-branch table manifests, table-object facts, WAL segments,
 checkpoint facts, snapshot objects, optional sidecars, and quarantine
 inventories. That split is acceptable only if L4 returns enough mechanical facts
@@ -338,7 +338,7 @@ The same publish protocol is duplicated across:
 - WAL segment creation
 - segment metadata sidecars
 
-Storage-next should factor this into one durable publish service with explicit
+Storage should factor this into one durable publish service with explicit
 failure semantics.
 
 ### Mixed Service And Policy
@@ -351,7 +351,7 @@ layers:
 - engine-supplied primitive checkpoint data
 - retention/truncation decisions
 
-Storage-next should keep the mechanics in L4 and move lifecycle policy to L8.
+Storage should keep the mechanics in L4 and move lifecycle policy to L8.
 
 ### Primitive Leakage In Snapshot Service
 
@@ -378,7 +378,7 @@ They have different semantics, but they share service needs:
 - handle missing manifest where allowed
 - report corruption precisely
 
-Storage-next should distinguish manifest roles while sharing the durable
+Storage should distinguish manifest roles while sharing the durable
 manifest service machinery.
 
 ### WAL Append Does Not Generalize To Object Stores
@@ -386,7 +386,7 @@ manifest service machinery.
 The current WAL writer is file-append oriented. Local filesystem can support
 that well. Browser/cache can fake it. Object stores usually cannot.
 
-Storage-next should avoid exposing "open appendable file" as the L4 contract.
+Storage should avoid exposing "open appendable file" as the L4 contract.
 It should define WAL as a service that can be implemented as:
 
 - local appendable segment files for local FS
@@ -623,7 +623,7 @@ WAL truncation must not delete the active segment or any segment at or above
 the safe active boundary.
 
 The current WAL compactor uses the maximum of manifest active segment and
-writer active segment. Storage-next should preserve this "writer fact beats
+writer active segment. Storage should preserve this "writer fact beats
 stale manifest fact" safety rule or replace it with a stronger manifest fencing
 protocol. Table compaction remains L5/L8; this L4 service is only about durable
 log reachability and safe WAL object deletion.

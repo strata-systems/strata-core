@@ -1,6 +1,6 @@
 # Follower Mode Removal Plan
 
-Status: V1 cleanup plan, aligned with engine-next architecture
+Status: V1 cleanup plan, aligned with engine architecture
 
 This document is still active as the implementation cleanup plan for removing
 follower mode from the current codebase. The target architecture is defined in
@@ -9,8 +9,8 @@ follower mode from the current codebase. The target architecture is defined in
 
 ## Purpose
 
-Remove follower mode from the current Strata codebase before storage-next and
-engine-next work begins.
+Remove follower mode from the current Strata codebase before storage and
+engine work begins.
 
 Follower mode currently acts as a second local database runtime over the same
 disk state. It avoids the primary lock, reconstructs state through recovery,
@@ -43,7 +43,7 @@ read-only follower.
 1. Do not redesign IPC in this work.
 2. Do not change WAL, manifest, checkpoint, or snapshot file formats.
 3. Do not change normal primary recovery semantics.
-4. Do not introduce storage-next abstractions.
+4. Do not introduce storage abstractions.
 5. Do not preserve follower compatibility shims. Strata is pre-v1, and keeping
    dead compatibility surface would make the next architecture pass harder.
 
@@ -419,7 +419,7 @@ Mitigation:
 ### Risk: Storage API Keeps Dead Follower Concepts
 
 Leaving `FollowerNeverCreateManifest`, follower layout paths, or follower
-state files in storage would make storage-next consume a dead concept.
+state files in storage would make storage consume a dead concept.
 
 Mitigation:
 

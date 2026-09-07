@@ -29,13 +29,13 @@ checkpointed, compacted, pruned, repaired, quiesced, or closed.
 L8 is that orchestration layer.
 
 It is still storage-internal. It should expose raw storage facts upward, but it
-must not turn those facts into product meaning. Engine-next decides product open
+must not turn those facts into product meaning. Engine decides product open
 policy, public error wording, IPC behavior, primitive snapshot reconstruction,
 and user-facing recovery UX.
 
 ## Core Decision
 
-Storage-next should have one explicit lifecycle layer rather than scattered
+Storage should have one explicit lifecycle layer rather than scattered
 maintenance helpers.
 
 The target shape is:
@@ -70,7 +70,7 @@ L8 should make those operations observable and testable storage internals.
 
 ### Compaction Shape Policy
 
-Storage-next uses the segmented level-target calculation for lifecycle
+Storage uses the segmented level-target calculation for lifecycle
 compaction pressure. Empty layouts start L1 at 1 MiB, and each deeper nonzero
 level multiplies the previous target by 10. Non-empty layouts derive the base
 target from the largest populated nonzero level, clamp the base between 1 MiB
@@ -114,13 +114,13 @@ with a retryable outcome so the flush drain can make progress first.
 
 Memory release remains measure-first. Flush drains record active and frozen
 mutable bytes before and after the drain plus a retained-byte re-evaluation
-threshold. Storage-next does not call nonportable allocator release hooks in V1;
+threshold. Storage does not call nonportable allocator release hooks in V1;
 the counter surface is the handoff for deciding whether such a hook belongs in
 storage or a lower allocator/backend layer.
 
 ### Snapshot And Pruning Ownership
 
-Snapshot object pruning is separate from source-shape maintenance. Storage-next
+Snapshot object pruning is separate from source-shape maintenance. Storage
 does not implement an implicit `set_snapshot_floor` or `gc_safe_point`
 equivalent during flush, compaction, materialization, checkpoint, or close.
 Snapshot-floor advancement is owned by the caller-supplied retention proof: the
@@ -143,7 +143,7 @@ diagnostics, not evidence that compaction or flush moved the retention floor.
 
 ### Maintenance Coverage Trigger Model
 
-Storage-next runs an in-process maintenance coverage pass after a successful
+Storage runs an in-process maintenance coverage pass after a successful
 mutating commit has evaluated the committing branch's post-commit maintenance
 pressure. The pass scans the deterministic live branch list and can discover
 quiet branches with frozen-table, L0, nonzero-level, or inherited-layer
@@ -161,7 +161,7 @@ unbounded duplicate queue.
 task inline. Cross-branch coverage work is queued deterministically and is not
 driven inline by the coverage pass. `Disabled` policy skips coverage entirely.
 
-Storage-next has no implicit background scheduler clock. Idle rounds therefore
+Storage has no implicit background scheduler clock. Idle rounds therefore
 mean consecutive coverage passes, triggered by later mutating commits, that find
 no eligible quiet-branch work. The in-process idle anchor consumes at most five
 idle rounds before recording an idle-limit stop. Healthy, idle-limit,
@@ -422,7 +422,7 @@ snapshot objects.
 - lossy fallback facts
 - maintenance state
 
-Engine-next may turn these facts into product diagnostics. Storage should not
+Engine may turn these facts into product diagnostics. Storage should not
 hide or over-interpret them.
 
 ### RecoveryHealth
@@ -444,7 +444,7 @@ on the engine public surface; the V1 cutover must either re-export/wrap
 storage-owned recovery health through engine or retire the engine-owned
 definitions.
 
-Storage should classify the facts. Engine-next decides whether a product open
+Storage should classify the facts. Engine decides whether a product open
 accepts or rejects a degraded outcome.
 
 ### MaintenanceTask
@@ -539,7 +539,7 @@ retention debt.
 Quarantine is a safety buffer between "not referenced now" and "deleted
 forever."
 
-Storage-next should preserve the current staged idea:
+Storage should preserve the current staged idea:
 
 1. block reclaim under unsafe degraded recovery
 2. prove the object is not referenced by live manifests and inherited layers
@@ -668,7 +668,7 @@ L8 optionally schedules snapshot pruning
 return raw checkpoint outcome
 ```
 
-Storage-next must not reconstruct graph, vector, JSON, event, search, or
+Storage must not reconstruct graph, vector, JSON, event, search, or
 intelligence semantics during checkpoint. It receives bytes or storage-shaped
 snapshot sections.
 
@@ -734,7 +734,7 @@ Metrics:
 - write stall counts and durations
 - selected storage runtime budget facts
 
-These facts should stay raw. Engine-next can render them for CLI, Strata AI, or
+These facts should stay raw. Engine can render them for CLI, Strata AI, or
 future StrataHub diagnostics.
 
 ## Backend Requirements
@@ -768,7 +768,7 @@ Future object-store/OpenDAL-backed mode:
 - may require chunked WAL, lease/lock services, and manifest generation checks
 - should fail open if requested durability cannot be provided
 
-Storage-next should design L8 with object-store constraints in mind, but the
+Storage should design L8 with object-store constraints in mind, but the
 first implementation does not need to ship production S3 durability.
 
 ## Storage Mode Capability Matrix
@@ -904,7 +904,7 @@ Not required for V1 storage:
 
 ## Implementation Notes
 
-Storage-next should avoid copying current one-off helper growth into L8.
+Storage should avoid copying current one-off helper growth into L8.
 
 Prefer repeatable concepts:
 

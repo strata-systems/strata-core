@@ -258,7 +258,7 @@ PERF-I2B is complete when:
 
 Implemented on the `perf/storage-traces-fixes` branch.
 
-Storage-next 100K cache load after the runtime duplicate-check fix:
+Storage 100K cache load after the runtime duplicate-check fix:
 
 | Metric | Before | After |
 | --- | ---: | ---: |

@@ -1,4 +1,4 @@
-# Engine-Next Architecture
+# Engine Architecture
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
@@ -14,7 +14,7 @@ The current engine crate map is documented in
 [docs/engine/engine-crate-map.md](../engine/engine-crate-map.md). That map is
 evidence. This document is the target internal architecture model.
 
-Engine-next should preserve the correct product boundary created by the engine
+Engine should preserve the correct product boundary created by the engine
 consolidation work while cleaning up the inside of the crate. The goal is not
 bespoke feature development. The goal is a reference-grade engine structure that
 is easier to reason about, test, and extend.
@@ -69,7 +69,7 @@ the current code got here. They are not target architecture.
 
 ## Product Constraints
 
-Engine-next exists to serve the V1 product model.
+Engine exists to serve the V1 product model.
 
 The important constraints are:
 
@@ -98,15 +98,15 @@ The important constraints are:
     control-plane tools.
 16. Users should not operate flush, compaction, checkpoint, retention, or
     recovery during normal use.
-17. Runtime resource profiling is a product requirement. Engine-next owns
+17. Runtime resource profiling is a product requirement. Engine owns
     product-wide resource policy and passes resolved storage budgets down.
 18. Upper layers must not reach around engine to consume storage directly.
 
-## Binding Engine-Next Decisions
+## Binding Engine Decisions
 
 These decisions pin the first-pass engine direction.
 
-1. **Engine-next is one semantic crate, not peer data-capability crates.**
+1. **Engine is one semantic crate, not peer data-capability crates.**
    KV, JSON, event, vector, and graph are product capabilities over one KV row
    substrate. Graph and vector are not top-level engine architecture buckets,
    and JSON/event/vector/graph are not peer storage engines.
@@ -123,17 +123,17 @@ These decisions pin the first-pass engine direction.
 
 4. **The control plane is first-class.**
    The global `_system_` branch and branch-local `_system_` space are target
-   architecture, not incidental implementation detail. Engine-next uses them
+   architecture, not incidental implementation detail. Engine uses them
    for recipes, capability registries, projection manifests, watermarks, derived
    state status, policies, and job metadata.
 
 5. **Persistence is the only normal storage-facing bucket.**
-   Engine-next should concentrate storage imports behind a persistence
+   Engine should concentrate storage imports behind a persistence
    adapter. Other buckets should use engine-owned key, row, batch, read, write,
    and timeline abstractions rather than importing storage internals directly.
 
 6. **Commit is internal but central.**
-   Engine-next keeps an internal commit unit, batch semantics, version
+   Engine keeps an internal commit unit, batch semantics, version
    allocation coordination, observers, and write ordering. It does not expose
    ordinary manual begin/commit/rollback sessions as the main product model.
    Each normal public write is one commit. Explicit batch APIs such as KV batch
@@ -141,7 +141,7 @@ These decisions pin the first-pass engine direction.
    are not a V1 requirement.
 
 7. **Branch product semantics stay in engine.**
-   Storage-next owns generic branch-isolated physical mechanics. Engine-next
+   Storage owns generic branch-isolated physical mechanics. Engine
    owns branch names, fork, merge, diff, restore, revert, cherry-pick,
    branch-from-history, and user-facing conflict policy.
 
@@ -151,17 +151,17 @@ These decisions pin the first-pass engine direction.
    behavior. They must not silently contradict committed source rows.
 
 9. **Intelligence and inference stay above engine.**
-   Engine-next can store model configuration and expose deterministic
+   Engine can store model configuration and expose deterministic
    retrieval. It should not call remote model providers or own inference
-   execution. Intelligence-next supplies model-dependent orchestration.
+   execution. Intelligence supplies model-dependent orchestration.
 
 10. **IPC command semantics belong to engine; IPC transport does not.**
-    Engine-next owns command classification, access-mode validation, product
+    Engine owns command classification, access-mode validation, product
     errors, and serializable command behavior. Executor/CLI or a later IPC
     runtime owns transport and process management.
 
 11. **Follower mode is excluded.**
-    Engine-next must not preserve follower refresh, follower state files,
+    Engine must not preserve follower refresh, follower state files,
     follower watermarks, or follower-specific recovery semantics as target
     architecture.
 
@@ -176,13 +176,13 @@ These decisions pin the first-pass engine direction.
     format/layout error unless a specific implementation plan later approves a
     one-off developer conversion utility.
 
-14. **Intelligence-next and inference are sequenced after engine.**
+14. **Intelligence and inference are sequenced after engine.**
     Semantic search, RAG, query expansion, reranking, generation, and model
     management pathways that need provider execution depend on those follow-up
     architecture documents.
 
 15. **Strata AI is a product client, not an engine bucket.**
-    Intelligence-next is an in-process Rust crate engine consumers may depend
+    Intelligence is an in-process Rust crate engine consumers may depend
     on. Strata AI is a user-facing product that consumes engine plus
     intelligence either in-process when bundled or over IPC when external.
 
@@ -290,7 +290,7 @@ The engine buckets are conceptual architecture buckets, not required Rust
 module names.
 
 ```text
-strata-intelligence-next / executor / cli / SDK / Strata AI
+strata-intelligence / executor / cli / SDK / Strata AI
         |
         v
 +------------------------------------------------+
@@ -334,9 +334,9 @@ giant branch operation file.
 
 ## API Bucket
 
-API is the executor-facing engine contract consumed by executor-next,
-intelligence-next, tests, and internal engine harnesses. It is not the public
-product/API layer. Executor-next owns the public command/API surface and adapts
+API is the executor-facing engine contract consumed by executor,
+intelligence, tests, and internal engine harnesses. It is not the public
+product/API layer. Executor owns the public command/API surface and adapts
 engine outcomes into CLI, SDK, IPC, and product-facing shapes.
 
 It owns:
@@ -349,7 +349,7 @@ It owns:
 - branch and time-travel command DTOs
 - retrieval request/response DTOs
 - engine health/status/report DTOs
-- engine error surface consumed by executor-next
+- engine error surface consumed by executor
 
 It must not own:
 
@@ -951,7 +951,7 @@ Current evidence:
 
 ## Data Movement And StrataHub Substrate
 
-Engine-next should treat clone/export/import/sync substrate as product semantics
+Engine should treat clone/export/import/sync substrate as product semantics
 above storage, but this document does not create a separate target bucket yet.
 
 For the first architecture pass:
@@ -964,7 +964,7 @@ For the first architecture pass:
 - actual network sync remains post-V1 unless a dedicated sync architecture
   says otherwise
 
-Storage-next persists bytes and rows. Engine-next understands branches, data
+Storage persists bytes and rows. Engine understands branches, data
 capabilities, entity references, recipes, derived state, provenance, and product
 errors. Therefore dataset movement is an engine/product concern, not a storage
 concern.
@@ -1002,7 +1002,7 @@ Current evidence:
 
 Testing is not a bucket. It cuts across every bucket.
 
-Engine-next must be designed so each bucket has direct tests:
+Engine must be designed so each bucket has direct tests:
 
 1. API surface and command classification tests.
 2. Runtime open/cache/read-only/IPC-classification tests.
@@ -1101,9 +1101,9 @@ storage boundary.
 | `bundle/` | Orchestration/Data Movement | Legacy branch-bundle path; remove from V1 product surface, and reuse code only when it serves the `.strata` clone-artifact contract without preserving branch-bundle compatibility. |
 | `test_path_key.rs`, `database/test_hooks.rs` | Diagnostics/Test | Test/fault support should become explicit and scoped. |
 
-## What Engine-Next Must Exclude
+## What Engine Must Exclude
 
-Engine-next must not include:
+Engine must not include:
 
 1. Storage backend IO implementation.
 2. WAL, manifest, table, checkpoint, and storage recovery internals below L9.
@@ -1117,7 +1117,7 @@ Engine-next must not include:
 10. User-operated flush, compact, checkpoint, and low-level maintenance flows as
     ordinary product pathways.
 
-Engine-next may expose engine-owned diagnostics about lower-layer facts. That
+Engine may expose engine-owned diagnostics about lower-layer facts. That
 does not make the lower-layer fact an engine implementation detail.
 
 ## Design Consequences
@@ -1141,7 +1141,7 @@ does not make the lower-layer fact an engine implementation detail.
 8. Data capability conformance tests should be designed before rewriting all
    capability implementations.
 9. Engine re-exports should expose only the executor-facing contract; the
-   public product/API surface belongs in executor-next.
+   public product/API surface belongs in executor.
 10. Data movement should be designed with StrataHub substrate in mind, but sync
     must remain explicit and opt-in.
 
@@ -1159,9 +1159,9 @@ The remaining architecture sequence after engine is:
 
 1. Final public API and CLI implementation plans.
 
-Inference-next is now documented in
+Inference is now documented in
 [inference-architecture.md](./inference-architecture.md). It is listed
-here as a completed lower model-execution anchor. Intelligence-next is now
+here as a completed lower model-execution anchor. Intelligence is now
 documented in
 [intelligence-architecture.md](./intelligence-architecture.md) as the
 Strata-aware model orchestration layer.

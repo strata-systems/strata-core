@@ -3,10 +3,10 @@
 ## Status
 
 Status: implemented hand-maintained inventory for
-`crates/executor-next/src/output.rs`.
+`crates/executor/src/output.rs`.
 
 This document records every public `Output` variant currently exposed by
-executor-next and maps it to the target V1 response concept. It is the source
+executor and maps it to the target V1 response concept. It is the source
 of truth for the response-contract completion slices until the IDL can generate
 the same inventory automatically.
 
@@ -46,7 +46,7 @@ shared concept.
 Golden fixture paths are target paths under:
 
 ```text
-crates/executor-next/tests/fixtures/responses/v1/
+crates/executor/tests/fixtures/responses/v1/
 ```
 
 Representative fixtures now exist for every public response family and every

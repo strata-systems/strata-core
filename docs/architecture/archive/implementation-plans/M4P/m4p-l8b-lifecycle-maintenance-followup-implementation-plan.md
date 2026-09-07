@@ -16,8 +16,8 @@ Architecture context:
 
 Audit context:
 
-1. `docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`
-2. `docs/architecture/perf-tuning/storage-next-serving-path-parity-plan.md`
+1. `docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`
+2. `docs/architecture/perf-tuning/storage-serving-path-parity-plan.md`
 3. `docs/architecture/implementation-plans/M4P/m4p-l8-automatic-maintenance-scheduling-followup.md`
 
 ## Objective

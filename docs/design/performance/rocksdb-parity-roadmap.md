@@ -1,7 +1,7 @@
 # RocksDB parity roadmap: the three root causes and their proven fixes
 
 Status: **strategy**. Companion to `rocksdb-aligned-compaction-plan.md` (the compaction slices)
-and the M4P-L8I lock-decoupling plan. Grounded in (a) a full read of the storage-next crate,
+and the M4P-L8I lock-decoupling plan. Grounded in (a) a full read of the storage crate,
 (b) a YCSB matrix (strata vs RocksDB, same harness: `benchmarks/src/bin/{engine_ycsb,rocksdb_ycsb}.rs`),
 and (c) a deep read of the RocksDB source for each mechanism (anchors below reference
 `~/Documents/GitHub/rocksdb`).
@@ -141,7 +141,7 @@ miss, never an error. Scans use auto-ramping readahead (8 KB→256 KB,
 
 Validation: the YCSB matrix (`engine-ycsb` vs `rocksdb-ycsb`, 100 K/1 M/10 M, A–F) is the
 standing scoreboard; each slice must move its target cells without regressing the others, and
-the full storage-next suite (recovery oracle + fault sweep) gates every step.
+the full storage suite (recovery oracle + fault sweep) gates every step.
 
 ## Invariants (unchanged from the layer contracts)
 

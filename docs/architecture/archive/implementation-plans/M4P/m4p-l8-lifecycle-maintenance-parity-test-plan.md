@@ -12,7 +12,7 @@ Architecture context:
 `docs/architecture/storage/l8-lifecycle-recovery-maintenance.md`
 
 Audit context:
-`docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`
+`docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`
 
 ## Goal
 

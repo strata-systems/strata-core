@@ -19,7 +19,7 @@ crash-window simulations.
 
 This plan must be checked against the audit findings before implementation starts:
 
-- `docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`
+- `docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`
   - `L4. Log / Manifest / Snapshot Services`
   - `Audit Matrix / Durability, Manifest, WAL, And Recovery Mechanics`
   - `Final Parity Matrix And Architecture-Aligned Gap Plan`

@@ -90,7 +90,7 @@ raw materials no other database has together:
    instead of inventing structure from unstructured text on every call.
 3. **Branches and time travel**: a place to do analysis without polluting
    production data, and the ability to compare states across time.
-4. **Native inference** (`inference-next`) with both local model execution
+4. **Native inference** (`inference`) with both local model execution
    (llama.cpp, any HF model) and remote provider APIs (OpenAI, Anthropic,
    Google). The same product runs in regulated air-gapped environments and
    in environments that want frontier-model quality.

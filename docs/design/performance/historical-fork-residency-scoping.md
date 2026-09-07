@@ -12,8 +12,8 @@ Historical / time-travel forks — `fork_at_retained_version` and `fork_at_retai
 `branch_lifecycle.rs:721/793`) — **materialize the entire visible state of the source branch into
 RAM** and install it as fresh eager tables. Ordinary `fork_current` is copy-on-write (references the
 parent's tables via an inherited layer, zero row copy). The historical-fork path is a first-class,
-**V1-required** product feature that is exposed through the full `-next` stack (executor-next command →
-engine-next service → storage API), and it **violates its own product spec**, which states: *"Avoid
+**V1-required** product feature that is exposed through the full `-next` stack (executor command →
+engine service → storage API), and it **violates its own product spec**, which states: *"Avoid
 materialized full copies unless COW cannot support the requested point"* (Pathway 29, line 217).
 
 The good news from the root-cause dig: **COW *can* support the requested point — materialization is a
@@ -147,7 +147,7 @@ Existing (must stay green — value + semantic equality is the contract):
   `fork_at_history_retained_version_succeeds:687`).
 - `api/tests/branch.rs:217/241/270/318` (succeeds / watermark-between-commits / unretained-rejects /
   timestamp-resolves); `tests/api_properties.rs:178`.
-- `engine-next/tests/temporal_timeline_model.rs:142` `fork_at_version_equals_source_as_of` (the core
+- `engine/tests/temporal_timeline_model.rs:142` `fork_at_version_equals_source_as_of` (the core
   correctness invariant: a v-fork equals reading the source `as_of` that version).
 - `lifecycle/tests/recovery.rs:2073` (recovery after historical fork); `engine_vector/index_manifest.rs:676`.
 

@@ -79,14 +79,14 @@ M6TD2: Cover recipe freshness degradation
 | Milestone | Title | Implementation status | Test status | Gate status | Next action |
 |---|---|---|---|---|---|
 | `M0` | Architecture freeze and tracking | Complete | Complete | Complete | M0 closed. |
-| `M1` | Core-next | Complete | Complete | Complete | M1 closed; start `M2A` and `M2TA` when storage implementation begins. |
-| `M2` | Storage-next testkit and crate skeleton | Complete | Complete | Complete | M2 closed. |
-| `M3` | Storage-next backend, layout, format, and durable services | Complete | Complete | Complete | M3 closed. M3TF1 reran lower-layer backend conformance across memory and local filesystem backends after durable services landed. |
-| `M4` | Storage-next table, branch, commit, recovery, and L9 API | Planned | Planned | Planned | Start M4 storage table, branch, commit, lifecycle recovery, and L9 API work. |
-| `M5` | Engine-next persistence adapter and control plane | Planned | Planned | Planned | Start after L9 is consumable. |
-| `M6` | Engine-next product semantics | Planned | Planned | Planned | Start after engine persistence/control plane are stable. |
-| `M7` | Inference-next hardening | Planned | Planned | Planned | May start now if inference should run parallel with storage path. |
-| `M8` | Intelligence-next orchestration | Planned | Planned | Planned | Start after engine surfaces and inference task contracts are ready. |
+| `M1` | Core | Complete | Complete | Complete | M1 closed; start `M2A` and `M2TA` when storage implementation begins. |
+| `M2` | Storage testkit and crate skeleton | Complete | Complete | Complete | M2 closed. |
+| `M3` | Storage backend, layout, format, and durable services | Complete | Complete | Complete | M3 closed. M3TF1 reran lower-layer backend conformance across memory and local filesystem backends after durable services landed. |
+| `M4` | Storage table, branch, commit, recovery, and L9 API | Planned | Planned | Planned | Start M4 storage table, branch, commit, lifecycle recovery, and L9 API work. |
+| `M5` | Engine persistence adapter and control plane | Planned | Planned | Planned | Start after L9 is consumable. |
+| `M6` | Engine product semantics | Planned | Planned | Planned | Start after engine persistence/control plane are stable. |
+| `M7` | Inference hardening | Planned | Planned | Planned | May start now if inference should run parallel with storage path. |
+| `M8` | Intelligence orchestration | Planned | Planned | Planned | Start after engine surfaces and inference task contracts are ready. |
 | `M9` | StrataHub V1 integration | Planned | Planned | Planned | Start after engine clone substrate and CLI conventions are stable. |
 | `M10` | Executor, CLI, SDK, tests, benches, and docs cutover | Planned | Planned | Planned | Start after product and StrataHub surfaces stabilize. |
 | `M11` | V1 readiness hardening | Planned | Planned | Planned | Start after cutover. |
@@ -96,15 +96,15 @@ M6TD2: Cover recipe freshness degradation
 | Epic | Title | Track | Status | Blocks | Next action |
 |---|---|---|---|---|---|
 | `M0D` | Tracking setup | Implementation | Complete | none | M0 can close and M1 can start. |
-| `M1A` | Core-next crate skeleton | Implementation | Complete | none | `M1A1` complete; continue M1 atom work. |
+| `M1A` | Core crate skeleton | Implementation | Complete | none | `M1A1` complete; continue M1 atom work. |
 | `M1TA` | Core atom unit tests | Test | Complete | none | Atom tests cover construction, validation, ordering, parsing, display, and serde behavior through `M1C`. |
 | `M1B` | Core atoms | Implementation | Complete | none | `M1B1` through `M1B4` complete. |
 | `M1C` | Core atom encodings | Implementation | Complete | none | Parse, display, and serde behavior complete. |
 | `M1TB` | Core atom property tests | Test | Complete | none | Generated ordering, boundary, invalid-input, and parse/display/serde round-trip coverage complete. |
-| `M1TC` | Core-next dependency guard | Test | Complete | none | Guard fails if core declares or resolves a dependency on any other Strata crate. |
-| `M1D` | Core-next boundary documentation | Implementation | Complete | none | Implemented public exports and rejected candidates are documented. |
-| `M1TD` | Core-next API audit | Test | Complete | none | Public API snapshot guard is checked in and runs with the core test suite. |
-| `M2A` | Storage-next crate skeleton | Implementation | Complete | none | `M2A1` complete. |
+| `M1TC` | Core dependency guard | Test | Complete | none | Guard fails if core declares or resolves a dependency on any other Strata crate. |
+| `M1D` | Core boundary documentation | Implementation | Complete | none | Implemented public exports and rejected candidates are documented. |
+| `M1TD` | Core API audit | Test | Complete | none | Public API snapshot guard is checked in and runs with the core test suite. |
+| `M2A` | Storage crate skeleton | Implementation | Complete | none | `M2A1` complete. |
 | `M2B` | Backend contract shell | Implementation | Complete | none | `M2B1` complete. |
 | `M2C` | Memory and local backend shells | Implementation | Complete | none | `M2C1` complete. |
 | `M2TA` | Backend conformance smoke | Test | Complete | none | Private backend conformance smoke covers memory and local filesystem shells. |

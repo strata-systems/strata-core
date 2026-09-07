@@ -187,7 +187,7 @@ Exit gate:
 2. Every keep/rewrite test has a target `M*T` track.
 3. Deleted/archived tests are tied to a V1 product or architecture decision.
 
-### M1T: Core-Next Tests
+### M1T: Core Tests
 
 Likely sources:
 
@@ -298,7 +298,7 @@ Every milestone test epic should map to one of the V1 test types in this
 document. If a milestone needs a custom gate that does not map cleanly, its
 implementation plan must name the custom gate and why it is necessary.
 
-### M7T: Inference-Next Tests
+### M7T: Inference Tests
 
 Likely sources:
 
@@ -317,7 +317,7 @@ V1 test focus:
 7. Fake providers.
 8. Unsafe audit/lifecycle tests for local runtime.
 
-### M8T: Intelligence-Next Tests
+### M8T: Intelligence Tests
 
 Likely sources:
 

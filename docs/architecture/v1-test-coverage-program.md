@@ -47,7 +47,7 @@ verbs, hub browse), W4 (the remaining generators: 4.1b, the 110-code replay drai
 4.9 fault families, 4.12 Adya), and Phase 5's 5.3–5.6. The drifted shell CLI
 corpora (`scripts/cli-tests/`, `scripts/cli-corpus/`, the `cli_next_*` scripts)
 were RETIRED in W0e: unmaintained and run by no CI lane, they had drifted on
-several renames (`event len`→`event count`, the `strata-cli-next` build target,
+several renames (`event len`→`event count`, the `strata-cli` build target,
 and reshaped outputs) and no longer built or passed. The real-binary Rust suite
 `crates/cli/tests/cli_execution.rs` is the authoritative CLI coverage.
 
@@ -679,7 +679,7 @@ Recorded so absence is a decision, not an accident:
 | loom/shuttle for L7 | Hand-rolled deterministic guard interleavings accepted by plan | **Superseded by Phase 4.3** — loom-based schedule exploration over the real commit/BS5/scan interleavings landed (a/b/c, #2682 closed); this row is closed, not open |
 | Close-runner rotate-refusal harmonization onto `decide_flush_rotation` (#2612 residual) | Production-unreachable (no production `DrainBeforeClose` flush producer); close-at-saturation verified sound | A production `DrainBeforeClose` flush producer appears |
 | OpenDAL/object backend conformance | Backend is post-V1 | Backend work starts |
-| CLI `--memory-budget` / `--profile` flags and `commands` / `explain` subcommands (cli-next plan items) | The shipped CLI never grew these surfaces; testing them would test nothing | If/when the CLI adds resource-profile flags or the IDL-generated command explorer |
+| CLI `--memory-budget` / `--profile` flags and `commands` / `explain` subcommands (cli plan items) | The shipped CLI never grew these surfaces; testing them would test nothing | If/when the CLI adds resource-profile flags or the IDL-generated command explorer |
 | Per-branch orphaned-delta fix (durable flushed-branch set + per-branch recovery, lifting the checkpoint guard and the #2624 close defer; multi-branch crash harness extension) | Frozen-format manifest change + two-phase recovery rework, coordinated with post-V1 multi-branch durable maintenance; guard verified airtight across all three publish paths (2.7) | Multi-branch durable-maintenance work starts (plan: `archive/implementation-plans/storage-testing/multi-branch-orphaned-delta-recovery-gap.md`) |
 | Cross-version metamorphic harness (Pebble model: the same seeded op-sequence replayed across the last N released versions + head; output divergence = compatibility bug; doubles as upgrade/compat coverage) | Was meaningless before a second tagged release existed | **Re-entry condition FIRED** — v1.0.0 / v1.1.0 / v1.1.1 are tagged; ready to build on the 4.2 nightly lane (its generator + corpora). Tracked under remediation W3 |
 

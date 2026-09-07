@@ -61,12 +61,16 @@
 //! ```
 //!
 //! The whole branch verb set on [`branch::BranchService`], named once so none of
-//! it stays hidden behind the CLI's own vocabulary:
+//! it stays hidden behind the CLI's own vocabulary. A test pins this list
+//! against the service, so a verb cannot be added or removed without it:
 //!
 //! ```text
-//! fork_current, create_from_head, fork_at_version, fork_at_timestamp,
+//! list, get, create, fork_current, fork_at_version, fork_at_timestamp,
 //! compare, preview, promote, delete
 //! ```
+//!
+//! `create` makes an empty branch; the `fork_*` verbs branch from an existing
+//! one, at its head or at a given point.
 //!
 //! `fork_at_version` takes a [`CommitVersion`] and `fork_at_timestamp` a
 //! [`Timestamp`] — both come off the commit a write acknowledged.

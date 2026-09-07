@@ -4,7 +4,7 @@ Status: Draft product inventory
 
 This document classifies Strata's current and intended product surface for V1.
 It sits under `docs/product/strata-v1-product-requirements.md` and should be
-read before architecture work on storage-next, engine-next, core-next, executor,
+read before architecture work on storage, engine, core, executor,
 intelligence, inference, or CLI.
 
 The goal is to prevent historical implementation surface from automatically

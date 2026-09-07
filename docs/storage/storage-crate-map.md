@@ -381,10 +381,10 @@ points are:
 ## Next Mapping Step
 
 The next architecture pass should not start by moving code. It should first
-define the intended storage-next layers:
+define the intended storage layers:
 
 ```text
-storage-next candidate layers
+storage candidate layers
 +-- data model and keyspace
 +-- write path
 +-- read path

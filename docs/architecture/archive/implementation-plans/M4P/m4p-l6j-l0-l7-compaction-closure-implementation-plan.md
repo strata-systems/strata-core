@@ -12,7 +12,7 @@ Related L6 test plan:
 `docs/architecture/implementation-plans/M4P/m4p-l6-branch-lsm-runtime-parity-test-plan.md`
 
 Benchmark context:
-`docs/architecture/perf-tuning/storage-next-serving-path-parity-plan.md`
+`docs/architecture/perf-tuning/storage-serving-path-parity-plan.md`
 
 ## Objective
 

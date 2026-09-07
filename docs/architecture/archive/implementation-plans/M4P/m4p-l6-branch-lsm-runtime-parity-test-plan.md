@@ -32,11 +32,11 @@ The tests must prove both behavior and mechanical shape:
 
 Primary sources:
 
-1. `docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`
+1. `docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`
    - `L6. Branch-Isolated LSM Runtime`
    - `9. Differential Tests And Perf Counters`
    - `10. Final Parity Matrix And Architecture-Aligned Gap Plan`
-2. `docs/architecture/perf-tuning/storage-next-serving-path-parity-plan.md`
+2. `docs/architecture/perf-tuning/storage-serving-path-parity-plan.md`
    - `Old Invariants To Restore`
    - `PERF-T3: Read Snapshot Pinning`
    - `PERF-T4: Point Read Seek Over Existing Internal Keys`

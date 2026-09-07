@@ -28,7 +28,7 @@ materialization are storage mechanics.
 
 ## Core Decision
 
-Storage-next should preserve the current branch-aware LSM architecture, but
+Storage should preserve the current branch-aware LSM architecture, but
 make its ownership explicit.
 
 The target shape is:
@@ -212,7 +212,7 @@ Current roles:
 - `decoded_snapshot_install.rs`: installs generic decoded rows into storage
   branch state; the generic row install shape belongs at the L6 boundary.
 
-Storage-next should preserve the mechanics but split ownership cleanly.
+Storage should preserve the mechanics but split ownership cleanly.
 
 ## Branch State Model
 
@@ -286,7 +286,7 @@ L0: overlapping tables, newest first
 L1-L6: non-overlapping tables, sorted by key range
 ```
 
-Storage-next can keep that shape unless the table-format spec or benchmark data
+Storage can keep that shape unless the table-format spec or benchmark data
 proves a better one. The important boundary is ownership:
 
 - L5 can compact table inputs into table outputs.
@@ -623,7 +623,7 @@ table references while the branch publishes a new level view.
 
 ## Shared Table Reachability
 
-COW branches share immutable tables. Storage-next needs explicit reachability
+COW branches share immutable tables. Storage needs explicit reachability
 facts so shared tables are not deleted early.
 
 L6 owns:
@@ -637,7 +637,7 @@ L6 owns:
 L8 may rebuild, validate, and repair these facts during recovery. L4 publishes
 the durable manifests. L5 reads table objects but does not decide reachability.
 
-The current `SegmentRefRegistry` is a runtime accelerator. Storage-next should
+The current `SegmentRefRegistry` is a runtime accelerator. Storage should
 keep the distinction:
 
 - durable branch/table manifests are the source of truth

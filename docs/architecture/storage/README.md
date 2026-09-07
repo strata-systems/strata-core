@@ -1,4 +1,4 @@
-# Storage-Next Layer Documents
+# Storage Layer Documents
 
 Status: current — describes shipped 1.2.x behaviour (#3134) index
 
@@ -47,7 +47,7 @@ scattered across L3, L6, L7, L8, and L9.
 
 Runtime resource-profile requirements live in
 [../runtime-resource-profile-architecture.md](../runtime-resource-profile-architecture.md).
-Storage-next consumes resolved storage budgets from that architecture; it does
+Storage consumes resolved storage budgets from that architecture; it does
 not own host probing or product resource-profile policy.
 
 ## Working Checklist
