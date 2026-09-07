@@ -96,15 +96,6 @@ impl<'a> BranchService<'a> {
         )))
     }
 
-    /// Creates a product branch from the current source branch head.
-    pub fn create_from_head(
-        &mut self,
-        source: &BranchName,
-        name: BranchName,
-    ) -> EngineResult<BranchCreateOutcome> {
-        self.fork_current(source, name)
-    }
-
     /// Forks a product branch from the current source branch head.
     pub fn fork_current(
         &mut self,
@@ -810,7 +801,7 @@ mod tests {
         ));
 
         let error = BranchService::new(&mut persistence, &mut control)
-            .create_from_head(&BranchName::default_branch(), feature.clone())
+            .fork_current(&BranchName::default_branch(), feature.clone())
             .expect_err("preexisting lower branch must fail");
         assert_eq!(error.class(), EngineErrorClass::NotFound);
         assert_eq!(error.code(), "not_found.engine.persistence");

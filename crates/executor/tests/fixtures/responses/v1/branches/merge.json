@@ -2,7 +2,7 @@
   "data": {
     "applied": [
       {
-        "capability": "key_value",
+        "capability": "kv",
         "identity": "YQ==",
         "space": "default",
         "value": "dHdv"
@@ -10,7 +10,7 @@
     ],
     "branch_point": 3,
     "capabilities_covered": [
-      "key_value",
+      "kv",
       "json",
       "vector"
     ],

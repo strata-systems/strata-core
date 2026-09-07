@@ -177,7 +177,7 @@ fn apply(db: &mut Database, model: &mut Model, op: Op) -> Result<(), TestCaseErr
             let result = db
                 .branches()
                 .expect("branch service")
-                .create_from_head(&branch(source), branch(dest))
+                .fork_current(&branch(source), branch(dest))
                 .map(|_| ());
             check_outcome(result, expected, "fork")?;
             if matches!(expected, Expect::Ok) {

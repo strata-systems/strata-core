@@ -39,7 +39,7 @@ use crate::persistence::{ReadSelector, StoragePersistence};
 /// Comparison covers all of them; promotion additionally filters to those whose
 /// adapter reports `supports_promotion` (see `three_way`).
 const AUTHORED_CAPABILITIES: [ComparedCapability; 9] = [
-    ComparedCapability::KeyValue,
+    ComparedCapability::Kv,
     ComparedCapability::Json,
     ComparedCapability::Vector,
     ComparedCapability::VectorCollection,
@@ -54,7 +54,7 @@ const AUTHORED_CAPABILITIES: [ComparedCapability; 9] = [
 /// capability→adapter mapping, shared by compare, preview, and promotion.
 pub(crate) fn adapter_for(capability: ComparedCapability) -> Box<dyn CapabilityBranchAdapter> {
     match capability {
-        ComparedCapability::KeyValue => Box::new(KvBranchAdapter),
+        ComparedCapability::Kv => Box::new(KvBranchAdapter),
         ComparedCapability::Json => Box::new(JsonBranchAdapter),
         ComparedCapability::Vector => Box::new(VectorBranchAdapter),
         ComparedCapability::VectorCollection => Box::new(VectorCollectionBranchAdapter),

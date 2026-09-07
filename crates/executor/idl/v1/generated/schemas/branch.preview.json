@@ -71,7 +71,7 @@
       "description": "The data capability a branch comparison entry belongs to.",
       "oneOf": [
         {
-          "const": "key_value",
+          "const": "kv",
           "description": "The key-value capability.",
           "type": "string"
         },

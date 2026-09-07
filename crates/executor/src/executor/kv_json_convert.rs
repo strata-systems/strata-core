@@ -460,7 +460,7 @@ fn compared_entity(entity: &EngineComparedEntity) -> ComparedEntityItem {
 
 const fn compared_capability(capability: EngineComparedCapability) -> ComparedCapability {
     match capability {
-        EngineComparedCapability::KeyValue => ComparedCapability::KeyValue,
+        EngineComparedCapability::Kv => ComparedCapability::Kv,
         EngineComparedCapability::Json => ComparedCapability::Json,
         EngineComparedCapability::Vector => ComparedCapability::Vector,
         EngineComparedCapability::VectorCollection => ComparedCapability::VectorCollection,
@@ -652,7 +652,7 @@ mod tests {
         assert!(item.spaces_covered().iter().any(|space| space == "default"));
         assert!(item
             .capabilities_covered()
-            .contains(&ComparedCapability::KeyValue));
+            .contains(&ComparedCapability::Kv));
         assert!(item
             .capabilities_unsupported()
             .contains(&ComparedCapability::Event));

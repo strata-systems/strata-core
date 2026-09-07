@@ -382,7 +382,7 @@ fn fork_inherits_and_isolates<C: CapabilityFixture>() {
     C::write(&mut db, "default", "default", 1).expect("seed source");
     db.branches()
         .expect("branch service")
-        .create_from_head(&branch("default"), branch("feature"))
+        .fork_current(&branch("default"), branch("feature"))
         .expect("fork from head");
     assert!(
         C::exists(&mut db, "feature", "default", 1).expect("child read"),

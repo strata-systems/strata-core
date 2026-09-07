@@ -185,7 +185,7 @@
       },
       {
         "in": "strata branch diff default experiment",
-        "out": "{\n  \"branch_a\": \"default\",\n  \"branch_b\": \"experiment\",\n  \"spaces\": [\n    {\n      \"added\": [],\n      \"capability\": \"key_value\",\n      \"modified\": [\n        {\n          \"identity\": \"config\",\n          \"version\": 0\n        }\n      ],\n      \"removed\": [],\n      \"space\": \"default\"\n    },\n    {\n      \"added\": [\n        {\n          \"identity\": \"\\u0000\\u0005notesn1\",\n          \"version\": 0\n        }\n      ],\n      \"capability\": \"vector\",\n      \"modified\": [],\n      \"removed\": [],\n      \"space\": \"default\"\n    }\n  ]\n}",
+        "out": "{\n  \"branch_a\": \"default\",\n  \"branch_b\": \"experiment\",\n  \"spaces\": [\n    {\n      \"added\": [],\n      \"capability\": \"kv\",\n      \"modified\": [\n        {\n          \"identity\": \"config\",\n          \"version\": 0\n        }\n      ],\n      \"removed\": [],\n      \"space\": \"default\"\n    },\n    {\n      \"added\": [\n        {\n          \"identity\": \"\\u0000\\u0005notesn1\",\n          \"version\": 0\n        }\n      ],\n      \"capability\": \"vector\",\n      \"modified\": [],\n      \"removed\": [],\n      \"space\": \"default\"\n    }\n  ]\n}",
         "reproducible": false,
         "note": "reports the key-value change and the new vector, grouped by capability"
       }
@@ -293,7 +293,7 @@
       },
       {
         "in": "strata branch merge experiment default --strategy strict",
-        "out": "{\n  \"applied\": [\n    {\n      \"capability\": \"key_value\",\n      \"identity\": \"config\",\n      \"space\": \"default\",\n      \"value\": \"tuned\"\n    }\n  ],\n  \"branch_point\": 3,\n  \"capabilities_covered\": [\n    \"key_value\",\n    \"json\",\n    \"vector\"\n  ],\n  \"capabilities_unsupported\": [\n    \"vector_collection\",\n    \"event\",\n    \"graph_metadata\",\n    \"graph_node\",\n    \"graph_edge\",\n    \"graph_ontology\"\n  ],\n  \"conflicts\": [],\n  \"deleted\": [],\n  \"derived_state\": [],\n  \"source\": \"experiment\",\n  \"spaces_covered\": [\n    \"default\"\n  ],\n  \"strategy\": \"strict\",\n  \"target\": \"default\",\n  \"target_timestamp\": 9,\n  \"target_version\": 9\n}",
+        "out": "{\n  \"applied\": [\n    {\n      \"capability\": \"kv\",\n      \"identity\": \"config\",\n      \"space\": \"default\",\n      \"value\": \"tuned\"\n    }\n  ],\n  \"branch_point\": 3,\n  \"capabilities_covered\": [\n    \"kv\",\n    \"json\",\n    \"vector\"\n  ],\n  \"capabilities_unsupported\": [\n    \"vector_collection\",\n    \"event\",\n    \"graph_metadata\",\n    \"graph_node\",\n    \"graph_edge\",\n    \"graph_ontology\"\n  ],\n  \"conflicts\": [],\n  \"deleted\": [],\n  \"derived_state\": [],\n  \"source\": \"experiment\",\n  \"spaces_covered\": [\n    \"default\"\n  ],\n  \"strategy\": \"strict\",\n  \"target\": \"default\",\n  \"target_timestamp\": 9,\n  \"target_version\": 9\n}",
         "reproducible": true,
         "note": "applies the fork's change onto default"
       }
@@ -317,7 +317,7 @@
       },
       {
         "in": "strata branch preview experiment default --strategy strict",
-        "out": "{\n  \"branch_point\": 3,\n  \"capabilities_covered\": [\n    \"key_value\",\n    \"json\",\n    \"vector\"\n  ],\n  \"capabilities_unsupported\": [\n    \"vector_collection\",\n    \"event\",\n    \"graph_metadata\",\n    \"graph_node\",\n    \"graph_edge\",\n    \"graph_ontology\"\n  ],\n  \"conflicts\": [],\n  \"derived_state\": [],\n  \"source\": \"experiment\",\n  \"spaces_covered\": [\n    \"default\"\n  ],\n  \"strategy\": \"strict\",\n  \"target\": \"default\"\n}",
+        "out": "{\n  \"branch_point\": 3,\n  \"capabilities_covered\": [\n    \"kv\",\n    \"json\",\n    \"vector\"\n  ],\n  \"capabilities_unsupported\": [\n    \"vector_collection\",\n    \"event\",\n    \"graph_metadata\",\n    \"graph_node\",\n    \"graph_edge\",\n    \"graph_ontology\"\n  ],\n  \"conflicts\": [],\n  \"derived_state\": [],\n  \"source\": \"experiment\",\n  \"spaces_covered\": [\n    \"default\"\n  ],\n  \"strategy\": \"strict\",\n  \"target\": \"default\"\n}",
         "reproducible": true,
         "note": "a clean preview — no conflicting changes on default"
       }
