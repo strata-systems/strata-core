@@ -4,6 +4,100 @@ All notable changes to StrataDB are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.1] - 2026-09-06
+
+Wall-clock time, and a large batch of Arrow import/export corrections.
+
+Strata has always been able to travel in time; until now it could only be asked
+in *commit-timeline* terms. Every commit now also records the real UTC instant
+it was applied, every temporal command accepts a wall-clock instant, `history`
+shows real dates, and the CLI takes one you can type. A fresh database no longer
+reports its first write as 1969-12-31.
+
+Changes are **additive on the wire**: a new optional `as_of_time` input on the
+31 temporal commands, a new optional `committed_at` field on write acks and
+history rows, and three new error codes. No existing field changed meaning, and
+the on-disk format gained a version-gated WAL record and checkpoint section that
+older data still reads.
+
+### Added
+
+- **Wall-clock time travel.** `as_of_time` (UTC epoch microseconds) on every
+  command that accepts `as_of`, across KV, JSON, vector, event and graph.
+  Resolves to the commit at or before that instant, and refuses rather than
+  guessing when the instant falls outside the branch's recorded history.
+  Mutually exclusive with `as_of`. (#3112)
+- **`committed_at`, the real time a commit was applied.** On write acks and on
+  every `history` row, in UTC epoch microseconds — the field to format as a
+  calendar date. `null` when unknown: a commit written before this release, or
+  one replayed from an artifact import. The logical `timestamp` beside it is
+  unchanged and remains a per-commit counter, never a date. (#3112)
+- **`strata kv|json|vector ... --as-of-time`.** Takes a date (`2026-09-05`), a
+  date and time (`2026-09-05 15:00`), an offset-bearing timestamp
+  (`2026-09-05T15:00:00Z`), or raw epoch microseconds. A time without an offset
+  is read in local time. Human output renders `committed_at` as a local date
+  with its offset; `--json` keeps the raw microseconds. (#3112)
+- **`strata changelog`.** Prints this file from the binary itself — offline, no
+  database, matched to the build you are holding. `--version 1.2.0` prints one
+  release. `CHANGELOG.md` also now ships inside `strata-idl-docs.tar.gz`, beside
+  the command index, so a consumer adopting a new catalog receives the notes
+  describing how it changed. (#3094)
+- **Multi-branch clone artifacts import as one globally-ordered replay**, so a
+  bundle whose branches share an interleaved commit stream reconstitutes
+  correctly instead of rejecting branches whose history predates another's
+  latest commit. (#3070)
+- **Arrow conformance matrix and coverage ledger**, the harness behind the
+  import/export corrections below. (#3084)
+
+### Fixed
+
+- **Arrow import correctness, a large batch.** Nested documents, `LargeList` /
+  `FixedSizeList`, `Map` and dictionary-encoded columns now reconstruct as data
+  rather than as a `Display` string (#3063, #3075, #3091); CSV import honors
+  Strata's declared text columns instead of re-inferring them (#3077);
+  JSONL/CSV schema is inferred over the whole file, not a prefix (#3080);
+  non-finite floats are rejected instead of stored as JSON null (#3078), and
+  non-finite embedding components are rejected outright; a null value cell is
+  skipped instead of stored as empty bytes; a key-only or encoding-only file no
+  longer fabricates a value; a 0-row file is a no-op rather than a "no key
+  column found" error; unsupported cell encodings and flags that do not apply to
+  the target are refused up front (#3079); events rejected by the engine are
+  reported as skipped rather than silently dropped (#3081); vector export to CSV
+  is refused up front instead of looping on a truncated file (#3082); graph
+  import rejects null node and edge ids instead of fabricating `""` (#3083).
+- **`--raw json get` prints a present `null` as `null`**, not as empty output —
+  the two were indistinguishable. (#3064)
+- **`branch diff` / `merge` / `preview` decode their identities for human
+  output** instead of printing raw encodings. (#3061)
+- **A recovered lock contention is no longer logged as an engine error.** (#3071)
+- **The CLI no longer advertises a `cli.path` for commands it cannot run.** (#3058)
+- **CLI examples render from a clap-authoritative arg spec**, so documented
+  invocations match the binary. (#3073)
+- **Example output ships in the docs bundle** rather than being generated
+  per-consumer. (#3059)
+
+### Changed
+
+- **`--as-of` help and schema text now say what it is**: a position on the
+  logical commit timeline, not microseconds and never a calendar date, with a
+  pointer to `--as-of-time` for real time. This wording was actively misleading
+  and is the confusion that motivated the wall-clock work. (#3066, #3112)
+- **New error codes** (additive; nothing was renamed or reclassified):
+  `invalid_argument.executor.as_of_conflict` (both clocks supplied at once),
+  `invalid_argument.executor.arrow_encoding`,
+  `invalid_argument.executor.arrow_non_finite_float`.
+- **Storage format**: WAL records gained version 3 and checkpoint timeline
+  sections gained kind 3, both carrying `committed_at`. Older records and
+  sections still decode, reporting an unknown instant. (#3112)
+
+### Known limitations
+
+Wall-clock resolution is best-effort by design and its edges are documented in
+#3185. The ones most likely to be met: commits written before this release have
+no instant, so a wall-clock query before a branch's first dated commit is
+refused; `branch diff` does not yet accept `as_of_time` (#3186); and
+`committed_at` appears on write acks and history, not on `get`/`scan` rows.
+
 ## [1.2.0] - 2026-09-04
 
 A hardening release on the V1 line, led by a self-update command and a batch of
