@@ -198,6 +198,34 @@ from twenty threads.
 group-commit benchmarks; the engine layer has none. No parallel-throughput claim
 should reach the README before this step measures one.
 
+#### Measured (H5, 8 threads, cache and durable)
+
+`Database` turned out to be **already `Send + Sync`** — H1–H3 removed the
+exclusivity without ever making the type thread-unsafe, so this step is bounds,
+tests and a number rather than a fix.
+
+| Mode | Serial | Concurrent | Speedup |
+|---|---|---|---|
+| cache (8×2000 commits) | ~16,700/s | ~18,800/s | **1.1–1.2×** |
+| durable (8×500 commits) | ~7,700/s | ~10,200/s | **1.3×** |
+
+Stable across three runs. Two things follow, and the second is the one that
+matters for what we say publicly:
+
+- **Durable gains more than cache**, consistently. That is the BS5 covering-fsync
+  chain doing its job: concurrent writers amortize a device flush that a serial
+  writer pays per commit. The mechanism works as designed.
+- **The gain is real but modest — nowhere near linear in thread count.** Commits
+  still serialize on the runtime lock for their critical section; only the fsync
+  and the pre-lock work overlap. So the honest framing of this whole workstream
+  is **ergonomics first, throughput second**: several services held at once,
+  readers not queueing behind writers, twenty branches writable from twenty
+  threads *at all* — with a ~1.1–1.3× throughput bonus, not a 20× one.
+
+Anything stronger than that in the README would be a claim the measurement does
+not support. Reproduce with
+`cargo test -p strata-engine --test h5_measure -- --ignored --nocapture`.
+
 ### Step 6 — Cross-capability atomic commit is a separate design
 
 *#3127 is not a handle problem.*
