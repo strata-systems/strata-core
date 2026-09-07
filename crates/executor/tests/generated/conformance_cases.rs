@@ -1712,6 +1712,28 @@ fn inference_rank_replay_observes_a_declared_output() {
     support::replay_observes_declared(&[], "requests/v1/inference/rank.json", &["inference_ranking"], true);
 }
 
+// ---- inference.status ----
+
+#[test]
+fn inference_status_request_wire_roundtrip_is_idempotent() {
+    support::request_roundtrip_idempotent("requests/v1/inference/status.json");
+}
+
+#[test]
+fn inference_status_response_wire_roundtrip_is_idempotent() {
+    support::response_roundtrip_idempotent("responses/v1/inference/status.json");
+}
+
+#[test]
+fn inference_status_request_rejects_unknown_keys_at_closed_objects() {
+    support::unknown_keys_rejected("requests/v1/inference/status.json", &[""]);
+}
+
+#[test]
+fn inference_status_replay_observes_a_declared_output() {
+    support::replay_observes_declared(&[], "requests/v1/inference/status.json", &["inference_status"], true);
+}
+
 // ---- inference.tokenize ----
 
 #[test]

@@ -78,6 +78,52 @@ pub struct ModelCacheStatus {
     pub ranking_models: Vec<String>,
 }
 
+/// Whether one provider can be used right now, and if not, why not.
+///
+/// Never carries a key — only where one was found (#3124/D11).
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "wire-schemas", derive(schemars::JsonSchema))]
+pub struct ProviderStatus {
+    /// Which provider this row describes.
+    pub provider: ProviderKind,
+    /// Whether this binary was compiled with the provider.
+    pub feature_enabled: bool,
+    /// Whether this provider needs an API key at all.
+    pub requires_api_key: bool,
+    /// Whether a key was found. Never the key itself.
+    pub key_present: bool,
+    /// The environment variable this provider reads its key from, whether or
+    /// not one is set — so a caller can say what to do about a missing key.
+    /// `None` for providers that need no key.
+    pub key_env_var: Option<String>,
+    /// Where the key was found, when one was. An environment variable name,
+    /// never a value. `None` when no key is present.
+    pub key_source: Option<String>,
+    /// Whether a call could be attempted right now.
+    pub ready: bool,
+}
+
+/// What this binary can do before anything is attempted (D11).
+///
+/// #3124: every part of this was knowable up front and reported nowhere, so a
+/// user learned their build's limits by watching an operation fail.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "wire-schemas", derive(schemars::JsonSchema))]
+pub struct InferenceStatus {
+    /// Whether this binary can execute local models.
+    pub local_execution: bool,
+    /// Whether this binary can download model artifacts.
+    pub model_download: bool,
+    /// Every provider, in a stable order.
+    pub providers: Vec<ProviderStatus>,
+    /// The model directory, shared by every database on this machine.
+    pub models_dir: PathBuf,
+    /// Catalogued models whose artifact is already on disk.
+    pub models_downloaded: usize,
+    /// Catalogued models in total.
+    pub models_catalogued: usize,
+}
+
 /// Provider/model capability facts.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "wire-schemas", derive(schemars::JsonSchema))]
@@ -279,6 +325,52 @@ impl InferenceRuntime {
         {
             let _ = model;
             Err(download_feature_unavailable())
+        }
+    }
+
+    /// Reports what this binary can do, before anything is attempted.
+    ///
+    /// Answers in one place the questions that previously had to be inferred
+    /// from a failure: which providers are compiled in, which have a key and
+    /// where it came from, whether local execution exists in this build, and
+    /// how many catalogued models are already on disk.
+    pub fn status(&self) -> InferenceStatus {
+        let providers = [
+            ProviderKind::OpenAI,
+            ProviderKind::Anthropic,
+            ProviderKind::Google,
+            ProviderKind::Local,
+        ]
+        .into_iter()
+        .map(|provider| {
+            let feature_enabled = generation_provider_feature_enabled(provider)
+                || embedding_provider_feature_enabled_for_capability(provider);
+            let requires_api_key = provider != ProviderKind::Local;
+            let key_env_var = requires_api_key.then(|| api_key_env_var(provider).to_owned());
+            let key_source = resolve_key_source(key_env_var.as_deref(), |name| {
+                std::env::var_os(name).is_some_and(|value| !value.is_empty())
+            });
+            let key_present = key_source.is_some();
+            ProviderStatus {
+                provider,
+                feature_enabled,
+                requires_api_key,
+                key_present,
+                key_env_var,
+                key_source,
+                ready: feature_enabled && (key_present || !requires_api_key),
+            }
+        })
+        .collect();
+
+        let catalog = self.registry().list_available();
+        InferenceStatus {
+            local_execution: cfg!(feature = "local"),
+            model_download: cfg!(feature = "download"),
+            providers,
+            models_dir: self.registry().models_dir().to_path_buf(),
+            models_downloaded: catalog.iter().filter(|info| info.is_local).count(),
+            models_catalogued: catalog.len(),
         }
     }
 
@@ -988,6 +1080,10 @@ impl crate::InferenceService for InferenceRuntime {
     fn cache_status(&self) -> Result<crate::ModelCacheStatus, InferenceError> {
         self.cache_status()
     }
+
+    fn status(&self) -> InferenceStatus {
+        self.status()
+    }
 }
 
 #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
@@ -1069,6 +1165,17 @@ fn remove_matching<T>(map: &mut HashMap<String, T>, model_spec: Option<&str>) ->
             had_entries
         }
     }
+}
+
+/// Where a provider's key came from, given which variable it reads and whether
+/// that variable holds anything.
+///
+/// A pure function on purpose: the alternative is a test that mutates the
+/// process environment, which races every other test in the binary. It also
+/// makes the one property that matters directly checkable — the result is the
+/// variable's NAME, never its value, so `status` cannot leak a key.
+fn resolve_key_source(env_var: Option<&str>, is_set: impl Fn(&str) -> bool) -> Option<String> {
+    env_var.filter(|name| is_set(name)).map(str::to_owned)
 }
 
 /// What a model and provider inherently support, before any question of what
@@ -1163,6 +1270,26 @@ mod tests {
         let config = InferenceRuntimeConfig::default();
         assert!(config.network_enabled);
         assert!(config.models_dir.is_none());
+    }
+
+    /// The key source is the variable's name, never its value (D11).
+    #[test]
+    fn key_source_reports_the_variable_name_never_the_value() {
+        const SECRET: &str = "sk-do-not-leak-this-value";
+
+        // Set: the source is the NAME. If this ever returned the value, a key
+        // would ride out on every `inference status`.
+        let found = resolve_key_source(Some("OPENAI_API_KEY"), |_| true);
+        assert_eq!(found.as_deref(), Some("OPENAI_API_KEY"));
+        assert_ne!(found.as_deref(), Some(SECRET));
+
+        // Unset: no source at all.
+        assert_eq!(resolve_key_source(Some("OPENAI_API_KEY"), |_| false), None);
+
+        // A provider that needs no key never reports a source, however the
+        // lookup behaves.
+        assert_eq!(resolve_key_source(None, |_| true), None);
+        assert_eq!(resolve_key_source(None, |_| false), None);
     }
 
     /// The truth table for what a model inherently supports (#3124).

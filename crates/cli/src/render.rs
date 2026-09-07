@@ -125,6 +125,7 @@ fn render_human(value: &Value, out: &mut String) -> Result<(), CliError> {
             "inference_embeddings" => print_embeddings_summary(data, out),
             "inference_ranking" => print_ranking(data, out),
             "inference_models" => print_inference_models(data, out),
+            "inference_status" => print_inference_status(data, out),
             "inference_model_pulled" => print_model_pulled(data, out),
             "inference_unload_result" => line!(
                 out,
@@ -461,6 +462,89 @@ fn print_inference_models(data: &Value, out: &mut String) {
             "\n{unavailable} model(s) unavailable: this build cannot run local \
              models. Add them with `strata inference install-local`, or use a \
              cloud model (`openai:`, `google:`, `anthropic:`)."
+        );
+    }
+}
+
+/// D11 (#3124): the answer to "will this work", before anything is attempted.
+///
+/// Every hint names a command that exists today. `strata inference
+/// install-local` is designed (D1/D2) and not built, so pointing at it here
+/// would repeat the defect this command exists to fix.
+fn print_inference_status(data: &Value, out: &mut String) {
+    let flag = |key: &str| data.get(key).and_then(Value::as_bool) == Some(true);
+    let local = flag("local_execution");
+
+    line!(
+        out,
+        "build\t{}",
+        if local {
+            "local + cloud"
+        } else {
+            "cloud providers only"
+        }
+    );
+    if !local {
+        line!(
+            out,
+            "\tlocal models: not available in this build -- rebuild with \
+             `cargo install --path crates/cli --features inference-local`"
+        );
+    }
+
+    line!(out, "\nproviders");
+    let providers = data.get("providers").and_then(Value::as_array);
+    for provider in providers.into_iter().flatten() {
+        let name = provider
+            .get("provider")
+            .and_then(Value::as_str)
+            .unwrap_or("-");
+        let enabled = provider.get("feature_enabled").and_then(Value::as_bool) == Some(true);
+        let needs_key = provider.get("requires_api_key").and_then(Value::as_bool) == Some(true);
+        let ready = provider.get("ready").and_then(Value::as_bool) == Some(true);
+        let detail = if !enabled {
+            "not in this build".to_owned()
+        } else if ready {
+            provider
+                .get("key_source")
+                .and_then(Value::as_str)
+                .map_or_else(
+                    || "ready".to_owned(),
+                    |from| format!("ready -- key from {from}"),
+                )
+        } else if needs_key {
+            provider
+                .get("key_env_var")
+                .and_then(Value::as_str)
+                .map_or_else(
+                    || "no key".to_owned(),
+                    |var| format!("no key -- export {var}=..."),
+                )
+        } else {
+            "not ready".to_owned()
+        };
+        line!(out, "  {name}\t{detail}");
+    }
+
+    let dir = data
+        .get("models_dir")
+        .and_then(Value::as_str)
+        .unwrap_or("-");
+    let downloaded = data
+        .get("models_downloaded")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let catalogued = data
+        .get("models_catalogued")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    line!(out, "\nmodels\t{dir} (shared by every database)");
+    line!(out, "  downloaded\t{downloaded} of {catalogued} catalogued");
+    if !flag("model_download") && downloaded < catalogued {
+        line!(
+            out,
+            "\tthis build cannot download models; fetch the GGUF file into the \
+             directory above, or rebuild with `--features inference-local`"
         );
     }
 }
@@ -1015,6 +1099,7 @@ mod tests {
         "inference_model_pulled",
         "inference_models",
         "inference_ranking",
+        "inference_status",
         "inference_text",
         "inference_token_ids",
         "inference_unload_result",

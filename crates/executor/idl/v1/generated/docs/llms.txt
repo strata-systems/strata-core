@@ -100,6 +100,7 @@
 - [List local models](https://stratadb.org/docs/inference/models/local.md): List locally downloaded inference models.
 - [Download a model](https://stratadb.org/docs/inference/models/pull.md): Download an inference model locally.
 - [Rank passages](https://stratadb.org/docs/inference/rank.md): Rank passages against a query.
+- [Report inference readiness](https://stratadb.org/docs/inference/status.md): Report what this binary can do before anything is attempted.
 - [Tokenize text](https://stratadb.org/docs/inference/tokenize.md): Tokenize text with a local model.
 - [Unload cached models](https://stratadb.org/docs/inference/unload.md): Unload cached inference models.
 

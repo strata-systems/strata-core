@@ -1,0 +1,155 @@
+{
+  "$defs": {
+    "InferenceStatus": {
+      "description": "What this binary can do before anything is attempted (D11).\n\n#3124: every part of this was knowable up front and reported nowhere, so a\nuser learned their build's limits by watching an operation fail.",
+      "properties": {
+        "local_execution": {
+          "description": "Whether this binary can execute local models.",
+          "type": "boolean"
+        },
+        "model_download": {
+          "description": "Whether this binary can download model artifacts.",
+          "type": "boolean"
+        },
+        "models_catalogued": {
+          "description": "Catalogued models in total.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "models_dir": {
+          "description": "The model directory, shared by every database on this machine.",
+          "type": "string"
+        },
+        "models_downloaded": {
+          "description": "Catalogued models whose artifact is already on disk.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "providers": {
+          "description": "Every provider, in a stable order.",
+          "items": {
+            "$ref": "#/$defs/ProviderStatus"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "local_execution",
+        "model_download",
+        "providers",
+        "models_dir",
+        "models_downloaded",
+        "models_catalogued"
+      ],
+      "type": "object"
+    },
+    "ProviderKind": {
+      "description": "Which inference provider to use.",
+      "oneOf": [
+        {
+          "const": "local",
+          "description": "Local GGUF model provider.",
+          "type": "string"
+        },
+        {
+          "const": "anthropic",
+          "description": "Anthropic cloud provider.",
+          "type": "string"
+        },
+        {
+          "const": "openai",
+          "description": "OpenAI cloud provider.",
+          "type": "string"
+        },
+        {
+          "const": "google",
+          "description": "Google Gemini cloud provider.",
+          "type": "string"
+        }
+      ]
+    },
+    "ProviderStatus": {
+      "description": "Whether one provider can be used right now, and if not, why not.\n\nNever carries a key — only where one was found (#3124/D11).",
+      "properties": {
+        "feature_enabled": {
+          "description": "Whether this binary was compiled with the provider.",
+          "type": "boolean"
+        },
+        "key_env_var": {
+          "description": "The environment variable this provider reads its key from, whether or\nnot one is set — so a caller can say what to do about a missing key.\n`None` for providers that need no key.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key_present": {
+          "description": "Whether a key was found. Never the key itself.",
+          "type": "boolean"
+        },
+        "key_source": {
+          "description": "Where the key was found, when one was. An environment variable name,\nnever a value. `None` when no key is present.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderKind",
+          "description": "Which provider this row describes."
+        },
+        "ready": {
+          "description": "Whether a call could be attempted right now.",
+          "type": "boolean"
+        },
+        "requires_api_key": {
+          "description": "Whether this provider needs an API key at all.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "provider",
+        "feature_enabled",
+        "requires_api_key",
+        "key_present",
+        "ready"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://stratadb.org/idl/v1/schemas/inference.status.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "command": "inference.status",
+  "request": {
+    "additionalProperties": false,
+    "description": "Reports what this binary can do before anything is attempted.\n\n# Guaranteed semantics\n\n- **Answers before the attempt.** Which providers are compiled in,\n  which have a key and where it came from, whether local execution\n  exists in this build, and how many catalogued models are on disk —\n  all knowable without trying an operation and failing (#3124).\n- **Never returns a key.** `key_source` names the environment variable\n  a key was read from; the value is never included.\n- **The model directory is shared** by every database on the machine, so\n  a model downloaded once is available to all of them.",
+    "properties": {
+      "type": {
+        "const": "inference_status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "type"
+    ],
+    "type": "object"
+  },
+  "response": {
+    "description": "What this binary can do before anything is attempted.",
+    "properties": {
+      "data": {
+        "$ref": "#/$defs/InferenceStatus"
+      },
+      "type": {
+        "const": "inference_status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "type",
+      "data"
+    ],
+    "type": "object"
+  }
+}

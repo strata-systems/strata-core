@@ -531,6 +531,29 @@ impl crate::InferenceService for FakeInferenceService {
             ranking_models: Vec::new(),
         })
     }
+
+    /// The fake executes in-process and needs no key or network, so every
+    /// provider it reports is ready and every catalogued model is runnable.
+    /// Keeping this deterministic is what lets fixtures replay it.
+    fn status(&self) -> crate::InferenceStatus {
+        let models = self.list_models();
+        crate::InferenceStatus {
+            local_execution: true,
+            model_download: false,
+            providers: vec![crate::ProviderStatus {
+                provider: crate::ProviderKind::Local,
+                feature_enabled: true,
+                requires_api_key: false,
+                key_present: false,
+                key_env_var: None,
+                key_source: None,
+                ready: true,
+            }],
+            models_dir: std::path::PathBuf::from("/fake/models"),
+            models_downloaded: models.iter().filter(|info| info.is_local).count(),
+            models_catalogued: models.len(),
+        }
+    }
 }
 
 #[cfg(test)]

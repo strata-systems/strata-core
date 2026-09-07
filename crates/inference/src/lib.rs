@@ -70,8 +70,8 @@ pub use error::{InferenceError, InferenceErrorClass};
 pub use registry::{ModelInfo, ModelRegistry, ModelTask};
 pub use runtime::{
     EmbedRequest, EmbedResponse, EmbedRuntimeOutcome, InferenceCapability, InferenceRuntime,
-    InferenceRuntimeConfig, ModelCacheStatus, PullModelOutput, RankRequest, RankResponse,
-    RankRuntimeOutcome,
+    InferenceRuntimeConfig, InferenceStatus, ModelCacheStatus, ProviderStatus, PullModelOutput,
+    RankRequest, RankResponse, RankRuntimeOutcome,
 };
 pub use wire::{
     ChatChoice, ChatMessage, ChatRequest, ChatResponse, EmbedInput, EmbeddingItem,
@@ -350,6 +350,9 @@ pub trait InferenceService: Send {
 
     /// Reports the model cache status.
     fn cache_status(&self) -> Result<ModelCacheStatus, InferenceError>;
+
+    /// Reports what this binary can do before anything is attempted.
+    fn status(&self) -> InferenceStatus;
 }
 
 /// Parse a `"provider:model_name"` spec into its components.

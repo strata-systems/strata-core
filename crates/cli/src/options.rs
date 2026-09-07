@@ -2233,6 +2233,8 @@ pub(crate) enum InferenceCommand {
     },
     /// Show runtime model-cache diagnostics.
     CacheStatus,
+    /// Show what this build can do: providers, keys, and on-disk models.
+    Status,
 }
 
 /// Inference model management arguments.
@@ -2386,6 +2388,7 @@ mod tests {
         "inference models local",
         "inference models pull",
         "inference rank",
+        "inference status",
         "inference tokenize",
         "inference unload",
         "info",

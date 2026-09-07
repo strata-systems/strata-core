@@ -164,3 +164,69 @@ fn inference_refusals_keep_their_codes() {
         "inference.unsupported_operation"
     );
 }
+
+/// D11: `status` answers "will this work" before anything is attempted.
+#[test]
+fn status_reports_the_build_and_every_provider() {
+    let status = runtime().status();
+
+    assert_eq!(status.local_execution, LOCAL_BUILT_IN);
+    assert_eq!(
+        status.providers.len(),
+        4,
+        "every provider is reported, including the ones that are not usable"
+    );
+
+    for provider in &status.providers {
+        // `ready` is never a claim the build cannot keep — the same law the
+        // capability flags follow.
+        if provider.ready {
+            assert!(
+                provider.feature_enabled,
+                "{:?} reports ready without being compiled in",
+                provider.provider
+            );
+            assert!(
+                provider.key_present || !provider.requires_api_key,
+                "{:?} reports ready with no key",
+                provider.provider
+            );
+        }
+        // A cloud provider always names the variable to set, whether or not a
+        // key is present — otherwise "no key" is not actionable.
+        assert_eq!(
+            provider.key_env_var.is_some(),
+            provider.requires_api_key,
+            "{:?} must name its key variable exactly when it needs one",
+            provider.provider
+        );
+        // A source is only reported when a key was actually found.
+        assert_eq!(provider.key_present, provider.key_source.is_some());
+    }
+
+    assert!(status.models_catalogued > 0, "the catalog is not empty");
+    assert!(status.models_downloaded <= status.models_catalogued);
+}
+
+/// Whatever the ambient environment holds, a reported source is the variable's
+/// name. The value-never-leaks property itself is pinned by
+/// `key_source_reports_the_variable_name_never_the_value`, which is a pure
+/// function and so needs no environment mutation — mutating the environment
+/// here would race every other test in this binary.
+#[test]
+fn a_reported_key_source_is_a_variable_name() {
+    for provider in runtime().status().providers {
+        if let Some(source) = provider.key_source.as_deref() {
+            assert_eq!(
+                Some(source),
+                provider.key_env_var.as_deref(),
+                "{:?} must report the variable it read, not anything else",
+                provider.provider
+            );
+            assert!(
+                std::env::var_os(source).is_some(),
+                "the reported source names a variable that is actually set"
+            );
+        }
+    }
+}

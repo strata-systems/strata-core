@@ -2193,6 +2193,7 @@ fn inference_command(command: options::InferenceCommand) -> Result<Command, CliE
         },
         Inf::Unload { model } => Command::InferenceUnload { model },
         Inf::CacheStatus => Command::InferenceCacheStatus {},
+        Inf::Status => Command::InferenceStatus {},
     })
 }
 

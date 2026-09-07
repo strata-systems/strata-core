@@ -148,6 +148,7 @@ const REQUIRED_INFERENCE: &[&str] = &[
     "inference.detokenize",
     "inference.embed",
     "inference.rank",
+    "inference.status",
     "inference.unload",
     "inference.cache_status",
 ];

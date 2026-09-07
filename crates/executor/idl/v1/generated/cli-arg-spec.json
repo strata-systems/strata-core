@@ -675,6 +675,10 @@
       ],
       "flags": {}
     },
+    "inference status": {
+      "positionals": [],
+      "flags": {}
+    },
     "inference tokenize": {
       "positionals": [
         "model",

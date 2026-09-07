@@ -2169,6 +2169,20 @@ pub enum Command {
     /// Returns inference runtime cache diagnostics.
     #[cfg(feature = "inference")]
     InferenceCacheStatus {},
+    /// Reports what this binary can do before anything is attempted.
+    ///
+    /// # Guaranteed semantics
+    ///
+    /// - **Answers before the attempt.** Which providers are compiled in,
+    ///   which have a key and where it came from, whether local execution
+    ///   exists in this build, and how many catalogued models are on disk —
+    ///   all knowable without trying an operation and failing (#3124).
+    /// - **Never returns a key.** `key_source` names the environment variable
+    ///   a key was read from; the value is never included.
+    /// - **The model directory is shared** by every database on the machine, so
+    ///   a model downloaded once is available to all of them.
+    #[cfg(feature = "inference")]
+    InferenceStatus {},
 }
 
 impl Command {
@@ -2321,6 +2335,8 @@ impl Command {
             Self::InferenceUnload { .. } => "inference_unload",
             #[cfg(feature = "inference")]
             Self::InferenceCacheStatus {} => "inference_cache_status",
+            #[cfg(feature = "inference")]
+            Self::InferenceStatus {} => "inference_status",
         }
     }
 

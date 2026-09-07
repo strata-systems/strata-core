@@ -1223,6 +1223,8 @@ impl Executor {
                 .cache_status()
                 .map(Output::InferenceCacheStatus)
                 .map_err(ExecutorError::from),
+            #[cfg(feature = "inference")]
+            Command::InferenceStatus {} => Ok(Output::InferenceStatus(self.inference.status())),
         }
     }
 }

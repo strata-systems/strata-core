@@ -1249,6 +1249,14 @@
         "reproducible": true
       }
     ],
+    "inference.status": [
+      {
+        "in": "strata inference status",
+        "out": "build\tcloud providers only\n\tlocal models: not available in this build -- rebuild with `cargo install --path crates/cli --features inference-local`\n\nproviders\n  openai\tno key -- export OPENAI_API_KEY=...\n  anthropic\tno key -- export ANTHROPIC_API_KEY=...\n  google\tno key -- export GOOGLE_API_KEY=...\n  local\tnot in this build\n\nmodels\t/home/anibjoshi/.strata/models (shared by every database)\n  downloaded\t11 of 13 catalogued\n\tthis build cannot download models; fetch the GGUF file into the directory above, or rebuild with `--features inference-local`",
+        "reproducible": true,
+        "note": "reports build, providers, keys, and on-disk models without attempting a call"
+      }
+    ],
     "inference.unload": [
       {
         "in": "strata inference unload",
