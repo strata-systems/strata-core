@@ -129,15 +129,21 @@ strata inference embed openai:text-embedding-3-small "how do branches work?"
 strata inference generate openai:gpt-4o-mini "summarize this changelog"
 ```
 
-**Released binaries run cloud models, not local ones.** Local GGUF execution
-means a vendored llama.cpp and cmake, which would turn a 12 MB download into a
-far larger one for a capability most users never ask for — so it is opt-in.
-`strata inference models list` shows the local catalog and marks every entry
-`unavailable` in a build that cannot run it. To get local execution, build with
-the feature:
+Keys persist, so you set them once rather than exporting in every shell:
 
 ```bash
-cargo install --path crates/cli --features inference-local
+strata config set openai.api_key sk-...   # stored at 0600; env still wins
+strata inference status                   # what this build can do, before you try
+```
+
+**The default binary runs cloud models, not local ones.** Local GGUF execution
+means a vendored llama.cpp and cmake, which would turn a 12 MB download into a
+far larger one for a capability most users never ask for — so it is opt-in.
+`strata inference status` says so up front, and `models list` marks every local
+entry `unavailable`. Add local execution without a Rust toolchain:
+
+```bash
+strata inference install-local           # swaps in the local-capable build
 strata inference models pull miniLM      # models live in ~/.strata/models,
 strata inference embed miniLM "..."      # shared by every database
 ```

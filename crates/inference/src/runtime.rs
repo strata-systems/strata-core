@@ -101,6 +101,12 @@ pub struct ProviderStatus {
     pub key_source: Option<String>,
     /// Whether a call could be attempted right now.
     pub ready: bool,
+    /// The model-spec prefix that selects this provider, e.g. `"openai:"`.
+    ///
+    /// A caller that finds a ready provider can use this directly: prefix any
+    /// model name with it. That is the actionable form for a coding agent,
+    /// which reads this over the human table.
+    pub model_prefix: String,
 }
 
 /// What this binary can do before anything is attempted (D11).
@@ -122,6 +128,9 @@ pub struct InferenceStatus {
     pub models_downloaded: usize,
     /// Catalogued models in total.
     pub models_catalogued: usize,
+    /// What to do when local execution is needed and absent. `None` when this
+    /// build already has it.
+    pub local_remedy: Option<String>,
 }
 
 /// Provider/model capability facts.
@@ -359,6 +368,7 @@ impl InferenceRuntime {
                 key_env_var,
                 key_source,
                 ready: feature_enabled && (key_present || !requires_api_key),
+                model_prefix: format!("{provider}:"),
             }
         })
         .collect();
@@ -371,6 +381,7 @@ impl InferenceRuntime {
             models_dir: self.registry().models_dir().to_path_buf(),
             models_downloaded: catalog.iter().filter(|info| info.is_local).count(),
             models_catalogued: catalog.len(),
+            local_remedy: (!cfg!(feature = "local")).then(|| LOCAL_UNAVAILABLE_REMEDY.to_owned()),
         }
     }
 
@@ -1167,6 +1178,23 @@ fn remove_matching<T>(map: &mut HashMap<String, T>, model_spec: Option<&str>) ->
     }
 }
 
+/// What to tell a caller who needs local model execution and does not have it.
+///
+/// **One authoring site on purpose.** Seven refusal messages, the status
+/// renderer, and the model listing all said this, and #3124 was partly about
+/// them disagreeing. It is also the string that changes when D2 lands
+/// `strata inference install-local` — at which point this becomes a command,
+/// and only here.
+///
+/// It names `strata inference install-local` and never `cargo install`: the
+/// callers of this surface are mostly coding agents, which have no Rust
+/// toolchain and cannot answer a build prompt. A remediation an agent cannot
+/// execute is the same dead end as no remediation at all.
+pub const LOCAL_UNAVAILABLE_REMEDY: &str =
+    "this build runs cloud models only. Add local execution with `strata \
+     inference install-local`, or prefix the model with `openai:`, `google:`, \
+     or `anthropic:`.";
+
 /// Where a provider's key came from, given which variable it reads and whether
 /// that variable holds anything.
 ///
@@ -1223,18 +1251,18 @@ impl ModelAbilities {
 /// said what to do about it. A refusal a user cannot act on is a dead end, and
 /// this is the most common refusal a released binary produces.
 ///
-/// **The wording is load-bearing.** `InferenceError::code()` classifies
-/// `NotSupported` by substring-matching this message: "provider" would make it
-/// `inference.unsupported_provider` and "download" would make it
-/// `inference.download_disabled`, instead of the `inference.unsupported_operation`
-/// these paths have always returned. `inference_refusals_keep_their_codes`
-/// pins that. See the systemic issue on message-derived error codes.
+/// **The wording is load-bearing, and has caught this change out twice.**
+/// `InferenceError::code()` classifies `NotSupported` by substring-matching the
+/// message: the word "provider" would silently make it
+/// `inference.unsupported_provider`, and "download"
+/// `inference.download_disabled`, instead of the
+/// `inference.unsupported_operation` these paths have always returned. That is
+/// why the text below names the prefixes directly rather than calling them
+/// providers. `inference_refusals_keep_their_codes` pins it; #3216 is the fix.
 pub(crate) fn local_feature_unavailable(operation: &str) -> InferenceError {
     InferenceError::NotSupported(format!(
-        "{operation} needs local model execution, which released binaries do \
-         not include. Build from source with `cargo install --path crates/cli \
-         --features inference-local`, or use a cloud model by prefixing the \
-         name (`openai:`, `google:`, `anthropic:`)."
+        "{operation} needs local model execution: {LOCAL_UNAVAILABLE_REMEDY} \
+         `strata inference status` shows which of those are ready."
     ))
 }
 
@@ -1243,13 +1271,12 @@ pub(crate) fn local_feature_unavailable(operation: &str) -> InferenceError {
 /// Must contain "download" and must not contain "provider" — see
 /// [`local_feature_unavailable`] on why the wording is load-bearing.
 pub(crate) fn download_feature_unavailable() -> InferenceError {
-    InferenceError::NotSupported(
-        "model download is not built into this binary. Build from source with \
-         `cargo install --path crates/cli --features inference-local`, or fetch \
-         the GGUF file yourself into the models directory (`strata inference \
-         models list` shows the expected repository and file name)."
-            .to_owned(),
-    )
+    InferenceError::NotSupported(format!(
+        "model download is not built into this binary: {LOCAL_UNAVAILABLE_REMEDY} \
+         To use a local model anyway, fetch its GGUF file into the models \
+         directory yourself — `strata inference status` shows the directory and \
+         `strata inference models list` the expected repository and file name."
+    ))
 }
 
 fn embedding_provider_feature_enabled_for_capability(provider: ProviderKind) -> bool {

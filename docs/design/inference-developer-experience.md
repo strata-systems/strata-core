@@ -198,15 +198,42 @@ Accepted 2026-09-07:
   `provider_feature_enabled` in the same object; a flag that reads `true` when
   the answer is `false` is a defect, not a contract. Wire-visible on
   `inference capability`, so it is called out in the release notes.
-- **D5 — keys in `~/.config/strata/config.toml`, mode 0600**, environment
-  variables still winning. Same posture as `~/.aws/credentials` and `~/.netrc`;
-  works headless and in containers, which the OS keychain does not.
+- **D5 — keys in the global config at mode 0600**, environment variables still
+  winning. **Correction: this was already built** and the gap table below was
+  wrong about it. `strata config set openai.api_key <key>` writes it,
+  `read_global_provider_key` reads it, and `load_provider_keys_into_env` fills
+  env gaps before any inference command runs. The original claim ("environment
+  variables only") came from grepping `crates/inference` alone and missing that
+  the CLI resolves config keys a layer above. What remains of D5 is surfacing
+  it: the no-key hint now names `strata config set`, which is persistent and
+  executable by an agent, rather than only `export`.
 - **D9 — a collection with no recorded model refuses `--text`** and names a
   command to declare one. Raw `--vector` keeps working. Inference-by-dimension
   was rejected: 384 and 768 are shared by several models, so it would guess,
   and guessing wrong silently is the exact failure this removes.
 - **D10 — executor orchestrates**, as a recorded exception to the thin-executor
   rule (see the table above).
+
+## 3b. Who is reading this
+
+The caller of these surfaces is usually a **coding agent**, not a person at a
+terminal. That is not a detail of tone; it decides what a remediation may say:
+
+- An agent reads `--json`, not the table. Remediations therefore travel **in the
+  payload** (`local_remedy`, `key_env_var`, `model_prefix`), not only in prose
+  the renderer composes.
+- An agent has **no Rust toolchain** and cannot answer a build prompt.
+  `cargo install --features inference-local` is not a remediation for it; it is
+  a dead end that happens to look like one.
+- An agent will execute whatever command we print. So every command named on
+  this surface **must exist and must work** — which is why the no-key hint names
+  `strata config set` (built) and the local hint names
+  `strata inference install-local` (D2, landing before this ships).
+- `model_prefix` exists for exactly this reader: having found a ready provider,
+  an agent needs the string to type, not a sentence describing it.
+
+The same rule applies to interactive prompts (D8): an agent cannot answer one,
+so `--json` and non-tty must refuse with the command to run instead.
 
 ## 4. Where we stand
 
@@ -220,7 +247,7 @@ Verified against `main` at 1.2.1.
 | `capability` truthfulness | ❌ `can_embed: true` beside `provider_feature_enabled: false` | **D3** — fixed in the #3124 branch |
 | Model list truthfulness | ❌ lists 11 models the binary cannot load; `is_local` is about the file | **D4** — fixed in the #3124 branch |
 | Refusal messages | ❌ seven phrasings, none actionable | partly fixed in the #3124 branch |
-| API key configuration | ❌ environment variables only | **D5** |
+| API key configuration | ✅ `strata config set <provider>.api_key`, 0600, env wins | — (was wrongly listed as missing) |
 | Key failure diagnosis | ❌ "not set" is distinguished; rejected vs unreachable are not | **D6** |
 | Model storage shared across DBs | ✅ `~/.strata/models`, global | **D7** (document it) |
 | Model download | ❌ rides with `local`, so a released binary cannot pull at all | **D1** |
@@ -229,7 +256,7 @@ Verified against `main` at 1.2.1.
 | Embedding model provenance | ❌ **nothing records it**; rule 24's error code does not exist in the codebase | **D9** |
 | Embed → store in one step | ❌ `inference embed` returns vectors to the caller; `vector upsert` takes them | **D10** |
 | Query-time embedding | ❌ caller must embed separately with the right model, unaided | **D9, D10** |
-| Single status surface | ❌ no such command | **D11** |
+| Single status surface | ✅ `strata inference status` | — |
 | `strata doctor` covers inference | ❌ checks binary, home, database only | **D11** |
 
 ### The two that matter most

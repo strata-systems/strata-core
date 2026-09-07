@@ -484,12 +484,8 @@ fn print_inference_status(data: &Value, out: &mut String) {
             "cloud providers only"
         }
     );
-    if !local {
-        line!(
-            out,
-            "\tlocal models: not available in this build -- rebuild with \
-             `cargo install --path crates/cli --features inference-local`"
-        );
+    if let Some(remedy) = data.get("local_remedy").and_then(Value::as_str) {
+        line!(out, "\tlocal models: {remedy}");
     }
 
     line!(out, "\nproviders");
@@ -505,20 +501,31 @@ fn print_inference_status(data: &Value, out: &mut String) {
         let detail = if !enabled {
             "not in this build".to_owned()
         } else if ready {
+            let prefix = provider
+                .get("model_prefix")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             provider
                 .get("key_source")
                 .and_then(Value::as_str)
                 .map_or_else(
-                    || "ready".to_owned(),
-                    |from| format!("ready -- key from {from}"),
+                    || format!("ready -- use {prefix}<model>"),
+                    |from| format!("ready -- key from {from}; use {prefix}<model>"),
                 )
         } else if needs_key {
+            // `strata config set` is the persistent path and the one an agent
+            // can take: it writes the key at 0600 and every later run picks it
+            // up. The environment variable still wins when both are set.
             provider
                 .get("key_env_var")
                 .and_then(Value::as_str)
                 .map_or_else(
                     || "no key".to_owned(),
-                    |var| format!("no key -- export {var}=..."),
+                    |var| {
+                        format!(
+                            "no key -- `strata config set {name}.api_key <key>`, or export {var}"
+                        )
+                    },
                 )
         } else {
             "not ready".to_owned()
@@ -543,8 +550,8 @@ fn print_inference_status(data: &Value, out: &mut String) {
     if !flag("model_download") && downloaded < catalogued {
         line!(
             out,
-            "\tthis build cannot download models; fetch the GGUF file into the \
-             directory above, or rebuild with `--features inference-local`"
+            "\tthis build cannot download models -- `strata inference \
+             install-local` adds downloading along with local execution"
         );
     }
 }

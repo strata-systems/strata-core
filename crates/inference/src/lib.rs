@@ -71,7 +71,7 @@ pub use registry::{ModelInfo, ModelRegistry, ModelTask};
 pub use runtime::{
     EmbedRequest, EmbedResponse, EmbedRuntimeOutcome, InferenceCapability, InferenceRuntime,
     InferenceRuntimeConfig, InferenceStatus, ModelCacheStatus, ProviderStatus, PullModelOutput,
-    RankRequest, RankResponse, RankRuntimeOutcome,
+    RankRequest, RankResponse, RankRuntimeOutcome, LOCAL_UNAVAILABLE_REMEDY,
 };
 pub use wire::{
     ChatChoice, ChatMessage, ChatRequest, ChatResponse, EmbedInput, EmbeddingItem,

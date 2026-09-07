@@ -129,13 +129,19 @@ fn local_refusals_share_one_actionable_phrasing() {
     ];
 
     for message in &refusals {
+        // Both ways forward, and both must be commands the reader can run —
+        // the reader here is usually a coding agent with no Rust toolchain.
         assert!(
-            message.contains("--features inference-local"),
-            "a refusal must name the build that fixes it: {message}"
+            message.contains("strata inference install-local"),
+            "a refusal must name the command that adds local execution: {message}"
         );
         assert!(
-            message.contains("cloud model") || message.contains("openai:"),
-            "a refusal must name the alternative that needs no rebuild: {message}"
+            message.contains("openai:"),
+            "a refusal must name the alternative that needs no install: {message}"
+        );
+        assert!(
+            !message.contains("cargo install"),
+            "a refusal must not send the reader to a source build: {message}"
         );
     }
 }

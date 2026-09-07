@@ -548,10 +548,12 @@ impl crate::InferenceService for FakeInferenceService {
                 key_env_var: None,
                 key_source: None,
                 ready: true,
+                model_prefix: "local:".to_owned(),
             }],
             models_dir: std::path::PathBuf::from("/fake/models"),
             models_downloaded: models.iter().filter(|info| info.is_local).count(),
             models_catalogued: models.len(),
+            local_remedy: None,
         }
     }
 }
