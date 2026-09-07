@@ -1,7 +1,7 @@
 ---
 title: "Read graph ontology summary"
 description: "Read the ontology with usage counts."
-source: strata-core@1.2.0
+source: strata-core@1.2.1
 section: graph
 ---
 

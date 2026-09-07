@@ -1,7 +1,7 @@
 ---
 title: "List vector collections"
 description: "List vector collections."
-source: strata-core@1.2.0
+source: strata-core@1.2.1
 section: vector
 ---
 

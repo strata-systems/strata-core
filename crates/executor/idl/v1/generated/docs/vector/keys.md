@@ -1,7 +1,7 @@
 ---
 title: "List vector keys"
 description: "List vector keys in a collection."
-source: strata-core@1.2.0
+source: strata-core@1.2.1
 section: vector
 ---
 
