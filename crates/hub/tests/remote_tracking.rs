@@ -15,7 +15,7 @@ use stratahub_protocol::{BranchName, DatasetName, Hash};
 use time::OffsetDateTime;
 
 fn build_fixture_db(path: &Path) {
-    let mut db = Database::open_local(path, DurableLocalOpenOptions::new())
+    let db = Database::open_local(path, DurableLocalOpenOptions::new())
         .expect("fixture opens")
         .into_database();
     let mut kv = db
@@ -78,7 +78,7 @@ fn clone_writes_the_ref_and_reopen_reads_it_back() {
     assert!(local_version.is_none());
 
     // The clone remains fully usable after the ref write.
-    let mut db = Database::open_local(&target, DurableLocalOpenOptions::new())
+    let db = Database::open_local(&target, DurableLocalOpenOptions::new())
         .expect("clone opens")
         .into_database();
     let mut kv = db

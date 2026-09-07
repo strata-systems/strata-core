@@ -32,8 +32,8 @@ const JSON_LIST_RAW_PAGE_MAX: usize = 1024;
 
 /// Service for JSON document operations.
 pub struct JsonService<'a> {
-    persistence: &'a mut StoragePersistence,
-    control: &'a mut ControlPlane,
+    persistence: &'a StoragePersistence,
+    control: &'a ControlPlane,
     branch: BranchName,
     space: ProductSpace,
 }
@@ -82,8 +82,8 @@ impl BatchDeleteState {
 
 impl<'a> JsonService<'a> {
     pub(crate) const fn new(
-        persistence: &'a mut StoragePersistence,
-        control: &'a mut ControlPlane,
+        persistence: &'a StoragePersistence,
+        control: &'a ControlPlane,
         branch: BranchName,
         space: ProductSpace,
     ) -> Self {

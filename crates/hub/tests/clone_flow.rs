@@ -83,7 +83,7 @@ impl HubTransport for FakeHub {
 
 fn build_source() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
-    let mut db = Database::open_local(dir.path(), DurableLocalOpenOptions::new())
+    let db = Database::open_local(dir.path(), DurableLocalOpenOptions::new())
         .expect("opens")
         .into_database();
     let mut kv = db
@@ -134,7 +134,7 @@ fn clone_flow_fetches_imports_and_records_origin() {
     assert_eq!(fetched, hub.manifest.object_count);
 
     // The clone is queryable and its origin is recorded.
-    let mut db = Database::open_local(&dest, DurableLocalOpenOptions::new())
+    let db = Database::open_local(&dest, DurableLocalOpenOptions::new())
         .expect("clone opens")
         .into_database();
     let mut kv = db

@@ -88,7 +88,7 @@ fn writer_lock_releases_on_close_and_the_data_survives() {
     let path = dir.path().join("db");
 
     {
-        let mut first = Database::open_local(&path, DurableLocalOpenOptions::new())
+        let first = Database::open_local(&path, DurableLocalOpenOptions::new())
             .expect("first open")
             .into_database();
         first

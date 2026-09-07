@@ -123,7 +123,7 @@ impl EnginePageStore {
         &mut self,
         f: impl FnOnce(&mut KvService<'_>) -> Result<T, GpuError>,
     ) -> Result<T, GpuError> {
-        let mut database = self.database.lock().expect("database lock poisoned");
+        let database = self.database.lock().expect("database lock poisoned");
         let mut kv = database
             .kv(self.branch.clone(), self.space.clone())
             .map_err(store_error("kv_service"))?;

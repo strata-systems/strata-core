@@ -22,7 +22,7 @@ use common::{
 #[test]
 fn kv_history_rows_carry_their_commits_wall_clock_instant() {
     const YEAR_2020_MICROS: u64 = 1_577_836_800_000_000;
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let mut kv = database
         .kv(branch("default"), space("default"))
         .expect("KV service opens");
@@ -76,13 +76,43 @@ fn kv_history_rows_carry_their_commits_wall_clock_instant() {
 }
 
 #[test]
+fn several_capability_services_can_be_held_at_once() {
+    let database = open_cache_database().expect("cache open succeeds");
+    // Establish the branch/space through an exclusive handle first.
+    database
+        .kv(branch("default"), space("default"))
+        .expect("kv opens")
+        .put(key(b"seed"), value(b"v"))
+        .expect("seed write");
+
+    // The point of the change: three services, alive simultaneously, from a
+    // SHARED borrow. Before this, the second call did not compile — `kv`
+    // already borrowed the database mutably.
+    let db = &database;
+    let mut kv = db
+        .kv(branch("default"), space("default"))
+        .expect("kv opens");
+    let mut json = db
+        .json(branch("default"), space("default"))
+        .expect("json opens");
+    let mut events = db
+        .event(branch("default"), space("default"))
+        .expect("event opens");
+
+    // All three are usable while the others are held.
+    assert!(kv.get(&key(b"seed")).expect("kv read").is_some());
+    assert_eq!(json.count(None).expect("json count"), 0);
+    assert_eq!(events.len().expect("event len").count(), 0);
+}
+
+#[test]
 fn cache_write_ack_carries_a_wall_clock_committed_at() {
     // #3112: the engine stamps a real wall-clock `committed_at` (UTC epoch
     // micros) onto every generated commit, distinct from the logical commit
     // clock. 2020-01-01 in epoch micros: any real clock is far above it, and the
     // logical per-commit counter (seeded near 1) far below.
     const YEAR_2020_MICROS: u64 = 1_577_836_800_000_000;
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let mut kv = database
         .kv(branch("default"), space("default"))
         .expect("KV service opens");
@@ -287,7 +317,7 @@ fn branch_lookup_returns_stable_summary() {
 
 #[test]
 fn kv_edge_cases_are_stable() {
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
 
     {
         let mut kv = database
@@ -360,7 +390,7 @@ fn kv_edge_cases_are_stable() {
 
 #[test]
 fn kv_batch_put_and_delete_are_single_commit_operations() {
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let mut kv = database
         .kv(branch("default"), space("default"))
         .expect("KV service opens");
@@ -417,7 +447,7 @@ fn kv_batch_put_and_delete_are_single_commit_operations() {
 
 #[test]
 fn kv_batch_validation_is_stable() {
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let mut kv = database
         .kv(branch("default"), space("default"))
         .expect("KV service opens");
@@ -463,7 +493,7 @@ fn kv_batch_validation_is_stable() {
 
 #[test]
 fn kv_versioned_and_point_in_time_reads_preserve_commit_metadata() {
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let mut kv = database
         .kv(branch("default"), space("default"))
         .expect("KV service opens");
@@ -532,7 +562,7 @@ fn kv_versioned_and_point_in_time_reads_preserve_commit_metadata() {
 
 #[test]
 fn kv_history_returns_newest_first_rows_with_tombstones() {
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let mut kv = database
         .kv(branch("default"), space("default"))
         .expect("KV service opens");
@@ -570,7 +600,7 @@ fn kv_history_returns_newest_first_rows_with_tombstones() {
 
 #[test]
 fn kv_first_write_in_new_space_hides_control_rows_from_commit_counts() {
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let mut kv = database
         .kv(branch("default"), space("tenant"))
         .expect("tenant KV service opens");
@@ -595,7 +625,7 @@ fn kv_first_write_in_new_space_hides_control_rows_from_commit_counts() {
 
 #[test]
 fn kv_batch_reads_and_exists_are_positional() {
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let mut kv = database
         .kv(branch("default"), space("default"))
         .expect("KV service opens");
@@ -638,7 +668,7 @@ fn kv_batch_reads_and_exists_are_positional() {
 
 #[test]
 fn kv_list_page_and_timestamp_list_suppress_tombstones() {
-    let (mut database, visible_timestamp) = open_database_with_kv_shape();
+    let (database, visible_timestamp) = open_database_with_kv_shape();
 
     let mut kv = database
         .kv(branch("default"), space("default"))
@@ -691,7 +721,7 @@ fn kv_list_page_and_timestamp_list_suppress_tombstones() {
 
 #[test]
 fn kv_scan_and_sample_suppress_tombstones() {
-    let (mut database, _) = open_database_with_kv_shape();
+    let (database, _) = open_database_with_kv_shape();
 
     let mut kv = database
         .kv(branch("default"), space("default"))
@@ -752,7 +782,7 @@ fn kv_scan_and_sample_suppress_tombstones() {
 
 #[test]
 fn kv_branch_and_space_scans_stay_isolated() {
-    let (mut database, _) = open_database_with_kv_shape();
+    let (database, _) = open_database_with_kv_shape();
     let app_prefix = key(b"app:");
 
     let mut kv = database
@@ -826,7 +856,7 @@ fn durable_reopen_preserves_kv_read_surface() {
     }
 
     {
-        let mut database = open_durable_database(&path).expect("durable reopen succeeds");
+        let database = open_durable_database(&path).expect("durable reopen succeeds");
         let mut kv = database
             .kv(branch("default"), space("default"))
             .expect("KV service opens");

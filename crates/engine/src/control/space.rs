@@ -35,7 +35,7 @@ pub(crate) fn seed_required_space_rows(
 }
 
 pub(crate) fn registration_mutations(
-    persistence: &mut StoragePersistence,
+    persistence: &StoragePersistence,
     record: &BranchCatalogRecord,
     space: &ProductSpace,
 ) -> EngineResult<Vec<RowMutation>> {
@@ -253,7 +253,7 @@ fn required_space_mutations(
 }
 
 fn read_required_space_index(
-    persistence: &mut StoragePersistence,
+    persistence: &StoragePersistence,
     record: &BranchCatalogRecord,
 ) -> EngineResult<Vec<ProductSpace>> {
     let bytes = read_required(persistence, &space_address(record, space_index_key()))?;
@@ -261,7 +261,7 @@ fn read_required_space_index(
 }
 
 fn validate_space_catalog_row(
-    persistence: &mut StoragePersistence,
+    persistence: &StoragePersistence,
     record: &BranchCatalogRecord,
     space: &ProductSpace,
 ) -> EngineResult<()> {
@@ -279,10 +279,7 @@ fn validate_space_catalog_row(
     Ok(())
 }
 
-fn read_required(
-    persistence: &mut StoragePersistence,
-    address: &RowAddress,
-) -> EngineResult<Vec<u8>> {
+fn read_required(persistence: &StoragePersistence, address: &RowAddress) -> EngineResult<Vec<u8>> {
     match persistence.read(address.clone(), ReadSelector::Latest) {
         Ok(Some(value)) => Ok(value),
         Ok(None) => Err(EngineError::corruption(
@@ -342,7 +339,7 @@ mod tests {
         seed_required_space_rows(&mut persistence, &record).expect("space rows seed");
         let tenant = ProductSpace::new("tenant").expect("valid space");
 
-        let mutations = registration_mutations(&mut persistence, &record, &tenant)
+        let mutations = registration_mutations(&persistence, &record, &tenant)
             .expect("tenant registration mutations");
         assert_eq!(mutations.len(), 2);
 
@@ -353,7 +350,7 @@ mod tests {
                 Some(record.generation()),
             ))
             .expect("space registration commits");
-        let mutations = registration_mutations(&mut persistence, &record, &tenant)
+        let mutations = registration_mutations(&persistence, &record, &tenant)
             .expect("tenant already registered");
         assert!(mutations.is_empty());
     }
@@ -377,7 +374,7 @@ mod tests {
         let record = create_branch(&mut persistence, "space-test");
         seed_required_space_rows(&mut persistence, &record).expect("space rows seed");
         let tenant = ProductSpace::new("tenant").expect("valid space");
-        let mutations = registration_mutations(&mut persistence, &record, &tenant)
+        let mutations = registration_mutations(&persistence, &record, &tenant)
             .expect("tenant registration mutations");
         persistence
             .commit(&CommitPlan::new(
@@ -413,7 +410,7 @@ mod tests {
         seed_required_space_rows(&mut persistence, &record).expect("space rows seed");
         let tenant = ProductSpace::new("tenant").expect("valid space");
         let other = ProductSpace::new("other").expect("valid space");
-        let mutations = registration_mutations(&mut persistence, &record, &tenant)
+        let mutations = registration_mutations(&persistence, &record, &tenant)
             .expect("tenant registration mutations");
         persistence
             .commit(&CommitPlan::new(

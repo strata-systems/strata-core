@@ -293,13 +293,13 @@ impl Database {
     }
 
     /// Returns a byte-oriented KV service for the selected branch and space.
-    pub fn kv(&mut self, branch: BranchName, space: ProductSpace) -> EngineResult<KvService<'_>> {
+    pub fn kv(&self, branch: BranchName, space: ProductSpace) -> EngineResult<KvService<'_>> {
         self.require_open()?;
         self.control.require_healthy()?;
         self.require_branch(&branch)?;
         Ok(KvService::new(
-            &mut self.persistence,
-            &mut self.control,
+            &self.persistence,
+            &self.control,
             branch,
             space,
         ))
@@ -337,23 +337,25 @@ impl Database {
     }
 
     /// Returns a JSON document service for the selected branch and space.
-    pub fn json(
-        &mut self,
-        branch: BranchName,
-        space: ProductSpace,
-    ) -> EngineResult<JsonService<'_>> {
+    pub fn json(&self, branch: BranchName, space: ProductSpace) -> EngineResult<JsonService<'_>> {
         self.require_open()?;
         self.control.require_healthy()?;
         self.require_branch(&branch)?;
         Ok(JsonService::new(
-            &mut self.persistence,
-            &mut self.control,
+            &self.persistence,
+            &self.control,
             branch,
             space,
         ))
     }
 
     /// Returns a vector service for the selected branch and space.
+    /// Still `&self`-less, unlike its kv/json/event/graph siblings: the vector
+    /// service also holds `&mut VectorArtifactStore`, an LRU runtime cache with
+    /// genuine eviction state. Sharing that is a real design question — which
+    /// lock, at what granularity, and whether eviction contends — not the
+    /// incidental exclusivity the rest of this change removed. Tracked as
+    /// follow-up work rather than decided here.
     pub fn vector(
         &mut self,
         branch: BranchName,
@@ -372,34 +374,26 @@ impl Database {
     }
 
     /// Returns an event log service for the selected branch and space.
-    pub fn event(
-        &mut self,
-        branch: BranchName,
-        space: ProductSpace,
-    ) -> EngineResult<EventService<'_>> {
+    pub fn event(&self, branch: BranchName, space: ProductSpace) -> EngineResult<EventService<'_>> {
         self.require_open()?;
         self.control.require_healthy()?;
         self.require_branch(&branch)?;
         Ok(EventService::new(
-            &mut self.persistence,
-            &mut self.control,
+            &self.persistence,
+            &self.control,
             branch,
             space,
         ))
     }
 
     /// Returns a graph core service for the selected branch and space.
-    pub fn graph(
-        &mut self,
-        branch: BranchName,
-        space: ProductSpace,
-    ) -> EngineResult<GraphService<'_>> {
+    pub fn graph(&self, branch: BranchName, space: ProductSpace) -> EngineResult<GraphService<'_>> {
         self.require_open()?;
         self.control.require_healthy()?;
         self.require_branch(&branch)?;
         Ok(GraphService::new(
-            &mut self.persistence,
-            &mut self.control,
+            &self.persistence,
+            &self.control,
             branch,
             space,
         ))

@@ -15,7 +15,7 @@ fn name(index: usize) -> String {
 #[test]
 fn kv_list_page_cursor_walk_and_tombstone_skip_cross_raw_page_boundary() {
     let total = 200usize;
-    let mut db = open_cache_database().expect("cache database opens");
+    let db = open_cache_database().expect("cache database opens");
     let mut kv = db
         .kv(branch("default"), space("default"))
         .expect("kv service opens");

@@ -59,7 +59,12 @@ fn bulk_insert_ingests_in_cache_and_durable_modes() {
     run_database_modes(exercise_bulk_insert);
 }
 
-fn exercise_bulk_insert(mut database: Database) {
+// Takes `Database` by value on purpose: the `fn(Database)` harness contract
+// hands over ownership so the database is DROPPED — and therefore closed —
+// when the exercise ends. Clippy cannot see that Drop is the point (#3126:
+// the body only needs `&Database` now that services borrow shared).
+#[allow(clippy::needless_pass_by_value)]
+fn exercise_bulk_insert(database: Database) {
     let mut graph = database
         .graph(branch("default"), space("default"))
         .expect("graph service opens");
@@ -135,7 +140,12 @@ fn bulk_chunks_respect_the_storage_commit_budget_in_cache_and_durable_modes() {
 /// forward and a reverse row, so an unchunked commit of a few thousand
 /// edges exceeds the storage per-commit mutation budget. The default
 /// and the clamp must keep every chunk inside one commit.
-fn exercise_storage_commit_budget(mut database: Database) {
+// Takes `Database` by value on purpose: the `fn(Database)` harness contract
+// hands over ownership so the database is DROPPED — and therefore closed —
+// when the exercise ends. Clippy cannot see that Drop is the point (#3126:
+// the body only needs `&Database` now that services borrow shared).
+#[allow(clippy::needless_pass_by_value)]
+fn exercise_storage_commit_budget(database: Database) {
     let mut graph = database
         .graph(branch("default"), space("default"))
         .expect("graph service opens");
@@ -172,7 +182,12 @@ fn bulk_insert_refuses_before_committing_in_cache_and_durable_modes() {
     run_database_modes(exercise_bulk_refusals);
 }
 
-fn exercise_bulk_refusals(mut database: Database) {
+// Takes `Database` by value on purpose: the `fn(Database)` harness contract
+// hands over ownership so the database is DROPPED — and therefore closed —
+// when the exercise ends. Clippy cannot see that Drop is the point (#3126:
+// the body only needs `&Database` now that services borrow shared).
+#[allow(clippy::needless_pass_by_value)]
+fn exercise_bulk_refusals(database: Database) {
     let mut graph = database
         .graph(branch("default"), space("default"))
         .expect("graph service opens");

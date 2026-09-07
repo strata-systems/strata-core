@@ -24,16 +24,16 @@ const KV_SCAN_RAW_PAGE_MAX: usize = 4096;
 
 /// Service for byte-oriented KV operations.
 pub struct KvService<'a> {
-    persistence: &'a mut StoragePersistence,
-    control: &'a mut ControlPlane,
+    persistence: &'a StoragePersistence,
+    control: &'a ControlPlane,
     branch: BranchName,
     space: ProductSpace,
 }
 
 impl<'a> KvService<'a> {
     pub(crate) const fn new(
-        persistence: &'a mut StoragePersistence,
-        control: &'a mut ControlPlane,
+        persistence: &'a StoragePersistence,
+        control: &'a ControlPlane,
         branch: BranchName,
         space: ProductSpace,
     ) -> Self {

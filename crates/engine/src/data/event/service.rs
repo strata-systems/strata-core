@@ -30,16 +30,16 @@ const TYPE_INDEX_VALUE: &[u8] = b"\x01";
 
 /// Service for event log operations.
 pub struct EventService<'a> {
-    persistence: &'a mut StoragePersistence,
-    control: &'a mut ControlPlane,
+    persistence: &'a StoragePersistence,
+    control: &'a ControlPlane,
     branch: BranchName,
     space: ProductSpace,
 }
 
 impl<'a> EventService<'a> {
     pub(crate) const fn new(
-        persistence: &'a mut StoragePersistence,
-        control: &'a mut ControlPlane,
+        persistence: &'a StoragePersistence,
+        control: &'a ControlPlane,
         branch: BranchName,
         space: ProductSpace,
     ) -> Self {

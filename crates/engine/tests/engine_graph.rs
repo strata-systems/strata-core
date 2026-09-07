@@ -1600,7 +1600,7 @@ fn outgoing_dsts(
 #[allow(clippy::similar_names)]
 #[test]
 fn graph_historical_edge_reads_never_dangle_or_corrupt() {
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let mut graph = database
         .graph(branch("default"), space("default"))
         .expect("graph service opens");

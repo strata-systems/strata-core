@@ -63,7 +63,7 @@ fn vector_metadata_must_be_a_json_object() {
 /// duplicate-id refusal reached through the public `batch_delete` API.
 #[test]
 fn json_batch_delete_rejects_duplicate_document_ids() {
-    let mut database = open_cache_database().expect("cache open");
+    let database = open_cache_database().expect("cache open");
     let mut json = database
         .json(branch("default"), space("default"))
         .expect("json service");

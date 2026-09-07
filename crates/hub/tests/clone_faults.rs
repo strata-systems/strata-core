@@ -143,7 +143,7 @@ impl HubTransport for FaultHub {
 
 fn build_source() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
-    let mut db = Database::open_local(dir.path(), DurableLocalOpenOptions::new())
+    let db = Database::open_local(dir.path(), DurableLocalOpenOptions::new())
         .expect("opens")
         .into_database();
     let mut kv = db

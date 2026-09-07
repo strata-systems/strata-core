@@ -93,7 +93,12 @@ fn neighbors_report_target_status_in_cache_and_durable_modes() {
     run_database_modes(exercise_target_status);
 }
 
-fn exercise_target_status(mut database: Database) {
+// Takes `Database` by value on purpose: the `fn(Database)` harness contract
+// hands over ownership so the database is DROPPED — and therefore closed —
+// when the exercise ends. Clippy cannot see that Drop is the point (#3126:
+// the body only needs `&Database` now that services borrow shared).
+#[allow(clippy::needless_pass_by_value)]
+fn exercise_target_status(database: Database) {
     // Author the bound KV entity first.
     {
         let mut kv = database
@@ -247,7 +252,12 @@ fn delete_policies_apply_in_cache_and_durable_modes() {
     run_database_modes(exercise_delete_policies);
 }
 
-fn exercise_delete_policies(mut database: Database) {
+// Takes `Database` by value on purpose: the `fn(Database)` harness contract
+// hands over ownership so the database is DROPPED — and therefore closed —
+// when the exercise ends. Clippy cannot see that Drop is the point (#3126:
+// the body only needs `&Database` now that services borrow shared).
+#[allow(clippy::needless_pass_by_value)]
+fn exercise_delete_policies(database: Database) {
     let mut graph = database
         .graph(branch("default"), space("default"))
         .expect("graph service opens");

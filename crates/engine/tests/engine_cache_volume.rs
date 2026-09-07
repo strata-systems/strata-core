@@ -21,7 +21,12 @@ fn acknowledged_writes_survive_memtable_rotation_in_cache_and_durable_modes() {
     run_database_modes(exercise_volume_liveness);
 }
 
-fn exercise_volume_liveness(mut database: Database) {
+// Takes `Database` by value on purpose: the `fn(Database)` harness contract
+// hands over ownership so the database is DROPPED — and therefore closed —
+// when the exercise ends. Clippy cannot see that Drop is the point (#3126:
+// the body only needs `&Database` now that services borrow shared).
+#[allow(clippy::needless_pass_by_value)]
+fn exercise_volume_liveness(database: Database) {
     let mut kv = database
         .kv(branch("default"), space("default"))
         .expect("kv service opens");

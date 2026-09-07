@@ -59,7 +59,7 @@ fn open_with_mode(root: &Path, mode: DurabilityMode) -> Database {
 
 #[test]
 fn cache_commits_attest_not_durable() {
-    let mut db = Database::open_cache(CacheOpenOptions::new())
+    let db = Database::open_cache(CacheOpenOptions::new())
         .map(DatabaseOpenOutcome::into_database)
         .expect("cache open");
     let mut kv = db.kv(branch(), space()).expect("kv opens");
@@ -70,7 +70,7 @@ fn cache_commits_attest_not_durable() {
 #[test]
 fn standard_commits_attest_standard_not_durable_now() {
     let dir = tempfile::tempdir().expect("tmp");
-    let mut db = open_with_mode(&dir.path().join("db"), DurabilityMode::Standard);
+    let db = open_with_mode(&dir.path().join("db"), DurabilityMode::Standard);
     let mut kv = db.kv(branch(), space()).expect("kv opens");
     let outcome = kv.put(kv_key(0), kv_value(0)).expect("put succeeds");
     // The #2756 defect: this attested `durable` before the sync point.
@@ -80,7 +80,7 @@ fn standard_commits_attest_standard_not_durable_now() {
 #[test]
 fn always_commits_attest_always() {
     let dir = tempfile::tempdir().expect("tmp");
-    let mut db = open_with_mode(&dir.path().join("db"), DurabilityMode::Always);
+    let db = open_with_mode(&dir.path().join("db"), DurabilityMode::Always);
     let mut kv = db.kv(branch(), space()).expect("kv opens");
     let outcome = kv.put(kv_key(0), kv_value(0)).expect("put succeeds");
     assert_eq!(outcome.commit().durability(), CommitDurability::Always);
@@ -108,7 +108,7 @@ fn phase_write_and_park() {
         _ => CommitDurability::Standard,
     };
     let root = Path::new(&dir).join("db");
-    let mut db = open_with_mode(&root, mode);
+    let db = open_with_mode(&root, mode);
     {
         let mut kv = db.kv(branch(), space()).expect("kv opens");
         for index in 0..KEYS {
@@ -159,7 +159,7 @@ fn acked_survivors_after_sigkill(root: &Path, mode: &str) -> u32 {
     child.kill().expect("SIGKILL child");
     child.wait().expect("reap child");
 
-    let mut db = open_with_mode(&root.join("db"), DurabilityMode::Standard);
+    let db = open_with_mode(&root.join("db"), DurabilityMode::Standard);
     let mut kv = db.kv(branch(), space()).expect("kv opens after recovery");
     let mut survivors = 0u32;
     let mut lost_seen = false;
@@ -225,7 +225,7 @@ fn standard_mode_clean_close_recovers_all_acknowledgements() {
         }
         db.close().expect("clean close");
     }
-    let mut db = open_with_mode(&root, DurabilityMode::Standard);
+    let db = open_with_mode(&root, DurabilityMode::Standard);
     let mut kv = db.kv(branch(), space()).expect("kv opens after reopen");
     for index in 0..KEYS {
         assert!(
