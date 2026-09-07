@@ -132,7 +132,7 @@ fn round_trip_conformance_import_then_reexport_matches_the_manifest_hash() {
         "import → re-export must reproduce the manifest hash"
     );
 
-    let mut db = Database::open_local(&target, DurableLocalOpenOptions::new())
+    let db = Database::open_local(&target, DurableLocalOpenOptions::new())
         .expect("clone opens")
         .into_database();
     let mut kv = db
@@ -308,7 +308,7 @@ fn multi_branch_bundle_round_trips() {
     );
 
     // Both branches serve their divergent content through normal reads.
-    let mut db = Database::open_local(&target_path, DurableLocalOpenOptions::new())
+    let db = Database::open_local(&target_path, DurableLocalOpenOptions::new())
         .expect("clone opens")
         .into_database();
     let space = || ProductSpace::new("default").expect("space");

@@ -244,7 +244,7 @@ impl ControlPlane {
     }
 
     pub(crate) fn space_registration_mutations(
-        persistence: &mut StoragePersistence,
+        persistence: &StoragePersistence,
         record: &BranchCatalogRecord,
         space: &crate::data::kv::ProductSpace,
     ) -> EngineResult<Vec<RowMutation>> {

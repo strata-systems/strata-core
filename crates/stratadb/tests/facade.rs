@@ -116,7 +116,7 @@ fn facade_exposes_all_six_data_services() {
 fn facade_errors_carry_stable_codes() {
     use stratadb::{BranchName, CacheOpenOptions, Database, EngineErrorClass, ProductSpace};
 
-    let mut db = Database::open_cache(CacheOpenOptions::new())
+    let db = Database::open_cache(CacheOpenOptions::new())
         .expect("cache open")
         .into_database();
     let error = db
@@ -201,7 +201,7 @@ fn facade_forks_a_branch_and_isolates_writes() {
 /// so this also proves the versioned-read surface is reachably re-exported.
 #[test]
 fn facade_reads_a_prior_version_through_time_travel() {
-    let mut db = Database::open_cache(CacheOpenOptions::new())
+    let db = Database::open_cache(CacheOpenOptions::new())
         .expect("cache open")
         .into_database();
     let mut kv = db

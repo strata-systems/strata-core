@@ -325,7 +325,7 @@ fn emit_schema_preview_false_omits_blobs_and_hashes() {
 fn preview_truncates_long_values() {
     let dir = tempfile::tempdir().expect("tempdir");
     {
-        let mut db = Database::open_local(dir.path(), DurableLocalOpenOptions::new())
+        let db = Database::open_local(dir.path(), DurableLocalOpenOptions::new())
             .expect("db opens")
             .into_database();
         let mut kv = db

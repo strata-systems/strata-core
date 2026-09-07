@@ -16,7 +16,7 @@ use common::{branch, open_cache_database, open_durable_database, space};
 /// runs each mutated crate's own tests.
 #[test]
 fn json_history_rows_carry_their_commits_wall_clock_instant() {
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let doc = JsonDocumentId::new("doc").expect("valid document id");
     let mut json = database
         .json(branch("default"), space("default"))
@@ -203,7 +203,7 @@ fn special_character_keys_are_addressable_by_bracket_notation() {
     // The issue's repro: keys that dot notation cannot express (emoji, an
     // embedded dot) are stored and then read back by bracket notation in either
     // quote style, while dot notation reports a typed, guidance-carrying error.
-    let mut database = open_cache_database().expect("cache open");
+    let database = open_cache_database().expect("cache open");
     let mut json = database
         .json(branch("default"), space("default"))
         .expect("json opens");
@@ -296,7 +296,7 @@ fn json_durable_reopen_preserves_documents_versions_and_indexes() {
         database.close().expect("close succeeds");
     }
 
-    let mut reopened = open_durable_database(tempdir.path()).expect("reopen succeeds");
+    let reopened = open_durable_database(tempdir.path()).expect("reopen succeeds");
     let mut json = reopened
         .json(branch("default"), space("default"))
         .expect("JSON service opens");
@@ -319,7 +319,7 @@ fn json_durable_reopen_preserves_documents_versions_and_indexes() {
 
 #[test]
 fn json_list_pages_live_rows_after_deletes() {
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let mut json = database
         .json(branch("default"), space("default"))
         .expect("JSON service opens");
@@ -345,7 +345,7 @@ fn json_list_pages_live_rows_after_deletes() {
 
 #[test]
 fn json_set_and_batch_contracts_are_explicit() {
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let doc = doc_id("contract:1");
     let mut json = database
         .json(branch("default"), space("default"))
@@ -410,7 +410,7 @@ fn json_set_and_batch_contracts_are_explicit() {
 
 #[test]
 fn json_space_isolation_covers_reads_lists_and_indexes() {
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let doc = doc_id("shared");
     {
         let mut default_json = database
@@ -598,7 +598,7 @@ fn json_null_documents_remain_live_for_list_count_and_timestamp_reads() {
 
 #[test]
 fn json_history_version_timestamp_and_list_at_are_stable() {
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let doc = doc_id("history:1");
     let other = doc_id("history:2");
     let mut json = database
@@ -765,7 +765,7 @@ fn assert_json_history_rows(json: &mut JsonService<'_>, doc: &JsonDocumentId) {
 
 #[test]
 fn json_index_metadata_covers_supported_kinds_and_errors() {
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let mut json = database
         .json(branch("default"), space("default"))
         .expect("JSON service opens");
@@ -866,7 +866,7 @@ fn json_durable_reopen_preserves_full_surface() {
         database.close().expect("close succeeds");
     }
 
-    let mut reopened = open_durable_database(tempdir.path()).expect("reopen succeeds");
+    let reopened = open_durable_database(tempdir.path()).expect("reopen succeeds");
     let mut default_json = reopened
         .json(branch("default"), space("default"))
         .expect("JSON service opens");
@@ -925,7 +925,7 @@ fn json_durable_reopen_preserves_full_surface() {
 
 #[test]
 fn json_error_surfaces_are_engine_owned() {
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let missing_branch = database
         .json(branch("missing"), space("default"))
         .map(|_| ())
@@ -1172,7 +1172,7 @@ fn exercise_json_batch_list_index_contract(
 
 #[test]
 fn json_batch_delete_entries_removes_paths_positionally() {
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let mut json = database
         .json(branch("default"), space("default"))
         .expect("JSON service opens");
@@ -1227,7 +1227,7 @@ fn json_batch_delete_entries_removes_paths_positionally() {
 
 #[test]
 fn json_batch_delete_entries_empty_is_a_noop() {
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let mut json = database
         .json(branch("default"), space("default"))
         .expect("JSON service opens");
@@ -1240,7 +1240,7 @@ fn json_batch_delete_entries_empty_is_a_noop() {
 
 #[test]
 fn json_set_path_type_and_not_found_errors_are_engine_owned() {
-    let mut database = open_cache_database().expect("cache open succeeds");
+    let database = open_cache_database().expect("cache open succeeds");
     let mut json = database
         .json(branch("default"), space("default"))
         .expect("JSON service opens");

@@ -116,7 +116,7 @@ fn durable_reopen_validates_registered_user_space_catalog() {
     let path = temp.path().join("db");
 
     {
-        let mut database = Database::open_local(&path, DurableLocalOpenOptions::new())
+        let database = Database::open_local(&path, DurableLocalOpenOptions::new())
             .expect("durable open succeeds")
             .into_database();
         database

@@ -16,7 +16,7 @@ use strata_hub::{
 use stratahub_protocol::{BranchName, DatasetName, Hash};
 
 fn build_source(path: &Path) {
-    let mut db = Database::open_local(path, DurableLocalOpenOptions::new())
+    let db = Database::open_local(path, DurableLocalOpenOptions::new())
         .expect("source opens")
         .into_database();
     let mut kv = db
@@ -123,7 +123,7 @@ fn clone_over_real_http_reconstitutes_and_records_origin() {
     assert_eq!(outcome.manifest_hash, manifest_hash);
 
     // The clone serves reads and carries its origin, hub URL included.
-    let mut db = Database::open_local(&dest, DurableLocalOpenOptions::new())
+    let db = Database::open_local(&dest, DurableLocalOpenOptions::new())
         .expect("clone opens")
         .into_database();
     let mut kv = db

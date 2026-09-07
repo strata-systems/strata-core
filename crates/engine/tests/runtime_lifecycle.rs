@@ -156,7 +156,7 @@ fn memory_budget_below_minimum_is_rejected() {
 fn dropped_durable_handle_preserves_committed_data() {
     let dir = tempfile::tempdir().expect("temp dir");
     {
-        let mut db = open_durable_database(dir.path()).expect("durable opens");
+        let db = open_durable_database(dir.path()).expect("durable opens");
         db.kv(branch("default"), space("default"))
             .expect("kv opens")
             .put(key(b"k"), value(b"v"))
@@ -164,7 +164,7 @@ fn dropped_durable_handle_preserves_committed_data() {
         // The handle is dropped here without an explicit close().
     }
 
-    let mut db = open_durable_database(dir.path()).expect("durable reopens");
+    let db = open_durable_database(dir.path()).expect("durable reopens");
     let stored = db
         .kv(branch("default"), space("default"))
         .expect("kv opens")

@@ -48,16 +48,16 @@ type MutationKey = (RowClass, Vec<u8>);
 
 /// Service for graph core operations.
 pub struct GraphService<'a> {
-    persistence: &'a mut StoragePersistence,
-    control: &'a mut ControlPlane,
+    persistence: &'a StoragePersistence,
+    control: &'a ControlPlane,
     branch: BranchName,
     space: ProductSpace,
 }
 
 impl<'a> GraphService<'a> {
     pub(crate) const fn new(
-        persistence: &'a mut StoragePersistence,
-        control: &'a mut ControlPlane,
+        persistence: &'a StoragePersistence,
+        control: &'a ControlPlane,
         branch: BranchName,
         space: ProductSpace,
     ) -> Self {

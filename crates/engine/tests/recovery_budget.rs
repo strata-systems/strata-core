@@ -116,7 +116,7 @@ fn phase_recover_budgeted() {
     };
     let root = Path::new(&dir).join("db");
     let before = vm_kb("VmHWM");
-    let mut db = open_budgeted(&root);
+    let db = open_budgeted(&root);
     let after_open = vm_kb("VmHWM");
 
     let mut kv = db.kv(branch(), space()).expect("kv opens after recovery");

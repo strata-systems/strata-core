@@ -18,7 +18,7 @@ const FIXTURE_HASH: &str =
     "blake3:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 fn build_source(path: &Path) {
-    let mut db = Database::open_local(path, DurableLocalOpenOptions::new())
+    let db = Database::open_local(path, DurableLocalOpenOptions::new())
         .expect("source opens")
         .into_database();
     let mut kv = db
