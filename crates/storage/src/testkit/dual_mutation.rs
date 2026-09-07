@@ -535,6 +535,25 @@ mod tests {
         check_dual_mutation_contract(dir.path(), script).expect("case runs clean")
     }
 
+    /// Folds the checkpoint/race split, which is a timing artifact rather than
+    /// a behavioural fact (#3181).
+    ///
+    /// A checkpoint the background lane happens to claim first is counted as a
+    /// `maintenance_race`, not a `checkpoint` — and `maintenance_races` is
+    /// documented above as benign, because *the maintenance work runs either
+    /// way*. Comparing the two counters separately therefore asserts which
+    /// thread won a race, which is not something this test is about and not
+    /// something a fixed seed can determine.
+    ///
+    /// This bit twice on unrelated diffs within four hours: once on the replay
+    /// comparison and once on the `expected` literal, which are the two
+    /// directions the same split can break.
+    fn settled(mut outcome: DualMutationOutcome) -> DualMutationOutcome {
+        outcome.checkpoints += outcome.maintenance_races;
+        outcome.maintenance_races = 0;
+        outcome
+    }
+
     #[test]
     fn a_clean_epoch_script_replays_identically_with_exact_counters() {
         let expected = DualMutationOutcome {
@@ -543,13 +562,19 @@ mod tests {
             paired_puts: 1,
             deletes: 1,
             flushes: 1,
+            // Checkpoint-or-race: `settled` folds the two, so this is "the
+            // checkpoint maintenance ran once", not "no race occurred".
             checkpoints: 1,
             reopens_classified: 3,
             ..DualMutationOutcome::default()
         };
-        let first = run(SEED_CLEAN_EPOCHS);
+        let first = settled(run(SEED_CLEAN_EPOCHS));
         assert_eq!(first, expected, "every grammar arm lands exactly once-plus");
-        assert_eq!(run(SEED_CLEAN_EPOCHS), first, "damage-free cases replay");
+        assert_eq!(
+            settled(run(SEED_CLEAN_EPOCHS)),
+            first,
+            "damage-free cases replay"
+        );
     }
 
     #[test]
