@@ -294,6 +294,7 @@ impl InferenceRuntime {
             None
         };
         let task = local_info.as_ref().map(|info| info.task);
+        let abilities = ModelAbilities::of(provider, task);
         Ok(InferenceCapability {
             provider,
             model,
@@ -304,16 +305,18 @@ impl InferenceRuntime {
             // false` made every caller responsible for ANDing the two, and the
             // more prominent field was the wrong one. What the model inherently
             // is stays discoverable through the catalog's `task`.
-            can_generate: (provider != ProviderKind::Local || task != Some(ModelTask::Embed))
-                && generation_provider_feature_enabled(provider),
-            can_tokenize: provider == ProviderKind::Local && cfg!(feature = "local"),
-            can_embed: (provider == ProviderKind::OpenAI
-                || provider == ProviderKind::Google
-                || task == Some(ModelTask::Embed))
+            //
+            // The two halves are separated deliberately: `ModelAbilities` is
+            // what the model supports, decided by a pure function with its own
+            // truth table, and the feature check is what this build can run.
+            // Folded together, every branch of the first half was unobservable
+            // in a build with the feature off (`x && false` is false whatever
+            // `x` is), so the mutation gate could not distinguish them.
+            can_generate: abilities.generate && generation_provider_feature_enabled(provider),
+            can_tokenize: abilities.tokenize && cfg!(feature = "local"),
+            can_embed: abilities.embed
                 && embedding_provider_feature_enabled_for_capability(provider),
-            can_rank: provider == ProviderKind::Local
-                && task == Some(ModelTask::Rank)
-                && cfg!(feature = "local"),
+            can_rank: abilities.rank && cfg!(feature = "local"),
             requires_network: provider != ProviderKind::Local,
             requires_api_key: provider != ProviderKind::Local,
             provider_feature_enabled: generation_provider_feature_enabled(provider)
@@ -1068,6 +1071,44 @@ fn remove_matching<T>(map: &mut HashMap<String, T>, model_spec: Option<&str>) ->
     }
 }
 
+/// What a model and provider inherently support, before any question of what
+/// this binary was compiled with.
+///
+/// Split out of `capability` (#3124) so the decision has a truth table that can
+/// be tested directly. Inside the `can_*` expressions each branch was ANDed
+/// with a feature check, so in a build with that feature off the whole
+/// expression was false regardless — every mutation of this logic was
+/// equivalent, and the mutation gate rightly could not tell them apart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ModelAbilities {
+    pub(crate) generate: bool,
+    pub(crate) tokenize: bool,
+    pub(crate) embed: bool,
+    pub(crate) rank: bool,
+}
+
+impl ModelAbilities {
+    /// `task` is the catalogued task for a local model, and `None` for a cloud
+    /// spec (where the provider alone decides).
+    pub(crate) fn of(provider: ProviderKind, task: Option<ModelTask>) -> Self {
+        let local = provider == ProviderKind::Local;
+        Self {
+            // Every cloud provider generates. A local model generates unless it
+            // is an embedding model.
+            generate: !local || task != Some(ModelTask::Embed),
+            // Tokenization is a property of a local GGUF; cloud providers do
+            // not expose it.
+            tokenize: local,
+            // OpenAI and Google serve embedding endpoints; Anthropic does not.
+            // A local model embeds when that is its catalogued task.
+            embed: matches!(provider, ProviderKind::OpenAI | ProviderKind::Google)
+                || task == Some(ModelTask::Embed),
+            // Reranking is local-only, and only for a rank model.
+            rank: local && task == Some(ModelTask::Rank),
+        }
+    }
+}
+
 /// One phrasing for "this binary was not built with local model execution".
 ///
 /// #3124: seven sites each said it differently ("tokenization requires the
@@ -1122,6 +1163,89 @@ mod tests {
         let config = InferenceRuntimeConfig::default();
         assert!(config.network_enabled);
         assert!(config.models_dir.is_none());
+    }
+
+    /// The truth table for what a model inherently supports (#3124).
+    ///
+    /// Observable regardless of which provider features are compiled in, which
+    /// is the point: folded into the `can_*` expressions this logic was
+    /// unreachable in a build with the feature off.
+    #[test]
+    fn model_abilities_truth_table() {
+        use ProviderKind::{Anthropic, Google, Local, OpenAI};
+
+        // Local embedding model: embeds and tokenizes, does not generate.
+        let embed = ModelAbilities::of(Local, Some(ModelTask::Embed));
+        assert_eq!(
+            embed,
+            ModelAbilities {
+                generate: false,
+                tokenize: true,
+                embed: true,
+                rank: false
+            }
+        );
+
+        // Local generation model: generates and tokenizes, does not embed.
+        let generate = ModelAbilities::of(Local, Some(ModelTask::Generate));
+        assert_eq!(
+            generate,
+            ModelAbilities {
+                generate: true,
+                tokenize: true,
+                embed: false,
+                rank: false
+            }
+        );
+
+        // Local rank model: ranks, and generates (it is not an embed model).
+        let rank = ModelAbilities::of(Local, Some(ModelTask::Rank));
+        assert_eq!(
+            rank,
+            ModelAbilities {
+                generate: true,
+                tokenize: true,
+                embed: false,
+                rank: true
+            }
+        );
+
+        // An uncatalogued local spec has no task: nothing local-specific is
+        // claimed beyond tokenization.
+        let unknown = ModelAbilities::of(Local, None);
+        assert_eq!(
+            unknown,
+            ModelAbilities {
+                generate: true,
+                tokenize: true,
+                embed: false,
+                rank: false
+            }
+        );
+
+        // Cloud providers never tokenize or rank here. OpenAI and Google embed;
+        // Anthropic does not.
+        for provider in [OpenAI, Google] {
+            assert_eq!(
+                ModelAbilities::of(provider, None),
+                ModelAbilities {
+                    generate: true,
+                    tokenize: false,
+                    embed: true,
+                    rank: false
+                },
+                "{provider:?}"
+            );
+        }
+        assert_eq!(
+            ModelAbilities::of(Anthropic, None),
+            ModelAbilities {
+                generate: true,
+                tokenize: false,
+                embed: false,
+                rank: false
+            }
+        );
     }
 
     #[test]

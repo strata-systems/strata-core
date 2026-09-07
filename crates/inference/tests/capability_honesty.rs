@@ -97,6 +97,8 @@ fn local_refusals_share_one_actionable_phrasing() {
     use strata_inference::EmbedRequest;
 
     let runtime = runtime();
+    // Every local entry point, so none can quietly start succeeding or drift to
+    // its own wording. `detokenize` had no test at all before #3124.
     let refusals = [
         runtime
             .embed(
@@ -110,6 +112,10 @@ fn local_refusals_share_one_actionable_phrasing() {
         runtime
             .tokenize("miniLM", "hello", false)
             .expect_err("tokenizing refuses without the local feature")
+            .to_string(),
+        runtime
+            .detokenize("miniLM", &[1, 2, 3])
+            .expect_err("detokenizing refuses without the local feature")
             .to_string(),
     ];
 
