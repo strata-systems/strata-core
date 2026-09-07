@@ -1,9 +1,9 @@
 //! Installation and database diagnostics (first-run D5).
 //!
 //! `strata doctor` is the one command a human or agent runs when anything is
-//! off: it reports the binary, platform, Strata home, PATH visibility, and —
-//! when a database is targeted via path, `--db`, `STRATA_DB`, or `--cache` —
-//! a health summary. Every finding carries a stable code and an actionable
+//! off: it reports the binary, platform, Strata home, PATH visibility,
+//! inference readiness, and — when a database is targeted via path, `--db`,
+//! `STRATA_DB`, or `--cache` — a health summary. Every finding carries a stable code and an actionable
 //! hint; the process exits non-zero when any issue is found, so install
 //! scripts can end with `strata doctor` as their verification step.
 
@@ -47,6 +47,7 @@ pub(crate) fn run_doctor(
         ));
     }
 
+    let inference = inference_report(&mut issues);
     let database = database_report(cache, db_flag, db_path, &mut issues)?;
 
     let healthy = issues.is_empty();
@@ -57,11 +58,77 @@ pub(crate) fn run_doctor(
             "platform": format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
             "home": home,
             "path_ok": path_ok,
+            "inference": inference,
             "database": database,
             "issues": issues,
         }
     });
     Ok((report, healthy))
+}
+
+/// Inference readiness, as facts plus the few things that are genuinely broken.
+///
+/// **Almost nothing here is an issue.** `doctor` exits non-zero when it finds
+/// one, and install scripts end with `strata doctor` — so a default install
+/// with no API key and no local models must stay green. Having no key is a
+/// choice, not a fault; so is the released binary shipping without local
+/// execution. Both are reported and neither is counted.
+///
+/// What *is* counted is misconfiguration a caller cannot see and will hit at
+/// call time: a key variable set to nothing, and a models path that exists but
+/// is not a directory.
+#[cfg(all(feature = "native", feature = "inference"))]
+fn inference_report(issues: &mut Vec<Value>) -> Value {
+    use strata_executor::{InferenceRuntime, InferenceRuntimeConfig};
+
+    // Config-file keys are copied into the environment before any inference
+    // command runs, so do the same here or doctor would under-report them.
+    crate::load_provider_keys_into_env();
+    let status = InferenceRuntime::new(InferenceRuntimeConfig::default()).status();
+
+    for provider in &status.providers {
+        // A variable set but empty fails at call time with a message about the
+        // provider rather than about the variable — worth catching here, where
+        // the fix is obvious.
+        if let Some(name) = provider.key_env_var.as_deref() {
+            if std::env::var(name).is_ok_and(|value| value.trim().is_empty()) {
+                issues.push(issue(
+                    "failed_precondition.cli.inference_key_empty",
+                    "an API key environment variable is set but empty; unset it or give it a value",
+                ));
+            }
+        }
+    }
+
+    if status.models_dir.exists() && !status.models_dir.is_dir() {
+        issues.push(issue(
+            "failed_precondition.cli.inference_models_not_directory",
+            "the model directory path exists but is not a directory; move it or point \
+             STRATA_MODELS_DIR elsewhere",
+        ));
+    }
+
+    let ready: Vec<&str> = status
+        .providers
+        .iter()
+        .filter(|provider| provider.ready)
+        .map(|provider| provider.model_prefix.trim_end_matches(':'))
+        .collect();
+
+    json!({
+        "local_execution": status.local_execution,
+        "ready_providers": ready,
+        "models_dir": status.models_dir.display().to_string(),
+        "models_downloaded": status.models_downloaded,
+        "models_catalogued": status.models_catalogued,
+    })
+}
+
+/// A build without inference reports the absence rather than omitting the
+/// section, so a reader can tell "no inference" from "doctor did not look".
+#[cfg(not(all(feature = "native", feature = "inference")))]
+fn inference_report(_issues: &mut Vec<Value>) -> Value {
+    json!({ "available": false })
 }
 
 fn database_report(

@@ -191,3 +191,107 @@ fn a_binary_off_path_reports_the_binary_not_on_path_code() {
     assert_eq!(report["data"]["path_ok"], false);
     assert_eq!(code, 1);
 }
+
+// ---------------------------------------------------------------------------
+// Inference readiness (D11). `doctor` is the one place that answers "will
+// inference work" without needing a database — `inference status` is an
+// executor command and requires one.
+// ---------------------------------------------------------------------------
+
+/// A default install reports inference facts and stays **green**.
+///
+/// This is the assertion that matters most here. `doctor` exits non-zero on any
+/// issue and `install.sh` ends with it, so a normal installation — no API key,
+/// no local execution, released binary — must not be called broken. Having no
+/// key is a choice; shipping without local models is the design.
+#[test]
+fn a_default_install_reports_inference_without_calling_it_broken() {
+    let (report, code) = run_doctor(
+        &[
+            ("OPENAI_API_KEY", None),
+            ("ANTHROPIC_API_KEY", None),
+            ("GOOGLE_API_KEY", None),
+        ],
+        None,
+    );
+
+    let inference = &report["data"]["inference"];
+    assert!(
+        inference["models_dir"].is_string(),
+        "the shared model directory is reported: {inference}"
+    );
+    assert!(inference["local_execution"].is_boolean());
+    assert_eq!(
+        inference["ready_providers"],
+        serde_json::json!([]),
+        "no keys set, so nothing is ready"
+    );
+
+    assert_eq!(
+        code, 0,
+        "a keyless install is not a broken install: {report}"
+    );
+    assert!(
+        !issue_codes(&report)
+            .iter()
+            .any(|code| code.contains("inference")),
+        "no inference issue on a default install: {report}"
+    );
+}
+
+/// A key that is set to nothing IS reported, because it fails at call time with
+/// a message about the provider rather than about the variable.
+#[test]
+fn an_empty_api_key_variable_is_reported_as_an_issue() {
+    let (report, code) = run_doctor(&[("OPENAI_API_KEY", Some(OsStr::new("   ")))], None);
+
+    assert!(
+        issue_codes(&report).contains(&"failed_precondition.cli.inference_key_empty".to_owned()),
+        "an empty key variable is a real misconfiguration: {report}"
+    );
+    assert_ne!(code, 0, "doctor exits non-zero when it finds an issue");
+}
+
+/// A key with a value makes its provider ready, and keeps doctor green.
+#[test]
+fn a_provider_with_a_key_reports_ready() {
+    let (report, code) = run_doctor(
+        &[
+            ("OPENAI_API_KEY", Some(OsStr::new("sk-not-a-real-key"))),
+            ("ANTHROPIC_API_KEY", None),
+            ("GOOGLE_API_KEY", None),
+        ],
+        None,
+    );
+
+    let ready = report["data"]["inference"]["ready_providers"]
+        .as_array()
+        .expect("ready providers array");
+    assert!(
+        ready.iter().any(|provider| provider == "openai"),
+        "a provider with a key is ready: {report}"
+    );
+    // Readiness is about configuration, not about the key being valid — doctor
+    // does not call the provider, so it cannot and must not claim more.
+    assert_eq!(code, 0, "{report}");
+}
+
+/// A model directory that is a file, not a directory, is reported.
+///
+/// `STRATA_MODELS_DIR` can point anywhere, and a file there means every model
+/// operation fails later with a filesystem error that does not name the cause.
+#[test]
+fn a_non_directory_models_dir_reports_the_models_not_directory_code() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let file = home.path().join("models-but-a-file");
+    std::fs::write(&file, b"not a directory").expect("write the blocking file");
+
+    let (report, code) = run_doctor(&[("STRATA_MODELS_DIR", Some(file.as_os_str()))], None);
+
+    assert!(
+        issue_codes(&report)
+            .contains(&"failed_precondition.cli.inference_models_not_directory".to_owned()),
+        "a file where the model directory should be is a real fault: {report}"
+    );
+    assert_ne!(code, 0);
+}
