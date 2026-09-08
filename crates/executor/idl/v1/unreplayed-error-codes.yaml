@@ -33,7 +33,11 @@
 # 111 -> 112 (#3079): invalid_argument.executor.arrow_encoding joins the same
 # *.executor.arrow* group for the same replay-skip reason (unsupported key/value
 # cell encoding on import).
-budget: 112
+# 112 -> 114 (#3236): inference.provider_model_not_found and
+# inference.provider_quota_exhausted join the inference.* debt group — both are
+# classified from a live provider's error body, which this replay lane cannot
+# produce; they wait on the same live-provider harness as their siblings.
+budget: 114
 unreplayed:
   - already_exists.engine.json_index
   - failed_precondition.engine.graph_negative_weight
@@ -57,6 +61,8 @@ unreplayed:
   - inference.model_load_failed
   - inference.provider_auth_failed
   - inference.provider_malformed_response
+  - inference.provider_model_not_found
+  - inference.provider_quota_exhausted
   - inference.provider_rate_limited
   - inference.provider_timeout
   - inference.provider_unavailable

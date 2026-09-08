@@ -135,6 +135,8 @@ errors:
   - inference.download_verification_failed
   - inference.io_failure
   - inference.provider_malformed_response
+  - inference.provider_quota_exhausted
+  - inference.provider_model_not_found
   - inference.unsupported_provider
   - inference.unsupported_parameter
   - inference.registry_corrupt

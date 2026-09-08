@@ -7,7 +7,9 @@
 //! Anthropic does not offer an embedding API — attempting to construct a
 //! `CloudEmbeddingEngine` with `ProviderKind::Anthropic` returns `NotSupported`.
 
-use crate::{embedding_provider_feature_enabled, InferenceError, ProviderFailure, ProviderKind};
+#[cfg(any(feature = "openai", feature = "google"))]
+use crate::provider::cloud::{post_json, CloudPost};
+use crate::{embedding_provider_feature_enabled, InferenceError, ProviderKind};
 
 /// Embedding engine backed by a cloud provider (OpenAI or Google).
 ///
@@ -27,6 +29,7 @@ impl std::fmt::Debug for CloudEmbeddingEngine {
             .field("provider", &self.provider)
             .field("model", &self.model)
             .field("api_key", &"[REDACTED]")
+            .field("api_base", &self.api_base)
             .finish()
     }
 }
@@ -102,27 +105,52 @@ impl CloudEmbeddingEngine {
         &self.model
     }
 
+    /// How long one embedding request may take.
+    #[cfg(any(feature = "openai", feature = "google"))]
+    const SINGLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+    /// How long a batch (up to [`Self::CLOUD_BATCH_CHUNK_SIZE`] texts) may take.
+    #[cfg(any(feature = "openai", feature = "google"))]
+    const BATCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+    /// POST `body` to `url` as this engine's provider, with its credential.
+    #[cfg(any(feature = "openai", feature = "google"))]
+    fn post(
+        &self,
+        url: &str,
+        body: &str,
+        timeout: std::time::Duration,
+    ) -> Result<String, InferenceError> {
+        let bearer = format!("Bearer {}", self.api_key);
+        let (provider, credential) = match self.provider {
+            ProviderKind::OpenAI => ("OpenAI", ("Authorization", bearer.as_str())),
+            ProviderKind::Google => ("Google", ("x-goog-api-key", self.api_key.as_str())),
+            // `new` admits only the two providers above.
+            other => {
+                return Err(InferenceError::NotSupported(format!(
+                    "cloud embedding not supported for provider: {other}"
+                )))
+            }
+        };
+        post_json(&CloudPost {
+            provider,
+            url,
+            headers: &[credential],
+            body,
+            timeout,
+        })
+    }
+
     /// Embed a single text via the cloud API.
     fn embed_single(&self, text: &str) -> Result<Vec<f32>, InferenceError> {
         match self.provider {
             #[cfg(feature = "openai")]
             ProviderKind::OpenAI => {
                 let body = crate::provider::openai::build_embed_request_json(&self.model, &[text]);
-                let agent = ureq::Agent::new_with_config(
-                    ureq::config::Config::builder()
-                        .timeout_global(Some(std::time::Duration::from_secs(30)))
-                        .build(),
-                );
-                let mut response = agent
-                    .post(&crate::provider::openai::embed_url(&self.api_base))
-                    .header("Authorization", &format!("Bearer {}", self.api_key))
-                    .header("content-type", "application/json")
-                    .send(&body)
-                    .map_err(|e| map_http_error("OpenAI", e))?;
-
-                let response_body = response.body_mut().read_to_string().map_err(|e| {
-                    InferenceError::Provider(format!("OpenAI: failed to read embed response: {e}"))
-                })?;
+                let response_body = self.post(
+                    &crate::provider::openai::embed_url(&self.api_base),
+                    &body,
+                    Self::SINGLE_TIMEOUT,
+                )?;
 
                 let mut embeddings =
                     crate::provider::openai::parse_embed_response_json(&response_body)?;
@@ -139,21 +167,7 @@ impl CloudEmbeddingEngine {
             ProviderKind::Google => {
                 let url = crate::provider::google::build_embed_url(&self.api_base, &self.model);
                 let body = crate::provider::google::build_embed_request_json(text);
-                let agent = ureq::Agent::new_with_config(
-                    ureq::config::Config::builder()
-                        .timeout_global(Some(std::time::Duration::from_secs(30)))
-                        .build(),
-                );
-                let mut response = agent
-                    .post(&url)
-                    .header("x-goog-api-key", &self.api_key)
-                    .header("content-type", "application/json")
-                    .send(&body)
-                    .map_err(|e| map_http_error("Google", e))?;
-
-                let response_body = response.body_mut().read_to_string().map_err(|e| {
-                    InferenceError::Provider(format!("Google: failed to read embed response: {e}"))
-                })?;
+                let response_body = self.post(&url, &body, Self::SINGLE_TIMEOUT)?;
 
                 let embedding = crate::provider::google::parse_embed_response_json(&response_body)?;
                 Ok(l2_normalize(embedding))
@@ -183,21 +197,11 @@ impl CloudEmbeddingEngine {
             #[cfg(feature = "openai")]
             ProviderKind::OpenAI => {
                 let body = crate::provider::openai::build_embed_request_json(&self.model, texts);
-                let agent = ureq::Agent::new_with_config(
-                    ureq::config::Config::builder()
-                        .timeout_global(Some(std::time::Duration::from_secs(60)))
-                        .build(),
-                );
-                let mut response = agent
-                    .post(&crate::provider::openai::embed_url(&self.api_base))
-                    .header("Authorization", &format!("Bearer {}", self.api_key))
-                    .header("content-type", "application/json")
-                    .send(&body)
-                    .map_err(|e| map_http_error("OpenAI", e))?;
-
-                let response_body = response.body_mut().read_to_string().map_err(|e| {
-                    InferenceError::Provider(format!("OpenAI: failed to read embed response: {e}"))
-                })?;
+                let response_body = self.post(
+                    &crate::provider::openai::embed_url(&self.api_base),
+                    &body,
+                    Self::BATCH_TIMEOUT,
+                )?;
 
                 let embeddings =
                     crate::provider::openai::parse_embed_response_json(&response_body)?;
@@ -210,21 +214,7 @@ impl CloudEmbeddingEngine {
                     crate::provider::google::build_batch_embed_url(&self.api_base, &self.model);
                 let body =
                     crate::provider::google::build_batch_embed_request_json(&self.model, texts);
-                let agent = ureq::Agent::new_with_config(
-                    ureq::config::Config::builder()
-                        .timeout_global(Some(std::time::Duration::from_secs(60)))
-                        .build(),
-                );
-                let mut response = agent
-                    .post(&url)
-                    .header("x-goog-api-key", &self.api_key)
-                    .header("content-type", "application/json")
-                    .send(&body)
-                    .map_err(|e| map_http_error("Google", e))?;
-
-                let response_body = response.body_mut().read_to_string().map_err(|e| {
-                    InferenceError::Provider(format!("Google: failed to read embed response: {e}"))
-                })?;
+                let response_body = self.post(&url, &body, Self::BATCH_TIMEOUT)?;
 
                 let embeddings =
                     crate::provider::google::parse_batch_embed_response_json(&response_body)?;
@@ -311,83 +301,9 @@ fn l2_normalize(mut v: Vec<f32>) -> Vec<f32> {
     v
 }
 
-/// Map ureq HTTP errors to InferenceError::Provider.
-#[cfg(any(feature = "openai", feature = "google"))]
-fn map_http_error(provider: &str, err: ureq::Error) -> InferenceError {
-    match &err {
-        ureq::Error::StatusCode(status) => {
-            let code = *status;
-            let description = match code {
-                401 => "invalid API key",
-                403 => "forbidden (check API key permissions)",
-                429 => "rate limited (too many requests)",
-                500 => "server error",
-                502 => "bad gateway",
-                503 => "service unavailable",
-                _ => "HTTP error",
-            };
-            // D6: the status IS the classification. Describing it in prose and
-            // matching the prose back is how "invalid API key" became
-            // indistinguishable from an outage.
-            InferenceError::ProviderFailed {
-                kind: ProviderFailure::from_http_status(code),
-                message: format!("{provider}: {description} (HTTP {code})"),
-            }
-        }
-        // The transport already told us it timed out.
-        ureq::Error::Timeout(_) => InferenceError::ProviderFailed {
-            kind: ProviderFailure::Timeout,
-            message: format!("{provider}: {err}"),
-        },
-        _ => InferenceError::ProviderFailed {
-            kind: ProviderFailure::Unavailable,
-            message: format!("{provider}: {err}"),
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The transport's own verdict decides the kind (D6).
-    ///
-    /// `map_http_error` turns a real `ureq::Error` into a classified failure,
-    /// and nothing tested it: deleting the `Timeout` arm let a timeout fall
-    /// through to the catch-all and report as an outage, which is the exact
-    /// collapse D6 exists to prevent — an outage invites a retry against a
-    /// server that is fine, while a timeout points at the deadline.
-    ///
-    /// `from_http_status` had a truth table, but a truth table on a pure
-    /// function proves nothing about the match that feeds it.
-    #[test]
-    fn a_transport_timeout_is_a_timeout_not_an_outage() {
-        let timeout = map_http_error("p", ureq::Error::Timeout(ureq::Timeout::Global));
-        assert_eq!(timeout.code(), "inference.provider_timeout");
-
-        // The catch-all still reports an outage, so the assertion above is
-        // about the arm and not about every error becoming a timeout.
-        let other = map_http_error("p", ureq::Error::HostNotFound);
-        assert_eq!(other.code(), "inference.provider_unavailable");
-    }
-
-    /// A status code reaches the classifier that reads it.
-    #[test]
-    fn an_http_status_is_classified_by_its_status() {
-        for (status, expected) in [
-            (401, "inference.provider_auth_failed"),
-            (403, "inference.provider_auth_failed"),
-            (429, "inference.provider_rate_limited"),
-            (503, "inference.provider_unavailable"),
-        ] {
-            let error = map_http_error("p", ureq::Error::StatusCode(status));
-            assert_eq!(error.code(), expected, "HTTP {status}");
-            assert!(
-                error.to_string().contains(&status.to_string()),
-                "the message names the status: {error}"
-            );
-        }
-    }
 
     // -----------------------------------------------------------------------
     // Construction
@@ -405,6 +321,7 @@ mod tests {
         let engine = engine.unwrap();
         assert_eq!(engine.provider(), ProviderKind::OpenAI);
         assert_eq!(engine.model(), "text-embedding-3-small");
+        assert_eq!(engine.api_base, crate::provider::openai::API_BASE);
     }
 
     #[cfg(feature = "google")]
@@ -419,6 +336,7 @@ mod tests {
         let engine = engine.unwrap();
         assert_eq!(engine.provider(), ProviderKind::Google);
         assert_eq!(engine.model(), "text-embedding-004");
+        assert_eq!(engine.api_base, crate::provider::google::API_BASE);
     }
 
     #[test]
@@ -644,7 +562,9 @@ mod tests {
             "the endpoint under the base: {request}"
         );
         assert!(
-            request.to_ascii_lowercase().contains("authorization: bearer test-key"),
+            request
+                .to_ascii_lowercase()
+                .contains("authorization: bearer test-key"),
             "the credential travels as a bearer token: {request}"
         );
     }
@@ -712,7 +632,9 @@ mod tests {
             "the model's endpoint under the base: {request}"
         );
         assert!(
-            request.to_ascii_lowercase().contains("x-goog-api-key: test-key"),
+            request
+                .to_ascii_lowercase()
+                .contains("x-goog-api-key: test-key"),
             "the credential travels in x-goog-api-key: {request}"
         );
     }

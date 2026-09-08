@@ -546,6 +546,8 @@ The global V1 registry should reserve these starter inference codes:
 | `inference.missing_api_key` | `failed_precondition` | `after_state_change` |
 | `inference.provider_auth_failed` | `access_denied` | `after_state_change` |
 | `inference.provider_rate_limited` | `unavailable` | `after_state_change` |
+| `inference.provider_quota_exhausted` | `failed_precondition` | `after_state_change` |
+| `inference.provider_model_not_found` | `not_found` | `never` |
 | `inference.provider_timeout` | `unavailable` | `same_request` |
 | `inference.provider_unavailable` | `unavailable` | `same_request` |
 | `inference.provider_malformed_response` | `serialization` | `unknown` |
@@ -558,7 +560,12 @@ The global V1 registry should reserve these starter inference codes:
 
 Raw provider response bodies, raw llama.cpp messages, native pointer details,
 and full prompt or document content are diagnostics context only. They must not
-become public error codes or default user-facing messages.
+become public error codes or default user-facing messages. A provider's error
+body is still *read*: its structured discriminators (`error.type`, `error.code`,
+`error.status`, `error.details[].reason`) decide the code ahead of the HTTP
+status — a 429 for an empty balance is `provider_quota_exhausted`, not
+`provider_rate_limited` — and its `error.message` sentence, redacted, is the
+concise user-facing message. The body as a whole is never surfaced.
 
 ### CLI And Strata AI Rendering
 
