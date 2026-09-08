@@ -2,9 +2,8 @@
 
 #![cfg(feature = "inference")]
 
-use std::path::PathBuf;
-
 use std::collections::BTreeSet;
+use std::path::PathBuf;
 
 use strata_executor::{
     public_error_code_entries, Command, CommitOutcomeStatus, ErrorClass, Executor, ExecutorError,
@@ -233,6 +232,11 @@ fn inference_error_retry_policies_match_v1_contract() {
 /// One `InferenceError` per way the inference crate can fail. The string
 /// variants pick their code from the message, so each message here is chosen
 /// to land on a distinct code; the structured variants carry theirs.
+///
+/// The list is hand-maintained over the inference crate's `#[non_exhaustive]`
+/// enums, so it grows by hand: a kind added without a registry row is caught
+/// only once it is listed here (the sweep then finds no row for its code),
+/// while a registry row added without a producer is caught unconditionally.
 fn every_constructible_inference_error() -> Vec<InferenceError> {
     let message = || "probe".to_owned();
     let mut errors = vec![
@@ -283,18 +287,28 @@ fn every_constructible_inference_error() -> Vec<InferenceError> {
 /// suggested fix: what an inference error carries onto the wire must be the
 /// row `strata agents errors` documents, for every code the inference crate
 /// can produce (#3243). The sweep also proves every `inference.*` row is
-/// reachable, so a new variant cannot land outside it.
+/// reachable and that every listed error keeps its own code (an unregistered
+/// code would be rewritten to `internal.executor.unregistered_code`).
+///
+/// This pins wire == registry, not the registry's values themselves; those
+/// literal contract values stay pinned by
+/// `inference_error_retry_policies_match_v1_contract` above, which is why
+/// that test is not folded into this one.
 #[test]
 fn test_inference_errors_carry_the_registry_retry_policy_and_suggested_fix() {
     let entries: Vec<_> = public_error_code_entries().collect();
     let mut reached = BTreeSet::new();
     let mut mismatches = Vec::new();
     for inference_error in every_constructible_inference_error() {
-        let error: ExecutorError = inference_error.into();
+        // Look the row up by the inference crate's own code, before the
+        // conversion can normalize an unregistered one away.
+        let code = inference_error.code();
         let entry = entries
             .iter()
-            .find(|entry| entry.code == error.code())
-            .unwrap_or_else(|| panic!("{} is not a registered code", error.code()));
+            .find(|entry| entry.code == code)
+            .unwrap_or_else(|| panic!("{code} is not a registered code"));
+        let error: ExecutorError = inference_error.into();
+        assert_eq!(error.code(), code, "conversion changed the code");
         reached.insert(entry.code);
         if error.retry_policy() != entry.retry_policy {
             mismatches.push(format!(
