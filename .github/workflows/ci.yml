@@ -294,12 +294,6 @@ jobs:
           # value. Vacuous survivors of the feature-gated kind this gate's
           # config header describes, not untested logic.
           #
-          # `cloud_embed.rs` (gated on openai/google) and `api_key` (gated on
-          # all three) are likewise not compiled here, so their mutants are the
-          # same vacuous kind as the local-gated files excluded beside them.
-          # `api_key` is excluded by its full signature, not its name, so the
-          # ungated `api_key_env_var` beside it stays mutated.
-          #
           # What IS observable without a provider feature is asserted and
           # falsification-checked in crates/inference/tests/capability_honesty.rs
           # (`status_reports_the_build_and_every_provider`): only the local
@@ -312,8 +306,6 @@ jobs:
             --exclude "crates/inference/src/embed.rs" \
             --exclude "crates/inference/src/rank.rs" \
             --exclude "crates/inference/src/provider/local.rs" \
-            --exclude "crates/inference/src/cloud_embed.rs" \
-            --exclude-re 'replace api_key -> Result<String, InferenceError>' \
             --timeout-multiplier 2.5 --minimum-test-timeout 60 || [ $? -eq 3 ]
       - name: Upload mutants report
         if: failure()
