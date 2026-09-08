@@ -1,4 +1,4 @@
-# Storage-next lock-decoupling roadmap — RETIRED
+# Storage lock-decoupling roadmap — RETIRED
 
 **Retired 2026-06-30. Superseded by the authoritative plan:**
 `docs/architecture/archive/implementation-plans/M4P/m4p-l8i-runtime-lock-decoupling-implementation-plan.md`

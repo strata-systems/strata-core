@@ -12,10 +12,10 @@ Related compaction hot-path plan:
 `docs/architecture/implementation-plans/M4P/m4p-l6k-table-compaction-hot-path-implementation-and-test-plan.md`
 
 Audit context:
-`docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`
+`docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`
 
 Serving-path context:
-`docs/architecture/perf-tuning/storage-next-serving-path-parity-plan.md`
+`docs/architecture/perf-tuning/storage-serving-path-parity-plan.md`
 
 Earlier point-read proof plan:
 `docs/architecture/perf-tuning/perf-i1-point-read-fix-plan.md`

@@ -1,4 +1,4 @@
-# Storage-Next Fuzz Targets
+# Storage Fuzz Targets
 
 This directory contains the storage cargo-fuzz package.
 

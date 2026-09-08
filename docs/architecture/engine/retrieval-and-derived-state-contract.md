@@ -1,4 +1,4 @@
-# Engine-Next Retrieval And Derived-State Contract
+# Engine Retrieval And Derived-State Contract
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
@@ -33,10 +33,10 @@ simple search, graph-aware search, recipe-driven retrieval, and optional RAG.
 Structured "find records related to X where Y" work should build on this
 contract later, not bypass it.
 
-The dependency boundary matters. Engine-next owns deterministic retrieval,
+The dependency boundary matters. Engine owns deterministic retrieval,
 capability projection, recipe records, derived-state manifests, and source
 validation. Intelligence/inference may wrap engine retrieval to generate
-embeddings, expansions, reranker scores, or answers. Engine-next must not import
+embeddings, expansions, reranker scores, or answers. Engine must not import
 or call upward into intelligence/inference.
 
 ## Related Documents
@@ -365,7 +365,7 @@ may summarize it.
 10. **Model-dependent stages are optional and observable.**
     Expansion, reranking, embedding, and generation may be disabled,
     unavailable, or budget-limited. The recipe must define whether upper layers
-    skip, degrade, or fail. Engine-next records the recipe and retrieval
+    skip, degrade, or fail. Engine records the recipe and retrieval
     provenance but does not execute provider calls.
 
 11. **RAG does not replace retrieval.**
@@ -668,7 +668,7 @@ Requirements:
 5. Cache keys must include every input that affects generated variants or the
    recipe must label cache reuse as intentionally approximate.
 6. Expansion failure must follow recipe policy: skip, degrade, or fail.
-7. Engine-next may persist recipe and cache metadata used by expansion, but it
+7. Engine may persist recipe and cache metadata used by expansion, but it
    must not execute model calls directly.
 
 ### Fusion Stage
@@ -698,12 +698,12 @@ Requirements:
 4. Reranking failure must follow recipe policy.
 5. Reranking must not hide original retrieval score contribution unless output
    intentionally omits debug details.
-6. Engine-next must provide stable hit/provenance inputs so upper layers can
+6. Engine must provide stable hit/provenance inputs so upper layers can
    rerank without re-reading storage directly.
 
 ### RAG Stage
 
-RAG assembles context and optionally generates an answer. Engine-next may
+RAG assembles context and optionally generates an answer. Engine may
 assemble retrieval context and provenance. Intelligence/inference execute
 generation.
 
@@ -717,7 +717,7 @@ Requirements:
    answer-only behavior and recipe policy allows failure.
 5. Prompt templates and model routing are control-plane or configuration
    records, not hidden runtime state.
-6. Engine-next must not call generation providers directly.
+6. Engine must not call generation providers directly.
 
 ## Derived-State Families
 
@@ -748,7 +748,7 @@ Every derived-state family must declare:
 | Health/manifests | `0x45` | Derived metadata | Watermarks, manifests, rebuild state, health records. |
 
 The current implementation may still use sidecar files for search indexes or
-vector acceleration. Engine-next should treat those sidecars as implementation
+vector acceleration. Engine should treat those sidecars as implementation
 details behind the same derived-state manifest and health contract. A retrieval
 run should not need to know whether a derived family is row-backed, file-backed,
 or in-memory.

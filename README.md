@@ -176,6 +176,11 @@ cargo install --path crates/cli     # installs the `strata` binary
 strata init
 ```
 
+**MSRV 1.91, develop on 1.94.** 1.91 is the compatibility promise — CI verifies
+every PR builds the library and binary targets on it. Contributors build with
+the 1.94.1 pin in `rust-toolchain.toml` so lints and formatting are reproducible;
+running the test suite may need it. Both numbers are intended (#3150).
+
 ## How it works
 
 Under every data model sits a single branch-aware MVCC storage engine: one write-ahead log, one commit clock, one copy-on-write branch tree. KV, JSON, events, vectors, and graph are capabilities layered over that substrate — which is why a fork captures all of them atomically and why time travel works uniformly everywhere. Durable databases recover from crashes via WAL replay; cache mode skips persistence entirely and lives in memory.

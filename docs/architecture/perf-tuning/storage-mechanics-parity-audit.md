@@ -1,4 +1,4 @@
-# Storage-Next Mechanics Parity Audit
+# Storage Mechanics Parity Audit
 
 ## Purpose
 
@@ -24,8 +24,8 @@ failure.
 | storage standard | 10M | 11,643 ops/s | 3,276 ops/s | 3,229 ops/s | 2,836 ops/s | 2,582 ops/s |
 | old cache | 10M | 285,173 ops/s | 82,091 ops/s | 111,430 ops/s | 13,867 ops/s | 9,868 ops/s |
 
-Storage-next 10M point reads visited `1,000,000` rows for `10,000` reads, or
-about 100 source probes per read. Storage-next 10M scans performed `1,010,000`
+Storage 10M point reads visited `1,000,000` rows for `10,000` reads, or
+about 100 source probes per read. Storage 10M scans performed `1,010,000`
 cursor seeks for `10,000` scans, also about 100 source seeks per scan.
 
 Relevant result files:
@@ -104,7 +104,7 @@ Old-storage evidence:
   `crates/storage/src/segmented/quarantine_protocol.rs`: durable cleanup paths
   where deletes or cross-directory moves are followed by parent-directory sync.
 
-Storage-next evidence:
+Storage evidence:
 
 - `crates/storage/src/backend/mod.rs`: object-first `Backend` contract,
   capability vocabulary, ranges, metadata, append facts, publish facts, writer
@@ -127,7 +127,7 @@ Storage-next evidence:
 
 Confirmed parity:
 
-- Storage-next has an L1 backend contract. Higher layers can move opaque bytes
+- Storage has an L1 backend contract. Higher layers can move opaque bytes
   by `ObjectName` instead of by local paths.
 - Cache mode is visibly non-durable. `MemoryBackend` satisfies cache
   requirements and rejects durable publish modes.
@@ -150,7 +150,7 @@ Confirmed parity:
 
 Intentional architecture changes, not gaps:
 
-- Storage-next is object-first instead of path-first. The local filesystem
+- Storage is object-first instead of path-first. The local filesystem
   backend maps object names to files internally; higher layers should not know
   those paths.
 - `LocalFsBackend` does not implement conditional create/update fences. That is
@@ -166,7 +166,7 @@ Gaps to fill:
      `crates/storage/src/durability/checkpoint_runtime.rs` and quarantine
      cross-directory movement in
      `crates/storage/src/segmented/quarantine_protocol.rs`.
-   - Storage-next services delete WAL, snapshot, sidecar, and quarantine
+   - Storage services delete WAL, snapshot, sidecar, and quarantine
      objects through `Backend::delete_object`, but L1 currently has no
      durable-delete operation, namespace sync operation, or delete outcome that
      can distinguish "deleted and durably removed" from "removed but parent
@@ -232,7 +232,7 @@ Old-storage evidence:
   `crates/storage/src/segmented/quarantine_protocol.rs`: old quarantine object
   and manifest naming evidence.
 
-Storage-next evidence:
+Storage evidence:
 
 - `crates/storage/src/object/mod.rs`: validated `ObjectName` and
   `ObjectPrefix` types.
@@ -254,7 +254,7 @@ Storage-next evidence:
 
 Confirmed parity:
 
-- Storage-next has a real L2 object-layout layer. Upper layers can work in
+- Storage has a real L2 object-layout layer. Upper layers can work in
   validated `ObjectName` and `ObjectPrefix` values instead of local filesystem
   paths.
 - The canonical reserved families exist: `manifest/`, `wal/`, `tables/`,
@@ -279,7 +279,7 @@ Confirmed parity:
 
 Intentional architecture changes, not gaps:
 
-- Storage-next should not preserve old filesystem filenames. Old names are
+- Storage should not preserve old filesystem filenames. Old names are
   evidence for mechanics, not binding target object names.
 - Follower-state object names are intentionally absent because follower mode is
   not a V1 storage product path.
@@ -378,7 +378,7 @@ Old-storage evidence:
 - `crates/storage/src/segment_builder.rs` and `crates/storage/src/segment.rs`:
   old immutable table bytes, block frames, compression, and corruption checks.
 
-Storage-next evidence:
+Storage evidence:
 
 - `crates/storage/src/format/mod.rs`: centralized L3 format exports,
   V1 constants, and typed `FormatError`.
@@ -413,7 +413,7 @@ Storage-next evidence:
 
 Confirmed parity:
 
-- Storage-next has a centralized durable-format layer. WAL, manifest, snapshot,
+- Storage has a centralized durable-format layer. WAL, manifest, snapshot,
   table, row, key, sidecar, watermark, quarantine, and table-manifest codecs
   are no longer scattered across path/service/runtime code the way old storage
   was.
@@ -425,7 +425,7 @@ Confirmed parity:
   violations, invalid storage-space IDs, and trailing data.
 - WAL segment headers preserve explicit magic, segment number, database id, and
   CRC. WAL records preserve self-delimiting length fields and CRC validation.
-- WAL commit payloads are storage-row-native. Storage-next did not reintroduce
+- WAL commit payloads are storage-row-native. Storage did not reintroduce
   old primitive writesets or MessagePack transaction payloads as the durable
   storage contract.
 - Snapshot containers preserve the old storage-owned container mechanics:
@@ -449,7 +449,7 @@ Confirmed parity:
 Intentional architecture changes, not gaps:
 
 - Old durable byte versions are not preserved as compatibility formats.
-  Storage-next is allowed to reject old development databases because Strata is
+  Storage is allowed to reject old development databases because Strata is
   still pre-launch.
 - The old table format (`STRAKV`/version 7), old manifest path format, and old
   primitive snapshot payloads are evidence only, not required V1 inputs.
@@ -575,7 +575,7 @@ Old-storage evidence:
   `crates/storage/src/segmented/quarantine_protocol.rs`: old quarantine
   object movement, inventory, and cleanup mechanics.
 
-Storage-next evidence:
+Storage evidence:
 
 - `crates/storage/src/service/mod.rs`: L4 service module boundary and
   exports.
@@ -612,14 +612,14 @@ Storage-next evidence:
 
 Confirmed parity:
 
-- Storage-next has a real L4 service layer. Durable services consume L1
+- Storage has a real L4 service layer. Durable services consume L1
   backend IO, L2 object names, and L3 format codecs instead of reaching around
   them.
 - `ObjectPublisher` centralizes durable create/replace and non-durable replace
   publication. Durable publication requires `DurablePublish` and
   `DurableSync`, and service callers validate object, byte count, and durable
   outcome metadata.
-- Manifest mechanics are service-owned. Storage-next has database manifest,
+- Manifest mechanics are service-owned. Storage has database manifest,
   table manifest, branch catalog, and pending-release services with typed load,
   create, replace, publish, codec, role, and publish-metadata errors.
 - WAL mechanics are service-owned. `WalService` opens or creates active
@@ -660,7 +660,7 @@ Confirmed parity:
 
 Intentional architecture changes, not gaps:
 
-- Storage-next uses object publication services instead of old local
+- Storage uses object publication services instead of old local
   path-specific temp-file and rename sequences. The local filesystem publish
   mechanics now belong to L1.
 - Cache mode intentionally has no durable WAL, manifests, snapshots, table
@@ -685,7 +685,7 @@ Gaps to fill:
      `crates/storage/src/durability/checkpoint_runtime.rs` and quarantine
      movement in
      `crates/storage/src/segmented/quarantine_protocol.rs`.
-   - Storage-next WAL retention uses
+   - Storage WAL retention uses
      `crates/storage/src/service/wal.rs::delete_covered_segments`,
      snapshot pruning uses
      `crates/storage/src/service/snapshot/listing.rs::prune_snapshots`,
@@ -701,7 +701,7 @@ Gaps to fill:
 2. L4 documentation has drifted behind implemented manifest services.
    - `docs/architecture/storage/l4-log-manifest-snapshot-services.md`
      describes database, branch/table, and quarantine manifest families.
-   - Storage-next now also has explicit branch catalog and pending-release
+   - Storage now also has explicit branch catalog and pending-release
      manifest services in `crates/storage/src/service/manifest.rs`.
    - Owner: L4 docs, coordinated with L2 object layout and L3 manifest-format
      docs.
@@ -723,7 +723,7 @@ Gaps to fill:
      cache-mode rejection.
 
 4. WAL durability policy parity should remain under test as modes evolve.
-   - Storage-next preserves the important V1 distinction:
+   - Storage preserves the important V1 distinction:
      `DurabilityPolicy::Always` forces WAL sync during append, while standard
      mode tracks dirty WAL state and close/maintenance can force durability.
    - Old storage also had explicit WAL mode/config files in
@@ -793,7 +793,7 @@ Old-storage evidence:
   tombstone/TTL/version-retention behavior, splitting builder use, and
   grandparent-overlap split predicate evidence.
 
-Storage-next evidence:
+Storage evidence:
 
 - `crates/storage/src/table/mod.rs`: L5 module boundary and exports.
 - `crates/storage/src/table/key.rs`: table internal-key bytes,
@@ -825,7 +825,7 @@ Storage-next evidence:
 
 Confirmed parity:
 
-- Storage-next has a distinct L5 table-runtime module. Table mechanics are no
+- Storage has a distinct L5 table-runtime module. Table mechanics are no
   longer hidden inside branch state, durability code, or public API code.
 - Mutable and frozen tables preserve the basic old ordered-table mechanics:
   rows are keyed by encoded internal key, insertion rejects duplicate internal
@@ -843,7 +843,7 @@ Confirmed parity:
   open from in-memory bytes or an arbitrary `TableByteSource`, and
   `TableObjectService` supplies an L4 object-backed source rather than letting
   L5 know object names, paths, or backend details.
-- Raw table cursors exist. Storage-next has memory cursors, immutable-table
+- Raw table cursors exist. Storage has memory cursors, immutable-table
   cursors, bounded cursors, and a merge cursor with a small-source linear path
   and a heap path above `MERGE_HEAP_THRESHOLD`.
 - Raw range and prefix bounds are represented at L5. `TableKeyBounds` supports
@@ -865,7 +865,7 @@ Confirmed parity:
 
 Intentional architecture changes, not gaps:
 
-- Storage-next table bytes are the formal L3 V1 format, not the old
+- Storage table bytes are the formal L3 V1 format, not the old
   `KVSegment` file format. Old segment bytes are evidence for mechanics, not a
   compatibility target.
 - L5 treats branch id, storage space id, timestamps, TTL, tombstones, and
@@ -884,7 +884,7 @@ Gaps to fill:
    - Old `KVSegment` in `crates/storage/src/segment.rs` opened table metadata,
      bloom/index/filter state, and then served point lookups through bloom,
      index lookup, block cache, and block-local scans.
-   - Storage-next `ImmutableTableReader` stores `rows: Vec<TableRow>`.
+   - Storage `ImmutableTableReader` stores `rows: Vec<TableRow>`.
      `open_source` reads metadata, then `read_rows_from_metadata` walks every
      data-block entry and decodes all rows into memory before the reader can
      serve lookups.
@@ -914,7 +914,7 @@ Gaps to fill:
    - Old storage had `SegmentIter`, `OwnedSegmentIter`, and
      `LevelSegmentIter` in `crates/storage/src/segment.rs`, plus seekable
      wrappers in `crates/storage/src/seekable.rs`.
-   - Storage-next has raw cursors, but immutable cursors currently iterate an
+   - Storage has raw cursors, but immutable cursors currently iterate an
      already-materialized row vector. They do not lazily load table blocks or
      hold the "current block plus index position" state used by old segment
      iterators.
@@ -926,7 +926,7 @@ Gaps to fill:
 4. L5 compaction is eager instead of streaming.
    - Old `CompactionIterator` streamed a sorted merge and
      `SplittingSegmentBuilder` emitted outputs as the iterator advanced.
-   - Storage-next `TableCompactionSource::from_cursor` collects all rows from
+   - Storage `TableCompactionSource::from_cursor` collects all rows from
      each cursor, `merged_rows` creates one merged vector, and `compact_tables`
      sorts that full vector before applying the caller policy.
    - This is clean scaffolding for correctness, but it is not old memory
@@ -940,7 +940,7 @@ Gaps to fill:
    - Old `compact_level` in `crates/storage/src/segmented/compaction.rs`
      supplied a grandparent-overlap split predicate to
      `SplittingSegmentBuilder::build_split_with_predicate`.
-   - Storage-next L5 splitting currently uses target approximate bytes and
+   - Storage L5 splitting currently uses target approximate bytes and
      avoids splitting a physical-key version group, but it does not expose a
      generic overlap-threshold predicate or split boundary hint supplied by L6.
    - Owner: L5 split API, consumed by L6 compaction planning.
@@ -951,7 +951,7 @@ Gaps to fill:
 6. Frozen table negative lookup acceleration is absent.
    - Old frozen memtables built a bloom filter lazily in
      `crates/storage/src/memtable.rs` and used it to skip absent point reads.
-   - Storage-next frozen tables use ordered `BTreeMap` seek, which is correct,
+   - Storage frozen tables use ordered `BTreeMap` seek, which is correct,
      but they do not have a frozen-table bloom equivalent.
    - Owner: L5 mutable/frozen table runtime.
    - Exit gate: either document that BTreeMap seek is sufficient for V1 frozen
@@ -970,7 +970,7 @@ Gaps to fill:
 
 L5 conclusion:
 
-- Storage-next has the right L5 architecture boundary and substantial
+- Storage has the right L5 architecture boundary and substantial
   correctness scaffolding: sorted mutable/frozen tables, table artifacts,
   object-backed readers, raw cursors, cache/bloom primitives, and
   policy-injected compaction.
@@ -1022,7 +1022,7 @@ Old-storage evidence:
   materialization, level invariants, fork-frontier, recovery, and failure
   semantics.
 
-Storage-next evidence:
+Storage evidence:
 
 - `crates/storage/src/branch/mod.rs`: L6 module boundary and exports.
 - `crates/storage/src/branch/state.rs`: branch-local active, frozen,
@@ -1063,7 +1063,7 @@ Storage-next evidence:
 
 Confirmed parity:
 
-- Storage-next has a distinct L6 branch-runtime layer. Branch mechanics are no
+- Storage has a distinct L6 branch-runtime layer. Branch mechanics are no
   longer hidden in public API code, WAL services, table format code, or backend
   IO.
 - `BranchLocalState` has the expected branch-local LSM state: active mutable
@@ -1081,7 +1081,7 @@ Confirmed parity:
   active, frozen, owned tables, then nearest inherited layer. Candidate
   selection sorts by commit version and source precedence, and tombstones/TTL
   are applied at L6 instead of L5.
-- Storage-next has COW branch inheritance. Fork into an empty child captures
+- Storage has COW branch inheritance. Fork into an empty child captures
   source owned levels plus active inherited layers, records nearest-first
   inherited layer order, rejects self-fork and unavailable layers, and carries
   fork-version facts.
@@ -1101,7 +1101,7 @@ Confirmed parity:
   `BranchReachabilitySnapshot`s and `BranchTableRef`s, while pruning proofs can
   require shared-table registry and table-manifest coverage before dropping
   older rows, tombstones, or expired rows.
-- Storage-next has broad L6 tests. The branch test suite covers identity,
+- Storage has broad L6 tests. The branch test suite covers identity,
   active/frozen state, read views, immutable reads, owned compaction, row
   pruning, snapshot install, inherited-layer validation, fork,
   materialization, retries, reachability, and manifest recovery.
@@ -1117,7 +1117,7 @@ Intentional architecture changes, not gaps:
   L6. L6 installs branch-local table descriptors and reachability facts; L4/L8
   persist and recover those facts.
 - Runtime refcounts from the old engine are not directly restored as a branch
-  data structure. Storage-next uses reachability snapshots, table refs, pinned
+  data structure. Storage uses reachability snapshots, table refs, pinned
   reachability, table manifests, and retention proofs instead.
 - Fork currently requires the source branch to have flushed active and frozen
   rows before inheritance capture. That is a stricter V1 architecture boundary
@@ -1132,7 +1132,7 @@ Gaps to fill:
      search each non-overlapping L1+ level and probe at most one segment per
      level. Inherited layers used the same L0 linear plus L1+ binary-search
      pattern after branch-id key rewriting.
-   - Storage-next `visible_point_candidates` in
+   - Storage `visible_point_candidates` in
      `crates/storage/src/branch/read.rs` now uses table-local
      `seek_physical_key`, which is better than full row filtering, but it
      still calls that seek on every owned table in every level and every
@@ -1154,7 +1154,7 @@ Gaps to fill:
      individual iterators for L0, but used `LevelSeekableIter` or
      `LevelSegmentIter` for L1+. Those iterators binary-searched to the first
      relevant segment and opened subsequent segments lazily.
-   - Storage-next borrowed scans in `crates/storage/src/branch/read.rs`
+   - Storage borrowed scans in `crates/storage/src/branch/read.rs`
      use `BranchScanCursor` and a heap merge, which is the right standard
      machinery direction, but `scan_cursors_for_sources` still pushes a
      bounded cursor for every owned table and every inherited table.
@@ -1171,7 +1171,7 @@ Gaps to fill:
    - Old `BranchSnapshot` in `crates/storage/src/segmented/mod.rs` cloned
      `Arc` handles to the active memtable, frozen memtables, and an
      `ArcSwap`-pinned `SegmentVersion`, then released the branch map guard.
-   - Storage-next `capture_read_view` in
+   - Storage `capture_read_view` in
      `crates/storage/src/branch/state/read_hooks.rs` clones the active
      table, frozen tables, owned levels, inherited layers, and branch facts.
      Because `BranchOwnedTable` contains `ImmutableTableReader` and current
@@ -1186,7 +1186,7 @@ Gaps to fill:
    - Old branch state tracked min/max timestamps and max applied version in
      atomics. Timestamp and timeline semantics were not implemented by walking
      every retained row on the read path.
-   - Storage-next `resolve_timestamp_to_commit_version` walks active, frozen,
+   - Storage `resolve_timestamp_to_commit_version` walks active, frozen,
      owned, and inherited rows to find the best commit version at or before a
      timestamp.
    - This is correct for current scaffolding but not scalable for timestamp
@@ -1202,7 +1202,7 @@ Gaps to fill:
      inherited table rows subject to fork-version filtering.
    - Old branch state kept hot facts such as max version, min/max timestamps,
      entry/deletion counts, level targets, and version snapshots incrementally.
-   - Storage-next already stores some incremental fields, but the facts API
+   - Storage already stores some incremental fields, but the facts API
      still recomputes from rows in important places, including read-view
      capture.
    - Owner: L6 branch facts.
@@ -1226,13 +1226,13 @@ Gaps to fill:
      compaction.
 
 7. Materialization is eager and fixed-chunk L0 output.
-   - Storage-next materialization preserves semantics, but
+   - Storage materialization preserves semantics, but
      `collect_materialization_rows` scans the target inherited layer into a
      row vector, builds replacement artifacts with a fixed
      `MATERIALIZATION_ROWS_PER_OUTPUT_TABLE`, and installs them as child-owned
      L0 replacement tables.
    - Old materialization also had heavy work, but it was anchored in segment
-     iterators and old builder mechanics. Storage-next should eventually share
+     iterators and old builder mechanics. Storage should eventually share
      the same streaming and split-boundary mechanics used by branch
      compaction, rather than remaining a separate eager path.
    - Owner: L6 materialization plus L5 streaming builder/compactor.
@@ -1245,7 +1245,7 @@ Gaps to fill:
    - Old `fork_branch` could capture active/frozen/segment state under branch
      locking and used per-branch max-version facts to avoid allocated-but-not-
      applied version gaps.
-   - Storage-next `fork_into_empty_child` rejects sources with active or
+   - Storage `fork_into_empty_child` rejects sources with active or
      frozen rows and requires at least one retained row. This is a clean V1
      L6 invariant, but it means higher layers must flush/quiesce before fork
      if the public API is expected to match old behavior.
@@ -1265,7 +1265,7 @@ Gaps to fill:
 
 L6 conclusion:
 
-- Storage-next has the right L6 boundary and preserved many high-value branch
+- Storage has the right L6 boundary and preserved many high-value branch
   mechanics: branch-local LSM state, L0/L1+ invariants, fork-version
   inheritance, materialization, snapshot install, compaction planning,
   pruning proofs, reachability, and tests.
@@ -1316,7 +1316,7 @@ Old-storage evidence:
   `crates/storage/src/segmented/tests/fork.rs`: old commit batching,
   concurrency, publish failure, MVCC, and fork-frontier coverage.
 
-Storage-next evidence:
+Storage evidence:
 
 - `crates/storage/src/commit/mod.rs`: L7 module boundary and exports.
 - `crates/storage/src/commit/batch.rs`: internal `CommitBatch`,
@@ -1371,7 +1371,7 @@ Storage-next evidence:
 
 Confirmed parity:
 
-- Storage-next has a distinct L7 commit-runtime layer. Commit ordering,
+- Storage has a distinct L7 commit-runtime layer. Commit ordering,
   version allocation, timestamp allocation, branch guards, conflict validation,
   WAL integration, row installation, and visible publication are not embedded
   in L9 API code or L6 table mechanics.
@@ -1421,11 +1421,11 @@ Confirmed parity:
 
 Intentional storage changes:
 
-- Storage-next L7 owns internal commit batches, not public transaction sessions.
+- Storage L7 owns internal commit batches, not public transaction sessions.
   Public transaction/session ergonomics remain an L9 or engine concern.
-- Storage-next does not preserve old durable transaction IDs as a separate
+- Storage does not preserve old durable transaction IDs as a separate
   public storage concept. Commit version is the storage-local ordering fact.
-- Storage-next V1 is single-branch per commit. Cross-branch atomic commits,
+- Storage V1 is single-branch per commit. Cross-branch atomic commits,
   distributed consensus, and object-store commit protocols remain outside L7
   V1.
 - Fast-fail quiesce/admission is a V1 lifecycle shape. If public callers need
@@ -1438,7 +1438,7 @@ Closed and deferred findings:
    - Old `TransactionManager` had per-branch commit locks plus a quiesce
      `RwLock`, so independent branch commits could proceed concurrently while
      still preserving same-branch ordering.
-   - Storage-next has per-branch guards, but `CommitUnresolvedDurableGate`
+   - Storage has per-branch guards, but `CommitUnresolvedDurableGate`
      also has a single `active_admission` slot. That serializes all mutating
      commits across branches, even when there is no unresolved durable commit.
    - This is accepted as an explicit V1 semantic decision, documented in
@@ -1454,7 +1454,7 @@ Closed and deferred findings:
      advanced `visible_version` to the highest version before the first pending
      commit. That allowed allocated commits to finish out of order without
      publishing future versions over gaps.
-   - Storage-next `VisibleVersionTracker` is a simple monotonic scalar. This is
+   - Storage `VisibleVersionTracker` is a simple monotonic scalar. This is
      safe today because mutating commits are globally admitted one at a time
      and unresolved durable/applied-not-visible states block unsafe follow-up
      commits.
@@ -1466,7 +1466,7 @@ Closed and deferred findings:
 3. Conflict validation can inherit L6 read-view cost.
    - Old validation read directly through branch state using point-read
      mechanics.
-   - Storage-next conflict validation can use `BranchReadView` as its source.
+   - Storage conflict validation can use `BranchReadView` as its source.
      Where that read view is captured eagerly, validation cost inherits the
      L6 captured-read-view row-scaling gap.
    - Status: closed for L7. Blind writes and empty validation sets skip source
@@ -1477,7 +1477,7 @@ Closed and deferred findings:
 4. WAL record construction is less allocation-conscious than old storage.
    - Old `commit_adapter` serialized WAL payloads into reusable thread-local
      buffers and appended pre-serialized bytes.
-   - Storage-next `CommitDurableRuntime` currently prepares combined rows,
+   - Storage `CommitDurableRuntime` currently prepares combined rows,
      clones them into a WAL record, then applies the rows to L6. The batch
      limits make this bounded, but it is not the old zero-extra-row-copy hot
      path.
@@ -1512,7 +1512,7 @@ Closed and deferred findings:
 7. Branch registry lookup is vector based.
    - Old storage used map/set structures for transaction locks and deleting
      branches.
-   - Storage-next `CommitBranchRegistry` stores descriptors in a `Vec` because
+   - Storage `CommitBranchRegistry` stores descriptors in a `Vec` because
      `BranchId` currently lacks `Ord`. This makes branch validation O(branch
      count).
    - Status: closed as a documented V1 bound. Branch-count scale tests record
@@ -1523,7 +1523,7 @@ Closed and deferred findings:
 8. Quiesce behavior is fast-fail instead of old blocking drain.
    - Old quiesce used a write lock that naturally waited for in-flight commit
      read guards to drain.
-   - Storage-next `CommitBranchGuardSet::try_begin_quiesce` returns a typed
+   - Storage `CommitBranchGuardSet::try_begin_quiesce` returns a typed
      busy result if a commit guard is active.
    - Status: closed as an L7 primitive. Guard tests prove fast-fail facts and
      release behavior.
@@ -1532,7 +1532,7 @@ Closed and deferred findings:
 
 L7 conclusion:
 
-- Storage-next preserves the core commit-runtime architecture. The major old
+- Storage preserves the core commit-runtime architecture. The major old
   correctness mechanics are present: internal batch validation, version and
   timestamp allocation, WAL-before-visible ordering, durable-but-not-visible
   classification, branch generation/deletion guards, conflict validation,
@@ -1596,7 +1596,7 @@ Old-storage evidence:
   `crates/storage/src/segmented/tests/quarantine_reconciliation.rs`: old
   lifecycle, compaction, restart, quarantine, and recovery coverage.
 
-Storage-next evidence:
+Storage evidence:
 
 - `crates/storage/src/lifecycle/mod.rs`: L8 module boundary and exported
   lifecycle surface.
@@ -1650,7 +1650,7 @@ Storage-next evidence:
 
 Confirmed parity:
 
-- Storage-next has a distinct L8 lifecycle layer. Open, recovery, maintenance,
+- Storage has a distinct L8 lifecycle layer. Open, recovery, maintenance,
   checkpoint, retention, quarantine, and close are not hidden in L9 API code,
   L6 branch state, or L7 commit code.
 - The lifecycle state model exists and is explicit. `LifecycleStateMachine`
@@ -1685,7 +1685,7 @@ Confirmed parity:
 - Durable checkpointing is row-native. It writes storage rows into checkpoint
   sections, updates manifest snapshot facts, can persist flush-watermark proof,
   and can trigger WAL truncation through L4 services.
-- Flush-watermark and WAL truncation are conservative. Storage-next requires a
+- Flush-watermark and WAL truncation are conservative. Storage requires a
   checkpoint or table-manifest coverage proof before persisting a flush
   watermark, and WAL truncation consumes a retention proof rather than deleting
   covered segments opportunistically.
@@ -1707,7 +1707,7 @@ Intentional storage changes:
 
 - L8 is storage-internal. Product open policy, primitive snapshot semantics,
   IPC, public UX, and product recovery wording stay above L8.
-- Storage-next checkpoints are row-native with optional extra sections. L8 can
+- Storage checkpoints are row-native with optional extra sections. L8 can
   carry opaque extra snapshot sections, but it does not materialize graph,
   vector, JSON, search, event, or intelligence state.
 - Object durable mode is represented as a candidate capability shape, not a V1
@@ -1722,7 +1722,7 @@ Gaps:
    - Old writes called `schedule_flush_if_needed` after successful mutating
      commits. That coalesced flush tasks, drained all frozen memtables across
      branches, then scheduled a background compaction chain.
-   - Storage-next can report pressure and can enqueue maintenance explicitly,
+   - Storage can report pressure and can enqueue maintenance explicitly,
      but normal commits do not automatically enqueue the pressure-suggested
      flush, compaction, or materialization task. Durable commits only evaluate
      WAL growth policy and may enqueue checkpoint work.
@@ -1740,7 +1740,7 @@ Gaps:
      flushed frozen memtables when needed, slowed writes at the L0 slowdown
      threshold, stalled at the L0 stop threshold, sampled memtable bytes and
      segment metadata pressure, and woke stalled writers after compaction.
-   - Storage-next `collect_storage_pressure` has
+   - Storage `collect_storage_pressure` has
      `BlockMutatingAdmission`, `Urgent`, and `Background` severities, but the
      normal commit path does not enforce those facts before accepting a
      mutating commit.
@@ -1755,7 +1755,7 @@ Gaps:
    - Old flush scheduling drained all branches needing flush and looped over
      each branch until no frozen memtable remained, with a bounded retry loop
      to cover the race where writers froze more state during the drain.
-   - Storage-next `Flush` task flushes one selected frozen table for one
+   - Storage `Flush` task flushes one selected frozen table for one
      branch per task run. The executor can be drained by a caller, but no L8
      policy currently turns one pressure event into a complete frozen-state
      drain.
@@ -1770,7 +1770,7 @@ Gaps:
      highest-scoring branch/level, performed one compaction, then resubmitted
      the chain until no score exceeded target. L0 was count-based; L1+ was
      byte-target based; nonzero compaction advanced compact pointers.
-   - Storage-next pressure currently suggests level-0 compaction at fixed L0
+   - Storage pressure currently suggests level-0 compaction at fixed L0
      count thresholds. `compaction_request_from_maintenance_task` maps nonzero
      levels to table index 0, and there is no L8 scheduler that picks the
      highest score across branches and levels or keeps re-running until the
@@ -1782,7 +1782,7 @@ Gaps:
      table counts, and post-drain L0/L1+ shape.
 
 5. Flush-watermark proof is not fully multi-branch yet.
-   - Storage-next has conservative checkpoint/table-manifest proofs, but
+   - Storage has conservative checkpoint/table-manifest proofs, but
      `persist_table_manifest_flush_watermark` currently requires active
      branches to equal the single seeded branch and rejects broader catalogs
      with a forward-compat guard.
@@ -1795,7 +1795,7 @@ Gaps:
      inherited layers, and pending releases.
 
 6. Pending-release durability is still incomplete.
-   - Storage-next has a PendingReleasesManifest service and recovery loader,
+   - Storage has a PendingReleasesManifest service and recovery loader,
      but the durable runtime still carries an active `pending_releases` buffer
      whose bootstrap comment describes it as in-memory-only and says durable
      persistence of release tombstones is tracked as separate closeout work.
@@ -1811,7 +1811,7 @@ Gaps:
 7. Close quiesce is one-shot instead of deadline-driven.
    - Old shutdown waited for idle commits and had deadline-aware shutdown
      orchestration above storage.
-   - Storage-next durable close calls `try_begin_quiesce` once and returns a
+   - Storage durable close calls `try_begin_quiesce` once and returns a
      retry-pending/timeout-style error when commit quiesce is unavailable.
    - This is a reasonable L7 primitive, but L8 does not yet provide the
      deadline/retry loop that makes close robust under normal concurrent use.
@@ -1822,7 +1822,7 @@ Gaps:
      retry.
 
 8. Budget and rate-limiting are not old-runtime parity.
-   - Storage-next has `StorageBudgetLedger` checks for generated artifacts,
+   - Storage has `StorageBudgetLedger` checks for generated artifacts,
      manifest/catalog budget, table readers, rotation, and maintenance enqueue.
    - Old runtime also had compaction rate limiting, memtable byte pressure,
      segment metadata pressure, and writer slow/stop thresholds tied to
@@ -1834,7 +1834,7 @@ Gaps:
      pressure.
 
 9. End-to-end lifecycle crash/perf proof is not complete.
-   - Storage-next has many targeted lifecycle tests, but the parity proof
+   - Storage has many targeted lifecycle tests, but the parity proof
      still needs full transition-window coverage: flush publish before install,
      table manifest publication debt, compaction replacement, materialization
      replacement, checkpoint publication, manifest snapshot update, flush
@@ -1847,7 +1847,7 @@ Gaps:
 
 L8 conclusion:
 
-- Storage-next has a serious L8 implementation, not just stubs. It restored
+- Storage has a serious L8 implementation, not just stubs. It restored
   typed lifecycle state, open outcomes, recovery health, durable service
   assembly, checkpoint/WAL/table/quarantine recovery, commit bootstrap,
   maintenance task execution, durable close ordering, and proof-driven
@@ -1894,7 +1894,7 @@ Old-storage evidence:
   that kept JSON/event/KV semantics above storage while relying on storage
   transaction mechanics below it.
 
-Storage-next evidence:
+Storage evidence:
 
 - `crates/storage/src/lib.rs`: declares `api` as the supported public
   boundary, documents durable-local native open, explicit volatile open, and
@@ -1923,7 +1923,7 @@ Storage-next evidence:
 
 Confirmed parity:
 
-- Storage-next has a real L9 API module. The public crate-level documentation
+- Storage has a real L9 API module. The public crate-level documentation
   names `api` as the supported boundary and makes native directory-backed
   opens go through `StorageRuntime::open_local(root)`.
 - Volatile storage is explicit. `StorageRuntime::open_cache()` and
@@ -1974,7 +1974,7 @@ Intentional storage changes:
   storage trait like old `Storage`. That is acceptable for the current
   storage shape as long as engine depends only on L9 and not lower
   modules.
-- Product transaction sessions are not L9 APIs. Engine-next should own public
+- Product transaction sessions are not L9 APIs. Engine should own public
   transaction ergonomics and translate storage-shaped read facts, writes, CAS
   expectations, and durability requests into L9 requests.
 - Product semantics remain above storage. The scan for product terms in
@@ -2005,7 +2005,7 @@ Gaps:
    - Old `TransactionContext` recorded every snapshot read in `read_set`, and
      `validate_transaction` checked the recorded versions against current
      storage before commit. CAS facts were separate from read-set facts.
-   - Storage-next L7 has internal `CommitReadFact`,
+   - Storage L7 has internal `CommitReadFact`,
      `CommitValidationFacts`, and read-set conflict validation.
    - L9 `CommitBatch` exposes CAS-style `CommitCondition` values but no public
      storage-shaped read facts. `map_api_commit_batch` currently constructs
@@ -2024,7 +2024,7 @@ Gaps:
    - Old engine/storage commit returned write-stall and durability failure
      information through the transaction path, and old writes actively slowed
      or stalled based on L0 and memory pressure.
-   - Storage-next L8 can report pressure and L7 has conflict/durable error
+   - Storage L8 can report pressure and L7 has conflict/durable error
      categories, but L9 `CommitSummary` only reports branch, version,
      timestamp, durability, mutation counts, timeline row count, and
      visibility.
@@ -2101,7 +2101,7 @@ Gaps:
 
 L9 conclusion:
 
-- Storage-next has a clean, storage-shaped L9 surface. It correctly keeps
+- Storage has a clean, storage-shaped L9 surface. It correctly keeps
   product meaning above storage, keeps lower modules private, makes volatile
   storage explicit, makes durable local storage explicit, exposes the expected
   read/scan/history/branch/maintenance/diagnostics/close mechanics, and routes
@@ -2123,7 +2123,7 @@ L9 conclusion:
 These old-storage files should be treated as the primary reference when restoring
 mechanics in storage.
 
-| Mechanic | Old reference files | Storage-next files to compare |
+| Mechanic | Old reference files | Storage files to compare |
 | --- | --- | --- |
 | Internal key ordering | `crates/storage/src/key_encoding.rs`, `crates/storage/src/memtable.rs` | `crates/storage/src/format/key.rs`, `crates/storage/src/table/key.rs` |
 | Mutable/frozen table lookup | `crates/storage/src/memtable.rs` | `crates/storage/src/table/mutable.rs`, `crates/storage/src/table/cursor.rs` |
@@ -2163,7 +2163,7 @@ Old reference files:
 - `crates/storage/src/segment.rs`
 - `crates/storage/src/segmented/tests/leveled.rs`
 
-Storage-next files inspected:
+Storage files inspected:
 
 - `crates/storage/src/branch/state.rs`
 - `crates/storage/src/branch/read.rs`
@@ -2172,11 +2172,11 @@ Storage-next files inspected:
 
 Findings:
 
-- Storage-next has `BranchLocalState::owned_levels`.
+- Storage has `BranchLocalState::owned_levels`.
 - L0 installation inserts newest-first and allows overlap.
 - Nonzero levels enforce sorted, non-overlapping physical key ranges during
   install and validation.
-- Storage-next has `CompactL0ToLevelOne` and `CompactLevel` planning.
+- Storage has `CompactL0ToLevelOne` and `CompactLevel` planning.
 - The benchmark load path explicitly calls `MaintenanceTask::Flush` every
   100K rows, which produces L0 tables.
 - That path does not drain enough compaction to turn L0 fanout into useful
@@ -2219,7 +2219,7 @@ Old reference files:
 - `crates/storage/src/segment.rs`
 - `crates/storage/src/segmented/mod.rs`
 
-Storage-next files to audit:
+Storage files to audit:
 
 - `crates/storage/src/branch/read.rs`
 - `crates/storage/src/table/mutable.rs`
@@ -2243,27 +2243,27 @@ Findings:
 - Old storage's segment path in `crates/storage/src/segment.rs` used
   `point_lookup_preencoded`, which applies a bloom check and then performs an
   index/block-local lookup instead of scanning unrelated rows.
-- Storage-next latest point reads call `read_latest_point` from
+- Storage latest point reads call `read_latest_point` from
   `crates/storage/src/api/runtime.rs`, so the hot latest-read path can use
   borrowed runtime state instead of always capturing an owned `BranchReadView`.
-- Storage-next table-local seek mechanics exist:
+- Storage table-local seek mechanics exist:
   `MutableTable::seek_physical_key` and `FrozenTable::seek_physical_key` in
   `crates/storage/src/table/mutable.rs`, plus
   `ImmutableTableReader::seek_physical_key` in
   `crates/storage/src/table/reader.rs`.
-- Storage-next's `visible_point_candidates` in
+- Storage's `visible_point_candidates` in
   `crates/storage/src/branch/read.rs` uses those table-local seeks, so the
   old row-scan regression has been partially removed for latest/borrowed point
   reads.
-- Storage-next still does not restore old source pruning. The current point
+- Storage still does not restore old source pruning. The current point
   candidate loop seeks every owned immutable table in every owned level, even
   though L1+ levels are non-overlapping and should allow one candidate table
   per level.
-- Storage-next inherited point reads also miss level pruning:
+- Storage inherited point reads also miss level pruning:
   `collect_visible_inherited_point_candidates` in
   `crates/storage/src/branch/read.rs` rewrites the physical key to the
   source branch and then seeks every inherited table in every inherited level.
-- Storage-next's captured read-view history path still contains a row-scan
+- Storage's captured read-view history path still contains a row-scan
   point candidate helper. `BranchReadView::history` calls
   `BranchReadView::point_candidates` in
   `crates/storage/src/branch/read.rs`; that helper filters active,
@@ -2273,7 +2273,7 @@ Findings:
 
 Diagnosis:
 
-- Point-read parity is partial, not missing. Storage-next has the ordered
+- Point-read parity is partial, not missing. Storage has the ordered
   table-local seek building blocks, and latest point reads use them.
 - The missing mechanic is old-storage source-level pruning:
   - L0: probe all tables newest-first because ranges may overlap.
@@ -2321,7 +2321,7 @@ Old reference files:
 - `crates/storage/src/segment.rs`
 - `crates/storage/src/segmented/mod.rs`
 
-Storage-next files to audit:
+Storage files to audit:
 
 - `crates/storage/src/branch/read.rs`
 - `crates/storage/src/table/cursor.rs`
@@ -2353,12 +2353,12 @@ Findings:
 - Old `MergeSeekableIter::seek` re-seeks existing children in place and
   re-heapifies. It does not rebuild all physical table cursors for every scan
   request.
-- Storage-next latest public scans do use the borrowed runtime path:
+- Storage latest public scans do use the borrowed runtime path:
   `StorageRuntime::scan_prefix` and `StorageRuntime::scan_range` in
   `crates/storage/src/api/runtime.rs` call
   `scan_latest_including_tombstones_for_branch`, which eventually calls
   `BranchLocalState::scan_including_tombstones_borrowed`.
-- Storage-next borrowed scan uses `scan_including_tombstones_from_sources` in
+- Storage borrowed scan uses `scan_including_tombstones_from_sources` in
   `crates/storage/src/branch/read.rs`.
 - `scan_cursors_for_sources` currently creates a `BoundedTableCursor` over
   active, every frozen table, every owned table in every level, and every
@@ -2369,7 +2369,7 @@ Findings:
   child cursors, but it also seeks every child on `seek_to_first`/`seek`. It is
   not a level iterator and does not know how to binary-search nonzero table
   ranges.
-- Storage-next table metadata is sufficient for restoration:
+- Storage table metadata is sufficient for restoration:
   `TableRuntimeFacts::key_range` in `crates/storage/src/table/facts.rs`
   records first/last internal keys, and branch validation already enforces
   sorted, non-overlapping nonzero levels.
@@ -2379,11 +2379,11 @@ Findings:
 
 Evidence:
 
-- Storage-next 10M standard scan-prefix performed `1,010,000`
+- Storage 10M standard scan-prefix performed `1,010,000`
   `scan_cursor_seeks` for `10,000` scan samples, with
   `branch_scan_source_setup_ns=3,008,512,152` and
   `branch_scan_merge_ns=433,583,048`.
-- Storage-next 10M standard scan-range performed `1,010,000`
+- Storage 10M standard scan-range performed `1,010,000`
   `scan_cursor_seeks` for `10,000` scan samples, with
   `branch_scan_source_setup_ns=3,250,675,313` and
   `branch_scan_merge_ns=524,067,767`.
@@ -2396,7 +2396,7 @@ Evidence:
 
 Diagnosis:
 
-- Scan parity is partial. Storage-next has sorted table cursors, bounded
+- Scan parity is partial. Storage has sorted table cursors, bounded
   cursors, heap merge, MVCC selection, inherited branch rewrite, and a borrowed
   latest path.
 - The missing mechanic is the old seekable source hierarchy:
@@ -2451,7 +2451,7 @@ Old reference files:
 - `crates/storage/src/segment_builder.rs`
 - `crates/storage/src/segmented/tests/leveled.rs`
 
-Storage-next files to audit:
+Storage files to audit:
 
 - `crates/storage/src/branch/state/compaction.rs`
 - `crates/storage/src/table/compaction.rs`
@@ -2484,43 +2484,43 @@ Findings:
   non-overlap cases, concurrent flush handling, repeated compaction, recovery,
   L1 to L2, round-robin selection, trivial move, grandparent splitting, and
   multi-level scan correctness.
-- Storage-next has branch-local compaction primitives in
+- Storage has branch-local compaction primitives in
   `crates/storage/src/branch/state/compaction.rs`:
   `CompactL0`, `CompactL0ToLevelOne`, and `CompactLevel`.
-- Storage-next `plan_l0_to_level_one_compaction` does merge all L0 tables with
+- Storage `plan_l0_to_level_one_compaction` does merge all L0 tables with
   overlapping L1 tables and installs sorted L1 outputs.
-- Storage-next `plan_nonzero_level_compaction` can merge one requested table
+- Storage `plan_nonzero_level_compaction` can merge one requested table
   with overlapping next-level tables, but the caller must pass a concrete
   `table_index`.
-- Storage-next `TableCompactor` in
+- Storage `TableCompactor` in
   `crates/storage/src/table/compaction.rs` can split output by target
   output bytes and avoids splitting within the same physical key.
-- Storage-next installation removes compacted tables by stale table reference,
+- Storage installation removes compacted tables by stale table reference,
   inserts outputs into the target level, validates level invariants, and updates
   runtime facts.
-- Storage-next lifecycle compaction in
+- Storage lifecycle compaction in
   `crates/storage/src/lifecycle/compaction.rs` only suggests compaction
   from L0 table-count pressure. It does not compute byte targets, score L1+,
   or choose the highest-pressure level.
-- Storage-next maps suggested nonzero compaction tasks to `table_index: 0`;
+- Storage maps suggested nonzero compaction tasks to `table_index: 0`;
   there is no compact pointer or round-robin selection equivalent.
-- Storage-next public runtime compaction currently maps maintenance compaction
+- Storage public runtime compaction currently maps maintenance compaction
   to L0-to-L1, so explicit public maintenance does not naturally compact deeper
   levels.
-- Storage-next nonzero compaction returns `NotEnoughInputTables` for a single
+- Storage nonzero compaction returns `NotEnoughInputTables` for a single
   non-overlapping input and therefore does not preserve the old trivial-move
   optimization.
-- Storage-next table compaction materializes all input rows into memory and
+- Storage table compaction materializes all input rows into memory and
   sorts them before output construction. The old path used streaming segment
   sources, `MergeIterator`, `CompactionIterator`, and split builders.
-- Storage-next output splitting is target-size based, but there is no audited
+- Storage output splitting is target-size based, but there is no audited
   equivalent of old grandparent-overlap split predicates.
 
 Evidence:
 
 - The 10M benchmark load path force-flushed every 100K rows because no-flush
   hit the mutable budget, producing roughly 100 immutable sources.
-- Storage-next point reads and scans still observed about 100 source probes or
+- Storage point reads and scans still observed about 100 source probes or
   seeks after load, which is consistent with insufficient compaction scheduling
   or incomplete deeper-level advancement.
 - Cache and standard storage modes showed the same fanout profile, so this
@@ -2531,7 +2531,7 @@ Evidence:
 
 Diagnosis:
 
-- Compaction parity is partial. Storage-next has the branch-local operations
+- Compaction parity is partial. Storage has the branch-local operations
   needed to compact L0 to L1 and to compact a selected nonzero table forward.
 - The missing old mechanic is the compaction control loop: dynamic level
   targets, scoring, highest-score selection, nonzero compact pointers,
@@ -2585,7 +2585,7 @@ Old reference files:
 - `crates/storage/src/segmented/tests/basic.rs`
 - `crates/storage/src/segmented/tests/resurrection.rs`
 
-Storage-next files to audit:
+Storage files to audit:
 
 - `crates/storage/src/api/runtime.rs`
 - `crates/storage/src/api/tests/read.rs`
@@ -2623,43 +2623,43 @@ Findings:
 - Old `TTLIndex` in `crates/storage/src/ttl.rs` supports efficient expired-key
   lookup, but `SegmentedStore::expire_ttl_keys` is a no-op; segmented storage
   handles TTL at read time and during compaction.
-- Storage-next `encode_internal_key` in
+- Storage `encode_internal_key` in
   `crates/storage/src/format/key.rs` appends the bitwise inverse commit
   version in big-endian order, so ascending byte order returns newest versions
   first for the same physical key.
-- Storage-next `StorageRow` stores an absolute `expires_at` timestamp. Public
+- Storage `StorageRow` stores an absolute `expires_at` timestamp. Public
   `CommitMutation::Put { ttl }` is converted in
   `crates/storage/src/api/runtime.rs` through `map_expiry`, which adds the
   TTL duration to the actual commit timestamp before the internal row is
   stamped in `crates/storage/src/commit/batch.rs`.
-- Storage-next tombstones are stricter on disk than old rows:
+- Storage tombstones are stricter on disk than old rows:
   `decode_storage_row` rejects tombstones with value bytes or expiry facts.
-- Storage-next at-version and at-timestamp API reads resolve the selected
+- Storage at-version and at-timestamp API reads resolve the selected
   commit frontier to a timestamp before applying TTL. The API tests in
   `crates/storage/src/api/tests/read.rs` cover TTL behavior for
   at-version, at-timestamp, and scans.
-- Storage-next `BranchReadView` tests in
+- Storage `BranchReadView` tests in
   `crates/storage/src/branch/tests/read_view.rs` cover timestamp
   tombstone boundaries, TTL boundaries, history ordering, tombstone inclusion,
   tombstone filtering, and inherited history behavior.
-- Storage-next compaction pruning is proof-gated in
+- Storage compaction pruning is proof-gated in
   `crates/storage/src/branch/pruning.rs`. Tombstone and TTL elision require
   retention floors, timestamp coverage, no readable inherited layers, shared
   table safety, recovery-health attestation, and bottommost candidate checks.
-- Storage-next row-pruning tests cover tombstone resurrection risk, bottommost
+- Storage row-pruning tests cover tombstone resurrection risk, bottommost
   tombstone elision, non-bottommost tombstone preservation/rejection,
   TTL cutoff safety, inherited-layer safety, materialized tombstone safety, and
   max-version retention.
 
 Evidence:
 
-- Storage-next has direct tests for the old core semantics:
+- Storage has direct tests for the old core semantics:
   `branch_read_view_timestamp_tombstones_suppress_fallthrough`,
   `branch_read_view_timestamp_ttl_boundaries_suppress_fallthrough`,
   `branch_read_view_history_preserves_tombstones_limits_and_before_version`,
   `read_at_version_applies_ttl_at_selected_frontier`, and
   `scan_at_version_applies_ttl_at_selected_frontier`.
-- Storage-next also has proof tests under
+- Storage also has proof tests under
   `crates/storage/src/branch/tests/row_pruning/required_plan.rs` and
   `crates/storage/src/branch/tests/row_pruning/tombstone_ttl.rs` that cover
   many old compaction-retention safety cases.
@@ -2672,15 +2672,15 @@ Evidence:
 Diagnosis:
 
 - MVCC ordering and tombstone suppression are mostly preserved.
-- Storage-next's TTL representation changed from old `{write timestamp,
+- Storage's TTL representation changed from old `{write timestamp,
   ttl_ms}` to absolute `expires_at`. That representation is acceptable if the
   public API computes expiry from the commit timestamp, which it does.
 - Latest-read TTL semantics are not old-engine parity. Old `get_versioned`,
   scans, and history used wall-clock `entry.is_expired()` for unbounded/latest
-  reads. Storage-next latest point reads and latest scans pass no selected
+  reads. Storage latest point reads and latest scans pass no selected
   timestamp, so `row_is_expired_at` does not filter expired rows.
 - History TTL semantics also differ. Old `get_history` filtered expired rows
-  with `entry.is_expired()`. Storage-next API history maps all rows from
+  with `entry.is_expired()`. Storage API history maps all rows from
   `BranchReadView::history` and preserves `expires_at` facts without filtering
   by wall clock.
 - Captured storage history is still inefficient. `BranchReadView::history`
@@ -2750,7 +2750,7 @@ Old implementation details:
   or closer inherited layers, and treats shadow-check corruption
   conservatively to avoid resurrecting stale inherited data.
 
-Storage-next findings:
+Storage findings:
 
 - `crates/storage/src/branch/read.rs` has explicit
   `BranchInheritedLayer` and `InheritedLayerDescriptor` objects. Validation
@@ -2762,7 +2762,7 @@ Storage-next findings:
   `fork_version` from the source retained rows, creates a nearest inherited
   layer from source-owned tables, and appends forkable inherited layers from the
   source branch.
-- Storage-next preserves `Materializing` status when cloning inherited layers
+- Storage preserves `Materializing` status when cloning inherited layers
   for a child. That differs from old storage's reset-to-`Active` behavior and
   needs an explicit architecture decision or recovery proof.
 - Inherited reads use `BranchEffectiveReadBound::for_inherited_layer` to cap
@@ -2813,7 +2813,7 @@ Old reference files:
 - `crates/storage/src/segmented/tests/fork.rs`
 - `crates/storage/src/segmented/tests/materialize.rs`
 
-Storage-next files to audit:
+Storage files to audit:
 
 - `crates/storage/src/branch/read.rs`
 - `crates/storage/src/branch/state/fork.rs`
@@ -2901,7 +2901,7 @@ Old implementation details:
   temp/write/fsync/rename/fsync-dir ordering; and prefers retention on reopen
   reconciliation mismatch.
 
-Storage-next findings:
+Storage findings:
 
 - `crates/storage/src/lifecycle/recovery.rs`
   `LifecycleRecoveryRuntime::recover` recovers checkpoint state, quarantine
@@ -2949,7 +2949,7 @@ Storage-next findings:
   `crates/storage/src/lifecycle/quarantine.rs` implement branch-scoped
   quarantine inventories, durable quarantine copy/delete ordering,
   inventory reconciliation, purge tokens, and recovery-health gates.
-- Storage-next has broad tests under
+- Storage has broad tests under
   `crates/storage/src/lifecycle/tests/recovery.rs`,
   `crates/storage/src/lifecycle/tests/table_manifest_recovery.rs`,
   `crates/storage/src/lifecycle/tests/checkpoint.rs`,
@@ -2976,18 +2976,18 @@ Diagnosis:
   table-backed durable recovery parity.
 - Durable rewrite publication has different failure semantics from old segment
   publish. Old storage treated the branch manifest as the authoritative segment
-  visibility set and skipped orphan files. Storage-next may install branch
+  visibility set and skipped orphan files. Storage may install branch
   output before table-manifest publication completes and then report manifest
   debt. That needs crash/reopen tests proving unmanifested outputs are either
   recovered correctly or retained as unreachable orphans without affecting
   reads.
 - Old recovery rebuilt shared segment references from inherited layers.
-  Storage-next replaces that with durable table catalog, reachability,
+  Storage replaces that with durable table catalog, reachability,
   retained-history,
   and quarantine gates. This is architecturally reasonable, but parity requires
   proof that owned, inherited, materialization-replacement, and
   checkpoint-restored table objects cannot be deleted while reachable.
-- Storage-next checkpoint recovery is row-section based rather than table
+- Storage checkpoint recovery is row-section based rather than table
   object based. That is acceptable for checkpoint rows, but it does not remove
   the need for table-object manifest recovery when durable tables are the
   post-flush source of truth.
@@ -3013,7 +3013,7 @@ Old reference files:
 - `crates/storage/src/segmented/tests/quarantine_reconciliation.rs`
 - `crates/storage/src/segmented/tests/publish_failures.rs`
 
-Storage-next files to audit:
+Storage files to audit:
 
 - `crates/storage/src/service/wal.rs`
 - `crates/storage/src/service/checkpoint.rs`
@@ -3095,7 +3095,7 @@ Old implementation details:
   `SegmentedStore`, so recovered durable state re-enters the same serving
   engine as cache/ephemeral state.
 
-Storage-next findings:
+Storage findings:
 
 - `crates/storage/src/lib.rs` documents the public boundary:
   native callers with a database directory should open durable local storage
@@ -3138,7 +3138,7 @@ Storage-next findings:
 - `crates/storage/src/lifecycle/budget.rs` introduces a pool-based
   `StorageBudgetLedger`: block cache, table reader, active mutable, frozen
   mutable, maintenance queue, generated artifacts, and manifest catalog.
-- Storage-next budget accounting is intentionally partial in V1. The file
+- Storage budget accounting is intentionally partial in V1. The file
   states that table readers, generated artifacts, and manifest catalog work use
   admission checks for one allocation rather than held cumulative reservations.
   Active mutable, frozen mutable, and maintenance queue usage are reported from
@@ -3148,7 +3148,7 @@ Storage-next findings:
   table count, owned table count, inherited layer count, and pending
   maintenance. It suggests flush/compaction/materialization tasks at thresholds
   including L0 counts of 2, 4, and 8.
-- Storage-next has tests for explicit cache opens, durable opens, durable-only
+- Storage has tests for explicit cache opens, durable opens, durable-only
   maintenance rejection in cache mode, WAL growth no-op in cache mode, budget
   pool validation, budget rejection before state mutation/publication, low
   memory profiles, and one active-budget parity test between cache and durable.
@@ -3169,11 +3169,11 @@ Diagnosis:
   tests. That is acceptable only if the API docs and tests explicitly state
   which durable mechanics are absent and which core serving mechanics remain
   identical.
-- Storage-next budget mechanics are useful guardrails, but they are not the old
+- Storage budget mechanics are useful guardrails, but they are not the old
   unified memory-budget mapping. Old storage derived write-buffer and block
   cache sizes from one budget and included segment metadata in pressure.
-  Storage-next uses independent pool budgets and partial per-allocation checks.
-- Storage-next pressure reports and suggests maintenance, but this audit did
+  Storage uses independent pool budgets and partial per-allocation checks.
+- Storage pressure reports and suggests maintenance, but this audit did
   not find proof that budget pressure automatically keeps L0 fanout bounded
   under sustained load. Given the benchmark evidence, the missing proof matters:
   pressure suggestions are not enough if callers must explicitly drive enough
@@ -3191,7 +3191,7 @@ Old reference files:
 - `crates/storage/src/segmented/compaction.rs`
 - `crates/storage/src/durability/`
 
-Storage-next files to audit:
+Storage files to audit:
 
 - `crates/storage/src/lib.rs`
 - `crates/storage/src/api/options.rs`
@@ -3277,7 +3277,7 @@ Existing evidence:
 
 Missing evidence:
 
-- Storage-next benchmark output does not yet record final level shape:
+- Storage benchmark output does not yet record final level shape:
   active row count, frozen table count, owned table counts by level, L0 table
   count, inherited layer count, inherited table counts by level, retained
   history table count, total table object count, and max table fanout observed
@@ -3311,7 +3311,7 @@ Differential test plan:
    - Old anchors:
      `crates/storage/src/segmented/tests/leveled.rs`,
      `crates/storage/src/segmented/tests/flush.rs`.
-   - Storage-next placement:
+   - Storage placement:
      `crates/storage/src/lifecycle/tests/compaction/`,
      `crates/storage/src/branch/tests/owned_compaction.rs`.
    - Test shape: load rows in repeated flush-sized batches, run maintenance
@@ -3322,7 +3322,7 @@ Differential test plan:
    - Old anchors:
      `crates/storage/src/segmented/mod.rs` `get_versioned_from_branch` and
      `point_lookup_level_preencoded`.
-   - Storage-next placement:
+   - Storage placement:
      `crates/storage/src/branch/tests/read_view.rs` and a new
      perf-trace gated branch-read test module.
    - Test shape: construct active, frozen, owned L0, owned L1+, inherited L0,
@@ -3334,7 +3334,7 @@ Differential test plan:
      `crates/storage/src/seekable.rs`,
      `crates/storage/src/merge_iter.rs`,
      `crates/storage/src/segmented/mod.rs` `StorageIterator`.
-   - Storage-next placement:
+   - Storage placement:
      `crates/storage/src/branch/tests/read_view.rs`,
      `crates/storage/src/table/tests/cursor.rs`, and API scan tests.
    - Test shape: scan prefix and range over many non-overlapping L1+ tables.
@@ -3346,7 +3346,7 @@ Differential test plan:
      `crates/storage/src/segmented/tests/basic.rs`,
      `crates/storage/src/segmented/tests/resurrection.rs`,
      `crates/storage/src/merge_iter.rs`, `crates/storage/src/ttl.rs`.
-   - Storage-next placement:
+   - Storage placement:
      `crates/storage/src/api/tests/read.rs`,
      `crates/storage/src/api/tests/commit.rs`,
      `crates/storage/src/branch/tests/row_pruning/`.
@@ -3359,7 +3359,7 @@ Differential test plan:
    - Old anchors:
      `crates/storage/src/segmented/tests/fork.rs`,
      `crates/storage/src/segmented/tests/materialize.rs`.
-   - Storage-next placement:
+   - Storage placement:
      `crates/storage/src/branch/tests/inheritance_materialization/`,
      `crates/storage/src/lifecycle/tests/branch_lifecycle/`.
    - Test shape: fork chains, child shadowing, inherited tombstones, parent
@@ -3372,7 +3372,7 @@ Differential test plan:
      `crates/storage/src/segmented/tests/materialize.rs`,
      `crates/storage/src/segmented/tests/publish_failures.rs`,
      `crates/storage/src/segmented/tests/quarantine_reconciliation.rs`.
-   - Storage-next placement:
+   - Storage placement:
      `crates/storage/src/lifecycle/tests/recovery.rs`,
      `crates/storage/src/lifecycle/tests/table_manifest_recovery.rs`,
      `crates/storage/src/lifecycle/tests/durable.rs`,
@@ -3387,7 +3387,7 @@ Differential test plan:
      `crates/storage/src/runtime_config.rs`,
      `crates/storage/src/segmented/mod.rs`,
      `crates/storage/src/durability/wal/mode.rs`.
-   - Storage-next placement:
+   - Storage placement:
      `crates/storage/src/lifecycle/tests/cache.rs`,
      `crates/storage/src/lifecycle/tests/durable.rs`,
      `crates/storage/src/lifecycle/tests/budget.rs`,
@@ -3486,7 +3486,7 @@ Status: `Partial`
 
 Overall conclusion:
 
-- Storage-next has substantial architecture and tests, but it has not restored
+- Storage has substantial architecture and tests, but it has not restored
   old-storage production mechanics yet.
 - No audited category is `Confirmed`. Every category is `Partial` because the
   code either lacks the old asymptotic behavior, lacks direct differential
@@ -3496,7 +3496,7 @@ Overall conclusion:
   100 flushed sources. Old storage avoided that with LSM level invariants,
   binary point lookup in L1+, and lazy level iteration for scans.
 - The most important correctness risk is durable topology/recovery parity.
-  Storage-next changed the durable source of truth from branch
+  Storage changed the durable source of truth from branch
   `segments.manifest` files to database/branch/table manifests and table object
   facts. That can be correct, but fault windows and reachability need direct
   restart proof before this is production-ready.
@@ -3510,7 +3510,7 @@ Final parity matrix:
 | --- | --- | --- | --- | --- |
 | LSM layout and level invariants | `Partial` | High performance | L6 primary, with L8 scheduling and L5 table output support | L0 fanout is not proven to drain under sustained load; level diagnostics are missing. |
 | Point-read source pruning | `Partial` | High performance | L6 read planning, with L5 table seek/filter support | Latest reads use table seeks, but source-class pruning for L1+ and inherited layers is not fully proven; history still scans unrelated keys. |
-| Scan source planning and iterator behavior | `Partial` | High performance | L6 scan planning, with L5 raw cursor/merge support | Storage-next has cursor mechanics, but old lazy nonzero-level iteration is not proven by counters/tests. |
+| Scan source planning and iterator behavior | `Partial` | High performance | L6 scan planning, with L5 raw cursor/merge support | Storage has cursor mechanics, but old lazy nonzero-level iteration is not proven by counters/tests. |
 | Compaction selection, output shape, and installation | `Partial` | High performance and correctness | L8 scheduling, L6 level mutation, L5 table compaction, L4 publication | Old scoring, output sizing, L0-to-L1 drain, and durable install fault windows are not fully mapped. |
 | MVCC, tombstone, TTL, and history | `Partial` | Medium correctness | L6 visibility and retention facts, with L5 row metadata and L8 pruning | Core MVCC/tombstones exist; latest/history TTL semantics differ from old wall-clock filtering, and history collection is inefficient. |
 | Branch inheritance, fork, and materialization | `Partial` | High correctness and performance | L6 branch COW/materialization, with L8 scheduling and L4 durable publication | Core COW mechanics exist; copied `Materializing` status differs, inherited serving inherits fanout gaps, and durable publication/recovery proof is incomplete. |
@@ -3552,7 +3552,7 @@ Architecture-aligned implementation packages:
      `crates/storage/src/merge_iter.rs`,
      `crates/storage/src/seekable.rs`, and table-oriented logic in
      `crates/storage/src/compaction.rs`.
-   - Storage-next target areas: table readers/builders, table cursor stack,
+   - Storage target areas: table readers/builders, table cursor stack,
      table compaction, table cache, and table-level perf facts.
    - Work: verify table key ordering, point seek, range seek, prefix seek,
      block/index/filter usage, raw lazy level cursor support, raw merge cursor
@@ -3571,7 +3571,7 @@ Architecture-aligned implementation packages:
      `crates/storage/src/stored_value.rs`,
      `crates/storage/src/segmented/ref_registry.rs`, and
      `crates/storage/src/manifest.rs`.
-   - Storage-next target areas: branch state, branch read planner, branch scan
+   - Storage target areas: branch state, branch read planner, branch scan
      planner, inherited-layer handling, materialization, and branch-level
      source/layout diagnostics.
    - Work: restore the old LSM shape as a branch-owned contract: active
@@ -3597,7 +3597,7 @@ Architecture-aligned implementation packages:
      `crates/storage/src/segmented/quarantine_protocol.rs`,
      `crates/storage/src/pressure.rs`, `crates/storage/src/rate_limiter.rs`,
      and `crates/storage/src/memory_stats.rs`.
-   - Storage-next target areas: lifecycle compaction scheduler, flush
+   - Storage target areas: lifecycle compaction scheduler, flush
      scheduler, maintenance pressure facts, materialization scheduler,
      retention/pruning, quarantine/reclaim, and budget consumption.
    - Work: restore automatic maintenance behavior so sustained load does not
@@ -3620,7 +3620,7 @@ Architecture-aligned implementation packages:
      `crates/storage/src/manifest.rs`,
      `crates/storage/src/segmented/recovery.rs`, and
      `crates/storage/src/segmented/quarantine_protocol.rs`.
-   - Storage-next target areas: WAL service, table manifest service,
+   - Storage target areas: WAL service, table manifest service,
      snapshot/checkpoint service, rewrite publication, table-object
      reachability, recovery bootstrap, and quarantine reconciliation.
    - Work: prove restart behavior across table publication, branch manifest
@@ -3638,7 +3638,7 @@ Architecture-aligned implementation packages:
      `crates/storage/src/txn/validation.rs`,
      `crates/storage/src/txn/lock_ordering.rs`, and
      `crates/storage/src/durability/commit_adapter.rs`.
-   - Storage-next target areas: commit batch, version allocation, commit
+   - Storage target areas: commit batch, version allocation, commit
      visibility, branch commit guards, WAL-before-visible bridge, and write
      stall/backpressure facts.
    - Work: confirm the read/scan performance gap is not caused by commit-time
@@ -3654,7 +3654,7 @@ Architecture-aligned implementation packages:
    - Old evidence files: `crates/storage/src/traits.rs`,
      `crates/storage/src/runtime_config.rs`, and engine call sites that
      consume storage through the public boundary.
-   - Storage-next target areas: open/create, explicit storage mode,
+   - Storage target areas: open/create, explicit storage mode,
      durability policy, L9 read/scan/history/fork/materialize APIs,
      benchmark drivers, and raw health/metrics outcomes.
    - Work: preserve explicit cache versus durable local mode selection, reject

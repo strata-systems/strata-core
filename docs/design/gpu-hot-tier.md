@@ -17,7 +17,7 @@ on the `gpu-hot-tier` branch and the §13 acceptance gates pass on the RTX
 - Maintenance (overlapped, off the decode path) is reported, not gated: at the
   full-scale store it is bound by engine read latency and a ~20× on-disk
   amplification under thousands of small batch commits — an **engine-side
-  finding** for the storage-next scaling work, not tier machinery (the quick
+  finding** for the storage scaling work, not tier machinery (the quick
   run's nominal store shows machinery-only rounds at ~1 ms).
 
 Lithos can adopt via `materialize()` + DLPack with zero custom kernels; Moho
@@ -72,24 +72,24 @@ crates/gpu-cache      ONE crate (package strata-gpu-cache) for the whole GPU
                       arena + pinned pools, PTX JIT     (the only unsafe)
   src/tier/           page pool, page table, promotion/eviction, summaries,
                       adjacency, write-behind, API      (safe Rust)
-                        └── consumes engine-next public surface
+                        └── consumes engine public surface
 python: strata_tier   PyO3 binding over strata-gpu-cache: DLPack, numpy-free
 ```
 
 Rules:
 
-- The tier layer imports **engine-next's public (D4) surface only** — it is a
-  consumer like the executor, never a storage-next importer. The one
+- The tier layer imports **engine's public (D4) surface only** — it is a
+  consumer like the executor, never a storage importer. The one
   anticipated D4 addition is a batched page-read call sized for promotion
   (§6); until approved, `kv_batch_get` suffices.
 - `#![deny(unsafe_code)]` at the crate root; only `src/device/` carries
-  `#[allow(unsafe_code)]` — module-scoped isolation, the inference-next
+  `#[allow(unsafe_code)]` — module-scoped isolation, the inference
   `local/` discipline (workspace rule 38). The tier layer is safe Rust.
 - The crate is a **workspace member but not a default-member**; the tier
   machinery compiles and tests against `host-sim` (§11) with no GPU. Device
   tests are `#[ignore]`d and run explicitly on hardware.
 - Naming: no `-next` suffix. These crates are not part of the V1 cutover
-  train; they track engine-next's public surface and take the one-line rename
+  train; they track engine's public surface and take the one-line rename
   when M9B sheds suffixes.
 - Errors follow the V1 contract (`<class>.<area>.<detail>`): areas `gpu` and
   `tier` (e.g. `unavailable.gpu.driver_missing`,
@@ -316,7 +316,7 @@ Everything above the backend — page table, epoch fencing, promotion
 scheduling, eviction policy, write-behind, backpressure, fork bookkeeping,
 T2 schema, error paths — runs and is asserted in ordinary CI with no GPU.
 Fault injection (copy failures, driver loss mid-run, backlog saturation) is a
-host-sim test knob, mirroring storage-next's fault-injection discipline.
+host-sim test knob, mirroring storage's fault-injection discipline.
 CUDA-specific correctness (stream ordering, event fencing under real
 concurrency, DLPack lifetime, PTX kernels) runs on the 4070S dev box behind
 `--features cuda`; those tests are part of the acceptance gate, not CI.

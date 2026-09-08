@@ -59,7 +59,7 @@ later milestone.
 | `docs/architecture/storage-architecture.md` | Exists | Binding storage architecture. |
 | `docs/architecture/engine-architecture.md` | Exists | Binding engine architecture. |
 | `docs/architecture/inference-architecture.md` | Exists | Binding inference architecture. |
-| `docs/architecture/intelligence-architecture.md` | Exists | Binding intelligence-next architecture. |
+| `docs/architecture/intelligence-architecture.md` | Exists | Binding intelligence architecture. |
 | `docs/architecture/stratahub-substrate-architecture.md` | Exists | Binding V1 StrataHub substrate architecture. |
 | `docs/architecture/runtime-resource-profile-architecture.md` | Exists | Binding runtime resource profile architecture. |
 
@@ -79,11 +79,11 @@ later milestone.
 | `docs/architecture/v1-document-inventory.md` | Exists | M0A canonical document inventory. |
 | `docs/architecture/v1-open-question-register.md` | Exists | M0B canonical open-question ownership register. |
 
-## Storage-Next Documents
+## Storage Documents
 
 | Document | Status | Role |
 |---|---|---|
-| `docs/architecture/storage/README.md` | Exists | Storage-next document index and reading order. |
+| `docs/architecture/storage/README.md` | Exists | Storage document index and reading order. |
 | `docs/architecture/storage/l1-backend-io.md` | Exists | Binding L1 conceptual contract. |
 | `docs/architecture/storage/l2-object-layout.md` | Exists | Binding L2 conceptual contract. |
 | `docs/architecture/storage/l3-durable-format-codec.md` | Exists | Binding L3 conceptual contract. |
@@ -99,11 +99,11 @@ later milestone.
 | `docs/architecture/storage/commit-timeline-substrate.md` | Exists | Binding commit timeline placement contract. |
 | `docs/spec/strata-storage-format-v1.md` | Exists | Draft public storage format specification; unstable until M3 freeze. |
 
-## Engine-Next Documents
+## Engine Documents
 
 | Document | Status | Role |
 |---|---|---|
-| `docs/architecture/engine/README.md` | Exists | Engine-next contract index and reading order. |
+| `docs/architecture/engine/README.md` | Exists | Engine contract index and reading order. |
 | `docs/architecture/engine/primitive-implementation-contract.md` | Exists | Binding data-capability implementation contract. |
 | `docs/architecture/engine/entity-ref-and-relationship-layer-contract.md` | Exists | Binding EntityRef and relationship-layer contract. |
 | `docs/architecture/engine/storage-space-id-registry.md` | Exists | Binding engine-owned storage-space registry. |
@@ -134,7 +134,7 @@ later milestone.
 | `docs/architecture/archive/implementation-plans/m5-m5t-implementation-plan.md` | Exists | M5 engine foundation plan. |
 | `docs/architecture/archive/implementation-plans/m6-m6t-implementation-plan.md` | Exists | M6 engine capabilities and product surface plan. |
 | `docs/architecture/archive/implementation-plans/m7-m7t-implementation-plan.md` | Exists | M7 inference plan. |
-| `docs/architecture/archive/implementation-plans/m8-m8t-implementation-plan.md` | Exists | M8 intelligence-next plan. |
+| `docs/architecture/archive/implementation-plans/m8-m8t-implementation-plan.md` | Exists | M8 intelligence plan. |
 | `docs/architecture/archive/implementation-plans/m9-m9t-implementation-plan.md` | Exists | M9 executor/CLI/SDK/cutover plan. |
 | `docs/architecture/archive/implementation-plans/m10-m10t-implementation-plan.md` | Exists | M10 V1 readiness and release hardening plan. |
 

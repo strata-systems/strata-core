@@ -166,7 +166,7 @@ Behavioral (`lifecycle/tests/durable.rs`):
 12. Boundary generation splits by size into N ranges; each subcompaction's keys stay in
     range; union is a valid non-overlapping level; recovery oracle holds.
 
-Suite gates (all slices): full `cargo test -p strata-storage-next` (incl. recovery oracle +
+Suite gates (all slices): full `cargo test -p strata-storage` (incl. recovery oracle +
 fault sweep); `clippy --all-targets -D warnings`; `fmt --check`.
 
 ## Perf validation (control-first — probe already in the tree)
@@ -198,6 +198,6 @@ Record a ledger row per slice.
 ## PR discipline
 
 One slice per PR, slice code in the title (assign against the roadmap), e.g.
-`perf(storage-next): cap memtable flush size independent of memory budget (RocksDB-aligned #1)`.
+`perf(storage): cap memtable flush size independent of memory budget (RocksDB-aligned #1)`.
 States change class + assurance (S3) and links a ledger row. The `STRATA_TRACE` debug probe
 is reverted before each PR.

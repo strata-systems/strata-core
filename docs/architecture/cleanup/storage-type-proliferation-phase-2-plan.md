@@ -1,4 +1,4 @@
-# Storage-Next Type Proliferation Phase 2 Plan
+# Storage Type Proliferation Phase 2 Plan
 
 Status: historical cleanup plan; temporary inventory guard retired
 

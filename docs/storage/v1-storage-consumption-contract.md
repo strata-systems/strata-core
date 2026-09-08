@@ -23,7 +23,7 @@ legacy bootstrap, executor, intelligence, CLI, and product code must consume
 storage-backed behavior through engine-owned APIs.
 
 This contract is the post-consolidation V1 boundary. It should be tightened
-during the v1 architecture design and any future storage-next work.
+during the v1 architecture design and any future storage work.
 
 Read this with:
 
@@ -57,7 +57,7 @@ Allowed does not mean:
 - executor, intelligence, CLI, or product code may import storage
 - storage owns the higher-level semantics that motivated the call
 - engine should re-export the storage type as a permanent public API
-- the operation should survive storage-next unchanged
+- the operation should survive storage unchanged
 
 Anything not named in this document is not part of the engine/storage
 consumption contract. It may still be public for storage tests, storage-local
@@ -73,7 +73,7 @@ Allowed exceptions:
 - `strata-storage` itself
 - storage tests, benches, fuzz targets, and diagnostic tools
 - engine tests that intentionally inspect storage behavior
-- future storage-next migration or verification tools
+- future storage migration or verification tools
 
 Not allowed:
 
@@ -1049,7 +1049,7 @@ When engine needs a new storage operation:
 5. Add characterization tests if the operation affects recovery, checkpoint,
    WAL, branch COW, retention, or transaction correctness.
 
-When storage-next changes implementation details, this document should be used
-as the migration checklist for engine compatibility. Storage-next may replace
+When storage changes implementation details, this document should be used
+as the migration checklist for engine compatibility. Storage may replace
 the physical implementation, but it must intentionally support or retire each
 operation listed here.

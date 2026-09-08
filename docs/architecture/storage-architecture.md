@@ -1,4 +1,4 @@
-# Storage-Next Architecture
+# Storage Architecture
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
@@ -63,7 +63,7 @@ follows the V1 product and architecture anchors when they conflict.
 
 ## Product Constraints
 
-Storage-next exists to serve the V1 product model.
+Storage exists to serve the V1 product model.
 
 The important constraints are:
 
@@ -87,7 +87,7 @@ The important constraints are:
 12. The same binary must run from constrained edge devices to server-class
     machines through resolved runtime budgets supplied by engine.
 
-The last point is important. Storage-next should be architected so format and
+The last point is important. Storage should be architected so format and
 backend evolution are possible, but this document does not authorize hidden
 changes to the WAL, manifest, checkpoint, snapshot, or row encodings as a side
 effect of crate cleanup. Format changes need their own design.
@@ -99,7 +99,7 @@ Because Strata is pre-launch, the default cutover decision is to reject pre-V1
 development databases during normal open rather than preserve old format
 compatibility.
 
-## Binding Storage-Next Decisions
+## Binding Storage Decisions
 
 The layer documents resolve several choices that were open in the first pass.
 
@@ -115,7 +115,7 @@ The layer documents resolve several choices that were open in the first pass.
    persistent instance identity is engine/product metadata.
 
 3. **Durability mode axes.**
-   Storage-next preserves the product modes `cache`, `standard`, and `always`
+   Storage preserves the product modes `cache`, `standard`, and `always`
    by splitting them into `StorageMode` and `DurabilityPolicy`. `cache` maps to
    `StorageMode::Cache` and has no durable policy. `standard` and `always` map
    to `StorageMode::Durable` with `DurabilityPolicy::Standard` or
@@ -128,7 +128,7 @@ The layer documents resolve several choices that were open in the first pass.
    hand-roll POSIX publish sequences.
 
 5. **Physical storage space.**
-   Storage-next replaces primitive-aware `TypeTag` ownership with an opaque
+   Storage replaces primitive-aware `TypeTag` ownership with an opaque
    storage space/family id supplied by engine. Storage may route by the byte; it
    must not know whether the byte means KV, JSON, graph, vector, event, search,
    or a future capability. Storage reserves `0x00..=0x1f` for storage-internal
@@ -155,7 +155,7 @@ The layer documents resolve several choices that were open in the first pass.
    and must not be required for recovering committed storage rows.
 
 9. **Merge semantics.**
-   Storage-next does not implement CRDT/HLC merge. V1 merge strategies are
+   Storage does not implement CRDT/HLC merge. V1 merge strategies are
    engine-owned product behavior over storage rows and retained history.
 
 10. **Sync.**
@@ -166,7 +166,7 @@ The layer documents resolve several choices that were open in the first pass.
 
 11. **Terminology.**
     Current code uses "segment" for immutable KV table files and
-    `SegmentedStore` for the branch-aware LSM runtime. Storage-next uses
+    `SegmentedStore` for the branch-aware LSM runtime. Storage uses
     "table" for the same immutable-table concept. This is a rename for clarity,
     not a second durable object family.
 
@@ -176,7 +176,7 @@ The layer documents resolve several choices that were open in the first pass.
     new storage layers.
 
 13. **Runtime resource budgets.**
-    Storage-next does not detect host hardware or classify devices. Engine-next
+    Storage does not detect host hardware or classify devices. Engine
     supplies a resolved storage runtime budget; storage owns storage-local
     spending across table cache, mutable-table sizing, table output targets,
     compaction rate, pressure facts, and maintenance scheduling.
@@ -358,7 +358,7 @@ Current evidence:
 - snapshot path helpers in `durability/format/snapshot.rs`
 - WAL segment filename parsing in `durability/wal/mod.rs`
 
-Storage-next must not carry follower-state or follower-audit layout concepts.
+Storage must not carry follower-state or follower-audit layout concepts.
 Follower mode is not a V1 pathway.
 
 ## L3. Durable Format / Codec Layer
@@ -401,7 +401,7 @@ Current evidence:
 - `durability/payload.rs`
 
 Current storage also contains primitive snapshot DTOs and primitive section
-tags. Storage-next should not treat those as proof that storage owns primitive
+tags. Storage should not treat those as proof that storage owns primitive
 semantics. Stable V1 committed snapshots should be row-native storage state.
 Primitive snapshot DTOs are current-code evidence only, not a V1 migration
 format or storage-owned payload family.
@@ -505,7 +505,7 @@ Current evidence:
 - `compaction.rs`
 - table-oriented parts of `segmented/compaction.rs`
 
-The current process-global block cache should be replaced here. Storage-next
+The current process-global block cache should be replaced here. Storage
 should make table/block cache ownership database-local for V1. Any future
 provider-local or shared cache must be an explicit design, not hidden
 process-global state.
@@ -606,7 +606,7 @@ Current evidence:
 - `txn/lock_ordering.rs`
 - `durability/commit_adapter.rs`
 
-Storage-next should make the commit unit a central concept, not a public
+Storage should make the commit unit a central concept, not a public
 transaction product.
 
 ## L8. Lifecycle / Recovery / Maintenance
@@ -701,14 +701,14 @@ It should not expose:
 - follower refresh
 - IPC behavior
 
-Engine-next should be the only normal production crate that consumes this
+Engine should be the only normal production crate that consumes this
 boundary directly.
 
 ## Cross-Cutting Test And Fault Framework
 
 Testing is not a layer in the stack. It cuts across every layer.
 
-Storage-next must be designed so each layer has direct tests:
+Storage must be designed so each layer has direct tests:
 
 1. Backend conformance tests.
 2. Object layout tests.
@@ -805,9 +805,9 @@ have its own product-path tests above storage.
 | `durability/recovery*.rs` | L8 | Recovery orchestration. |
 | `durability/checkpoint_runtime.rs` | L8/L4 | Split orchestration from durable services. |
 
-## What Storage-Next Must Exclude
+## What Storage Must Exclude
 
-Storage-next must not include:
+Storage must not include:
 
 1. JSON document semantics.
 2. Event chain product semantics.
@@ -824,7 +824,7 @@ Storage-next must not include:
 13. Host hardware detection, product resource-profile classification, or
     graph/search/vector/intelligence budget policy.
 
-Storage-next may persist rows that engine uses for those features. It does not
+Storage may persist rows that engine uses for those features. It does not
 define their meaning.
 
 ## Design Consequences

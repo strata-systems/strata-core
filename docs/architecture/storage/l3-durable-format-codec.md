@@ -14,13 +14,13 @@ inside those objects: headers, records, frames, row bytes, checksums, format
 versions, and codec boundaries.
 
 This layer exists so durable bytes are explicit, testable, fuzzable, and
-separate from runtime policy. Storage-next should not scatter byte formats
+separate from runtime policy. Storage should not scatter byte formats
 across WAL code, table code, checkpoint code, and recovery code the way the
 current crate does.
 
 ## Core Decision
 
-Storage-next should have a small, deliberate durable-format layer.
+Storage should have a small, deliberate durable-format layer.
 
 L3 should own the byte-level formats for storage mechanics. It should not own
 database lifecycle, recovery policy, compaction policy, checkpoint policy,
@@ -33,7 +33,7 @@ development-era version numbers or compatibility branches.
 
 ## Format Revision Policy
 
-Storage-next is allowed to introduce a V1 storage-row-native format where the
+Storage is allowed to introduce a V1 storage-row-native format where the
 architecture requires it. In particular, a commit payload encoded as storage
 rows instead of `EntityRef` plus primitive tags is a deliberate format revision,
 not a hidden refactor.
@@ -148,7 +148,7 @@ Current facts:
   payload bytes
 - CRCs are used for segment header and record integrity
 
-Storage-next should preserve the idea of explicit segment headers and framed
+Storage should preserve the idea of explicit segment headers and framed
 records. Whether the exact bytes remain identical is an implementation
 decision, but any change must be a deliberate format-version decision.
 
@@ -193,7 +193,7 @@ Current snapshot files provide evidence for:
 - section headers
 - footer CRC
 
-Storage-next should keep the distinction between a storage-owned snapshot
+Storage should keep the distinction between a storage-owned snapshot
 container and the payload meaning inside sections.
 
 M3C4 implementation note: storage preserves the proven snapshot container
@@ -241,7 +241,7 @@ These are current primitive snapshot-section tags, not the V1
 
 These are current-format evidence, not target storage ownership.
 
-Storage-next should not conclude that storage owns JSON documents, event
+Storage should not conclude that storage owns JSON documents, event
 chains, vector collections, graph records, or branch product behavior because
 old snapshot sections were shaped that way.
 
@@ -270,7 +270,7 @@ The current code has two related paths:
 
 Both are useful evidence. Neither is the ideal storage contract.
 
-Storage-next should encode an internal commit unit as storage mechanics:
+Storage should encode an internal commit unit as storage mechanics:
 
 - branch id
 - physical key bytes or storage-key components
@@ -313,7 +313,7 @@ Current facts:
 - data blocks may use zstd compression
 - internal keys sort by physical key ascending and commit version descending
 
-Storage-next should move table byte definitions into the L3 ownership model,
+Storage should move table byte definitions into the L3 ownership model,
 even if implementation keeps builder/reader code nearby for performance.
 
 L5 should own table runtime behavior: building, reading, caching, seeking,
@@ -394,7 +394,7 @@ Codec rules:
 
 Snapshots need special care. The current snapshot container records and
 validates the configured codec id, but primitive section payloads use a
-canonical section codec. Storage-next should make this explicit rather than
+canonical section codec. Storage should make this explicit rather than
 letting snapshot and WAL codec behavior drift.
 
 ## Format Versioning
@@ -445,7 +445,7 @@ defines how to parse or reject the sidecar bytes.
 
 ## Storage Row Encoding
 
-Storage-next needs one generic row model.
+Storage needs one generic row model.
 
 The row model should support:
 

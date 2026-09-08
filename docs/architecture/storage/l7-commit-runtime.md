@@ -18,7 +18,7 @@ Consumed by:
 
 L7 owns Strata's internal commit unit.
 
-Storage-next should not expose public begin/commit/rollback transaction
+Storage should not expose public begin/commit/rollback transaction
 sessions as a V1 product surface. Users should use product operations such as
 get, set, put, delete, append, search, and branch operations. Storage still
 needs a precise commit runtime so writes can be ordered, validated, made
@@ -125,7 +125,7 @@ L7 Commit Runtime
 
 L7 may call L4 and L6. L4 must not call L7. L6 must not call L7.
 
-Engine-next should not import WAL records, `TransactionContext`, or branch-LSM
+Engine should not import WAL records, `TransactionContext`, or branch-LSM
 internals. It should submit semantic writes as storage commit batches.
 
 ## Current Code Evidence
@@ -208,7 +208,7 @@ It should not contain:
 - WAL record bytes
 - table object names
 
-Engine-next may build a `CommitBatch` from one product operation or from a
+Engine may build a `CommitBatch` from one product operation or from a
 small engine-internal operation group. The batch is the storage boundary.
 
 ### CommitRow
@@ -281,7 +281,7 @@ Rules:
 
 The current code already treats version gaps as acceptable. For example, a
 pre-apply hook failure can reserve a version and then return no visible rows.
-Storage-next should either preserve version gaps deliberately or explicitly
+Storage should either preserve version gaps deliberately or explicitly
 design them away. It must not accidentally rely on dense version sequences.
 
 ### VisibleVersionTracker
@@ -290,7 +290,7 @@ design them away. It must not accidentally rely on dense version sequences.
 fully applied.
 
 The current design has both storage's branch/global version facts and the
-transaction manager's visible version. Storage-next should define this more
+transaction manager's visible version. Storage should define this more
 clearly:
 
 - `allocated_version`: highest version reserved by L7
@@ -468,7 +468,7 @@ The current implementation waits for `visible_version` to catch up to the
 storage version before constructing normal transaction snapshots. That protects
 readers from observing a version whose rows are not fully applied.
 
-Storage-next should make the rule explicit:
+Storage should make the rule explicit:
 
 1. A reader snapshot may target only a visible version.
 2. L7 publishes visible version after L6 apply completes.
@@ -503,7 +503,7 @@ The staged view may support:
 - CAS fact capture
 
 This builder should not become a public storage transaction session by default.
-Engine-next can own product-specific staging when it needs semantic reads before
+Engine can own product-specific staging when it needs semantic reads before
 commit. L7 only needs the final batch and validation facts.
 
 ## Conflict Model
@@ -522,7 +522,7 @@ read-set and CAS facts:
 This is a reasonable internal model. It is not a full serializable transaction
 claim.
 
-Storage-next should preserve the model unless product requirements explicitly
+Storage should preserve the model unless product requirements explicitly
 choose a different guarantee. If V1 removes public transaction commands, the
 conflict model becomes an internal correctness mechanism, not a user-facing
 feature.
@@ -551,7 +551,7 @@ mutation safety.
 Today, WAL commit records carry timestamps and normal storage apply paths stamp
 rows at apply time. Recovery-specific paths preserve WAL timestamps.
 
-Storage-next should tighten this:
+Storage should tighten this:
 
 1. L7 allocates one commit timestamp per commit.
 2. L3 encodes that timestamp into the commit payload/WAL record.
@@ -739,7 +739,7 @@ Guard tests:
 
 1. Public storage API does not expose begin/commit/rollback transaction
    sessions.
-2. Engine-next does not import WAL record structs or transaction internals.
+2. Engine does not import WAL record structs or transaction internals.
 3. L7 tests use storage-shaped rows, not engine primitive DTOs.
 
 ## V1 Minimum
@@ -825,7 +825,7 @@ around unresolved versions. Some failure paths could remove a WAL-durable but
 not-yet-applied version from pending before recovery installed the rows.
 
 Reason: commit versions are ordering facts, not proof that user rows were made
-visible. Storage-next keeps the visible-version tracker monotonic and flat, and
+visible. Storage keeps the visible-version tracker monotonic and flat, and
 uses explicit unresolved-durable facts to prevent unsafe advancement when a
 durable or applied row exists above visible. Allocation-only gaps are harmless:
 they do not create user rows or commit timeline rows.
@@ -1058,7 +1058,7 @@ durable WAL encode path directly and showed high reuse.
    once public transaction sessions are removed?
 6. What metrics are stable L7 facts versus L8 health aggregation?
 
-Question 4 is also an engine architecture input. Engine-next must decide
+Question 4 is also an engine architecture input. Engine must decide
 which product branch-generation guarantees it expects storage to enforce
 mechanically before the L7 implementation plan freezes.
 

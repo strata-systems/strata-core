@@ -1,4 +1,4 @@
-# Engine-Next Data Capability Implementation Contract
+# Engine Data Capability Implementation Contract
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
@@ -138,7 +138,7 @@ storage to understand product capability semantics.
 ## Binding Decisions
 
 1. **There is one physical storage primitive: the branch-aware MVCC KV row.**
-   Engine-next must not model JSON, event, vector, or graph as separate storage
+   Engine must not model JSON, event, vector, or graph as separate storage
    engines. They are product capabilities layered over the same row substrate.
 
 2. **KV is the reference capability and the thinnest product layer over the row
@@ -782,7 +782,7 @@ Those belong in follow-up contracts.
 
 ## Implementation Anti-Patterns
 
-Engine-next data capability implementation should avoid these patterns:
+Engine data capability implementation should avoid these patterns:
 
 1. A capability imports storage internals directly.
 2. Branch code decodes every capability's row format itself.

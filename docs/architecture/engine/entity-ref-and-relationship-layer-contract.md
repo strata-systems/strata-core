@@ -1,4 +1,4 @@
-# Engine-Next EntityRef And Relationship-Layer Contract
+# Engine EntityRef And Relationship-Layer Contract
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
@@ -6,7 +6,7 @@ Status: current — describes shipped 1.2.x behaviour (#3134)
 
 This document defines the identity and relationship contract for engine.
 
-Storage-next persists branch-aware MVCC KV rows. Engine-next owns product
+Storage persists branch-aware MVCC KV rows. Engine owns product
 identity. `EntityRef` is the product identity layer that lets engine services,
 users, search, graph traversal, diagnostics, clone, and future StrataHub
 features refer to records without exposing storage keys or pretending that
@@ -628,7 +628,7 @@ Current `CascadePolicy::Ignore` maps to keep-dangling behavior in this target
 contract. It should not remain an undocumented "do nothing" mode.
 
 Current graph has an integrity helper that can detach or cascade nodes by
-opaque entity URI. Engine-next should convert that into typed policy over
+opaque entity URI. Engine should convert that into typed policy over
 structured bindings.
 
 ## Reverse Maps And Indexes

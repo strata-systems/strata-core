@@ -149,3 +149,61 @@ fn types_the_api_returns_can_be_named() {
         .expect("present at its own commit");
     assert_eq!(read.as_bytes(), b"v1");
 }
+
+/// The branch verb set the crate docs name must be exactly what
+/// `BranchService` offers.
+///
+/// #3195 asked for the verbs to be listed once at the crate root so none stays
+/// hidden behind the CLI's vocabulary. A hand-written list rots: #3210 wrote it
+/// while `create_from_head` still existed, #3211 deleted that method under
+/// #3147, and for one commit the published crate advertised a method that did
+/// not compile. This pins the list to the service.
+#[test]
+fn documented_branch_verbs_match_the_service() {
+    let facade = workspace_file("crates/stratadb/src/lib.rs");
+    let marker = "The whole branch verb set";
+    let after = facade
+        .split_once(marker)
+        .expect("crate docs name the branch verb set")
+        .1;
+    let block = after
+        .split_once("```text")
+        .expect("the verb set is a text block")
+        .1
+        .split_once("```")
+        .expect("the text block is closed")
+        .0;
+    let documented: BTreeSet<String> = block
+        .lines()
+        .flat_map(|line| line.trim_start_matches("//!").split(','))
+        .map(|verb| verb.trim().to_owned())
+        .filter(|verb| !verb.is_empty())
+        .collect();
+
+    let service = workspace_file("crates/engine/src/branch/service.rs");
+    let offered: BTreeSet<String> = service
+        .lines()
+        .filter_map(|line| {
+            let rest = line.strip_prefix("    pub fn ")?;
+            Some(
+                rest.chars()
+                    .take_while(|c| c.is_alphanumeric() || *c == '_')
+                    .collect(),
+            )
+        })
+        .collect();
+
+    assert!(
+        offered.len() > 5,
+        "parsed only {} BranchService methods — the parser has drifted",
+        offered.len()
+    );
+    assert_eq!(
+        documented,
+        offered,
+        "the crate docs' branch verb list has drifted from BranchService: \
+         documented-not-offered {:?}, offered-not-documented {:?}",
+        documented.difference(&offered).collect::<Vec<_>>(),
+        offered.difference(&documented).collect::<Vec<_>>()
+    );
+}

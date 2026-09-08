@@ -142,10 +142,10 @@ Forbidden module shapes:
 4. Revived mega-modules that collect unrelated behavior under historical names.
 5. Public modules created only to preserve an old import path.
 
-Storage-next should fold the L1-L9 architecture into domain modules such as
+Storage should fold the L1-L9 architecture into domain modules such as
 backend, layout, format, service, table, branch, commit, lifecycle, and api.
 
-Engine-next should use domain buckets such as api, runtime, commit, branch,
+Engine should use domain buckets such as api, runtime, commit, branch,
 data, entity, control, orchestration, retrieval, persistence, diagnostics,
 command, clone, and config.
 

@@ -93,11 +93,11 @@ This document does not define:
    enterprise hub implementations.
 
 2. **Storage stays hub-agnostic.**
-   Storage-next must not know datasets, accounts, organizations, hub URLs,
+   Storage must not know datasets, accounts, organizations, hub URLs,
    remotes, auth tokens, fleet registrations, or sync policies.
 
 3. **Engine owns hub-compatible product semantics.**
-   Engine-next owns dataset identity, provenance, clone/import/export semantics,
+   Engine owns dataset identity, provenance, clone/import/export semantics,
    remote refs, branch conflict behavior, and product diagnostics. Storage may
    expose raw capability, health, and row-native bundle facts through engine.
 
@@ -144,7 +144,7 @@ field.
 Database identity names a concrete Strata database created or opened by the
 local runtime.
 
-Storage-next may own a durable database UUID for durable mode when that identity
+Storage may own a durable database UUID for durable mode when that identity
 is needed for manifests, recovery, diagnostics, or bundle validation. Cache mode
 may report only ephemeral runtime identity.
 
@@ -156,7 +156,7 @@ Instance identity names a user-owned local installation of a database after it
 is created or cloned. Two clones of the same dataset should have different
 instance identities.
 
-Instance identity is product metadata. It belongs above storage. Engine-next may
+Instance identity is product metadata. It belongs above storage. Engine may
 persist it as engine-owned rows or sidecar metadata, but storage must treat that
 metadata as ordinary engine data.
 
@@ -372,12 +372,12 @@ Fleet reporting should consume engine-owned health and storage-owned raw health
 facts translated through engine. It should not call storage directly during
 normal product operation.
 
-## Storage-Next Requirements
+## Storage Requirements
 
-Storage-next must support the hub substrate by providing generic mechanics, not
+Storage must support the hub substrate by providing generic mechanics, not
 hub semantics.
 
-Storage-next should provide:
+Storage should provide:
 
 1. Durable database identity where needed for storage correctness and
    diagnostics.
@@ -393,7 +393,7 @@ Storage-next should provide:
 10. Resolved storage runtime budget facts for diagnostics.
 11. Fault-injection surfaces for clone/install/recovery testing.
 
-Storage-next must not provide:
+Storage must not provide:
 
 1. Hub URLs.
 2. Remote refs.
@@ -406,11 +406,11 @@ Storage-next must not provide:
 9. Dataset search or discovery behavior.
 10. Hidden upload or background sync.
 
-## Engine-Next Requirements
+## Engine Requirements
 
-Engine-next is the natural owner of hub-compatible product semantics.
+Engine is the natural owner of hub-compatible product semantics.
 
-Engine-next should provide or reserve:
+Engine should provide or reserve:
 
 1. Dataset identity metadata.
 2. Instance identity metadata.
@@ -426,12 +426,12 @@ Engine-next should provide or reserve:
 11. A provider-neutral remote abstraction for future hub implementations.
 12. Redaction rules for fleet reports and diagnostics.
 
-Engine-next should not force a StrataHub dependency into ordinary local opens.
+Engine should not force a StrataHub dependency into ordinary local opens.
 Hub behavior is optional product behavior layered over normal engine APIs.
 
-## Core-Next Considerations
+## Core Considerations
 
-Core-next should not absorb hub concepts unless a later document proves they
+Core should not absorb hub concepts unless a later document proves they
 are true cross-layer contracts.
 
 Likely core candidates:
@@ -537,9 +537,9 @@ The substrate is adequate when:
 
 1. A `.strata` artifact can be described without reference to `stratahub.com`.
 2. A cloned dataset becomes a normal local Strata database.
-3. Storage-next can implement its layers without hub URLs, auth, remotes,
+3. Storage can implement its layers without hub URLs, auth, remotes,
    accounts, fleet registration, or sync policies.
-4. Engine-next has a clear home for dataset identity, instance identity,
+4. Engine has a clear home for dataset identity, instance identity,
    provenance, remote refs, and bundle validation.
 5. Future sync can be added above engine without changing storage's core row,
    WAL, manifest, checkpoint, or recovery architecture.

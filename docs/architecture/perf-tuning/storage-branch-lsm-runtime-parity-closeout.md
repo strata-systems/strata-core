@@ -1,4 +1,4 @@
-# Storage-Next Branch LSM Runtime Parity Closeout
+# Storage Branch LSM Runtime Parity Closeout
 
 Status: implementation guards complete; benchmark rerun required
 

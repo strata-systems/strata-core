@@ -1,10 +1,10 @@
-# Engine-Next Testing And Conformance Plan
+# Engine Testing And Conformance Plan
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
 ## Purpose
 
-Engine-next should be built around conformance from the start. The engine is
+Engine should be built around conformance from the start. The engine is
 where Strata turns storage rows into product behavior: data capabilities,
 branching, time travel, retrieval, graph relationships, clone artifacts, IPC,
 runtime policy, and diagnostics.
@@ -142,12 +142,12 @@ product-pathway conformance
 8. This document does not require optional model-dependent pathways to ship.
 
 Performance regression benchmarks remain governed by current project rules and
-future benchmark plans. Engine-next must not use this document to weaken those
+future benchmark plans. Engine must not use this document to weaken those
 requirements.
 
 ## Test Taxonomy
 
-Engine-next should use a small set of repeatable test families.
+Engine should use a small set of repeatable test families.
 
 ### Unit Tests
 
@@ -316,7 +316,7 @@ interactions after contracts are already pinned.
 
 ### Engine Testkit
 
-Engine-next should have a reusable testkit for:
+Engine should have a reusable testkit for:
 
 1. Opening cache, durable local, read-only, and IPC-backed databases.
 2. Seeding multi-capability datasets.
@@ -334,7 +334,7 @@ helpers should be hidden and clearly marked test-only.
 
 ### Fake And Faulting Persistence
 
-Engine-next needs two persistence test doubles:
+Engine needs two persistence test doubles:
 
 1. A fake L9-compatible persistence implementation for fast semantic tests.
 2. A faulting wrapper around real persistence for boundary/failure tests.
@@ -481,7 +481,7 @@ The fake provider should support:
 8. Timeout.
 9. Redacted secret configuration.
 
-Engine-next itself should not own provider execution. This harness is for
+Engine itself should not own provider execution. This harness is for
 command-boundary and integration tests where optional upper-layer behavior is
 present.
 
@@ -1086,7 +1086,7 @@ Resolve before engine implementation freezes:
 
 This plan is satisfied when:
 
-1. Engine-next has reusable harnesses for persistence, capabilities, branch
+1. Engine has reusable harnesses for persistence, capabilities, branch
    models, temporal models, command goldens, IPC, clone artifacts, and errors.
 2. Each engine architecture bucket has direct tests for its contract.
 3. Shared data capability conformance prevents five unrelated implementation

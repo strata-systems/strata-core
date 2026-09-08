@@ -70,9 +70,9 @@ The old read snapshot is also cheap. `snapshot_branch` clones `Arc` handles for
 active memtable, frozen memtables, segment version, and inherited layers
 (`crates/storage/src/segmented/mod.rs:5137`). It does not clone every row.
 
-## Storage-Next Mechanics
+## Storage Mechanics
 
-Storage-next kept the same internal-key ordering foundation. `encode_internal_key`
+Storage kept the same internal-key ordering foundation. `encode_internal_key`
 appends the bitwise inverse commit version in big-endian order, so ordinary
 ascending byte order returns newest commit versions first for the same physical
 key (`crates/storage/src/format/key.rs:36`).
@@ -105,7 +105,7 @@ metadata and used bloom/index/block-cache reads on demand.
 
 ## Interpretation
 
-The regression is not caused by missing key-order semantics. Storage-next already
+The regression is not caused by missing key-order semantics. Storage already
 has the same logical ordering needed for old-style point lookup.
 
 The regression is caused by adapter-level serving-path divergence:

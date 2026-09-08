@@ -312,7 +312,7 @@ Known intelligence boundary debt:
 
 1. Intelligence still consumes core-owned product DTOs directly because those
    DTOs have not moved to engine.
-2. Intelligence-next must consume inference through task contracts and engine
+2. Intelligence must consume inference through task contracts and engine
    through named engine surfaces, not through provider internals or storage.
 
 ### Root Package Carries Test And Benchmark Edges

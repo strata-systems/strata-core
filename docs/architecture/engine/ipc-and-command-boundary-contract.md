@@ -1,4 +1,4 @@
-# Engine-Next IPC And Serializable Command-Boundary Contract
+# Engine IPC And Serializable Command-Boundary Contract
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
@@ -342,7 +342,7 @@ Every serializable command should declare:
 10. Expected error classes.
 11. Pagination or streaming behavior, if any.
 
-The current `Command::is_write()` is the seed of this contract. Engine-next
+The current `Command::is_write()` is the seed of this contract. Engine
 should avoid scattering write classification across CLI, executor, IPC, and
 engine.
 

@@ -130,7 +130,7 @@ The exact encoding should be designed in the architecture phase. The important
 V1 product rule is that the reference is typed and validated enough to avoid
 being just an opaque note.
 
-Storage should not need to decode this reference. Engine-next owns the
+Storage should not need to decode this reference. Engine owns the
 `EntityRef` type, encodes references into storage rows or values where needed,
 and maintains any reverse lookup indexes as engine-owned rows. This lets graph
 traversal return typed entity references without making storage understand KV,

@@ -60,8 +60,8 @@ coherence, the agent-facing layer, and release automation.
 | Channel | Artifact | State |
 |---|---|---|
 | **cURL** | `stratadb.org/public/install.sh` — platform detect, GitHub Releases download, PATH setup for bash/zsh/fish, teach-next-step epilogue | **Live.** Human UX is good. No checksum verification, no version pinning, no non-TTY/agent mode; suggested first commands don't match binary behavior (§6.1) |
-| **CLI binary** | `strata` from `crates/cli-next` — REPL + one-shot, global `--json`/`--format`, `run --command-json` (structured command execution), `strata init` (returns JSON with `next_steps`) | Built, `publish = false`. No agent guide surface yet |
-| **Executor metadata** | `executor-next/src/cli_metadata.rs`, `idl_tooling.rs`, `error_registry.rs` | **The key asset.** A machine-readable catalog of every command and error already exists in code; nothing surfaces it to users or agents yet |
+| **CLI binary** | `strata` from `crates/cli` — REPL + one-shot, global `--json`/`--format`, `run --command-json` (structured command execution), `strata init` (returns JSON with `next_steps`) | Built, `publish = false`. No agent guide surface yet |
+| **Executor metadata** | `executor/src/cli_metadata.rs`, `idl_tooling.rs`, `error_registry.rs` | **The key asset.** A machine-readable catalog of every command and error already exists in code; nothing surfaces it to users or agents yet |
 | **pip / uv** | `stratadb` on PyPI (strata-python repo, PyO3/maturin), v0.14.5 | Live, binds the **old** architecture; V1 cutover pending (M9) |
 | **npm** | `@stratadb/core` (strata-nodesdk repo, napi-rs prebuilds), v0.15.0 | Live, old architecture; V1 cutover pending |
 | **MCP** | `strata-mcp` repo — Rust server, 61 tools | Works, but install is `cargo install`/from-source only — a non-starter for MCP's config-file ecosystem. No `npx` path, no registry listings |
@@ -79,10 +79,10 @@ because an agent following one artifact's pointers lands on a different artifact
 | # | Finding | Evidence |
 |---|---|---|
 | F1 | **Four different GitHub org names in shipped/drafted artifacts.** An agent resolving source or releases gets four different answers | `strata-ai-labs/strata-core` (install.sh, brew draft), `strata-systems/strata-*` (strata-mcp README), `stratalab/strata-node` (nodesdk package.json), `anibjoshi/strata` (workspace Cargo.toml `repository`) |
-| F2 | **No version train.** core 0.6.1, cli-next 1.0.0, python 0.14.5, node 0.15.0. "What version of Strata do you have?" has no answer | workspace + SDK manifests |
-| F3 | **install.sh teaches commands the binary doesn't do.** Epilogue suggests bare `strata kv put greeting "hello world"`, but a bare one-shot command opens **the current working directory** as a durable database (`cli-next/src/open.rs:30`) — turning `$HOME` or a repo root into a Strata database as a side effect of a hello-world | install.sh `print_success` vs `open.rs` |
+| F2 | **No version train.** core 0.6.1, cli 1.0.0, python 0.14.5, node 0.15.0. "What version of Strata do you have?" has no answer | workspace + SDK manifests |
+| F3 | **install.sh teaches commands the binary doesn't do.** Epilogue suggests bare `strata kv put greeting "hello world"`, but a bare one-shot command opens **the current working directory** as a durable database (`cli/src/open.rs:30`) — turning `$HOME` or a repo root into a Strata database as a side effect of a hello-world | install.sh `print_success` vs `open.rs` |
 | F4 | **No checksum verification or version pinning in install.sh.** `curl \| sh` from GitHub `releases/latest` with no sha256 check and no `STRATA_VERSION` override | install.sh `get_latest_version`/`download_and_install` |
-| F5 | **install.sh advertises `strata ai`** — a surface that doesn't exist in cli-next | install.sh epilogue |
+| F5 | **install.sh advertises `strata ai`** — a surface that doesn't exist in cli | install.sh epilogue |
 | F6 | **MCP server requires a Rust toolchain to install.** The MCP ecosystem's lingua franca is an `npx`/`uvx` one-liner in a JSON config | strata-mcp README |
 
 ---
@@ -314,7 +314,7 @@ verification step: `install.sh` ends by running `strata doctor --quiet` instead 
 
 ## 7. The self-describing surface (`strata agents`)
 
-**This is the centerpiece of the agent story, and it is nearly free**: `executor-next` already
+**This is the centerpiece of the agent story, and it is nearly free**: `executor` already
 maintains `cli_metadata.rs`, `idl_tooling.rs`, and `error_registry.rs` — a complete machine-readable
 catalog of the command surface and error codes. Nothing surfaces it. Expose it as a first-class
 subcommand family:
@@ -370,7 +370,7 @@ pastes one config line, and the *model* has to succeed from there.
 1. **Distribution: `npx -y @stratadb/mcp`** (F6 fix). Thin npm shim → platform binary from the same
    release assets, sha-verified, cached. `uvx stratadb-mcp` mirror for the Python-native crowd is a
    cheap follow-on (same shim pattern on PyPI).
-2. **V1 architecture: thin transport over executor-next**, exactly like cli-next — same verbs, same
+2. **V1 architecture: thin transport over executor**, exactly like cli — same verbs, same
    JSON shapes, same error codes (P6). **Decided (2026-07-06): the server folds into the main
    binary as `strata mcp serve`** (the shim then just execs the installed binary); the `strata-mcp`
    repo becomes the packaging/registry home. One artifact, version-locked with the engine, and
@@ -474,7 +474,7 @@ agents *expect* the surface to be — sometimes the right fix is an alias, not a
 | # | Deliverable | Repo | Depends on | Size |
 |---|---|---|---|---|
 | D1 | Repo-URL sweep to `stratalab` across all artifacts (org decided) — **strata-core swept 2026-07-06, other repos pending** | all | — | hours |
-| D2 | Bare-command footgun fix + teaching error + `STRATA_DB` (§6.1) — **landed 2026-07-06** | strata-core (cli-next) | — | S |
+| D2 | Bare-command footgun fix + teaching error + `STRATA_DB` (§6.1) — **landed 2026-07-06** | strata-core (cli) | — | S |
 | D3 | `strata agents` family generated from executor metadata (§7) — **landed 2026-07-06** (catalog coverage grows with IDL #5) | strata-core | cli_metadata/idl_tooling (exist); full IDL (#5) refines later | M |
 | D4 | Error `hint` + `ref` surfaced on all channels (§7.2) — **landed 2026-07-06** (refs are `stratadb.org/e/<code>`) | strata-core | error_registry (exists) | S–M |
 | D5 | `strata doctor` (§6.3) — **landed 2026-07-06** | strata-core | — | S |

@@ -22,11 +22,11 @@ Detailed L8 context:
 
 Audit context:
 
-1. `docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`,
+1. `docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`,
    especially `### L8. Lifecycle / Recovery / Maintenance`,
    `### 4. LSM Layout, Level Invariants, And Compaction`, and
    `GAP-L8`.
-2. `docs/architecture/perf-tuning/storage-next-serving-path-parity-plan.md`,
+2. `docs/architecture/perf-tuning/storage-serving-path-parity-plan.md`,
    especially the serving-path proof gates for maintenance, compaction, and
    source fanout.
 
@@ -77,7 +77,7 @@ snapshot/pruning gaps.
 ## Audit Findings
 
 Primary audit section:
-`docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`,
+`docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`,
 `### L8. Lifecycle / Recovery / Maintenance`.
 
 Findings to close in this plan:

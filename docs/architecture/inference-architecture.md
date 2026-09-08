@@ -1,4 +1,4 @@
-# Inference-Next Architecture
+# Inference Architecture
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
@@ -7,7 +7,7 @@ Status: current — describes shipped 1.2.x behaviour (#3134)
 This document defines the target architecture for `inference`, the layer
 that executes model calls for Strata.
 
-Inference-next is intentionally much smaller than storage or engine.
+Inference is intentionally much smaller than storage or engine.
 The current `strata-inference` crate is already close to the right boundary:
 it owns local model execution, cloud provider adapters, embeddings, reranking,
 model registry behavior, and model download support. It does not depend on
@@ -15,7 +15,7 @@ engine or storage, and it does not own Strata product semantics.
 
 The V1 job is therefore not an invasive rewrite. The job is to make the
 boundary explicit, harden the unsafe/native and network surfaces, and give
-intelligence-next a stable lower layer for model execution.
+intelligence a stable lower layer for model execution.
 
 ## Related Documents
 
@@ -35,8 +35,8 @@ Engine and product contracts that consume inference:
 3. [docs/product/pathways/retrieval-and-intelligence.md](../product/pathways/retrieval-and-intelligence.md)
 
 [intelligence-architecture.md](./intelligence-architecture.md) sits
-between engine and inference. Intelligence-next owns model-dependent
-Strata behavior. Inference-next owns provider execution.
+between engine and inference. Intelligence owns model-dependent
+Strata behavior. Inference owns provider execution.
 
 ## Requirement Language
 
@@ -47,17 +47,17 @@ Strata behavior. Inference-next owns provider execution.
 
 ## Product Role
 
-Inference-next exists so Strata can support:
+Inference exists so Strata can support:
 
 1. Local model-backed generation.
 2. Cloud model-backed generation.
 3. Embedding generation.
 4. Cross-encoder reranking.
-5. Retrieval augmentation through intelligence-next.
+5. Retrieval augmentation through intelligence.
 6. Search recipe stages that need expansion, reranking, or answer generation.
 7. Future Autosearch workflows that run many bounded model-assisted trials.
 
-Inference-next must not become a database layer. It should know models,
+Inference must not become a database layer. It should know models,
 providers, requests, responses, and execution diagnostics. It should not know
 branches, storage spaces, recipes, search indexes, IPC sessions, StrataHub
 identity, or database commits.
@@ -137,19 +137,19 @@ Current files and responsibilities:
 
 ## Binding V1 Decisions
 
-1. **Inference-next has no dependency on engine, storage, or intelligence.**
-   Dependency direction is one-way: intelligence-next may call inference.
-   Inference-next must not call back into Strata data layers.
+1. **Inference has no dependency on engine, storage, or intelligence.**
+   Dependency direction is one-way: intelligence may call inference.
+   Inference must not call back into Strata data layers.
 
-2. **Inference-next owns provider execution, not Strata semantics.**
+2. **Inference owns provider execution, not Strata semantics.**
    It can generate text, embed text, rank passages, load models, and report
    provider/model diagnostics. It must not decide search recipes, branch
    behavior, autoembedding policy, RAG prompts, IPC command semantics, or
    persistence layout.
 
-3. **Intelligence-next is the Strata-aware model layer.**
-   Intelligence-next decides when to ask for embeddings, expansion, reranking,
-   or generation. Inference-next only performs the requested model operation.
+3. **Intelligence is the Strata-aware model layer.**
+   Intelligence decides when to ask for embeddings, expansion, reranking,
+   or generation. Inference only performs the requested model operation.
 
 4. **The V1 inference API remains synchronous.**
    Strata's public product APIs may choose their own threading model. The
@@ -175,7 +175,7 @@ Current files and responsibilities:
    sets.
 
 8. **Credentials are caller-owned secrets.**
-   Inference-next may accept API keys and read environment variables where the
+   Inference may accept API keys and read environment variables where the
    loader contract says so. It must not persist secrets, put secrets in Debug
    output, or write secrets into model registry metadata.
 
@@ -202,9 +202,9 @@ Current files and responsibilities:
 
 12. **Runtime resource profiles may provide hints, not policy.**
     Engine or intelligence may pass resolved budgets and preferences down.
-    Inference-next may consume hints such as context size, batch size, thread
+    Inference may consume hints such as context size, batch size, thread
     count, memory budget, GPU preference, timeout, and provider selection.
-    Inference-next does not classify the host or own product-wide budgets.
+    Inference does not classify the host or own product-wide budgets.
 
 13. **The inference crate default is minimal.**
     V1 inference should compile without selecting a provider runtime by
@@ -228,7 +228,7 @@ Current files and responsibilities:
 15. **Embedding and ranking get explicit operation DTOs.**
     V1 should add `EmbedRequest`, `EmbedResponse`, `RankRequest`, and
     `RankResponse`. The current trait methods may remain convenience methods,
-    but intelligence-next needs operation metadata, provider/model identity,
+    but intelligence needs operation metadata, provider/model identity,
     dimensions, item counts, warnings, degraded settings, and per-item
     diagnostics. V1 embed and rank responses are allowed to contain item-level
     success or item-level failure outcomes. Provider-level failures, missing
@@ -288,23 +288,23 @@ Current files and responsibilities:
     adapter shape so an `openai-compatible` endpoint provider can be added
     later without changing intelligence or engine architecture.
 
-24. **Inference-next hides provider execution from intelligence-next.**
-    Inference-next is responsible for turning provider-specific execution into
+24. **Inference hides provider execution from intelligence.**
+    Inference is responsible for turning provider-specific execution into
     Strata-neutral outputs: generated text, token counts, embeddings, ranking
-    scores, capability facts, and diagnostics. Intelligence-next must not need
+    scores, capability facts, and diagnostics. Intelligence must not need
     to understand whether those outputs came from embedded llama.cpp, a cloud
     provider, or a future OpenAI-compatible local/private endpoint.
 
 25. **Network policy is enforced before provider execution.**
     Engine runtime profile or request context decides whether network use is
-    allowed. Intelligence-next passes the resolved policy with the operation.
-    Inference-next enforces it before issuing cloud HTTP or model downloads and
+    allowed. Intelligence passes the resolved policy with the operation.
+    Inference enforces it before issuing cloud HTTP or model downloads and
     reports `failed_precondition.network_disabled` through the global error
     contract when the request would leave the machine.
 
 ## Responsibilities
 
-Inference-next owns:
+Inference owns:
 
 1. Provider-neutral model operation DTOs.
 2. Provider identity and model spec parsing.
@@ -321,9 +321,9 @@ Inference-next owns:
     credentials.
 13. Feature-gated compilation envelopes.
 14. Test utilities for fake providers and deterministic model responses, where
-    needed by intelligence-next tests.
+    needed by intelligence tests.
 
-Inference-next does not own:
+Inference does not own:
 
 1. Strata database open behavior.
 2. Storage, WAL, manifest, checkpoint, or snapshot behavior.
@@ -411,7 +411,7 @@ The V1 public inference boundary should contain:
 The current crate has `GenerateRequest`, `GenerateResponse`, `ProviderKind`,
 `ModelInfo`, `ModelTask`, `InferenceEngine`, and operation-specific engines.
 It does not yet have explicit request/response DTOs for embed and rank. V1
-should add them if intelligence-next needs stable structured diagnostics,
+should add them if intelligence needs stable structured diagnostics,
 operation metadata, or per-item failures.
 
 The primary intelligence-facing traits are task-specific:
@@ -421,7 +421,7 @@ The primary intelligence-facing traits are task-specific:
 3. `Reranker` accepts `RankRequest` and returns `RankResponse`.
 
 `InferenceEngine` may remain as an advanced aggregate trait or compatibility
-surface, but intelligence-next should load the narrow task trait it needs. An
+surface, but intelligence should load the narrow task trait it needs. An
 autoembedding worker should load an `Embedder`, not a full engine that might
 fail later because embedding is unsupported.
 
@@ -433,7 +433,7 @@ download requirements, and timeout behavior. Consumers use it to reject
 unsupported user intent before execution and to populate diagnostics; it is not
 a second model registry.
 
-`EmbedResponse` and `RankResponse` use item outcomes so intelligence-next can
+`EmbedResponse` and `RankResponse` use item outcomes so intelligence can
 retry, drop, or quarantine only failed items when the provider supports partial
 results. Whole-operation failures remain errors.
 
@@ -463,7 +463,7 @@ A provider adapter must declare:
 
 Provider adapters should not silently discard material user intent. If a field
 cannot be honored, the adapter should either reject the request or return a
-diagnostic that intelligence-next can expose in search or generation stats.
+diagnostic that intelligence can expose in search or generation stats.
 
 Provider adapters may translate Strata-neutral request DTOs into provider JSON,
 but provider JSON should remain private to the adapter.
@@ -557,7 +557,7 @@ recipe and derived-state manifest.
 
 ## Runtime Resource Integration
 
-Inference-next may consume resource hints from upper layers.
+Inference may consume resource hints from upper layers.
 
 Useful hints include:
 
@@ -571,7 +571,7 @@ Useful hints include:
 8. Whether network use is allowed.
 9. Whether model download is allowed.
 
-Inference-next should not probe the full host and choose the product profile.
+Inference should not probe the full host and choose the product profile.
 That belongs to runtime resource profile architecture above this layer. The
 inference layer should only apply concrete resolved hints.
 
@@ -622,7 +622,7 @@ Required global starter codes:
 18. `inference.io_failure`
 
 The authoritative class and retry-policy mapping lives in
-`v1-error-and-diagnostics-contract.md`. Inference-next must not introduce a
+`v1-error-and-diagnostics-contract.md`. Inference must not introduce a
 new product-facing `inference.*` code without adding that global mapping.
 
 Diagnostics should include:
@@ -686,7 +686,7 @@ No-default builds are important for:
 
 ## Testing And Conformance
 
-Inference-next needs a smaller but sharper test plan than storage or engine.
+Inference needs a smaller but sharper test plan than storage or engine.
 
 Required tests:
 
@@ -719,7 +719,7 @@ Required tests:
 13. Local runtime constructor error tests that do not require real models.
 14. Local smoke tests gated behind explicit model fixtures.
 15. Unsafe FFI layout and lifecycle tests where practical.
-16. Fake provider tests for intelligence-next search, RAG, and Autosearch
+16. Fake provider tests for intelligence search, RAG, and Autosearch
     conformance.
 
 Live provider calls should not run in ordinary CI. They may exist as
@@ -741,7 +741,7 @@ The V1 inference minimum is:
 9. Model registry with local resolution.
 10. Optional model download with safe publish semantics.
 11. Secret-redacted provider adapters.
-12. Structured enough errors for intelligence-next to map failures cleanly.
+12. Structured enough errors for intelligence to map failures cleanly.
 13. Fake provider/testkit support for deterministic upper-layer tests.
 
 Post-V1 inference targets include:
@@ -784,14 +784,14 @@ names and exact fake-provider testkit shape.
 
 ## Implementation Stance
 
-Inference-next should not repeat the engine/storage cleanup pattern. The
+Inference should not repeat the engine/storage cleanup pattern. The
 current boundary is already mostly healthy. The right implementation path is:
 
 1. Keep the crate small.
 2. Add the missing structured contracts.
 3. Harden unsafe and network edges.
-4. Add deterministic provider/testkit support for intelligence-next.
+4. Add deterministic provider/testkit support for intelligence.
 5. Preserve the no-engine/no-storage dependency boundary.
 
 If the implementation starts creating Strata-specific concepts inside
-inference, the design is drifting upward into intelligence-next.
+inference, the design is drifting upward into intelligence.

@@ -362,7 +362,7 @@ strata-core/                          # primary development repo
 ├── crates/
 │   ├── storage/                 # core
 │   ├── engine/
-│   ├── intelligence-next/
+│   ├── intelligence/
 │   ├── inference/
 │   ├── agent-next/
 │   ├── mcp-server/                   # generated from IDL
@@ -1300,7 +1300,7 @@ Things that look acceptable but reduce SDK quality:
    default; cursor access the explicit override.
 
 7. **Errors that leak internal details without explaining them.** A stack
-   trace from inside `intelligence-next` is internal noise. Wrap with a typed
+   trace from inside `intelligence` is internal noise. Wrap with a typed
    public error.
 
 8. **API stability that breaks across versions.** Once shipped, methods are

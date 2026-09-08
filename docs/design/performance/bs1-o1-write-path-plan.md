@@ -221,7 +221,7 @@ falsification recorded, not re-litigated — the measured evidence points to BS2
 
 ## Correctness gates (every slice)
 
-Full `cargo test -p strata-storage-next` in **debug** (oracle armed) and release; recovery
+Full `cargo test -p strata-storage` in **debug** (oracle armed) and release; recovery
 oracle + fault sweep + simulation faults; `clippy --all-targets -- -D warnings`; `fmt --check`.
 The pressure-equivalence matrix (BS1.3) is the semantic-freeze gate: BS1 must not change any
 admission/scheduling decision, only its cost.

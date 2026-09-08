@@ -14,20 +14,20 @@ Status: design only — superseded as a statement of current architecture
 
 ## Purpose
 
-This document defines the target architecture for `intelligence-next`, the
+This document defines the target architecture for `intelligence`, the
 Strata-aware model orchestration layer.
 
-Intelligence-next sits above engine and inference:
+Intelligence sits above engine and inference:
 
 ```text
 engine ----\
-                 -> intelligence-next -> executor / cli / SDK / Strata AI
+                 -> intelligence -> executor / cli / SDK / Strata AI
 inference -/
 ```
 
-Engine-next owns database semantics, deterministic retrieval, branches, entity
-references, derived-state storage, recipes, and command behavior. Inference-next
-owns model and provider execution. Intelligence-next is the layer that combines
+Engine owns database semantics, deterministic retrieval, branches, entity
+references, derived-state storage, recipes, and command behavior. Inference
+owns model and provider execution. Intelligence is the layer that combines
 those two worlds without letting either leak into the other.
 
 The current `strata-intelligence` crate is small and generally well bounded.
@@ -71,7 +71,7 @@ Product direction:
 
 ## Product Role
 
-Intelligence-next exists so Strata can support:
+Intelligence exists so Strata can support:
 
 1. Autoembedding of KV, JSON, and event values into shadow vectors.
 2. Manual embedding operations.
@@ -84,7 +84,7 @@ Intelligence-next exists so Strata can support:
 8. Future Autosearch workflows that tune retrieval recipes over branches.
 9. Strata AI workflows that need database context and local model execution.
 
-Intelligence-next should make AI features feel native to Strata without making
+Intelligence should make AI features feel native to Strata without making
 engine depend on models or making inference know about databases.
 
 ## Current Codebase Evidence
@@ -175,21 +175,21 @@ Current executor touchpoints:
 
 ## Binding V1 Decisions
 
-1. **Intelligence-next depends on engine and inference only.**
+1. **Intelligence depends on engine and inference only.**
    It may consume engine product APIs and inference model APIs. It must not
    import storage or bypass engine persistence.
 
-2. **Intelligence-next owns model-dependent Strata behavior.**
+2. **Intelligence owns model-dependent Strata behavior.**
    It owns when to call models for embeddings, expansion, reranking, RAG, or
    generation. It does not own the model runtime itself.
 
-3. **Engine-next remains the source of database truth.**
-   Intelligence-next may write derived state through engine APIs, but source
+3. **Engine remains the source of database truth.**
+   Intelligence may write derived state through engine APIs, but source
    rows, branch semantics, search indexes, vector collections, relationship
    facts, recipes, and control-plane layout are engine-owned.
 
-4. **Inference-next remains the source of model execution truth.**
-   Intelligence-next should not implement provider clients, llama.cpp FFI,
+4. **Inference remains the source of model execution truth.**
+   Intelligence should not implement provider clients, llama.cpp FFI,
    model artifact download mechanics, tokenization runtimes, or provider JSON.
 
 5. **No direct storage access.**
@@ -215,20 +215,20 @@ Current executor touchpoints:
    paths.
 
 9. **Shadow vectors are engine-owned derived rows.**
-   Intelligence-next decides what text to embed and when. Engine-next owns the
+   Intelligence decides what text to embed and when. Engine owns the
    vector capability, system collections, source references, branch-local
    visibility, and cleanup semantics.
 
 10. **Recipe storage is engine-owned; model stage execution is
     intelligence-owned.**
-    Engine-next resolves recipe structure and deterministic retrieval stages.
-    Intelligence-next executes model-dependent stages referenced by those
+    Engine resolves recipe structure and deterministic retrieval stages.
+    Intelligence executes model-dependent stages referenced by those
     recipes.
 
 11. **RAG policy is intelligence-owned.**
     Prompt construction, context ordering, type-tagged context, citation
     extraction, grounded-answer behavior, and RAG answer metadata belong in
-    intelligence-next. Inference-next only generates text.
+    intelligence. Inference only generates text.
 
 12. **Generation model state is runtime state, not durable database state.**
     Loaded local engines and cloud provider adapters live in process memory.
@@ -248,7 +248,7 @@ Current executor touchpoints:
 
 15. **Broad inference re-exports should shrink.**
     Executor and CLI should not depend directly on inference, but
-    intelligence-next should expose Strata-shaped model APIs rather than
+    intelligence should expose Strata-shaped model APIs rather than
     re-exporting the entire lower inference surface. Selected provider/model
     identifiers may be re-exported only when they are part of the product
     contract: `ProviderKind`, `ModelTask`, `ModelInfo`, `ModelSpec`, and
@@ -261,13 +261,13 @@ Current executor touchpoints:
     should preserve the substrate, but full Autosearch can remain a follow-up
     product feature.
 
-17. **Intelligence-next has no IPC transport responsibility.**
+17. **Intelligence has no IPC transport responsibility.**
     It may define serializable operation outcomes consumed by command handlers.
     Executor, CLI, SDK, IPC runtime, and Strata AI own transport and command
     rendering.
 
 18. **Secrets are consumed, not owned.**
-    Intelligence-next may request provider credentials from engine-owned config
+    Intelligence may request provider credentials from engine-owned config
     or caller-supplied runtime context. It must not persist raw API keys or
     leak them in diagnostics.
 
@@ -277,13 +277,13 @@ Current executor touchpoints:
     execution, and report model/provider diagnostics cleanly.
 
 20. **External on-prem model stacks are post-V1.**
-    Intelligence-next should consume model execution through the inference
+    Intelligence should consume model execution through the inference
     provider gateway so future vLLM, NIM, Ollama, LM Studio, llama.cpp server,
     and other OpenAI-compatible endpoint adapters do not require intelligence
     rewrites. V1 does not need to ship those adapters.
 
 21. **Provider execution is a solved lower-layer concern.**
-    Intelligence-next treats inference providers as opaque executors. It asks
+    Intelligence treats inference providers as opaque executors. It asks
     inference for model outputs, token counts, embeddings, ranking scores,
     capability facts, and diagnostics. It must not branch on provider-specific
     transport, endpoint compatibility, tokenization, HTTP shape, native runtime
@@ -291,22 +291,22 @@ Current executor touchpoints:
 
 22. **Embedding model mismatch is a rebuild-required freshness failure.**
     If a recipe selects an embedding model whose spec hash, dimension, or metric
-    does not match the shadow-vector manifest, intelligence-next must not try to
+    does not match the shadow-vector manifest, intelligence must not try to
     paper over the mismatch with a best-effort search. Engine retrieval detects
     the mismatch before model execution and surfaces
-    `failed_precondition.embedding_model_mismatch`; intelligence-next may then
+    `failed_precondition.embedding_model_mismatch`; intelligence may then
     schedule or request an explicit reindex.
 
 23. **Model management is split by database awareness.**
-    Inference-next owns registry mechanics, local artifact resolution,
-    downloads, and provider capability facts. Intelligence-next owns
+    Inference owns registry mechanics, local artifact resolution,
+    downloads, and provider capability facts. Intelligence owns
     database-aware model selection: recipe selection, branch-local policy,
     autoembedding policy, and mapping model diagnostics into Strata stage
     outcomes.
 
 ## Responsibilities
 
-Intelligence-next owns:
+Intelligence owns:
 
 1. Model-assisted operation orchestration.
 2. Query embedding requests over engine configuration and inference models.
@@ -323,7 +323,7 @@ Intelligence-next owns:
 12. Fake model/testkit support for deterministic product-path tests.
 13. Future Autosearch orchestration over branches and recipes.
 
-Intelligence-next does not own:
+Intelligence does not own:
 
 1. Storage persistence.
 2. Engine primitive semantics.
@@ -342,7 +342,7 @@ Intelligence-next does not own:
 
 ## Engine Surface Consumed
 
-Intelligence-next must consume engine through named product/internal
+Intelligence must consume engine through named product/internal
 surfaces, never by reaching into storage or private engine tables.
 
 The exact Rust names can be chosen during implementation, but the required
@@ -368,16 +368,16 @@ engine surfaces are:
 10. Diagnostics APIs for publishing stage outcomes, degraded operation facts,
     and rebuild-required status.
 
-These surfaces are engine obligations. Intelligence-next may wrap them in
+These surfaces are engine obligations. Intelligence may wrap them in
 ergonomic helpers, but it does not define alternative persistence contracts.
 
 ## Target Crate Shape
 
-The exact file names can change during implementation, but intelligence-next
+The exact file names can change during implementation, but intelligence
 should stay domain-shaped and small:
 
 ```text
-crates/intelligence-next/
+crates/intelligence/
   Cargo.toml
   src/
     lib.rs                       # public re-exports only
@@ -420,7 +420,7 @@ the V1 tree should not contain an empty module for it.
 The target shape follows the V1 engineering standards. Roadmap labels and
 cleanup-era labels must not become intelligence module names, feature flags,
 test names, errors, telemetry fields, public APIs, recipe names, or stage
-diagnostics. Temporary `intelligence-next` package naming is build-branch
+diagnostics. Temporary `intelligence` package naming is build-branch
 scaffolding only; code inside the crate should use permanent retrieval,
 embedding, model, diagnostics, and derived-state vocabulary.
 
@@ -445,7 +445,7 @@ Every model-assisted stage should define:
 4. Model use:
    provider kind, model spec, elapsed time, token counts where available, and
    whether network was used. These facts come from inference diagnostics;
-   intelligence-next should not inspect provider internals to derive them.
+   intelligence should not inspect provider internals to derive them.
 
 5. Degradation behavior:
    what the caller receives when the stage cannot run.
@@ -485,7 +485,7 @@ V1 requirements:
     execution and surfaced as `failed_precondition.embedding_model_mismatch`.
 14. Query embedding for shadow-vector search must be preceded by an engine
     freshness/manifest check when the recipe targets existing shadow vectors.
-    Intelligence-next should not spend model work on a query embedding when the
+    Intelligence should not spend model work on a query embedding when the
     selected model cannot match the branch's shadow-vector family.
 
 The current runtime already queues work, uses the engine scheduler, writes
@@ -501,7 +501,7 @@ different model for existing shadow vectors.
 
 ## Retrieval-Augmentation Contract
 
-Intelligence-next executes model-assisted retrieval stages over engine search
+Intelligence executes model-assisted retrieval stages over engine search
 results.
 
 ### Query Expansion
@@ -547,7 +547,7 @@ RAG should:
 
 ## Model State And Configuration
 
-Intelligence-next needs runtime model state but should keep it simple.
+Intelligence needs runtime model state but should keep it simple.
 
 V1 requirements:
 
@@ -599,7 +599,7 @@ it owns shipped behavior.
 
 ## Errors And Diagnostics
 
-Intelligence-next should map inference and engine failures into
+Intelligence should map inference and engine failures into
 model-assisted product outcomes.
 
 Required diagnostics:
@@ -700,7 +700,7 @@ The V1 intelligence minimum is:
 
 ## Open Questions And Closed Ownership
 
-The open questions below should be closed before intelligence-next
+The open questions below should be closed before intelligence
 implementation plans:
 
 1. Which stage diagnostics become part of public search stats versus internal
@@ -714,11 +714,11 @@ Closed ownership:
 
 1. The exact `StageOutcome` shape shared by expansion, rerank, RAG, and future
    Autosearch is owned by the engine retrieval and derived-state work tracked
-   by `V1Q-004` before intelligence-next consumes it.
+   by `V1Q-004` before intelligence consumes it.
 
 ## Implementation Stance
 
-Intelligence-next should stay small. Its value is not in owning another large
+Intelligence should stay small. Its value is not in owning another large
 runtime; its value is in cleanly orchestrating model-dependent Strata behavior.
 
 The implementation should:
@@ -732,4 +732,4 @@ The implementation should:
 
 If provider HTTP, llama.cpp pointers, tokenizer internals, model artifact
 verification, provider JSON, or endpoint compatibility logic appear in
-intelligence-next, the design is drifting downward into inference.
+intelligence, the design is drifting downward into inference.

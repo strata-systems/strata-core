@@ -904,46 +904,81 @@ fn function_body<'a>(source: &'a str, signature: &str) -> &'a str {
     panic!("unterminated function body `{signature}`");
 }
 
-/// #3134: the pre-M9B crate names must not come back into the docs CLAUDE.md
-/// calls authoritative.
+/// #3134: the pre-M9B crate names must not come back into the live docs.
 ///
 /// The crates shed their `-next` suffix in M9B (hard rule 43); the docs did
-/// not, and 1,890 stale references survived into 1.2.x — an agent reading
-/// `strata-storage-next` will try to depend on a crate that has not existed
-/// for a year. The archive is deliberately exempt: it is a record of the
-/// rewrite, where the old names are the correct ones.
+/// not, and thousands of stale references survived into 1.2.x — an agent
+/// reading `strata-storage-next` will try to depend on a crate that has not
+/// existed for a year.
+///
+/// The first version of this guard matched four lowercase names in
+/// `docs/architecture` and `docs/spec` only, so 961 references in other cases
+/// (`Storage-next`, `Storage-Next`), under names it did not list
+/// (`intelligence-next`, `cli-next`, `executor-next`), and in doc trees it did
+/// not scan survived it — along with eight file *names*. It now matches
+/// case-insensitively, covers every renamed crate, and checks paths as well as
+/// content.
+///
+/// Every `archive/` directory and the audit trees are deliberately exempt: both
+/// are records of the rewrite, where the old names are the correct ones.
 #[test]
-fn authoritative_docs_do_not_name_pre_rename_crates() {
+fn live_docs_do_not_name_pre_rename_crates() {
+    /// Every crate that shed a `-next` suffix, longest first so that
+    /// `intelligence-next` is reported rather than the `.*-next` inside it.
+    const RENAMED: &[&str] = &[
+        "intelligence-next",
+        "inference-next",
+        "executor-next",
+        "storage-next",
+        "engine-next",
+        "core-next",
+        "cli-next",
+    ];
+
     let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
         .expect("crate sits under <repo>/crates/engine")
         .to_path_buf();
 
-    // The paths CLAUDE.md's "Where To Read Before Working On A Slice" points at.
-    let authoritative = [repo.join("docs/architecture"), repo.join("docs/spec")];
-    let stale = ["storage-next", "engine-next", "core-next", "inference-next"];
+    let mut documents: Vec<PathBuf> = markdown_files(&repo.join("docs"));
+    documents.extend(markdown_files(&repo.join("crates")));
+    documents.push(repo.join("CLAUDE.md"));
+    documents.push(repo.join("README.md"));
 
     let mut offenders = Vec::new();
-    for root in &authoritative {
-        for path in markdown_files(root) {
-            // History keeps its own names.
-            if path.components().any(|p| p.as_os_str() == "archive") {
-                continue;
-            }
-            let text = fs::read_to_string(&path).expect("read doc");
-            for name in stale {
-                if text.contains(name) {
-                    offenders.push(format!("{}: {name}", path.display()));
-                }
+    for path in documents {
+        let relative = path.strip_prefix(&repo).unwrap_or(&path);
+        // History keeps its own names: every `archive/` directory, and the
+        // audit trees, which record what the code said when they were written.
+        let historical = relative.components().any(|part| {
+            matches!(
+                part.as_os_str().to_string_lossy().as_ref(),
+                "archive" | "audit" | "audits"
+            )
+        });
+        if historical {
+            continue;
+        }
+        let haystacks = [
+            relative.to_string_lossy().to_lowercase(),
+            fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
+                .to_lowercase(),
+        ];
+        for name in RENAMED {
+            if haystacks.iter().any(|hay| hay.contains(name)) {
+                offenders.push(format!("{}: {name}", relative.display()));
+                break;
             }
         }
     }
     assert!(
         offenders.is_empty(),
-        "authoritative docs name crates that were renamed in M9B; use the \
-         shipped names (strata-storage, strata-engine, strata-core, \
-         strata-inference) or move the document to docs/architecture/archive/:\n  {}",
+        "live docs name crates that were renamed in M9B; use the shipped names \
+         (strata-storage, strata-engine, strata-core, strata-inference, \
+         strata-executor, strata-cli) or move the document under \
+         docs/architecture/archive/:\n  {}",
         offenders.join("\n  ")
     );
 }

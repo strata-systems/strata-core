@@ -1,4 +1,4 @@
-# Storage-Next Performance Proof Plan
+# Storage Performance Proof Plan
 
 ## Purpose
 
@@ -12,7 +12,7 @@ move the benchmark.
 
 This is not an index-building project. The old engine already had the right
 shape: ordered internal keys, pinned read snapshots, blind-write fast paths, and
-lazy merge scans. Storage-next should recover those mechanics only where
+lazy merge scans. Storage should recover those mechanics only where
 measurement proves they were lost and are responsible for the regression.
 
 This also is not another rearchitecture. The goal is deliberate performance

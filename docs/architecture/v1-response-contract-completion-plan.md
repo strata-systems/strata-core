@@ -74,9 +74,9 @@ For a failure:
 
 ## Layer Contract
 
-### Storage-Next
+### Storage
 
-Storage-next should stay mechanical.
+Storage should stay mechanical.
 
 It should provide:
 
@@ -97,9 +97,9 @@ It should not provide:
 
 Storage is not the main blocker for response quality.
 
-### Engine-Next
+### Engine
 
-Engine-next should own product meaning.
+Engine should own product meaning.
 
 It should expose:
 
@@ -118,9 +118,9 @@ Current gap:
 3. Pagination and optional-read facts are not represented through one shared
    engine-facing response model.
 
-### Executor-Next
+### Executor
 
-Executor-next should own the public command response shape until the IDL layer
+Executor should own the public command response shape until the IDL layer
 exists.
 
 It should expose:
@@ -170,7 +170,7 @@ Current gap:
 
 ### 1. Structured Batch Item Errors
 
-Status: implemented for executor-next batch item result types. Batch item
+Status: implemented for executor batch item result types. Batch item
 failures now serialize `ErrorStatus`, successful items serialize `error: null`,
 and existing message accessors remain for compatibility.
 
@@ -347,7 +347,7 @@ Exit criteria:
 
 ### 6. Golden Response Snapshots
 
-Status: implemented for the executor-next representative fixture matrix.
+Status: implemented for the executor representative fixture matrix.
 
 Serde round-trip tests are necessary but not sufficient for an SDK freeze.
 

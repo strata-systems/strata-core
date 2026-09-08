@@ -591,7 +591,7 @@ Control = BS4-final binary; treatment = per slice; the BS5.0 benchmark is the in
    - **Reopening criteria:** (i) the admission-focused slice that runs BS3.4c's
      graded-admission bake-off (pacing calibration belongs there, with stall-wall and
      small-budget guardrails as hard gates); (ii) real multi-writer workload data once
-     the engine/executor layers run on storage-next (decides whether the SkipMap
+     the engine/executor layers run on storage (decides whether the SkipMap
      complexity is workload-motivated); (iii) the milestone review choosing to restate
      the gate against unpaced protocol capacity. Recommended order if reopened:
      admission A/B → single-write WAL group batching (~1–2 µs at 4T+) → re-measure →

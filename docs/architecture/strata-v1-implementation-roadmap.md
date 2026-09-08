@@ -34,7 +34,7 @@ The roadmap has two jobs:
 
 1. Confirm that the V1 architecture documents form one coherent stack.
 2. Define the order in which `core`, `storage`, `engine`,
-   `inference`, `intelligence-next`, executor, CLI, tests, and cutover
+   `inference`, `intelligence`, executor, CLI, tests, and cutover
    work should land.
 
 ## Related Documents
@@ -109,24 +109,24 @@ The V1 documents now describe one stack:
 core
   -> storage
   -> engine
-  -> intelligence-next
+  -> intelligence
   -> executor / cli / SDK / Strata AI
 
-intelligence-next
+intelligence
   -> inference
 ```
 
 The stack is coherent if these rules remain true during implementation:
 
 1. Only engine consumes storage directly in normal production code.
-2. Storage-next owns generic persistence mechanics and storage-local recovery
+2. Storage owns generic persistence mechanics and storage-local recovery
    facts.
-3. Engine-next owns product semantics, data capabilities, branch behavior,
+3. Engine owns product semantics, data capabilities, branch behavior,
    command semantics, IPC classification, derived-state meaning, and product
    diagnostics.
-4. Intelligence-next owns model-assisted Strata behavior but does not own
+4. Intelligence owns model-assisted Strata behavior but does not own
    provider execution or persistence.
-5. Inference-next owns provider execution and model artifact resolution but
+5. Inference owns provider execution and model artifact resolution but
    knows nothing about databases.
 6. Executor, CLI, SDK surfaces, and Strata AI consume engine and intelligence
    surfaces, not storage internals.
@@ -154,8 +154,8 @@ The current architecture covers the V1 product model as follows:
 | KV/JSON/event/vector/graph capabilities | engine | Persistence adapter and capability contracts |
 | Graph relationship layer | engine | EntityRef contract, graph capability, reverse maps |
 | Branching and time travel | storage timeline + engine semantics | Storage commit timeline before branch-from-time |
-| Search/retrieval/RAG substrate | engine + intelligence-next + inference | Engine retrieval before intelligence stages |
-| Autoembedding | intelligence-next over engine surfaces | Engine shadow-vector surfaces before intelligence runtime |
+| Search/retrieval/RAG substrate | engine + intelligence + inference | Engine retrieval before intelligence stages |
+| Autoembedding | intelligence over engine surfaces | Engine shadow-vector surfaces before intelligence runtime |
 | Runtime resource adaptation | engine policy + storage/inference hints | Resource profile implementation before product cutover |
 | Dataset clone artifacts | engine + storage bundles | Clone contract before CLI `strata clone` |
 | StrataHub V1 clone/info | engine metadata + clone/provenance + CLI/Hub protocol | Clone substrate before M9 Hub integration |
@@ -179,7 +179,7 @@ post-V1 once V1 engine and CLI APIs are stable.
    llama.cpp server). Extension point reserved in inference; adapter is
    post-V1.
 6. Streaming generation unless explicitly pulled forward by product.
-7. Autosearch optimizer. Substrate is preserved in intelligence-next; the
+7. Autosearch optimizer. Substrate is preserved in intelligence; the
    optimizer is post-V1.
 8. The surfaces listed in `docs/architecture/v1-removed-surfaces.md`.
 
@@ -190,7 +190,7 @@ for active architecture questions. This roadmap keeps the high-level summary;
 the register owns the detailed source coverage, owner milestones, and closure
 points.
 
-1. Core-next public surface is closed as the V1 baseline.
+1. Core public surface is closed as the V1 baseline.
    See `V1Q-001`.
 2. Storage durable bytes are owned by `M3C` and `M3TA`.
    See `V1Q-002`.
@@ -236,21 +236,21 @@ The critical path is:
 
 ```text
 Phase 0: Architecture freeze and tracking
-Phase 1: Core-next
-Phase 2: Storage-next testkit and crate skeleton
-Phase 3: Storage-next backend, layout, format, and durable services
-Phase 4: Storage-next table, branch, commit, recovery, and L9 API
-Phase 5: Engine-next persistence adapter and control plane
-Phase 6: Engine-next capabilities, branch/time, retrieval, IPC, and clone
-Phase 7: Inference-next hardening
-Phase 8: Intelligence-next orchestration
+Phase 1: Core
+Phase 2: Storage testkit and crate skeleton
+Phase 3: Storage backend, layout, format, and durable services
+Phase 4: Storage table, branch, commit, recovery, and L9 API
+Phase 5: Engine persistence adapter and control plane
+Phase 6: Engine capabilities, branch/time, retrieval, IPC, and clone
+Phase 7: Inference hardening
+Phase 8: Intelligence orchestration
 Phase 9: StrataHub V1 integration
 Phase 10: Executor, CLI, SDK, tests, benches, and docs cutover
 Phase 11: V1 readiness hardening
 ```
 
-Inference-next can proceed in parallel with storage because it does not
-depend on storage or engine. Intelligence-next should wait for engine surfaces
+Inference can proceed in parallel with storage because it does not
+depend on storage or engine. Intelligence should wait for engine surfaces
 to stabilize, but its fake-provider/testkit work can start earlier.
 
 Milestone scheduling is a DAG, not a strict serial chain:
@@ -284,7 +284,7 @@ M{milestone}{epic-letter}{slice-number}
 Examples:
 
 1. `M1`
-   Core-next milestone.
+   Core milestone.
 2. `M1A`
    First core epic.
 3. `M1A1`
@@ -301,7 +301,7 @@ M{milestone}T{test-epic-letter}{slice-number}
 Examples:
 
 1. `M1T`
-   Core-next test track.
+   Core test track.
 2. `M1TA`
    First core test epic.
 3. `M1TA1`
@@ -340,14 +340,14 @@ Milestone code map:
 | Roadmap phase | Milestone code | Milestone title |
 |---|---|---|
 | Phase 0 | `M0` | Architecture freeze and tracking |
-| Phase 1 | `M1` | Core-next |
-| Phase 2 | `M2` | Storage-next testkit and crate skeleton |
-| Phase 3 | `M3` | Storage-next backend, layout, format, and durable services |
-| Phase 4 | `M4` | Storage-next table, branch, commit, recovery, and L9 API |
-| Phase 5 | `M5` | Engine-next persistence adapter and control plane |
-| Phase 6 | `M6` | Engine-next product semantics |
-| Phase 7 | `M7` | Inference-next hardening |
-| Phase 8 | `M8` | Intelligence-next orchestration |
+| Phase 1 | `M1` | Core |
+| Phase 2 | `M2` | Storage testkit and crate skeleton |
+| Phase 3 | `M3` | Storage backend, layout, format, and durable services |
+| Phase 4 | `M4` | Storage table, branch, commit, recovery, and L9 API |
+| Phase 5 | `M5` | Engine persistence adapter and control plane |
+| Phase 6 | `M6` | Engine product semantics |
+| Phase 7 | `M7` | Inference hardening |
+| Phase 8 | `M8` | Intelligence orchestration |
 | Phase 9 | `M9` | StrataHub V1 integration |
 | Phase 10 | `M10` | Executor, CLI, SDK, tests, benches, and docs cutover |
 | Phase 11 | `M11` | V1 readiness hardening |
@@ -410,7 +410,7 @@ Exit criteria:
 4. The progress tracker identifies the current milestone status and next ready
    work.
 
-## Phase 1: Core-Next
+## Phase 1: Core
 
 Goal: build the smallest shared contract crate.
 
@@ -436,10 +436,10 @@ Exit criteria:
 
 1. Public surface fits in one short table.
 2. Every public type has an owner justification.
-3. Storage-next and engine can depend on it without inheriting product
+3. Storage and engine can depend on it without inheriting product
    policy.
 
-## Phase 2: Storage-Next Testkit And Crate Skeleton
+## Phase 2: Storage Testkit And Crate Skeleton
 
 Goal: make storage implementation testable before durable behavior lands.
 
@@ -462,7 +462,7 @@ Exit criteria:
 3. Testkit exists without becoming a production API.
 4. `wasm32-unknown-unknown` cache/memory compile path is protected.
 
-## Phase 3: Storage-Next Backend, Layout, Format, And Durable Services
+## Phase 3: Storage Backend, Layout, Format, And Durable Services
 
 Goal: implement the lower storage mechanics before table/commit semantics rely
 on them.
@@ -487,7 +487,7 @@ Exit criteria:
 3. Durable format failures produce stable storage errors.
 4. The storage format spec matches the implemented bytes.
 
-## Phase 4: Storage-Next Table, Branch, Commit, Recovery, And L9 API
+## Phase 4: Storage Table, Branch, Commit, Recovery, And L9 API
 
 Goal: finish the storage substrate engine will consume.
 
@@ -508,7 +508,7 @@ Work:
 
 Exit criteria:
 
-1. Engine-next can consume storage through L9 only.
+1. Engine can consume storage through L9 only.
 2. Storage recovery health facts are storage-owned.
 3. Branch-aware storage row reads support current, version, history, and
    timestamp-to-version substrate needed by engine.
@@ -516,7 +516,7 @@ Exit criteria:
    conformance coverage.
 5. No product data-capability semantics leak into storage.
 
-## Phase 5: Engine-Next Persistence Adapter And Control Plane
+## Phase 5: Engine Persistence Adapter And Control Plane
 
 Goal: establish the only normal engine path to storage.
 
@@ -535,15 +535,15 @@ Work:
 
 Exit criteria:
 
-1. Engine-next opens cache and durable local databases through storage.
-2. Engine-next can read/write storage-shaped rows only through the persistence
+1. Engine opens cache and durable local databases through storage.
+2. Engine can read/write storage-shaped rows only through the persistence
    adapter.
 3. Control-plane rows for capability registry, storage-space registry,
    resource profile, and derived-state manifests are created and validated.
 4. Product errors preserve storage source chains without exposing storage enum
    names as public API.
 
-## Phase 6: Engine-Next Product Semantics
+## Phase 6: Engine Product Semantics
 
 Goal: implement the V1 database behavior over the persistence adapter.
 
@@ -569,7 +569,7 @@ Exit criteria:
 
 1. Product-pathway conformance tests pass over engine for required V1
    pathways.
-2. Engine-next exposes the surfaces intelligence-next requires for
+2. Engine exposes the surfaces intelligence requires for
    autoembedding, shadow-vector writes, recipe execution, and derived-state
    freshness.
 3. IPC command semantics are transport-independent and serializable.
@@ -577,9 +577,9 @@ Exit criteria:
 5. Cache mode supports the full V1 product API, with durability as the only
    product difference.
 
-## Phase 7: Inference-Next Hardening
+## Phase 7: Inference Hardening
 
-Goal: stabilize provider and local model execution before intelligence-next
+Goal: stabilize provider and local model execution before intelligence
 depends on it.
 
 Work:
@@ -602,10 +602,10 @@ Exit criteria:
 2. Required feature matrix builds pass.
 3. Provider mapping, parser, registry, redaction, capability, and fake-provider
    tests pass.
-4. Inference-next exposes enough stable surface for intelligence-next without
+4. Inference exposes enough stable surface for intelligence without
    knowing Strata database concepts.
 
-## Phase 8: Intelligence-Next Orchestration
+## Phase 8: Intelligence Orchestration
 
 Goal: implement model-assisted Strata behavior over engine and
 inference.
@@ -627,7 +627,7 @@ Work:
 
 Exit criteria:
 
-1. Intelligence-next consumes only named engine surfaces and inference task
+1. Intelligence consumes only named engine surfaces and inference task
    traits.
 2. Autoembedding failures do not affect source write success and are visible
    through health/status.
@@ -687,7 +687,7 @@ Goal: make the V1 integration line ready for promotion without exposing
 
 Work:
 
-1. Cut product crates over to engine and intelligence-next APIs on the V1
+1. Cut product crates over to engine and intelligence APIs on the V1
    integration branch.
 2. Replace old canonical crate implementations with the new stack within the
    V1 line.
@@ -814,7 +814,7 @@ deleted. A milestone cannot close until both tracks close.
 
 | Phase | Required gate |
 |---|---|
-| Core-next | public surface, serialization, property, dependency guards |
+| Core | public surface, serialization, property, dependency guards |
 | Storage skeleton | backend conformance and testkit compile gates |
 | Storage durable services | golden, fuzz, fault-window, crash harness gates |
 | Storage L5-L9 | model/property, recovery, mode conformance, L9 gates |

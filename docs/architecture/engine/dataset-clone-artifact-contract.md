@@ -1,4 +1,4 @@
-# Engine-Next Dataset Clone Artifact Contract
+# Engine Dataset Clone Artifact Contract
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
@@ -127,16 +127,16 @@ not a replacement for the live database directory.
    future providers may host the same artifact family.
 
 5. **Storage is hub-agnostic.**
-   Storage-next must not know accounts, organizations, hub URLs, remote refs,
+   Storage must not know accounts, organizations, hub URLs, remote refs,
    auth tokens, sync policies, or dataset discovery.
 
 6. **Engine owns artifact product semantics.**
-   Engine-next owns clone/import/export meaning, dataset metadata, provenance,
+   Engine owns clone/import/export meaning, dataset metadata, provenance,
    branch selection, derived-state policy, error mapping, and compatibility
    checks.
 
 7. **Storage owns generic install mechanics.**
-   Storage-next may provide row-native export/install/checksum primitives, but
+   Storage may provide row-native export/install/checksum primitives, but
    it does not decide what a dataset means or where it came from.
 
 8. **Source rows are authoritative.**
@@ -253,7 +253,7 @@ The source data payload contains committed user-authored data:
    and temporal semantics.
 7. TTL metadata when retained rows require it.
 
-Storage-space IDs identify row families. Engine-next owns the meaning of those
+Storage-space IDs identify row families. Engine owns the meaning of those
 row families.
 
 ### Control Payload
@@ -388,7 +388,7 @@ The normal clone flow is:
    object URL, or another explicitly supported provider.
 
 2. Fetch bytes to a staging location.
-   Network and provider fetch logic belongs above storage. Storage-next should
+   Network and provider fetch logic belongs above storage. Storage should
    only see local or provider-neutral object operations selected by the caller.
 
 3. Read the outer manifest.

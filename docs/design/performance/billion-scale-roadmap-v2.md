@@ -2,7 +2,7 @@
 
 Status: **draft for review** (2026-07-07). Supersedes the remaining open items of
 `billion-scale-plan.md` (v1) as the organizing plan for durable-mode performance.
-Change class: planning document. Owner: storage-next.
+Change class: planning document. Owner: storage.
 
 ## Goal
 
@@ -33,7 +33,7 @@ Contrast at 100K records (small scale, low debt): durable A 13K / B 605K / D 502
 B and D within 1.5–1.7× of CACHE mode. **The 100× gap is a scale phenomenon, not an
 engine-architecture phenomenon.** Cache mode at 10M (258K/1.05M/1.60M) proves the
 engine layers above storage are sound; every missing order of magnitude lives in
-storage-next's behavior when the dataset exceeds memtables and compaction debt is real.
+storage's behavior when the dataset exceeds memtables and compaction debt is real.
 
 ## The gap model — four terms, in causal order
 

@@ -64,7 +64,7 @@ conformance tests.
 
 ## Structural Invariants
 
-1. Engine-next consumes storage through L9. It must not import WAL records,
+1. Engine consumes storage through L9. It must not import WAL records,
    manifest services, table object names, backend handles, object layout
    constructors, or publish primitives during normal production operation.
 2. L8 owns open, recovery, checkpoint, compaction, pruning, repair, and close

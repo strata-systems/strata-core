@@ -471,7 +471,7 @@ Core should not decide storage layout, branch policy, or search semantics.
 
 ### Storage
 
-Storage-next should own generic time/version mechanics:
+Storage should own generic time/version mechanics:
 
 1. Commit-version MVCC.
 2. Timestamp preservation.
@@ -486,7 +486,7 @@ whether the generic data needed for that version is available.
 
 ### Engine
 
-Engine-next should own product semantics:
+Engine should own product semantics:
 
 1. Branch creation from current, version, and timestamp.
 2. Branch metadata and lineage.

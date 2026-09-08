@@ -1,4 +1,4 @@
-# Engine-Next Architecture Document Index
+# Engine Architecture Document Index
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
@@ -147,7 +147,7 @@ criteria.
 
 ## Supplemental Documents
 
-### Engine-Next Error And Diagnostics Contract
+### Engine Error And Diagnostics Contract
 
 Path: `docs/architecture/engine/error-and-diagnostics-contract.md`
 
@@ -157,7 +157,7 @@ Purpose: Applies the V1 error and diagnostics vocabulary to engine:
 product error ownership, storage mapping, capability diagnostics, command/IPC
 status preservation, redaction, cutover requirements, and conformance tests.
 
-### Engine-Next Testing And Conformance Plan
+### Engine Testing And Conformance Plan
 
 Path: `docs/architecture/engine/testing-and-conformance-plan.md`
 
@@ -168,7 +168,7 @@ testkits, fake/faulting persistence, shared data-capability conformance,
 branch/time model tests, command/IPC goldens, clone artifact tests,
 error/status tests, removed-surface guards, and V1 readiness gates.
 
-### Engine-Next Target Crate Shape And Test Harness
+### Engine Target Crate Shape And Test Harness
 
 Path: `docs/architecture/engine/target-crate-shape-and-test-harness.md`
 
@@ -187,7 +187,7 @@ writing code.
 
 ## Vocabulary Discipline
 
-Engine-next should minimize named concepts.
+Engine should minimize named concepts.
 
 A contract should introduce a new named type, enum, trait, service, or adapter
 only when the concept is durable enough to appear in code, tests, diagnostics,

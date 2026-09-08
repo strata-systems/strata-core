@@ -43,7 +43,7 @@ must follow the same action as that module's V1 owner.
 | Core identifier and public-surface guards | Rewrite into M1/M5/M9 guard tests. |
 | Storage durability, recovery, branch visibility, and segmented-store tests | Rewrite into M3/M4 storage conformance, property, and fault tests. |
 | Engine primitive, branch, relationship, versioning, and retrieval tests | Rewrite into M5/M6 engine conformance and product-path tests. |
-| Intelligence search and model-orchestration tests | Rewrite into M8 intelligence-next tests. |
+| Intelligence search and model-orchestration tests | Rewrite into M8 intelligence tests. |
 | Executor, CLI, IPC, and command tests | Rewrite into M9 cutover tests, except removed commands. |
 | Follower mode, branch tags/notes, public transaction sessions, branch bundles, and normal-user maintenance workflows | Delete or archive; V1 guard tests must prove absence. |
 | Stress, adversarial, and benchmark files | Rewrite into M10 readiness/performance gates. |
@@ -57,7 +57,7 @@ must follow the same action as that module's V1 owner.
 | `tests/cli_external_suite_manifest.json` | CLI external fixture | External CLI case manifest | Redesign | Rewrite | `M9T` | `M9TA` | none | Manifest must match V1 CLI. | Contains removed `compact` and `flush` cases today. |
 | `tests/common/branching.rs` | shared test support | Branch lifecycle and lineage helpers | Redesign | Rewrite | `M6T` | `M6TA` | none | Helper imports old engine internals and graph DAG names. | Keep intent; rename around V1 branch lifecycle. |
 | `tests/common/mod.rs` | shared test support | Root integration helpers and database fixtures | Redesign | Rewrite | `M6T` | `M6TA` | root fixtures | Helper opens old runtime subsystems directly. | V1 testkit helpers must use product open surfaces. |
-| `tests/core_foundation_surface.rs` | core guard | Core public surface and dependency shape | Required | Rewrite | `M1T` | `M1TA` | none | Core-next surface changes. | Guard new core atoms and no upward dependencies. |
+| `tests/core_foundation_surface.rs` | core guard | Core public surface and dependency shape | Required | Rewrite | `M1T` | `M1TA` | none | Core surface changes. | Guard new core atoms and no upward dependencies. |
 | `tests/durability/crash_recovery.rs` | durability | Crash recovery across durable transitions | Required | Rewrite | `M4T` | `M4TD` | none | Recovery behavior survives under storage. | Move to crash harness/fault-window model. |
 | `tests/durability/cross_primitive_recovery.rs` | durability | Recovery across engine capabilities | Required | Rewrite | `M6T` | `M6TA` | none | Behavior survives but engine/storage boundary changes. | Split storage recovery from engine product replay. |
 | `tests/durability/main.rs` | durability harness | Root durability module harness | Redesign | Rewrite | `M4T` | `M4TA` | durability modules | Harness must match new storage tests. | Rename around storage behavior. |

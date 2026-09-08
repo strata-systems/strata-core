@@ -147,7 +147,7 @@ mid-level reunion differential test. But the bake-off did NOT move the gate:
 
 1. **Every engine-level bench bin was silently running GLIBC MALLOC.** The jemalloc
    `#[global_allocator]` lives in the benchmark LIB crate, and bins that never
-   reference the lib don't link it — only `storage-next-concurrent-writers` did. All
+   reference the lib don't link it — only `storage-concurrent-writers` did. All
    engine-ycsb evidence to date (three-ways, stall investigations) was measured under
    glibc; deltas remain valid (consistent within themselves) but absolute numbers and
    the RSS story carried an allocator confound. Fixed: every bin now

@@ -6,7 +6,7 @@ This is an internal evidence map for `crates/engine`. It describes the crate as
 it exists now, after the storage-boundary cleanup and the consolidation of graph,
 vector, search, security/open options, and product-open behavior into engine.
 
-This document is not an engine-next architecture proposal. Its job is to make
+This document is not an engine architecture proposal. Its job is to make
 the current crate navigable before the next architecture pass.
 
 ## Executive Summary
@@ -205,7 +205,7 @@ Current public groups:
 | Storage re-exports | `DurabilityMode`, `WalCounters`, `StorageIterator`, `VersionedEntry`, `DegradationClass`, `RecoveryHealth` |
 
 The current public surface is useful for compatibility, but it also exposes
-types from several layers that engine-next should probably separate:
+types from several layers that engine should probably separate:
 
 - product APIs
 - engine semantic APIs
@@ -502,7 +502,7 @@ Responsibilities:
   vector entry types
 
 This is the closest thing engine currently has to a pure domain layer. It
-should be treated as an important input to engine-next, because it contains
+should be treated as an important input to engine, because it contains
 types that are easier to reason about without database lifecycle concerns.
 
 ## Graph Cluster
@@ -688,7 +688,7 @@ engine executes deterministic retrieval.
 Important tension:
 
 - Search contains both deterministic engine behavior and prompt/parser helpers
-  for model-assisted query expansion/reranking. Engine-next should keep the
+  for model-assisted query expansion/reranking. Engine should keep the
   boundary between deterministic retrieval and intelligence-facing wrappers
   crisp.
 
@@ -904,7 +904,7 @@ Responsibilities:
 Current tension:
 
 - The current engine error model is product-facing and stable-ish, but the
-  storage-next work now has a more precise error/diagnostics direction. Engine
+  storage work now has a more precise error/diagnostics direction. Engine
   needs an explicit mapping layer so storage errors are not flattened across
   important write-path ambiguity.
 
@@ -965,7 +965,7 @@ integration tests, database tests, and guard tests.
 ## Current Architectural Hotspots
 
 These are not findings to fix in this document; they are map markers for the
-engine-next architecture pass.
+engine architecture pass.
 
 1. `database/` is doing too much.
    It combines public database API, product open, storage adaptation, lifecycle,
@@ -978,7 +978,7 @@ engine-next architecture pass.
    namespace.
 
 3. Storage-shaped concepts are spread through engine.
-   This is partly necessary in the current implementation, but engine-next needs
+   This is partly necessary in the current implementation, but engine needs
    a clearer rule for row-key encoding, storage family allocation, and what
    storage DTOs may cross into engine.
 
@@ -1008,7 +1008,7 @@ engine-next architecture pass.
 9. Branch bundles remain a full data-movement path.
    The product direction is moving toward StrataHub clone/sync and portable
    dataset files. Bundle code should be classified as keep, migrate, or retire
-   before engine-next implementation.
+   before engine implementation.
 
 10. System metadata is stored as ordinary rows.
     `_system_`, recipe rows, branch control rows, graph DAG rows, shadow vectors,
@@ -1036,14 +1036,14 @@ engine-next architecture pass.
 
 ## How To Use This Map
 
-Use this map as the starting point for engine-next design:
+Use this map as the starting point for engine design:
 
 - If a feature is listed under database runtime, decide whether it is product
   API, engine policy, or storage adapter.
 - If a feature is listed under graph/vector/search, decide whether it is core
   engine domain behavior, derived-state runtime, or intelligence-facing wrapper.
 - If a feature uses storage keys or `TypeTag`, decide whether the current storage
-  shape should remain visible to engine-next or be hidden behind a storage
+  shape should remain visible to engine or be hidden behind a storage
   consumption contract.
 - If a public type is listed only because it is convenient today, decide whether
   it belongs in the future product surface.

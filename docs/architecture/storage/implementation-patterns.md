@@ -1,4 +1,4 @@
-# Storage-Next Consistency And Implementation Patterns
+# Storage Consistency And Implementation Patterns
 
 Status: architecture checkpoint
 
@@ -23,9 +23,9 @@ should prefer.
 The current documents are aligned on the major product and architecture
 decisions:
 
-1. Storage is below engine. Engine-next is the only normal production consumer
+1. Storage is below engine. Engine is the only normal production consumer
    of storage.
-2. Storage-next owns persistence mechanics, not product semantics.
+2. Storage owns persistence mechanics, not product semantics.
 3. KV, JSON, events, graph, vectors, search, recipes, RAG, and Strata AI remain
    above storage.
 4. Local filesystem is the durable reference backend.
@@ -378,7 +378,7 @@ Error enums should be typed at layer or service boundaries. They should:
 
 ## Test Pattern
 
-Storage-next testing should use repeatable harnesses instead of per-feature
+Storage testing should use repeatable harnesses instead of per-feature
 bespoke tests.
 
 Required test families:

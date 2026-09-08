@@ -1,4 +1,4 @@
-# Engine-Next Error And Diagnostics Contract
+# Engine Error And Diagnostics Contract
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
@@ -17,7 +17,7 @@ that vocabulary to engine:
 4. Which current error surfaces are transitional and must not be frozen.
 5. Which conformance tests prove the engine error boundary is trustworthy.
 
-Engine-next is the first layer that can interpret storage mechanics as product
+Engine is the first layer that can interpret storage mechanics as product
 meaning. It must make failures useful without leaking implementation history,
 raw storage internals, credentials, or private debug strings.
 
@@ -67,7 +67,7 @@ surface:
    through engine paths for degraded recovery, retention refusal, and primitive
    degradation.
 
-Engine-next should keep engine ownership of product errors and replace the
+Engine should keep engine ownership of product errors and replace the
 legacy coarse details with the V1 status contract.
 
 ## Relationship To The V1 Error Contract
@@ -91,13 +91,13 @@ This engine contract owns engine application of that language:
 5. How command, IPC, CLI, SDK, agent, and integration boundaries preserve the
    engine status.
 
-Engine-next must not define a second taxonomy. It may add engine-owned code
+Engine must not define a second taxonomy. It may add engine-owned code
 families to the shared registry, but those codes still use the V1 class, retry,
 commit-outcome, and redaction model.
 
 ## Target Error Shape
 
-Engine-next should have one product error parent for normal database APIs.
+Engine should have one product error parent for normal database APIs.
 
 The implementation name is not frozen here. Conceptually it must carry:
 
@@ -133,7 +133,7 @@ Rules:
 
 ## Vocabulary Discipline
 
-Engine-next should avoid growing a new vocabulary of one-off error types.
+Engine should avoid growing a new vocabulary of one-off error types.
 
 Allowed durable concepts:
 
@@ -524,9 +524,9 @@ track Rust enum variants or parse messages.
 
 ### Engine To Intelligence And Inference
 
-Engine-next should not depend upward on intelligence-next or inference.
+Engine should not depend upward on intelligence or inference.
 Engine-owned retrieval statuses should describe database and derived-state
-availability. Intelligence-next and inference own provider execution
+availability. Intelligence and inference own provider execution
 failures and map them into the same V1 status contract above engine.
 
 When a public command boundary presents intelligence or inference failures next
@@ -581,7 +581,7 @@ Fields may be omitted when unknown or unsafe. They must not carry secrets.
 
 ## Redaction
 
-Engine-next must redact:
+Engine must redact:
 
 1. Provider API keys.
 2. StrataHub or private hub credentials.
@@ -632,7 +632,7 @@ use the status model.
 
 ## Conformance Requirements
 
-Engine-next error conformance tests should include:
+Engine error conformance tests should include:
 
 1. Registry tests proving every emitted engine code is registered.
 2. Mapping tests from capability errors to stable statuses.
@@ -666,7 +666,7 @@ Engine-next error conformance tests should include:
 
 This contract is satisfied when:
 
-1. Engine-next has one normal product error parent.
+1. Engine has one normal product error parent.
 2. Every public engine failure can produce a V1 `ErrorStatus`.
 3. Storage errors cross through the persistence adapter with context.
 4. Capability errors map into registered product codes.

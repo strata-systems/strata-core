@@ -150,7 +150,7 @@ deployment also work for:
 
 This is a category of customer that most "AI-native" databases
 structurally cannot serve. The capability follows directly from the
-inference-next design choice to support both local and remote inference
+inference design choice to support both local and remote inference
 in the same data plane.
 
 Required: native inference (specifically the local-model path).

@@ -106,17 +106,17 @@ This document does not define:
    devices to server-class hosts.
 
 2. **Host probing belongs above storage.**
-   Storage-next must not read `/proc/meminfo`, call `sysctl`, inspect CPU
+   Storage must not read `/proc/meminfo`, call `sysctl`, inspect CPU
    counts, classify the machine, or choose product defaults such as vector
    dtype.
 
-3. **Engine-next owns product resource policy.**
-   Engine-next should own host probing, profile classification, user override
+3. **Engine owns product resource policy.**
+   Engine should own host probing, profile classification, user override
    precedence, product-level budget allocation, and human-readable
    explanations.
 
-4. **Storage-next owns storage-local budget spending.**
-   Storage-next receives explicit resolved storage budgets and decides how they
+4. **Storage owns storage-local budget spending.**
+   Storage receives explicit resolved storage budgets and decides how they
    map to table cache, mutable tables, compaction, pressure, and maintenance
    mechanics.
 
@@ -237,7 +237,7 @@ vector, search, and intelligence by itself.
 
 ### Engine Derived-State Budget
 
-Engine-next should own budgets for data capabilities and derived state:
+Engine should own budgets for data capabilities and derived state:
 
 1. Graph relationship indexes and analytics scratch memory.
 2. Vector in-memory indexes and reload policy.
@@ -247,7 +247,7 @@ Engine-next should own budgets for data capabilities and derived state:
 6. Import/export buffering.
 7. Branch diff and time-travel scan windows.
 
-Engine may pass some of these budgets to intelligence-next or inference,
+Engine may pass some of these budgets to intelligence or inference,
 but storage must not know what the budgets mean.
 
 ## Profile Examples

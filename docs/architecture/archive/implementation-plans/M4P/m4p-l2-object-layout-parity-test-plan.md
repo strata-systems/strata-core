@@ -32,7 +32,7 @@ Tests should fail if M4P-L2:
 ## Audit Finding References
 
 Primary audit source:
-`docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`
+`docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`
 
 Relevant sections:
 

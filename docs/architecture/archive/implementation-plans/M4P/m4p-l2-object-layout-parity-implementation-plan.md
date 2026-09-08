@@ -33,7 +33,7 @@ can consume L2 role facts without reopening object namespace decisions.
 ## Audit Finding References
 
 Primary audit source:
-`docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`
+`docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`
 
 Relevant sections:
 

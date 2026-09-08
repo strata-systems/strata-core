@@ -147,7 +147,7 @@ Correctness / durability (the S3 bar — this is the risky part):
    go stale — if the conflict rule is right, non-adjacent same-branch compactions never
    invalidate each other.
 
-Suite gates: full `cargo test -p strata-storage-next` (maintenance, compaction, recovery
+Suite gates: full `cargo test -p strata-storage` (maintenance, compaction, recovery
 oracle, fault sweep, commit-hardening, format goldens); `clippy --all-targets -D warnings`;
 `fmt --check`.
 
@@ -197,7 +197,7 @@ vs cap).
 ## PR discipline
 
 One slice per PR, slice code in the title (assign against the roadmap), e.g.
-`perf(storage-next): run non-conflicting compactions concurrently (Lever B.1)`. States
+`perf(storage): run non-conflicting compactions concurrently (Lever B.1)`. States
 change class (intentional semantic change — background concurrency) + assurance (S3, with
 the recovery-oracle/fault-sweep evidence) and links a new ledger row. The `STRATA_TRACE`
 debug probes are reverted before the PR.

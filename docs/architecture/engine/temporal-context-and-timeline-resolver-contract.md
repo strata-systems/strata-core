@@ -1,4 +1,4 @@
-# Engine-Next Temporal Context And Timeline Resolver Contract
+# Engine Temporal Context And Timeline Resolver Contract
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
@@ -9,7 +9,7 @@ history, timeline resolution, and time-travel product behavior.
 
 Strata's storage layer owns generic branch timelines: commit versions,
 commit timestamps, retention bounds, and the mapping from timestamp to retained
-commit frontier. Engine-next owns the product meaning of those facts:
+commit frontier. Engine owns the product meaning of those facts:
 
 1. What `current`, `version`, `as_of`, and history mean to users.
 2. How those selectors apply to KV, JSON, event, vector, graph, relationships,
@@ -33,7 +33,7 @@ product request
 
 Storage remains primitive-agnostic. It does not know whether a retained row is
 KV, JSON, event, vector, graph, search, relationship, recipe, or control-plane
-data. Engine-next must not reintroduce storage-specific timeline machinery in
+data. Engine must not reintroduce storage-specific timeline machinery in
 each capability.
 
 ## Related Documents
@@ -111,7 +111,7 @@ temporal contract explicit so every capability consumes it the same way.
 
 A commit version is the authoritative storage timeline position for a branch.
 
-Engine-next must treat commit version as the resolved frontier for visibility.
+Engine must treat commit version as the resolved frontier for visibility.
 Capability-local versions such as event sequence numbers or vector counters may
 remain product metadata, but they do not replace the branch commit version for
 time-travel correctness.
@@ -120,7 +120,7 @@ time-travel correctness.
 
 A commit timestamp is the timestamp attached to a commit in the branch timeline.
 
-Storage-next is responsible for making commit timestamps monotonic enough for
+Storage is responsible for making commit timestamps monotonic enough for
 timestamp resolution within a branch. If the physical clock repeats or moves
 backward, storage must still expose deterministic ordering through the
 commit version tie-breaker.
@@ -447,7 +447,7 @@ belongs to the public API and CLI cleanup contract.
 
 ## Engine Responsibilities
 
-Engine-next owns:
+Engine owns:
 
 1. Parsing normalized product selectors into temporal contexts.
 2. Resolving contexts through the persistence adapter.
@@ -459,7 +459,7 @@ Engine-next owns:
 8. Coordinating temporal branch workflows.
 9. Testing product-level time travel behavior across capabilities.
 
-Engine-next must not:
+Engine must not:
 
 1. Store a second authoritative commit timeline outside storage.
 2. Let each capability define incompatible `as_of` or history semantics.
@@ -469,7 +469,7 @@ Engine-next must not:
 
 ## Storage Responsibilities Consumed By Engine
 
-Storage-next must expose, through L9 and the persistence adapter:
+Storage must expose, through L9 and the persistence adapter:
 
 1. Current branch frontier.
 2. Exact retained version resolution.
@@ -484,7 +484,7 @@ Storage-next must expose, through L9 and the persistence adapter:
 11. Timeline corruption and recovery diagnostics.
 12. Cache-mode durability facts.
 
-Engine-next consumes those facts. It does not infer them by reading storage
+Engine consumes those facts. It does not infer them by reading storage
 internals.
 
 ## Temporal Selector Semantics

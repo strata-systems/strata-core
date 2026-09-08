@@ -1,4 +1,4 @@
-# Engine-Next Test Plan
+# Engine Test Plan
 
 Status: V1 actionable plan (grounded in current `crates/engine` source)
 
@@ -603,7 +603,7 @@ scale.
 
 ## 14. Exit Gates (scoped to the implemented surface)
 
-Engine-next test conformance for V1 surface freeze (implemented subset) is green when:
+Engine test conformance for V1 surface freeze (implemented subset) is green when:
 
 1. Shared data-capability conformance passes for KV/JSON/event/vector/graph.
 2. Branch (create/fork/delete) + temporal (latest/version/timestamp/history) model

@@ -1,4 +1,4 @@
-# Storage-Next Benchmarking Plan
+# Storage Benchmarking Plan
 
 Status: V1 draft, lands during M9F and M10D
 
@@ -34,7 +34,7 @@ during M9F and M10D, after storage is functionally complete.
 
 ## Goals
 
-1. Storage-next baselines for every L9 surface (commit, read latest, read by
+1. Storage baselines for every L9 surface (commit, read latest, read by
    version, read by timestamp, scan, history, branch fork, materialize, close,
    recovery) across cache and durable local modes.
 2. Comparative numbers at the same workloads against redb, fjall, RocksDB, and
@@ -62,7 +62,7 @@ This plan deliberately excludes:
    principle but needs a separate WASM-shaped runner.
 3. Multi-process / IPC benchmarks. IPC is engine territory and arrives
    after the storage layer is stable.
-4. Engine-next / intelligence-next / inference workloads in this plan.
+4. Engine / intelligence / inference workloads in this plan.
    Engine and primitive overhead measurement is **the payoff** of the plan, but
    the engine driver lands as a follow-on milestone (M10D) using the same
    harness rather than a new one.
@@ -482,7 +482,7 @@ Every run records:
 - Recovery time: wall clock to reach `Open` from cold start
 - L0 count over time: sampled every second to characterize backpressure regimes
 
-Storage-next-specific facts also recorded when applicable:
+Storage-specific facts also recorded when applicable:
 
 - Inherited-layer depth distribution
 - Materialization wall time
@@ -575,9 +575,9 @@ The plan tracks the roadmap. Each phase has a clear entry condition.
 | Phase 1 | M5 / M6 (L9 surface is real) | Build the bench crate, the driver trait, and the storage driver. Run end-to-end at 100K / 1M / 10M for durable local modes. **Land the headline fork-latency-by-source-size measurement.** No competitors yet. Validate layer-span instrumentation overhead. |
 | Phase 2 | M9F | Add redb and fjall drivers at all scales up to 100M. Land layer attribution reports. Land hierarchy + materialization + branch-lifecycle suites at up to 1K branches. |
 | Phase 3 | M9F to M10D | Add RocksDB and LMDB drivers. Add 500M and 1B scale runs. Add sustained, recovery, branch-aware compaction, real-world composite, and 100K-branch recovery workloads. |
-| Phase 4 | M10D | Engine-next driver added to the same harness. Same workloads run through engine's KV primitive surface. Delta against storage quantifies engine + primitive overhead. This is the point of the plan. |
+| Phase 4 | M10D | Engine driver added to the same harness. Same workloads run through engine's KV primitive surface. Delta against storage quantifies engine + primitive overhead. This is the point of the plan. |
 
-Phase 4 is intentionally deferred. Storage-next must be fast and well
+Phase 4 is intentionally deferred. Storage must be fast and well
 characterized before any engine overhead measurement is meaningful.
 
 ## Execution Cadence
@@ -673,7 +673,7 @@ V1 does not require:
 2. 500M and 1B scale runs (Phase 3).
 3. Branch-count scale matrix beyond 1K (Phase 3).
 4. Real-world composite branching patterns (Phase 3).
-5. Engine-next driver (Phase 4).
+5. Engine driver (Phase 4).
 6. Object-store benchmarks.
 7. Browser benchmarks.
 8. Cross-machine or multi-process runs.

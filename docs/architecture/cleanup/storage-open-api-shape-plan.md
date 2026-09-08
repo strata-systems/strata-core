@@ -1,4 +1,4 @@
-# Storage-Next Open API Shape Plan
+# Storage Open API Shape Plan
 
 Status: draft cleanup plan
 

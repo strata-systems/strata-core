@@ -366,7 +366,7 @@ prepare the following:
     plane metadata.
 
 These requirements should feed the V1 feature inventory, user pathways, NFRs,
-storage-next architecture, engine-next architecture, and CLI design.
+storage architecture, engine architecture, and CLI design.
 
 ## Privacy, Trust, And Safety
 

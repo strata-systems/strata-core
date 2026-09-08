@@ -49,9 +49,9 @@ WAL is bounded (≤ 662 MB, 80 segments truncated) — RC3 holds; not a factor.
 
 ## Methodology
 
-- Tool: the existing `storage-next-l9-scale` perf-trace runner, which calls
+- Tool: the existing `storage-l9-scale` perf-trace runner, which calls
   `perf_trace::reset()` before each phase and `snapshot()` after, against the
-  public `strata_storage_next::api` surface (no engine-next overhead).
+  public `strata_storage_next::api` surface (no engine overhead).
 - **No change to the measured crate.** Two additive changes to the *measurement
   tool only*:
   - `--memory-budget SIZE` — threads an explicit `StorageMemoryBudget` through
@@ -183,7 +183,7 @@ keep-up counters above.
 ## Reproduce
 
 ```bash
-cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-next-l9-scale -- \
+cargo run --release --manifest-path benchmarks/Cargo.toml --bin storage-l9-scale -- \
   --scales 1m,3m,5m --engines standard --workloads load-seq \
   --value-bytes 1000 --memory-budget 8g --diagnostic-source-shape --keep-dir
 # then: du -sh <root>/standard-5000000-*/tables ; find <...>/tables -type f | wc -l

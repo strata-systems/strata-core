@@ -33,7 +33,7 @@ object-store support.
 ## Audit Finding References
 
 Primary audit source:
-`docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`
+`docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`
 
 Relevant sections:
 

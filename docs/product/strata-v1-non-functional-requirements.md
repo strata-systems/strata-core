@@ -136,7 +136,7 @@ become stricter.
 3. Pre-V1 development formats may be rejected by default. After V1 stabilizes,
    format changes must have explicit migration, rejection, or clone/export
    behavior.
-4. Architecture should preserve room for storage-next, engine-next, core-next,
+4. Architecture should preserve room for storage, engine, core,
    and future StrataHub workflows.
 
 ## User Experience

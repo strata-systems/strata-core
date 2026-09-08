@@ -1,4 +1,4 @@
-# Engine-Next Branch Operation And Capability Adapter Contract
+# Engine Branch Operation And Capability Adapter Contract
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
@@ -7,8 +7,8 @@ Status: current — describes shipped 1.2.x behaviour (#3134)
 This document defines how engine owns branch workflows and how data
 capabilities participate in those workflows.
 
-Branches are database workspaces and timelines. Storage-next supplies generic
-branch mechanics through the persistence adapter. Engine-next owns the product
+Branches are database workspaces and timelines. Storage supplies generic
+branch mechanics through the persistence adapter. Engine owns the product
 meaning of creating, comparing, promoting, copying, restoring, and deleting
 branches.
 

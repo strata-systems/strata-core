@@ -61,7 +61,7 @@ Reference files:
 3. `crates/storage/src/seekable.rs::MergeSeekableIter`
 4. `crates/storage/src/seekable.rs::MvccSeekableIter`
 
-Storage-next should port that iterator discipline into its own branch/table
+Storage should port that iterator discipline into its own branch/table
 vocabulary rather than route through old storage code.
 
 ## Non-Goals

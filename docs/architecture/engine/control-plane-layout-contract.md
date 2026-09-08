@@ -1,4 +1,4 @@
-# Engine-Next Control-Plane Layout Contract
+# Engine Control-Plane Layout Contract
 
 Status: current — describes shipped 1.2.x behaviour (#3134)
 
@@ -22,7 +22,7 @@ implementation as complete or correct. Current `_system_` usage grew over time:
 some rows live on the system branch, some rows live in branch-local system
 space, some branch-control rows live in the nil/default namespace, some branch
 DAG rows live in a graph-only `_graph_` space, and some upper-layer code writes
-system-space keys directly. Engine-next must normalize this.
+system-space keys directly. Engine must normalize this.
 
 The target rule is:
 
@@ -149,7 +149,7 @@ The system branch is still backed by normal storage rows. That is deliberate:
 global control metadata needs durability, versioning, crash recovery, clone
 behavior, and diagnostics. Storage must not know what those rows mean.
 
-The system branch has deterministic identity. Engine-next must be able to
+The system branch has deterministic identity. Engine must be able to
 derive it before reading branch catalog rows, because the branch catalog itself
 lives on the system branch. This is a bootstrap exception to the normal rule
 that branch identity is discovered through the branch catalog.
@@ -206,11 +206,11 @@ Derived and cache rows must never become the only copy of user-authored data.
 ## Binding Decisions
 
 1. **The control plane is first-class engine architecture.**
-   It is not a bag of helper keys. Engine-next must have one documented layout
+   It is not a bag of helper keys. Engine must have one documented layout
    and one normal write/read path for control-plane rows.
 
 2. **Global control rows live on `_system_` branch in `_system_` space.**
-   Engine-next should not use `_system_` branch `default` space for control
+   Engine should not use `_system_` branch `default` space for control
    rows. Current tags/notes/audit rows in that location are current
    implementation residue, not target architecture.
 
@@ -286,8 +286,8 @@ Derived and cache rows must never become the only copy of user-authored data.
     `_system_` or space `_system_` exists.
 
 17. **Storage database identity and engine product identity are separate.**
-    Storage-next may own the durable database UUID or storage identity required
-    for manifests, recovery, and backend validation. Engine-next owns local
+    Storage may own the durable database UUID or storage identity required
+    for manifests, recovery, and backend validation. Engine owns local
     instance identity, dataset identity, provenance, remote refs, and
     hub-compatible product metadata. Engine control rows may reference the
     storage database identity, but they are not its source of truth.
@@ -427,7 +427,7 @@ only when one of the declared behaviors differs materially.
 
 Storage-space IDs are coarse. Key prefixes are fine-grained.
 
-Engine-next should prefer a small number of storage-space IDs and a small,
+Engine should prefer a small number of storage-space IDs and a small,
 documented set of prefixes under each ID.
 
 Suggested prefix families:
@@ -569,7 +569,7 @@ Rules:
 
 ## Bootstrap Rules
 
-Engine-next must be able to open enough of the control plane to decide whether
+Engine must be able to open enough of the control plane to decide whether
 the database is valid.
 
 Bootstrap order:
@@ -757,7 +757,7 @@ System access diagnostics:
 
 ## Migration From Current Implementation
 
-Engine-next should not port current `_system_` usage mechanically.
+Engine should not port current `_system_` usage mechanically.
 
 Target changes:
 

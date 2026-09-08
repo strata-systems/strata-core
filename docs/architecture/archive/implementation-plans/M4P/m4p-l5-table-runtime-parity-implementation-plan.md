@@ -34,8 +34,8 @@ scheduling, durable publication, or recovery policy into table code.
 
 Primary audit and perf evidence:
 
-1. `docs/architecture/perf-tuning/storage-next-mechanics-parity-audit.md`
-2. `docs/architecture/perf-tuning/storage-next-serving-path-parity-plan.md`
+1. `docs/architecture/perf-tuning/storage-mechanics-parity-audit.md`
+2. `docs/architecture/perf-tuning/storage-serving-path-parity-plan.md`
 3. `docs/architecture/perf-tuning/perf-p0-decision-report.md`
 4. `docs/architecture/perf-tuning/perf-p1-point-read-mechanics-comparison.md`
 5. `docs/architecture/perf-tuning/perf-p2-point-read-isolation-report.md`

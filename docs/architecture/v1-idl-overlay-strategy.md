@@ -22,8 +22,8 @@ Strata already has several layers:
 
 ```text
 engine APIs
-executor-next command DTOs
-executor-next IDL overlay metadata
+executor command DTOs
+executor IDL overlay metadata
 SDKs / CLI / MCP / docs
 ```
 
@@ -37,14 +37,14 @@ source of truth.
 ## Decision
 
 The V1 IDL should be a thin executor-owned metadata overlay on top of
-executor-next public command DTOs.
+executor public command DTOs.
 
-The overlay should live inside the `executor-next` package because it describes
-the external Strata boundary that executor-next already owns. A separate IDL
+The overlay should live inside the `executor` package because it describes
+the external Strata boundary that executor already owns. A separate IDL
 crate creates a misleading third product boundary between executor commands and
 downstream CLI/SDK/MCP/docs generation.
 
-Executor-next owns:
+Executor owns:
 
 1. request DTO fields;
 2. response DTO fields;
@@ -144,7 +144,7 @@ normal command execution.
 Recommended layout:
 
 ```text
-crates/executor-next/
+crates/executor/
   idl/v1/
     manifest.yaml
     defaults.yaml
@@ -169,8 +169,8 @@ later CLI/SDK/MCP/docs generators.
 The local developer commands should be executor package commands:
 
 ```text
-cargo run -p strata-executor-next --features idl-tooling --bin strata-idl -- generate
-cargo run -p strata-executor-next --features idl-tooling --bin strata-idl -- check
+cargo run -p strata-executor --features idl-tooling --bin strata-idl -- generate
+cargo run -p strata-executor --features idl-tooling --bin strata-idl -- check
 ```
 
 There should not be a separate `idl-next` workspace crate for V1.
@@ -243,7 +243,7 @@ like configuring a framework.
 
 ### Canonical Field Shapes
 
-Executor-next public DTOs are the canonical V1 wire shapes.
+Executor public DTOs are the canonical V1 wire shapes.
 
 Examples:
 
@@ -637,7 +637,7 @@ The IDL pipeline should generate:
 Generated artifacts should live under the executor-owned generated directory:
 
 ```text
-crates/executor-next/idl/v1/generated/
+crates/executor/idl/v1/generated/
 ```
 
 Hand-authored overlays should live outside generated directories.
@@ -645,7 +645,7 @@ Hand-authored overlays should live outside generated directories.
 Recommended authored layout:
 
 ```text
-crates/executor-next/idl/v1/
+crates/executor/idl/v1/
   manifest.yaml
   defaults.yaml
   families.yaml
@@ -691,7 +691,7 @@ If customers report that an agent struggles to choose `kv.put`, update the
 canonical command prose:
 
 ```text
-crates/executor-next/idl/v1/prose/commands/kv.put.md
+crates/executor/idl/v1/prose/commands/kv.put.md
 ```
 
 For example:
@@ -723,13 +723,13 @@ mcp:
 Then regenerate the resolved index:
 
 ```text
-cargo run -p strata-executor-next --features idl-tooling --bin strata-idl -- generate
+cargo run -p strata-executor --features idl-tooling --bin strata-idl -- generate
 ```
 
 The generated command index becomes the single downstream source:
 
 ```text
-crates/executor-next/idl/v1/generated/command-index.json
+crates/executor/idl/v1/generated/command-index.json
 ```
 
 SDK, CLI, MCP, and docs generators consume that resolved command record. They do
@@ -748,8 +748,8 @@ customer feedback
 
 ### Update Rules
 
-1. Change command language in `crates/executor-next/idl/v1/prose`.
-2. Change command behavior metadata in `crates/executor-next/idl/v1/commands`.
+1. Change command language in `crates/executor/idl/v1/prose`.
+2. Change command behavior metadata in `crates/executor/idl/v1/commands`.
 3. Change executor DTOs only when the actual wire contract changes.
 4. Do not edit generated SDK docs, MCP descriptions, or command-reference pages
    directly.
@@ -783,7 +783,7 @@ Drift guards, all CI-enforced:
    (`idl/v1/uncovered-commands.yaml`). The allowlist may only shrink; adding a
    command variant without either fails CI. This resolves executor-review
    finding META-3.
-2. **Consumer guard.** cli-next's verb tree must round-trip against the
+2. **Consumer guard.** cli's verb tree must round-trip against the
    catalog: every catalog `cli.path` marked implemented resolves to a real
    clap verb, and every clap verb maps back to a catalog entry. The
    handwritten clap surface and the generated catalog are reconciled by test,
@@ -844,7 +844,7 @@ SDKs are generated from.
 
 ### No Duplicate Field Contract
 
-Request and response fields live in executor-next DTOs. The IDL references
+Request and response fields live in executor DTOs. The IDL references
 those DTOs and enriches them with metadata.
 
 This avoids drift between Rust code and the public contract.
@@ -902,7 +902,7 @@ The IDL can drive guard tests:
 
 ## Non-Goals
 
-1. The IDL is not a replacement for executor-next command DTOs.
+1. The IDL is not a replacement for executor command DTOs.
 2. The IDL is not a full OpenAPI spec.
 3. The IDL is not a second hand-authored request/response schema.
 4. The IDL should not expose storage or engine internals.
@@ -1020,12 +1020,12 @@ Vector should validate:
 ### Slice 1b: Executor-Owned IDL Packaging
 
 Before adding CLI generation, fold the Slice 1 resolver and authored sources
-into `executor-next`.
+into `executor`.
 
 Scope:
 
 1. move authored IDL from repo-root `idl/strata/v1` to
-   `crates/executor-next/idl/v1`;
+   `crates/executor/idl/v1`;
 2. move resolver/generator code from any standalone IDL crate into
    executor-owned tooling;
 3. expose `generate` and `check` through an executor package dev binary;
@@ -1125,7 +1125,7 @@ Where the pipeline actually stands:
 | Overlay authoring model (kinds/families/defaults, prose, fixtures) | ✅ complete, all 10 families (120/120 commands) |
 | Resolver + validation + freshness `check` | ✅ built (`idl_tooling.rs`) |
 | Resolved `command-index.json` + `cli-command-index.json` | ✅ generated |
-| Generic command runner (`strata command run --command-json`) | ✅ shipped in cli-next |
+| Generic command runner (`strata command run --command-json`) | ✅ shipped in cli |
 | Runtime `CliCommandCatalog` | ✅ built, consumed only by its own tests |
 | JSON Schemas (schemars) | ✅ built 2026-07-10: per-command documents in `generated/schemas/`, fixtures validate against them in `generate`/`check` |
 | CLI reads the catalog (help/explain/listing) | ❌ Slice 2 unlanded; clap tree is parallel and unguarded (META-4) |

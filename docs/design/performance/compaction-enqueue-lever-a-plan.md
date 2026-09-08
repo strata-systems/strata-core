@@ -253,7 +253,7 @@ Behavioral (`lifecycle/tests/durable.rs`):
 
 ### Suite gates (both slices)
 
-- `cargo test -p strata-storage-next` — full maintenance/compaction, recovery
+- `cargo test -p strata-storage` — full maintenance/compaction, recovery
   oracle, flush/checkpoint/commit-hardening, format goldens (format unaffected, but
   run to confirm).
 - `cargo clippy --workspace --all-targets -- -D warnings`; `cargo fmt --all --check`.
@@ -329,7 +329,7 @@ but the backlog still doesn't drain, the next residual is the single Rewrite lan
 
 **A.1 + A.3 land together** in one PR — A.1's enqueue only pays off once A.3 lets it
 run, and committing A.1 solo ships the flush-preempt churn with no win. Slice code in
-the title (assign against the roadmap), e.g. `perf(storage-next): enqueue eligible
+the title (assign against the roadmap), e.g. `perf(storage): enqueue eligible
 compaction and loosen flush-preemption so it runs (Lever A.1+A.3)`. States change class
 (intentional semantic change) + assurance (S3) and links a new ledger row. The
 `STRATA_TRACE` / `STRATA_SNAP_CAP_MB` debug probes are reverted before the PR.
