@@ -1,26 +1,29 @@
-# cargo-mutants configuration for the DEFAULT run (run A of the
-# mutation-on-diff CI gate in .github/workflows/ci.yml).
+# cargo-mutants configuration for LANE A of the mutation-on-diff CI gate.
 #
-# cargo-mutants forwards `--features` to the per-package `cargo test` it runs
-# for each mutant, and feature names are package-local — one global feature
-# list cannot serve the workspace (`--features idl-tooling` is a hard error
-# when the mutant under test is in strata-storage). The gate is therefore
-# PARTITIONED (issue #2659):
+# The gate is PARTITIONED into three lanes (issue #2659), because cargo-mutants
+# forwards `--features` to the per-package `cargo test` it runs for each mutant
+# and feature names are package-local — `--features idl-tooling` is a hard error
+# when the mutant under test is in strata-storage, so one global feature list
+# cannot serve the workspace.
 #
-#   run A (this config): every package EXCEPT executor and inference, built
-#         with default features.
-#   run B (ci.yml, --no-config): strata-executor under
-#         `--features idl-tooling,inference,testkit` — the same set the test
-#         job's IDL gates use — so feature-gated code (idl_tooling, the
-#         inference command surface) is compiled and its tests run instead of
-#         every mutant reporting a false MISSED.
-#   run C (ci.yml, --no-config): strata-inference under
-#         `--features download,testkit`, excluding `local`-gated files (they
-#         need cmake + model artifacts no CI lane has, so mutants there are
-#         untestable by construction).
+# **Each lane has its own config file, and this one is only lane A.**
 #
-# Keep this partition and the three run definitions in ci.yml in sync: a
-# package added here must gain a featured run there, and vice versa.
+#   | lane | packages                     | config                          |
+#   |------|------------------------------|---------------------------------|
+#   | A    | everything else, default     | `.cargo/mutants.toml` (here)    |
+#   | B    | strata-executor              | `.cargo/mutants-executor.toml`  |
+#   | C    | strata-inference             | `.cargo/mutants-inference.toml` |
+#
+# Lanes B and C are invoked with `--config <their file>`, which REPLACES this
+# one rather than adding to it. So an exclusion written here has no effect
+# whatsoever on an executor or inference mutant: put it in that lane's file.
+# This is not a hypothetical — an exclusion for `embed_text_with` was added
+# here, silently did nothing, and the same nine mutants survived two CI cycles.
+# `mutation_partition_guard.rs` now fails on an exclusion that names a symbol
+# its own lane cannot reach, so the mistake is caught at `cargo test` time.
+#
+# Keep the partition and ci.yml in sync: a package excluded here must have a
+# lane of its own there, and vice versa — the guard asserts both directions.
 exclude_globs = [
     "crates/executor/**",
     "crates/inference/**",

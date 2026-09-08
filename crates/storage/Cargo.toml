@@ -35,6 +35,8 @@ zstd-pure-rs = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+# mutation_partition_guard.rs parses the cargo-mutants lane configs.
+toml = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 proptest = { workspace = true }
