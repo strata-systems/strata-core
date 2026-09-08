@@ -353,6 +353,86 @@ fn a_model_is_declared_once() {
     assert_eq!(error.code(), "not_found.engine.vector_collection");
 }
 
+/// A snapshot read sees the model the collection recorded *then*.
+///
+/// A declaration vouches for the vectors present when it is made. Vectors the
+/// collection held before — since overwritten or deleted — were vouched for by
+/// nobody, so a text search at a snapshot older than the declaration has no
+/// model to embed with, exactly as it had none at the time. Reading the model
+/// from the head of the branch would quietly compare an embedding made now
+/// against vectors of unknown origin.
+#[test]
+fn the_recorded_model_is_read_at_the_snapshot_being_searched() {
+    let mut database = open_cache_database().expect("cache open succeeds");
+    let mut vectors = database
+        .vector(branch("default"), space("default"))
+        .expect("vector service opens");
+
+    // A commit from before `legacy` existed, to read it at.
+    let earlier = vectors
+        .create_collection(collection("other"), config(2))
+        .expect("collection is created")
+        .created_timestamp();
+    vectors
+        .create_collection(collection("legacy"), config(2))
+        .expect("collection is created");
+    let before = vectors
+        .upsert(
+            collection("legacy"),
+            VectorKey::new("v1").expect("key"),
+            VectorEmbedding::new(vec![1.0, 0.0]).expect("embedding"),
+            None,
+        )
+        .expect("a vector is stored before any model is declared")
+        .commit()
+        .timestamp();
+    // The info a declaration returns carries the commit that rewrote the
+    // config row — the declaration's own position on the timeline.
+    let declared = vectors
+        .declare_embedding_model(&collection("legacy"), model("miniLM"))
+        .expect("a model-less collection accepts a declaration")
+        .created_timestamp();
+    assert!(before < declared, "the declaration is a later commit");
+
+    // Before the declaration: no model, and no remedy either — the message
+    // must not send the caller to declare one, since that would not change
+    // what this snapshot recorded.
+    let error = vectors
+        .recorded_embedding_model_at(&collection("legacy"), before)
+        .expect_err("a snapshot older than the declaration has no model");
+    assert_eq!(error.class(), EngineErrorClass::Conflict);
+    assert_eq!(
+        error.code(),
+        "failed_precondition.engine.embedding_model_missing"
+    );
+    assert!(
+        !error.to_string().contains("set-embedding-model"),
+        "declaring a model now cannot fix a snapshot that predates it: {error}"
+    );
+
+    // At and after the declaration: the model it recorded.
+    assert_eq!(
+        vectors
+            .recorded_embedding_model_at(&collection("legacy"), declared)
+            .expect("the declaration's own commit records the model"),
+        model("miniLM")
+    );
+    assert_eq!(
+        vectors
+            .recorded_embedding_model(&collection("legacy"))
+            .expect("the head of the branch records the model"),
+        model("miniLM")
+    );
+
+    // A snapshot before the collection existed is a missing collection, the
+    // same answer a vector search at that snapshot gives.
+    let error = vectors
+        .recorded_embedding_model_at(&collection("legacy"), earlier)
+        .expect_err("the collection did not exist yet");
+    assert_eq!(error.class(), EngineErrorClass::NotFound);
+    assert_eq!(error.code(), "not_found.engine.vector_collection");
+}
+
 /// A declaration is provenance like any other: it survives a reopen.
 #[test]
 fn a_declared_model_survives_a_durable_reopen() {

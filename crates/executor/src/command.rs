@@ -1183,6 +1183,14 @@ pub enum Command {
         /// This is the half that makes provenance worth recording: the query is
         /// embedded with the same model the collection was written with, so a
         /// caller cannot accidentally compare vectors from two models.
+        ///
+        /// With `as_of` or `as_of_time`, the model is the one the collection
+        /// recorded at that snapshot. A snapshot older than the model's
+        /// declaration is refused with
+        /// `failed_precondition.engine.embedding_model_missing`: the
+        /// declaration vouched for the vectors present when it was made, not
+        /// for what the collection held before. Search such a snapshot with a
+        /// `query` vector.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         text: Option<String>,
         /// Maximum number of matches.

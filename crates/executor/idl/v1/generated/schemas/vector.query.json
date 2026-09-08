@@ -204,7 +204,7 @@
         ]
       },
       "text": {
-        "description": "Text to embed with the collection's recorded model, instead of\nsupplying a query vector (D10).\n\nThis is the half that makes provenance worth recording: the query is\nembedded with the same model the collection was written with, so a\ncaller cannot accidentally compare vectors from two models.",
+        "description": "Text to embed with the collection's recorded model, instead of\nsupplying a query vector (D10).\n\nThis is the half that makes provenance worth recording: the query is\nembedded with the same model the collection was written with, so a\ncaller cannot accidentally compare vectors from two models.\n\nWith `as_of` or `as_of_time`, the model is the one the collection\nrecorded at that snapshot. A snapshot older than the model's\ndeclaration is refused with\n`failed_precondition.engine.embedding_model_missing`: the\ndeclaration vouched for the vectors present when it was made, not\nfor what the collection held before. Search such a snapshot with a\n`query` vector.",
         "type": [
           "string",
           "null"

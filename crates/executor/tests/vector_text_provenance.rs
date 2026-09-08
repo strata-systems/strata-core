@@ -194,6 +194,15 @@ impl Harness {
     }
 
     fn query_text(&mut self, collection: &str, text: &str) -> ExecutorResult<Output> {
+        self.query_text_as_of(collection, text, None)
+    }
+
+    fn query_text_as_of(
+        &mut self,
+        collection: &str,
+        text: &str,
+        as_of: Option<u64>,
+    ) -> ExecutorResult<Output> {
         self.executor.execute(Command::VectorQuery {
             branch: None,
             space: None,
@@ -202,9 +211,41 @@ impl Harness {
             text: Some(text.to_owned()),
             k: 5,
             filter: None,
-            as_of: None,
+            as_of,
             as_of_time: None,
         })
+    }
+
+    fn query_vector_as_of(
+        &mut self,
+        collection: &str,
+        query: Vec<f64>,
+        as_of: Option<u64>,
+    ) -> ExecutorResult<Output> {
+        self.executor.execute(Command::VectorQuery {
+            branch: None,
+            space: None,
+            collection: collection.to_owned(),
+            query,
+            text: None,
+            k: 5,
+            filter: None,
+            as_of,
+            as_of_time: None,
+        })
+    }
+
+    /// Stores a raw vector and returns the commit's logical timestamp — the
+    /// value `as_of` takes.
+    fn upsert_vector(&mut self, collection: &str, key: &str, vector: Vec<f32>) -> u64 {
+        match self
+            .executor
+            .vector_upsert(collection, key, vector, None)
+            .expect("raw vector upserts")
+        {
+            Output::VectorWriteResult { commit, .. } => commit.timestamp(),
+            other => panic!("unexpected upsert output: {other:?}"),
+        }
     }
 
     fn declare(&mut self, collection: &str, model: &str) -> ExecutorResult<Output> {
@@ -335,6 +376,87 @@ fn declaring_a_model_turns_the_refusal_into_a_store() {
         .calls()
         .iter()
         .all(|(model, _)| model == "fake-embed"));
+}
+
+/// A text search at a snapshot embeds with the model the collection recorded
+/// *at that snapshot*, not the one it records now.
+///
+/// The two can differ in exactly one way, since a model is declared once and
+/// never changed: the snapshot predates the declaration. The vectors visible
+/// then were vouched for by nobody — the declaration speaks for the vectors
+/// present when it was made — so the search is refused, as it would have been
+/// at the time, and the caller is pointed at a vector query rather than at a
+/// declaration that cannot reach the past. The same snapshot stays searchable
+/// with a vector, and a snapshot from after the declaration searches with it.
+#[test]
+fn a_text_query_at_a_snapshot_uses_the_model_recorded_then() {
+    let mut harness = Harness::new();
+    harness.create("legacy", DIMENSION, None);
+    // Written before any model existed: a vector nobody vouched for.
+    let before = harness.upsert_vector("legacy", "orphan", vec![1.0; WIDTH]);
+    harness
+        .declare("legacy", "fake-embed")
+        .expect("a model-less collection accepts a declaration");
+    let after = match harness
+        .upsert_text("legacy", "k", "hello")
+        .expect("text stores once a model is declared")
+    {
+        Output::VectorWriteResult { commit, .. } => commit.timestamp(),
+        other => panic!("unexpected upsert output: {other:?}"),
+    };
+    let calls_before_the_searches = harness.calls().len();
+
+    // Before the declaration: refused, and the provider is never asked.
+    let error = harness
+        .query_text_as_of("legacy", "hello", Some(before))
+        .expect_err("a snapshot older than the declaration has no model to embed with");
+    assert_eq!(error.public_class(), ErrorClass::FailedPrecondition);
+    assert_eq!(
+        error.code(),
+        "failed_precondition.engine.embedding_model_missing"
+    );
+    assert!(
+        !error.to_string().contains("set-embedding-model"),
+        "declaring a model now cannot change what that snapshot recorded: {error}"
+    );
+    assert_eq!(
+        harness.calls().len(),
+        calls_before_the_searches,
+        "no provider is consulted for a snapshot that recorded no model"
+    );
+
+    // The refusal is about text needing a model, not about the snapshot: a
+    // vector still searches it.
+    assert_eq!(
+        matched_keys(
+            harness
+                .query_vector_as_of("legacy", vec![1.0; WIDTH], Some(before))
+                .expect("a vector query searches the old snapshot")
+        ),
+        vec!["orphan".to_owned()]
+    );
+
+    // From the declaration on: embedded with the model recorded then.
+    let keys = matched_keys(
+        harness
+            .query_text_as_of("legacy", "hello", Some(after))
+            .expect("a snapshot after the declaration searches with its model"),
+    );
+    assert_eq!(keys.first().map(String::as_str), Some("k"));
+    assert_eq!(
+        harness.calls().last(),
+        Some(&("fake-embed".to_owned(), Some(InputType::Query)))
+    );
+    assert_eq!(
+        matched_keys(
+            harness
+                .query_text("legacy", "hello")
+                .expect("the head of the branch searches with its model")
+        )
+        .first()
+        .map(String::as_str),
+        Some("k")
+    );
 }
 
 #[test]

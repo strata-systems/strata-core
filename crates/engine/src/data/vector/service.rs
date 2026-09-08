@@ -246,18 +246,42 @@ impl<'a> VectorService<'a> {
         &mut self,
         collection: &VectorCollectionName,
     ) -> EngineResult<EmbeddingModelId> {
+        self.recorded_embedding_model_with_selector(collection, ReadSelector::Latest)
+    }
+
+    /// The model a text must be embedded with to be searched against the
+    /// collection as it was at a commit timestamp.
+    ///
+    /// A snapshot read sees the collection as it was, and that includes which
+    /// model it recorded then. A declaration vouches for the vectors present
+    /// when it is made — not for whatever the collection held earlier, which
+    /// may since have been overwritten or deleted — so a snapshot older than
+    /// the declaration is a collection with no model, and text is refused for
+    /// it exactly as it was at the time. Reading the model from the head of
+    /// the branch instead would embed the query with a model nobody vouched
+    /// for the snapshot's vectors having come from.
+    pub fn recorded_embedding_model_at(
+        &mut self,
+        collection: &VectorCollectionName,
+        timestamp: Timestamp,
+    ) -> EngineResult<EmbeddingModelId> {
+        self.recorded_embedding_model_with_selector(
+            collection,
+            ReadSelector::AtTimestamp(timestamp),
+        )
+    }
+
+    fn recorded_embedding_model_with_selector(
+        &mut self,
+        collection: &VectorCollectionName,
+        selector: ReadSelector,
+    ) -> EngineResult<EmbeddingModelId> {
         let record = self.branch_record()?;
-        let config = self.require_collection_config(&record, collection)?;
+        let config = self.require_collection_config_with_selector(&record, collection, selector)?;
         config.embedding_model().cloned().ok_or_else(|| {
             EngineError::conflict(
                 "failed_precondition.engine.embedding_model_missing",
-                format!(
-                    "vector collection `{}` records no embedding model, so text cannot be \
-                     embedded for it; declare one with `vector collection \
-                     set-embedding-model {} <model>`, or pass a vector directly",
-                    collection.as_str(),
-                    collection.as_str(),
-                ),
+                missing_embedding_model_message(collection, selector),
             )
         })
     }
@@ -3043,6 +3067,31 @@ impl<'a> VectorService<'a> {
             .persistence
             .commit(&plan)?
             .with_counts(user_put_count, user_delete_count))
+    }
+}
+
+/// Why a collection cannot embed text, said for the read that asked.
+///
+/// At the head of the branch the remedy is to declare a model. At a snapshot
+/// there is no remedy: a declaration made now says nothing about the vectors
+/// the collection held then, so the only way to search that snapshot is with
+/// a vector.
+fn missing_embedding_model_message(
+    collection: &VectorCollectionName,
+    selector: ReadSelector,
+) -> String {
+    let collection = collection.as_str();
+    match selector {
+        ReadSelector::Latest => format!(
+            "vector collection `{collection}` records no embedding model, so text cannot be \
+             embedded for it; declare one with `vector collection set-embedding-model \
+             {collection} <model>`, or pass a vector directly"
+        ),
+        ReadSelector::AtVersion(_) | ReadSelector::AtTimestamp(_) => format!(
+            "vector collection `{collection}` recorded no embedding model as of the requested \
+             snapshot, so text cannot be searched against it; a model declared since does not \
+             vouch for the vectors it held then — pass a vector directly"
+        ),
     }
 }
 

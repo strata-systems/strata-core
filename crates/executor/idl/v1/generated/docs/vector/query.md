@@ -41,7 +41,7 @@ $ strata vector query docs [1.0,0.0,0.0] --k 2
 | `filter` | `VectorMetadataFilter` | no | Optional metadata filter. |
 | `k` | `integer` | yes | Maximum number of matches. |
 | `query` | `number[]` | no | Query embedding. Accepted at wire (f64) precision and narrowed to the searched f32; a value that underflows or overflows f32 is rejected. Empty when `text` is supplied instead. |
-| `text` | `string` | no | Text to embed with the collection's recorded model, instead of supplying a query vector (D10). This is the half that makes provenance worth recording: the query is embedded with the same model the collection was written with, so a caller cannot accidentally compare vectors from two models. |
+| `text` | `string` | no | Text to embed with the collection's recorded model, instead of supplying a query vector (D10). This is the half that makes provenance worth recording: the query is embedded with the same model the collection was written with, so a caller cannot accidentally compare vectors from two models. With `as_of` or `as_of_time`, the model is the one the collection recorded at that snapshot. A snapshot older than the model's declaration is refused with `failed_precondition.engine.embedding_model_missing`: the declaration vouched for the vectors present when it was made, not for what the collection held before. Search such a snapshot with a `query` vector. |
 
 Plus the optional scope: `branch` and `space` (default to the session branch and the `"default"` space).
 

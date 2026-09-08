@@ -14,6 +14,7 @@ use super::{
     Executor, ExecutorError, ExecutorResult, Maybe, Output, PageInfo, VectorDistanceMetric,
     VectorIndexQueryResult, VectorMetadataFilter, DEFAULT_VECTOR_LIST_LIMIT,
 };
+use strata_core::Timestamp;
 
 /// Whether a text is being stored or searched with (D10).
 ///
@@ -196,6 +197,12 @@ impl Executor {
     /// The embedding happens **before** the write. It can fail — no key, no
     /// network, model not installed — and when it does, nothing is written.
     /// The store that follows is the single commit.
+    ///
+    /// `as_of` is the snapshot the caller is reading — `None` for a write,
+    /// which always lands at the head of the branch. The model is read from
+    /// the same snapshot the vectors will be, so a text search at a timestamp
+    /// is embedded with the model the collection recorded *then*, and refused
+    /// if it recorded none; the engine says why.
     #[allow(clippy::needless_pass_by_value)]
     fn embed_with_collection_model(
         &mut self,
@@ -204,14 +211,19 @@ impl Executor {
         collection: &EngineVectorCollectionName,
         text: String,
         purpose: EmbedPurpose,
+        as_of: Option<Timestamp>,
     ) -> ExecutorResult<Vec<f64>> {
         // What a missing model means is the engine's call
         // (`failed_precondition.engine.embedding_model_missing`, naming the
         // command that declares one); this only carries the answer to the
         // provider.
-        let model = self
-            .vector_service(branch, space)?
-            .recorded_embedding_model(collection)?;
+        let model = {
+            let mut service = self.vector_service(branch, space)?;
+            match as_of {
+                Some(as_of) => service.recorded_embedding_model_at(collection, as_of)?,
+                None => service.recorded_embedding_model(collection)?,
+            }
+        };
         self.embed_text_with(model.as_str(), text, purpose)
     }
 
@@ -281,12 +293,15 @@ impl Executor {
         let collection = vector_collection(collection)?;
         let key = vector_key(key)?;
         let vector = resolve_vector_or_text(vector, text, |text| {
+            // A write lands at the head of the branch, so the model that
+            // governs it is the one recorded now.
             self.embed_with_collection_model(
                 branch,
                 space,
                 &collection,
                 text,
                 EmbedPurpose::Document,
+                None,
             )
         })?;
         let embedding = vector_embedding(vector)?;
@@ -544,11 +559,24 @@ impl Executor {
         as_of_time: Option<u64>,
     ) -> ExecutorResult<Output> {
         let collection = vector_collection(collection)?;
+        // #3112 S3b: resolve any wall-clock instant to a logical timestamp
+        // BEFORE the service borrow, so both forms run the identical as-of path.
+        // It comes before the embedding too: a text query is embedded with the
+        // model the collection recorded at the snapshot being searched, so the
+        // snapshot has to be known first.
+        let as_of = self.resolve_as_of(branch, as_of, as_of_time)?;
         // A text query is embedded with the collection's own model, so a
         // caller never has to know which model wrote the collection — and
         // cannot pick the wrong one.
         let query = resolve_vector_or_text(query, text, |text| {
-            self.embed_with_collection_model(branch, space, &collection, text, EmbedPurpose::Query)
+            self.embed_with_collection_model(
+                branch,
+                space,
+                &collection,
+                text,
+                EmbedPurpose::Query,
+                as_of,
+            )
         })?;
         let query = query_embedding(query)?;
         let k = required_usize(
@@ -557,9 +585,6 @@ impl Executor {
             "vector match limit does not fit this platform",
         )?;
         let filter = filter.map(vector_filter).transpose()?;
-        // #3112 S3b: resolve any wall-clock instant to a logical timestamp
-        // BEFORE the service borrow, so both forms run the identical as-of path.
-        let as_of = self.resolve_as_of(branch, as_of, as_of_time)?;
         let mut service = self.vector_service(branch, space)?;
         let result = if let Some(as_of) = as_of {
             service.query_at(&collection, &query, k, filter.as_ref(), as_of)?
