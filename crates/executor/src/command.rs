@@ -2177,8 +2177,9 @@ pub enum Command {
     ///   which have a key and where it came from, whether local execution
     ///   exists in this build, and how many catalogued models are on disk —
     ///   all knowable without trying an operation and failing (#3124).
-    /// - **Never returns a key.** `key_source` names the environment variable
-    ///   a key was read from; the value is never included.
+    /// - **Never returns a key.** `key_source` names where a key was read
+    ///   from — the environment variable, or the config file when the CLI
+    ///   loaded it from `strata config set`; the value is never included.
     /// - **The model directory is shared** by every database on the machine, so
     ///   a model downloaded once is available to all of them.
     #[cfg(feature = "inference")]

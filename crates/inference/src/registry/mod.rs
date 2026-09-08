@@ -108,8 +108,8 @@ pub struct ModelInfo {
     ///
     /// Every model in this catalog runs through the local provider, so this is
     /// false in any build without the `local` feature — which is every released
-    /// binary. Build from source with `--features inference-local` to change
-    /// it, or use a cloud provider.
+    /// binary. `strata inference install-local` adds that execution; a cloud
+    /// model needs none.
     pub runnable: bool,
     /// Local GGUF path when present.
     pub local_path: Option<PathBuf>,
@@ -170,6 +170,21 @@ impl ModelRegistry {
                 local_variant.map(|v| self.entry_to_info(entry, v.name))
             })
             .collect()
+    }
+
+    /// Catalog facts for a model name, or `None` when the catalog has no such
+    /// model.
+    ///
+    /// Resolves the name the way `resolve` does — aliases, `family:size`, and
+    /// a quant suffix all count — so a caller reporting on a model sees the
+    /// same entry the registry would load. `capability` used to match the
+    /// spec against `list_available` names instead, so `nomic` (an alias) and
+    /// `miniLM:f16` (a quant) came back with no task and a zero dimension
+    /// while `resolve` accepted both (#3124).
+    pub(crate) fn info(&self, name: &str) -> Option<ModelInfo> {
+        // The parse error only says "unknown model"; absence is the answer.
+        let (entry, quant) = self.parse_name(name).ok()?;
+        Some(self.entry_to_info(entry, quant.unwrap_or(entry.default_quant)))
     }
 
     /// Resolve a model name to a local file path.

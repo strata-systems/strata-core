@@ -470,9 +470,10 @@ fn print_inference_models(data: &Value, out: &mut String) {
 
 /// D11 (#3124): the answer to "will this work", before anything is attempted.
 ///
-/// Every hint names a command that exists today. `strata inference
-/// install-local` is designed (D1/D2) and not built, so pointing at it here
-/// would repeat the defect this command exists to fix.
+/// Every hint names a command that exists today — `local_remedy` arrives from
+/// the runtime already pointing at `strata inference install-local` (D1/D2),
+/// and the key hints below at `strata config set`. A hint naming something
+/// that cannot be run would repeat the defect this command exists to fix.
 fn print_inference_status(data: &Value, out: &mut String) {
     let flag = |key: &str| data.get(key).and_then(Value::as_bool) == Some(true);
     let local = flag("local_execution");

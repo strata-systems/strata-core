@@ -37,7 +37,7 @@
           "type": "string"
         },
         "runnable": {
-          "description": "Whether **this binary** can execute this model.\n\nEvery model in this catalog runs through the local provider, so this is\nfalse in any build without the `local` feature — which is every released\nbinary. Build from source with `--features inference-local` to change\nit, or use a cloud provider.",
+          "description": "Whether **this binary** can execute this model.\n\nEvery model in this catalog runs through the local provider, so this is\nfalse in any build without the `local` feature — which is every released\nbinary. `strata inference install-local` adds that execution; a cloud\nmodel needs none.",
           "type": "boolean"
         },
         "size_bytes": {

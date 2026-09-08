@@ -99,8 +99,14 @@ pub struct ProviderStatus {
     /// not one is set — so a caller can say what to do about a missing key.
     /// `None` for providers that need no key.
     pub key_env_var: Option<String>,
-    /// Where the key was found, when one was. An environment variable name,
-    /// never a value. `None` when no key is present.
+    /// Where the key was found, when one was. Never a value. `None` when no
+    /// key is present.
+    ///
+    /// This runtime reads only the environment, so it always names the
+    /// variable. The CLI copies `strata config set <provider>.api_key` keys
+    /// into that environment before running, and replaces this with the
+    /// config file's path for the ones it copied — so a caller is told the
+    /// file, not a variable it never exported.
     pub key_source: Option<String>,
     /// Whether a call could be attempted right now.
     pub ready: bool,
@@ -392,11 +398,10 @@ impl InferenceRuntime {
     /// Returns capability facts for a model spec.
     pub fn capability(&self, model_spec: &str) -> Result<InferenceCapability, InferenceError> {
         let (provider, model) = parse_model_spec(model_spec)?;
+        // The registry's own name resolution, so an alias or a quant suffix
+        // reports the same entry it would load.
         let local_info = if provider == ProviderKind::Local {
-            self.registry()
-                .list_available()
-                .into_iter()
-                .find(|info| info.name.eq_ignore_ascii_case(&model))
+            self.registry().info(&model)
         } else {
             None
         };
@@ -1264,16 +1269,23 @@ pub(crate) struct ModelAbilities {
 
 impl ModelAbilities {
     /// `task` is the catalogued task for a local model, and `None` for a cloud
-    /// spec (where the provider alone decides).
+    /// spec (where the provider alone decides) or a local spec the catalog
+    /// does not know.
+    ///
+    /// A local model does exactly what its catalogued task says: a reranker
+    /// ranks, an embedding model embeds, a generation model generates, and
+    /// each of them tokenizes. An uncatalogued local spec claims nothing —
+    /// the registry cannot load it, so this binary can do nothing with it.
     pub(crate) fn of(provider: ProviderKind, task: Option<ModelTask>) -> Self {
         let local = provider == ProviderKind::Local;
         Self {
-            // Every cloud provider generates. A local model generates unless it
-            // is an embedding model.
-            generate: !local || task != Some(ModelTask::Embed),
+            // Every cloud provider generates; a local model only when that is
+            // its task. `!= Some(Embed)` here once claimed generation for a
+            // reranker (#3124).
+            generate: !local || task == Some(ModelTask::Generate),
             // Tokenization is a property of a local GGUF; cloud providers do
             // not expose it.
-            tokenize: local,
+            tokenize: local && task.is_some(),
             // OpenAI and Google serve embedding endpoints; Anthropic does not.
             // A local model embeds when that is its catalogued task.
             embed: matches!(provider, ProviderKind::OpenAI | ProviderKind::Google)
@@ -1484,26 +1496,26 @@ mod tests {
             }
         );
 
-        // Local rank model: ranks, and generates (it is not an embed model).
+        // Local rank model: ranks and tokenizes; neither generates nor embeds.
         let rank = ModelAbilities::of(Local, Some(ModelTask::Rank));
         assert_eq!(
             rank,
             ModelAbilities {
-                generate: true,
+                generate: false,
                 tokenize: true,
                 embed: false,
                 rank: true
             }
         );
 
-        // An uncatalogued local spec has no task: nothing local-specific is
-        // claimed beyond tokenization.
+        // An uncatalogued local spec has no task, and the registry cannot load
+        // it: nothing is claimed.
         let unknown = ModelAbilities::of(Local, None);
         assert_eq!(
             unknown,
             ModelAbilities {
-                generate: true,
-                tokenize: true,
+                generate: false,
+                tokenize: false,
                 embed: false,
                 rank: false
             }

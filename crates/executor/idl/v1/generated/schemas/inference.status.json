@@ -96,7 +96,7 @@
           "type": "boolean"
         },
         "key_source": {
-          "description": "Where the key was found, when one was. An environment variable name,\nnever a value. `None` when no key is present.",
+          "description": "Where the key was found, when one was. Never a value. `None` when no\nkey is present.\n\nThis runtime reads only the environment, so it always names the\nvariable. The CLI copies `strata config set <provider>.api_key` keys\ninto that environment before running, and replaces this with the\nconfig file's path for the ones it copied — so a caller is told the\nfile, not a variable it never exported.",
           "type": [
             "string",
             "null"
@@ -135,7 +135,7 @@
   "command": "inference.status",
   "request": {
     "additionalProperties": false,
-    "description": "Reports what this binary can do before anything is attempted.\n\n# Guaranteed semantics\n\n- **Answers before the attempt.** Which providers are compiled in,\n  which have a key and where it came from, whether local execution\n  exists in this build, and how many catalogued models are on disk —\n  all knowable without trying an operation and failing (#3124).\n- **Never returns a key.** `key_source` names the environment variable\n  a key was read from; the value is never included.\n- **The model directory is shared** by every database on the machine, so\n  a model downloaded once is available to all of them.",
+    "description": "Reports what this binary can do before anything is attempted.\n\n# Guaranteed semantics\n\n- **Answers before the attempt.** Which providers are compiled in,\n  which have a key and where it came from, whether local execution\n  exists in this build, and how many catalogued models are on disk —\n  all knowable without trying an operation and failing (#3124).\n- **Never returns a key.** `key_source` names where a key was read\n  from — the environment variable, or the config file when the CLI\n  loaded it from `strata config set`; the value is never included.\n- **The model directory is shared** by every database on the machine, so\n  a model downloaded once is available to all of them.",
     "properties": {
       "type": {
         "const": "inference_status",

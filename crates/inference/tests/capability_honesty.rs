@@ -328,4 +328,58 @@ fn a_rank_model_claims_ranking_only_when_the_build_can_rank() {
         !capability.can_embed,
         "a reranker is not an embedding model, whatever the build"
     );
+    assert!(
+        !capability.can_generate,
+        "a reranker is not a generation model either, whatever the build"
+    );
+}
+
+/// The spec forms the registry loads — an alias, a quant suffix, a different
+/// case — must report the same model. `capability` matched the spec against
+/// catalog names itself and so reported `nomic` and `miniLM:f16` as unknown
+/// (no task, dimension 0) while `strata inference embed` accepted both.
+#[test]
+fn capability_resolves_the_spec_forms_the_registry_accepts() {
+    let runtime = runtime();
+    let canonical = runtime.capability("miniLM").expect("catalogued");
+    assert_eq!(canonical.embedding_dim, 384);
+
+    // A quant suffix needs the `local:` prefix: a bare `miniLM:f16` parses as
+    // provider `miniLM`.
+    for spec in [
+        "MINILM",
+        "all-minilm",
+        "local:miniLM:f16",
+        "local:all-minilm:f16",
+    ] {
+        let capability = runtime.capability(spec).expect("a catalogued form");
+        assert_eq!(
+            capability.embedding_dim, 384,
+            "{spec} must resolve to the same catalog entry as miniLM"
+        );
+        assert_eq!(
+            capability.can_embed, canonical.can_embed,
+            "{spec} must report the same abilities as miniLM"
+        );
+        assert_eq!(capability.can_tokenize, canonical.can_tokenize, "{spec}");
+        assert!(!capability.can_generate, "{spec} is an embedding model");
+    }
+}
+
+/// A local spec the catalog does not know cannot be loaded, so nothing may be
+/// claimed for it in any build. Before, it was reported as able to generate
+/// and tokenize — abilities of a file that does not exist.
+#[test]
+fn an_uncatalogued_local_spec_claims_nothing() {
+    let capability = runtime()
+        .capability("local:no-such-model")
+        .expect("capability is metadata-only and does not need the model");
+    assert!(
+        !capability.can_generate
+            && !capability.can_tokenize
+            && !capability.can_embed
+            && !capability.can_rank,
+        "an unknown local model must not claim abilities: {capability:?}"
+    );
+    assert_eq!(capability.embedding_dim, 0);
 }

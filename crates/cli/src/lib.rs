@@ -696,9 +696,19 @@ pub(crate) fn execute_parsed_command(
         options::TopCommand::Inference(args) => {
             // Make config-file provider keys visible to the runtime (which reads
             // the environment). Env vars already set win — this only fills gaps.
-            load_provider_keys_into_env();
+            let config_backed = load_provider_keys_into_env();
             let command = inference_command(args.command)?;
-            execute_with_download_offer(connection, command, format)?
+            let mut output = execute_with_download_offer(connection, command, format)?;
+            // The runtime saw the variables this process just set; only the
+            // CLI knows which of them it filled from the file. No config path
+            // means nothing could have been bridged, so there is nothing to
+            // rename.
+            if let (strata_executor::Output::InferenceStatus(status), Some(config_path)) =
+                (&mut output, strata_hub::global_config_path())
+            {
+                name_config_key_sources(status, &config_backed, &config_path.display().to_string());
+            }
+            output
         }
         options::TopCommand::Command(args) => connection.execute(raw_command(args.command)?)?,
         options::TopCommand::Search(_)
@@ -952,6 +962,10 @@ fn execute_with_download_offer(
 
     eprintln!("{error}");
     eprint!("\nDownload {model} now? [y/N] ");
+    // Rationale: the flush only makes the prompt appear before the read
+    // blocks. If stderr cannot be flushed the prompt is lost, not the answer —
+    // the read below still decides, and reporting the flush failure would go
+    // to the same broken stream.
     let _ = std::io::stderr().flush();
     let mut answer = String::new();
     if std::io::stdin().read_line(&mut answer).is_err() || !answer.trim().eq_ignore_ascii_case("y")
@@ -1005,14 +1019,52 @@ fn missing_model_spec(command: &strata_executor::Command) -> Option<String> {
     }
 }
 
+/// Copies config-file provider keys into the environment the runtime reads,
+/// and returns the variables it filled.
+///
+/// A variable already set wins — the file only fills gaps — so every name
+/// returned is a key the environment did *not* have and the file supplied.
+/// That list is what lets `inference status` say so (see
+/// [`name_config_key_sources`]).
 #[cfg(all(feature = "native", feature = "inference"))]
-fn load_provider_keys_into_env() {
+fn load_provider_keys_into_env() -> Vec<&'static str> {
+    let mut filled = Vec::new();
     for info in strata_executor::INFERENCE_CLOUD_PROVIDER_KEYS {
         if std::env::var_os(info.env_var).is_some() {
             continue;
         }
         if let Ok(Some(key)) = strata_hub::read_global_provider_key(info.provider) {
             std::env::set_var(info.env_var, key);
+            filled.push(info.env_var);
+        }
+    }
+    filled
+}
+
+/// Reports where a bridged key actually lives.
+///
+/// The runtime reads keys from the environment and names the variable it
+/// found one in. That is true and misleading when the CLI put it there a
+/// moment ago from `strata config set <provider>.api_key`: `key from
+/// OPENAI_API_KEY` sends a user looking for an export that does not exist,
+/// and an agent that relays it repeats the mistake. For every provider whose
+/// variable is in `config_backed` — the ones [`load_provider_keys_into_env`]
+/// filled — the source becomes the file. A key that was already in the
+/// environment keeps its variable name; a provider with no key stays without
+/// a source, whatever the list says.
+#[cfg(all(feature = "native", feature = "inference"))]
+fn name_config_key_sources(
+    status: &mut strata_executor::InferenceStatus,
+    config_backed: &[&str],
+    config_path: &str,
+) {
+    for provider in &mut status.providers {
+        let bridged = provider
+            .key_env_var
+            .as_deref()
+            .is_some_and(|name| config_backed.contains(&name));
+        if bridged && provider.key_source.is_some() {
+            provider.key_source = Some(config_path.to_owned());
         }
     }
 }
@@ -3154,6 +3206,84 @@ mod tests {
                 "{code} is not fixed by downloading"
             );
         }
+    }
+
+    /// The truth table for where `inference status` says a key came from.
+    ///
+    /// The runtime only ever names a variable. The CLI knows which variables
+    /// it filled from the config file, and those — only those — are renamed
+    /// to the file. A key that was already exported keeps its variable name,
+    /// a provider with no key never gains a source, and a provider that reads
+    /// no variable is untouched.
+    #[cfg(all(feature = "native", feature = "inference"))]
+    #[test]
+    fn a_bridged_key_is_reported_from_the_file_not_the_variable() {
+        use strata_executor::{InferenceProviderKind, InferenceProviderStatus, InferenceStatus};
+
+        use super::name_config_key_sources;
+
+        const CONFIG: &str = "/home/u/.config/strata/config.toml";
+
+        let provider = |kind: InferenceProviderKind, env_var: Option<&str>, present: bool| {
+            InferenceProviderStatus {
+                provider: kind,
+                feature_enabled: true,
+                requires_api_key: env_var.is_some(),
+                key_present: present,
+                key_env_var: env_var.map(str::to_owned),
+                key_source: present
+                    .then(|| env_var.expect("a present key names its variable"))
+                    .map(str::to_owned),
+                ready: present || env_var.is_none(),
+                model_prefix: format!("{kind}:"),
+            }
+        };
+        let mut status = InferenceStatus {
+            local_execution: false,
+            model_download: true,
+            providers: vec![
+                // Exported by the user: the environment had it first.
+                provider(InferenceProviderKind::OpenAI, Some("OPENAI_API_KEY"), true),
+                // Bridged from the file by this process.
+                provider(
+                    InferenceProviderKind::Anthropic,
+                    Some("ANTHROPIC_API_KEY"),
+                    true,
+                ),
+                // No key anywhere.
+                provider(InferenceProviderKind::Google, Some("GOOGLE_API_KEY"), false),
+                // Needs no key, reads no variable.
+                provider(InferenceProviderKind::Local, None, false),
+            ],
+            models_dir: std::path::PathBuf::from("/models"),
+            models_downloaded: 0,
+            models_catalogued: 0,
+            local_remedy: None,
+        };
+
+        // Google is listed as bridged though it has no key: the list must not
+        // conjure a source for a key that is not there.
+        name_config_key_sources(
+            &mut status,
+            &["ANTHROPIC_API_KEY", "GOOGLE_API_KEY"],
+            CONFIG,
+        );
+
+        let sources: Vec<Option<&str>> = status
+            .providers
+            .iter()
+            .map(|provider| provider.key_source.as_deref())
+            .collect();
+        assert_eq!(
+            sources,
+            [Some("OPENAI_API_KEY"), Some(CONFIG), None, None],
+            "only the bridged, present key is attributed to the file"
+        );
+
+        // Nothing bridged: every row is exactly as the runtime reported it.
+        let untouched = status.clone();
+        name_config_key_sources(&mut status, &[], CONFIG);
+        assert_eq!(status, untouched);
     }
 
     /// `missing_model_spec` picks the model out of the commands that load one.
