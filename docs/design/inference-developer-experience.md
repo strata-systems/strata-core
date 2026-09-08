@@ -54,11 +54,11 @@ strata inference generate <model> "..."
 │   │                                  (cannot happen in a released binary —
 │   │                                   cloud is always in)
 │   ├─ key available?         ──no──▶ REFUSE: no key for <provider>.
-│   │                                  → strata inference keys set <provider>
+│   │                                  → strata config set <provider>.api_key
 │   │                                  → or export <PROVIDER>_API_KEY
 │   ├─ provider rejects key?  ──yes─▶ REFUSE: <provider> rejected the key.
 │   │                                  → check it at <provider console URL>
-│   │                                  → strata inference keys set <provider>
+│   │                                  → strata config set <provider>.api_key
 │   ├─ network unreachable?   ──yes─▶ REFUSE (retryable): cannot reach
 │   │                                  <provider>. → --offline uses local models
 │   └─ ▶ generate
@@ -90,8 +90,10 @@ strata <db> vector add <collection> <key> --text "..."
 │
 ├─ collection exists?              ──no──▶ REFUSE, name the create command
 ├─ collection has an embedding model recorded?
-│   ├─ no  (created by hand, raw vectors)  ──▶ REFUSE: this collection stores
-│   │                                           raw vectors; pass --vector
+│   ├─ no  (created by hand, raw vectors)  ──▶ REFUSE (embedding_model_missing):
+│   │                                           pass --vector, or declare once:
+│   │                                           vector collection
+│   │                                             set-embedding-model <c> <model>
 │   └─ yes ▶ use THAT model, not a default
 ├─ that model runnable here?       ──no──▶ REFUSE: this collection was built
 │                                           with <model>, which this build
@@ -119,19 +121,32 @@ error and no meaning.
 ```
 strata inference install-local
 │
-├─ Homebrew-managed binary?  ──yes──▶ brew install stratalab/tap/strata-local
+├─ already runs local models?  ──yes──▶ no-op, changed: false
+├─ Homebrew-managed binary?    ──yes──▶ REFUSE, name the formula:
+│                                        brew install stratalab/tap/strata-local
 ├─ curl-installed?
-│   ├─ resolve the -local asset for this target triple
-│   ├─ show the size (it is much larger) and ask
+│   ├─ resolve the -local asset for this target triple, at THIS version
 │   ├─ download + verify SHA-256 BEFORE touching anything
 │   └─ atomically replace the running binary
-└─ ▶ strata inference status now reports local: available
+└─ ▶ strata inference status now reports local_execution: true
 ```
 
 This is not new machinery. `strata update` already resolves a release, fetches
 the target-triple tarball and `checksums-sha256.txt`, verifies in-process, and
 swaps the binary atomically. `install-local` is that flow pointed at a
 different asset.
+
+**As built (#3217), two things differ from the first sketch of this flow.** It
+does not show the asset's size and ask: the command is itself the request, the
+way `strata update` is, and the reader in §3b cannot answer a prompt — a
+confirmation would block the agent the command exists for, and it would be a
+second consent for a fetch the user just typed. And a Homebrew-managed binary
+is refused with the formula's name rather than swapped; the `strata-local`
+formula it names does not exist yet (#3224), so until it does that message
+points at nothing. Two properties the sketch left implicit are contracts: it
+installs the version it is running, not the latest (adding a capability must
+not also move you across releases), and it is idempotent, so an agent that
+cannot tell whether it already ran it can run it again.
 
 **What it costs us:** a second build per target in the release matrix, with
 cmake and the vendored llama.cpp. CI time and release size, not user cost. CUDA
@@ -155,7 +170,7 @@ build          lean (cloud providers only)
 providers
   openai       ready          key from OPENAI_API_KEY
   anthropic    ready          key from ~/.config/strata/config.toml
-  google       no key         → strata inference keys set google
+  google       no key         → strata config set google.api_key
   local        not in build   → strata inference install-local
 
 models         ~/.strata/models  (shared by every database)
@@ -211,8 +226,22 @@ Accepted 2026-09-07:
   command to declare one. Raw `--vector` keeps working. Inference-by-dimension
   was rejected: 384 and 768 are shared by several models, so it would guess,
   and guessing wrong silently is the exact failure this removes.
+
+  As built (#3218), the command is `vector collection set-embedding-model
+  <collection> <model>`. It is a declaration, not a verification: the engine
+  cannot tell which model produced a stored vector, so it takes the caller's
+  word for the vectors present and holds every later write to it. It is
+  one-time — redeclaring the same model commits nothing, and a different one
+  is refused, because changing the model under existing vectors is the mixing
+  rule 24 forbids. The missing-model refusal has its own code,
+  `failed_precondition.engine.embedding_model_missing`, so a caller can tell
+  "nothing recorded" from "two models disagree". Rule 24's spelling of the
+  mismatch code is two segments; rule 27 requires three, so the registered
+  code is `failed_precondition.engine.embedding_model_mismatch`.
 - **D10 — executor orchestrates**, as a recorded exception to the thin-executor
-  rule (see the table above).
+  rule (see the table above). Built in #3218 as `vector upsert --text` and
+  `vector query --text`; writes embed as documents and searches as queries,
+  since instruction-tuned embedders produce different vectors for the two.
 
 ## 3b. Who is reading this
 
@@ -242,8 +271,8 @@ Verified against `main` at 1.2.1.
 | Capability | Today | Gap |
 |---|---|---|
 | Cloud generation | ✅ works, three providers in the released binary | — |
-| Local execution in releases | ❌ compiled out | **D1, D2** |
-| Way to add local later | ❌ source build only | **D1, D2** |
+| Local execution in releases | ❌ compiled out | **D1, D2** — `-local` asset in the #3124 branch |
+| Way to add local later | ❌ source build only | **D1, D2** — `install-local` in the #3124 branch |
 | `capability` truthfulness | ❌ `can_embed: true` beside `provider_feature_enabled: false` | **D3** — fixed in the #3124 branch |
 | Model list truthfulness | ❌ lists 11 models the binary cannot load; `is_local` is about the file | **D4** — fixed in the #3124 branch |
 | Refusal messages | ❌ seven phrasings, none actionable | partly fixed in the #3124 branch |
@@ -251,13 +280,13 @@ Verified against `main` at 1.2.1.
 | Key failure diagnosis | ❌ "not set" is distinguished; rejected vs unreachable are not | **D6** |
 | Model storage shared across DBs | ✅ `~/.strata/models`, global | **D7** (document it) |
 | Model download | ❌ rides with `local`, so a released binary cannot pull at all | **D1** |
-| First-use download prompt | ❌ no prompt, no auto-pull | **D8** |
+| First-use download prompt | ❌ no prompt, no auto-pull | **D8** — fixed in the #3124 branch; `vector --text` not yet covered (#3226) |
 | Removing a model | ❌ no `models rm` | minor |
-| Embedding model provenance | ❌ **nothing records it**; rule 24's error code does not exist in the codebase | **D9** |
-| Embed → store in one step | ❌ `inference embed` returns vectors to the caller; `vector upsert` takes them | **D10** |
-| Query-time embedding | ❌ caller must embed separately with the right model, unaided | **D9, D10** |
-| Single status surface | ✅ `strata inference status` | — |
-| `strata doctor` covers inference | ❌ checks binary, home, database only | **D11** |
+| Embedding model provenance | ❌ **nothing records it**; rule 24's error code does not exist in the codebase | **D9** — fixed in #3218 |
+| Embed → store in one step | ❌ `inference embed` returns vectors to the caller; `vector upsert` takes them | **D10** — fixed in #3218 |
+| Query-time embedding | ❌ caller must embed separately with the right model, unaided | **D9, D10** — fixed in #3218 |
+| Single status surface | ❌ none; `capability` answers per model | **D11** — `strata inference status` in the #3124 branch |
+| `strata doctor` covers inference | ❌ checks binary, home, database only | **D11** — fixed in the #3124 branch |
 
 ### The two that matter most
 
@@ -301,14 +330,17 @@ toolchain wall.
 
 - **Homebrew:** a separate `strata-local` formula, or a formula option? A tap
   can carry both, but a user who `brew install`s one and then runs
-  `install-local` needs a coherent answer.
+  `install-local` needs a coherent answer. `install-local` already refuses a
+  Homebrew binary by naming `stratalab/tap/strata-local`; publishing that
+  formula is #3224.
 - **Windows:** `install-local` inherits `update`'s platform support. Local
   execution on Windows is untested.
 - **CUDA:** a third asset per target, or permanently a source build? A GPU user
   is likelier to tolerate a build, but they are also the user who most wants
   local inference.
-- **Existing collections:** if D9 lands after users have vector data, what is
-  the story for a collection with no recorded model? Refuse `--text`, allow raw
-  vectors (the proposal above), or a one-time declaration command?
+- ~~**Existing collections:** if D9 lands after users have vector data, what is
+  the story for a collection with no recorded model?~~ Answered in #3218: all
+  three. `--text` refuses with `embedding_model_missing`, raw vectors keep
+  working, and `vector collection set-embedding-model` declares once (D9).
 - **Key precedence:** env over config is proposed. Does a per-database override
   belong here too? (Related: the deferred per-device inference config work.)
