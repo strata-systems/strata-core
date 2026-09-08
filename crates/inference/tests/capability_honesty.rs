@@ -192,6 +192,48 @@ fn status_reports_the_build_and_every_provider() {
         "every provider is reported, including the ones that are not usable"
     );
 
+    // `ready` and `feature_enabled` stated as equalities, not implications.
+    //
+    // Every assertion below this used the form "if ready, then ...", which two
+    // mutants satisfied by making `ready` false for everyone — a status page
+    // reporting nothing usable passes an implication-only test perfectly.
+    for provider in &status.providers {
+        let expected_feature = match provider.provider {
+            // A provider is enabled if it can do either job. Anthropic is the
+            // case that distinguishes `||` from `&&`: it generates but has no
+            // embedding support at all, so under `&&` it would report disabled
+            // while being perfectly usable for generation.
+            strata_inference::ProviderKind::Anthropic => cfg!(feature = "anthropic"),
+            strata_inference::ProviderKind::OpenAI => cfg!(feature = "openai"),
+            strata_inference::ProviderKind::Google => cfg!(feature = "google"),
+            strata_inference::ProviderKind::Local => LOCAL_BUILT_IN,
+        };
+        assert_eq!(
+            provider.feature_enabled, expected_feature,
+            "{:?} must report the features this build has",
+            provider.provider
+        );
+        assert_eq!(
+            provider.ready,
+            provider.feature_enabled && (provider.key_present || !provider.requires_api_key),
+            "{:?} is ready exactly when it is built in and has whatever key it needs",
+            provider.provider
+        );
+    }
+
+    // And the keyless provider is ready on nothing but its feature — the case
+    // where `key_present || !requires_api_key` carries the whole decision.
+    let local = status
+        .providers
+        .iter()
+        .find(|provider| provider.provider == strata_inference::ProviderKind::Local)
+        .expect("local is reported");
+    assert!(!local.key_present, "local never has a key");
+    assert_eq!(
+        local.ready, LOCAL_BUILT_IN,
+        "local is ready whenever it is built in, with no key involved"
+    );
+
     for provider in &status.providers {
         // `ready` is never a claim the build cannot keep — the same law the
         // capability flags follow.

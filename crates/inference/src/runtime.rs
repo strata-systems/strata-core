@@ -361,7 +361,7 @@ impl InferenceRuntime {
             let requires_api_key = provider != ProviderKind::Local;
             let key_env_var = requires_api_key.then(|| api_key_env_var(provider).to_owned());
             let key_source = resolve_key_source(key_env_var.as_deref(), |name| {
-                std::env::var_os(name).is_some_and(|value| !value.is_empty())
+                env_holds_a_key(std::env::var_os(name).as_deref())
             });
             let key_present = key_source.is_some();
             ProviderStatus {
@@ -371,7 +371,7 @@ impl InferenceRuntime {
                 key_present,
                 key_env_var,
                 key_source,
-                ready: feature_enabled && (key_present || !requires_api_key),
+                ready: provider_is_ready(feature_enabled, key_present, requires_api_key),
                 model_prefix: format!("{provider}:"),
             }
         })
@@ -1223,6 +1223,29 @@ fn resolve_key_source(env_var: Option<&str>, is_set: impl Fn(&str) -> bool) -> O
     env_var.filter(|name| is_set(name)).map(str::to_owned)
 }
 
+/// A variable that exists but holds nothing is not a key.
+///
+/// Extracted from the closure inside `status` so the rule has a truth table.
+/// No provider variable is set in CI, so `var_os` returns `None` there and the
+/// predicate's body is never reached — dropping the `!` was undetectable from
+/// `status` alone, and the mutant survived. Here it is decided on a value.
+fn env_holds_a_key(value: Option<&std::ffi::OsStr>) -> bool {
+    value.is_some_and(|value| !value.is_empty())
+}
+
+/// A provider can be called when the build has it and it has whatever key it
+/// needs.
+///
+/// Extracted for the same reason as `env_holds_a_key`: in CI `local` is off and
+/// no cloud key is set, so `feature_enabled` is false for the keyless provider
+/// and `key_present` is false for every other one. Both branches of the
+/// disjunction are false together, which makes it indistinguishable from a
+/// conjunction — the mutant survived on the environment, not on the logic.
+/// Decided on values here, it has a truth table.
+fn provider_is_ready(feature_enabled: bool, key_present: bool, requires_api_key: bool) -> bool {
+    feature_enabled && (key_present || !requires_api_key)
+}
+
 /// What a model and provider inherently support, before any question of what
 /// this binary was compiled with.
 ///
@@ -1308,6 +1331,98 @@ fn embedding_provider_feature_enabled_for_capability(provider: ProviderKind) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Readiness, over every combination rather than the one CI happens to be in.
+    ///
+    /// The two rows that matter are the ones the environment cannot produce: a
+    /// keyless provider that is built in is ready with no key, and a keyed
+    /// provider that is built in is ready once its key arrives.
+    #[test]
+    fn a_provider_is_ready_when_built_in_and_holding_any_key_it_needs() {
+        // Keyless: readiness is the feature alone.
+        assert!(
+            provider_is_ready(true, false, false),
+            "built in, needs no key"
+        );
+        assert!(provider_is_ready(true, true, false));
+        assert!(!provider_is_ready(false, false, false), "not built in");
+        assert!(!provider_is_ready(false, true, false));
+
+        // Keyed: the feature and the key together.
+        assert!(provider_is_ready(true, true, true), "built in, key present");
+        assert!(
+            !provider_is_ready(true, false, true),
+            "built in, key missing"
+        );
+        assert!(
+            !provider_is_ready(false, true, true),
+            "key without the feature"
+        );
+        assert!(!provider_is_ready(false, false, true));
+    }
+
+    /// An empty variable is not a key.
+    ///
+    /// The distinction matters because `KEY=""` is what an unset shell variable
+    /// expands to in a script: reporting a key present there sends the caller
+    /// to a provider that will reject them, instead of to the line that sets it.
+    #[test]
+    fn an_empty_variable_does_not_count_as_a_key() {
+        use std::ffi::OsStr;
+        assert!(!env_holds_a_key(None), "unset is no key");
+        assert!(!env_holds_a_key(Some(OsStr::new(""))), "empty is no key");
+        assert!(env_holds_a_key(Some(OsStr::new("sk-abc"))));
+        assert!(
+            env_holds_a_key(Some(OsStr::new(" "))),
+            "whitespace is a value"
+        );
+    }
+
+    /// `api_key` reports exactly what the environment holds.
+    ///
+    /// Written as a relationship rather than a fixed answer so it holds whether
+    /// or not the developer running it has keys set, while still killing the
+    /// mutants: with no key set (CI) an `Ok(_)` of any kind contradicts the
+    /// error, and with one set a wrong or empty string contradicts the value.
+    #[test]
+    #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
+    fn the_reported_key_is_the_one_the_environment_holds() {
+        for provider in [
+            ProviderKind::OpenAI,
+            ProviderKind::Anthropic,
+            ProviderKind::Google,
+        ] {
+            let variable = api_key_env_var(provider);
+            let expected = std::env::var(variable);
+            let reported = api_key(provider);
+            assert_eq!(
+                reported.is_ok(),
+                expected.is_ok(),
+                "{provider} must report a key exactly when {variable} is set"
+            );
+            if let (Ok(reported), Ok(expected)) = (reported, expected) {
+                assert_eq!(
+                    reported, expected,
+                    "{provider} must report {variable} verbatim"
+                );
+            }
+        }
+    }
+
+    /// The local provider has no key to report, and says so as a refusal rather
+    /// than as an empty string that would read like a key.
+    ///
+    /// The code is `unsupported_provider` and not `unsupported_operation` for a
+    /// reason worth recording: `NotSupported` is classified by substring-matching
+    /// the message, and this one contains the word "provider". The answer happens
+    /// to be apt, but nothing chose it — rewording the sentence would move it.
+    /// One more instance of #3216, alongside the four in this PR's history.
+    #[test]
+    #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
+    fn the_local_provider_has_no_api_key() {
+        let error = api_key(ProviderKind::Local).expect_err("local uses no key");
+        assert_eq!(error.code(), "inference.unsupported_provider");
+    }
 
     #[test]
     fn default_config_allows_network() {
