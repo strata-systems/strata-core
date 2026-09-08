@@ -11,7 +11,7 @@
   "command": "kv.count",
   "request": {
     "additionalProperties": false,
-    "description": "Counts keys.",
+    "description": "Counts keys.\n\n# Guaranteed semantics\n\n- **Exact, over live keys only.** Deleted keys are not counted, and the\n  answer is not an estimate.\n- **A walk, not a counter.** There is no maintained total: counting\n  visits every live key under the prefix, so the cost grows with the\n  number of keys counted. Narrow it with a prefix when that matters.",
     "properties": {
       "as_of": {
         "description": "Read as of a position on the logical commit timeline — the\n`timestamp` from `history` output, not the `version`, and never a\ncalendar date. To read as of a real time, use `as_of_time` instead.",

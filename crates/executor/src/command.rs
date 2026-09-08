@@ -283,6 +283,12 @@ pub enum Command {
     ///   observes this write (or a newer one) — including immediately, from
     ///   the handle that issued it. Acknowledged writes are never
     ///   transiently invisible.
+    /// - **Shapes.** A key is any non-empty byte string; a value is any byte
+    ///   string, including empty — an empty value is a present entry, not an
+    ///   absent one. Neither carries an engine length limit; the durable row
+    ///   format caps each at 4 GiB. In practice the database's memory budget
+    ///   is the binding limit long before that, and cache mode holds
+    ///   everything resident.
     KvPut {
         /// Target branch. Defaults to the executor handle branch.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -296,6 +302,13 @@ pub enum Command {
         value: Bytes,
     },
     /// Reads one KV entry.
+    ///
+    /// # Guaranteed semantics
+    ///
+    /// - **Absent and empty are different.** A missing key returns no entry; a
+    ///   key holding zero bytes returns an entry whose value is empty.
+    /// - **Reads never block writers.** A read observes a consistent version of
+    ///   the key and takes no lock a concurrent writer waits on.
     KvGet {
         /// Target branch. Defaults to the executor handle branch.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -320,6 +333,16 @@ pub enum Command {
         as_of_time: Option<u64>,
     },
     /// Deletes one KV entry.
+    ///
+    /// # Guaranteed semantics
+    ///
+    /// - **Deleting what is not there succeeds.** The result reports
+    ///   `deleted: false` and **no commit is made** — the branch is untouched
+    ///   and its version does not move. Callers that expect a version back
+    ///   from every delete must handle its absence.
+    /// - **History survives.** Delete writes a tombstone; it does not erase
+    ///   past versions. `history`, and any read at an earlier point, still
+    ///   return what the key held before.
     KvDelete {
         /// Target branch. Defaults to the executor handle branch.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -331,6 +354,16 @@ pub enum Command {
         key: Bytes,
     },
     /// Lists KV keys.
+    ///
+    /// # Guaranteed semantics
+    ///
+    /// - **Ordered by key.** Pages come back in ascending byte order, and a
+    ///   cursor resumes strictly after the last key of the previous page.
+    /// - **Latest per page, not a snapshot.** Each page reads the branch as it
+    ///   is when that page is fetched, so a write landing between two pages can
+    ///   appear in the later one. For a listing that cannot shift underneath
+    ///   you, pass `as_of` (or `as_of_time`) and keep it fixed across every
+    ///   page: each page then reads the same point on the timeline.
     KvList {
         /// Target branch. Defaults to the executor handle branch.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -362,6 +395,14 @@ pub enum Command {
         as_of_time: Option<u64>,
     },
     /// Scans KV rows.
+    ///
+    /// # Guaranteed semantics
+    ///
+    /// - **One call, one read.** A scan returns its rows from a single read of
+    ///   the branch; it does not paginate across calls, so no write can land
+    ///   part-way through the result. Use `list` when you need cursored pages.
+    /// - **Ordered and half-open.** Rows come back in ascending key order over
+    ///   `[start, end)` — the start key is included, the end key is not.
     KvScan {
         /// Target branch. Defaults to the executor handle branch.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -377,6 +418,17 @@ pub enum Command {
         limit: Option<u64>,
     },
     /// Writes multiple KV entries in one engine commit.
+    ///
+    /// # Guaranteed semantics
+    ///
+    /// - **Atomic across the batch.** Every entry lands in one engine commit
+    ///   and shares its version. There is no partial batch to detect or undo:
+    ///   readers see all of it or none of it.
+    /// - **Duplicate keys are refused.** Two entries with the same key fail the
+    ///   whole batch with `invalid_argument.engine.kv_batch_duplicate_key`, and
+    ///   nothing is written — including the entries that were not duplicated.
+    ///   The batch is a set of keys, not a sequence of writes to replay.
+    /// - **An empty batch is refused** with `invalid_argument.engine.kv_batch`.
     KvBatchPut {
         /// Target branch. Defaults to the executor handle branch.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -388,6 +440,14 @@ pub enum Command {
         entries: Vec<BatchKvEntry>,
     },
     /// Reads multiple KV entries.
+    ///
+    /// # Guaranteed semantics
+    ///
+    /// - **Positional.** One result per requested key, in the order asked. A
+    ///   key that is not there comes back absent rather than being skipped, so
+    ///   result `i` always belongs to request `i`.
+    /// - **Repeats are allowed**, unlike the write batches — a read batch is a
+    ///   list of lookups, not a set of mutations.
     KvBatchGet {
         /// Target branch. Defaults to the executor handle branch.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -399,6 +459,18 @@ pub enum Command {
         keys: Vec<Bytes>,
     },
     /// Deletes multiple KV entries in one engine commit.
+    ///
+    /// # Guaranteed semantics
+    ///
+    /// - **Atomic across the batch.** Whatever the batch removes, it removes
+    ///   in one engine commit.
+    /// - **Only what existed is committed.** Keys that were not there are
+    ///   reported `false` and cost nothing. If none of the keys existed there
+    ///   is nothing to commit, and the result carries no commit at all.
+    /// - **Duplicate keys are refused** with
+    ///   `invalid_argument.engine.kv_batch_duplicate_key`, and an empty batch
+    ///   with `invalid_argument.engine.kv_batch`. In both cases nothing is
+    ///   written.
     KvBatchDelete {
         /// Target branch. Defaults to the executor handle branch.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -410,6 +482,13 @@ pub enum Command {
         keys: Vec<Bytes>,
     },
     /// Checks multiple keys for existence.
+    ///
+    /// # Guaranteed semantics
+    ///
+    /// - **Positional**, one answer per requested key in the order asked, with
+    ///   repeats allowed — the same contract as `batch_get`.
+    /// - **A deleted key does not exist**, even though its history remains
+    ///   readable through `history` and through any read at an earlier point.
     KvBatchExists {
         /// Target branch. Defaults to the executor handle branch.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -421,6 +500,13 @@ pub enum Command {
         keys: Vec<Bytes>,
     },
     /// Checks one key for existence.
+    ///
+    /// # Guaranteed semantics
+    ///
+    /// - **Existence is about the latest version.** A key that was deleted does
+    ///   not exist here, even though `history` still returns what it held.
+    /// - **A key holding an empty value exists.** Empty is a value, not
+    ///   absence.
     KvExists {
         /// Target branch. Defaults to the executor handle branch.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -432,6 +518,17 @@ pub enum Command {
         key: Bytes,
     },
     /// Reads full version history for one key.
+    ///
+    /// # Guaranteed semantics
+    ///
+    /// - **Every version, including the deletes.** History reports each commit
+    ///   that touched the key, so a key that reads as absent now still returns
+    ///   the versions it held before.
+    /// - **Scoped to one key.** The cost follows that key's own version count,
+    ///   not the size of the database or of the space.
+    /// - **Both clocks.** Each row carries the logical `version` and
+    ///   `timestamp` of its commit and the wall-clock `committed_at` instant —
+    ///   the values `as_of` and `as_of_time` respectively expect.
     KvHistory {
         /// Target branch. Defaults to the executor handle branch.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -443,6 +540,14 @@ pub enum Command {
         key: Bytes,
     },
     /// Counts keys.
+    ///
+    /// # Guaranteed semantics
+    ///
+    /// - **Exact, over live keys only.** Deleted keys are not counted, and the
+    ///   answer is not an estimate.
+    /// - **A walk, not a counter.** There is no maintained total: counting
+    ///   visits every live key under the prefix, so the cost grows with the
+    ///   number of keys counted. Narrow it with a prefix when that matters.
     KvCount {
         /// Target branch. Defaults to the executor handle branch.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -468,6 +573,16 @@ pub enum Command {
         as_of_time: Option<u64>,
     },
     /// Samples keys and values.
+    ///
+    /// # Guaranteed semantics
+    ///
+    /// - **Deterministic, not random.** Rows are taken at even intervals
+    ///   through the keys in order, so the same request over unchanged data
+    ///   returns the same rows. This shows a spread of the data; it does not
+    ///   draw a statistical sample.
+    /// - **`total` is exact**, not an estimate — sampling walks the live keys
+    ///   to produce it, so its cost matches `count`.
+    /// - Asking for more rows than exist returns all of them.
     KvSample {
         /// Target branch. Defaults to the executor handle branch.
         #[serde(default, skip_serializing_if = "Option::is_none")]

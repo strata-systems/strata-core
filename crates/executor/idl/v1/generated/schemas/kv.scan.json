@@ -40,7 +40,7 @@
   "command": "kv.scan",
   "request": {
     "additionalProperties": false,
-    "description": "Scans KV rows.",
+    "description": "Scans KV rows.\n\n# Guaranteed semantics\n\n- **One call, one read.** A scan returns its rows from a single read of\n  the branch; it does not paginate across calls, so no write can land\n  part-way through the result. Use `list` when you need cursored pages.\n- **Ordered and half-open.** Rows come back in ascending key order over\n  `[start, end)` — the start key is included, the end key is not.",
     "properties": {
       "branch": {
         "description": "Target branch. Defaults to the executor handle branch.",

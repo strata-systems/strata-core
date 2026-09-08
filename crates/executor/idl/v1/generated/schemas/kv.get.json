@@ -58,7 +58,7 @@
   "command": "kv.get",
   "request": {
     "additionalProperties": false,
-    "description": "Reads one KV entry.",
+    "description": "Reads one KV entry.\n\n# Guaranteed semantics\n\n- **Absent and empty are different.** A missing key returns no entry; a\n  key holding zero bytes returns an entry whose value is empty.\n- **Reads never block writers.** A read observes a consistent version of\n  the key and takes no lock a concurrent writer waits on.",
     "properties": {
       "as_of": {
         "description": "Read as of a position on the logical commit timeline — the\n`timestamp` from `history` output, not the `version`, and never a\ncalendar date. To read as of a real time, use `as_of_time` instead.",

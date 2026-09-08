@@ -558,7 +558,7 @@
   "command": "kv.batch_get",
   "request": {
     "additionalProperties": false,
-    "description": "Reads multiple KV entries.",
+    "description": "Reads multiple KV entries.\n\n# Guaranteed semantics\n\n- **Positional.** One result per requested key, in the order asked. A\n  key that is not there comes back absent rather than being skipped, so\n  result `i` always belongs to request `i`.\n- **Repeats are allowed**, unlike the write batches — a read batch is a\n  list of lookups, not a set of mutations.",
     "properties": {
       "branch": {
         "description": "Target branch. Defaults to the executor handle branch.",

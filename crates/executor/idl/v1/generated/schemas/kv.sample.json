@@ -39,7 +39,7 @@
   "command": "kv.sample",
   "request": {
     "additionalProperties": false,
-    "description": "Samples keys and values.",
+    "description": "Samples keys and values.\n\n# Guaranteed semantics\n\n- **Deterministic, not random.** Rows are taken at even intervals\n  through the keys in order, so the same request over unchanged data\n  returns the same rows. This shows a spread of the data; it does not\n  draw a statistical sample.\n- **`total` is exact**, not an estimate — sampling walks the live keys\n  to produce it, so its cost matches `count`.\n- Asking for more rows than exist returns all of them.",
     "properties": {
       "branch": {
         "description": "Target branch. Defaults to the executor handle branch.",
