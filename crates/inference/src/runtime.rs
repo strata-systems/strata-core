@@ -133,7 +133,9 @@ pub struct InferenceStatus {
     pub providers: Vec<ProviderStatus>,
     /// The model directory, shared by every database on this machine.
     pub models_dir: PathBuf,
-    /// Catalogued models whose artifact is already on disk.
+    /// Catalogued models with at least one variant downloaded — the models
+    /// `models local` lists, judged the way resolution judges (a non-empty
+    /// file; an interrupted download's zero-length leftover does not count).
     pub models_downloaded: usize,
     /// Catalogued models in total.
     pub models_catalogued: usize,
@@ -343,7 +345,19 @@ impl InferenceRuntime {
         #[cfg(not(feature = "download"))]
         {
             let _ = model;
-            Err(download_feature_unavailable())
+            // One phrasing for "this binary was not built with model
+            // downloading". Must contain "download" and must not contain
+            // "provider" — see [`local_feature_unavailable`] on why the
+            // wording is load-bearing. Inline rather than a function of its
+            // own: a function only a `not(download)` build can call is dead
+            // code to the featured lane's clippy, and a `cfg`-gated function
+            // is a mutation site that lane cannot compile or kill.
+            Err(InferenceError::NotSupported(format!(
+                "model download is not built into this binary: {LOCAL_UNAVAILABLE_REMEDY} \
+                 To use a local model anyway, fetch its GGUF file into the models \
+                 directory yourself — `strata inference status` shows the directory and \
+                 `strata inference models list` the expected repository and file name."
+            )))
         }
     }
 
@@ -383,14 +397,16 @@ impl InferenceRuntime {
         })
         .collect();
 
-        let catalog = self.registry().list_available();
+        let registry = self.registry();
         InferenceStatus {
             local_execution: cfg!(feature = "local"),
             model_download: cfg!(feature = "download"),
             providers,
-            models_dir: self.registry().models_dir().to_path_buf(),
-            models_downloaded: catalog.iter().filter(|info| info.is_local).count(),
-            models_catalogued: catalog.len(),
+            models_dir: registry.models_dir().to_path_buf(),
+            // What `models local` lists: any downloaded variant counts, not
+            // only the default quant that `list_available` reports on.
+            models_downloaded: registry.list_local().len(),
+            models_catalogued: registry.list_available().len(),
             local_remedy: (!cfg!(feature = "local")).then(|| LOCAL_UNAVAILABLE_REMEDY.to_owned()),
         }
     }
@@ -1315,19 +1331,6 @@ pub(crate) fn local_feature_unavailable(operation: &str) -> InferenceError {
     InferenceError::NotSupported(format!(
         "{operation} needs local model execution: {LOCAL_UNAVAILABLE_REMEDY} \
          `strata inference status` shows which of those are ready."
-    ))
-}
-
-/// One phrasing for "this binary was not built with model downloading".
-///
-/// Must contain "download" and must not contain "provider" — see
-/// [`local_feature_unavailable`] on why the wording is load-bearing.
-pub(crate) fn download_feature_unavailable() -> InferenceError {
-    InferenceError::NotSupported(format!(
-        "model download is not built into this binary: {LOCAL_UNAVAILABLE_REMEDY} \
-         To use a local model anyway, fetch its GGUF file into the models \
-         directory yourself — `strata inference status` shows the directory and \
-         `strata inference models list` the expected repository and file name."
     ))
 }
 

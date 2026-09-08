@@ -26,6 +26,21 @@ use std::path::{Path, PathBuf};
 
 use crate::error::InferenceError;
 
+/// Whether the model file at `path` is downloaded.
+///
+/// The one predicate behind every surface that answers that question —
+/// `models list`, `models local`, `inference status`, resolution, and the
+/// downloader's "already here" check — so they cannot disagree. They did:
+/// resolution refused a zero-length file as an interrupted download while
+/// the listing called the same file "ready" and the status counted it.
+///
+/// A regular file with at least one byte. A directory or an empty file at the
+/// path is a leftover, not a model.
+pub(crate) fn model_file_is_downloaded(path: &Path) -> bool {
+    path.metadata()
+        .is_ok_and(|meta| meta.is_file() && meta.len() > 0)
+}
+
 /// What a model is designed for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "wire-schemas", derive(schemars::JsonSchema))]
@@ -98,7 +113,9 @@ pub struct ModelInfo {
     pub default_quant: String,
     /// Embedding dimension, or zero for non-embedding models.
     pub embedding_dim: usize,
-    /// Whether the model artifact is present locally.
+    /// Whether this variant's artifact is downloaded — a non-empty file at
+    /// `local_path`, the same test `resolve` applies. An interrupted
+    /// download's zero-length file is not downloaded.
     ///
     /// This is about the *file*, not about whether it can be run: a released
     /// binary reports `is_local: true` for models it cannot load. Check
@@ -163,10 +180,10 @@ impl ModelRegistry {
             .iter()
             .filter_map(|entry| {
                 // Find the first locally-present variant
-                let local_variant = entry.variants.iter().find(|v| {
-                    let p = self.models_dir.join(v.hf_file);
-                    p.exists() && p.metadata().map(|m| m.len() > 0).unwrap_or(false)
-                });
+                let local_variant = entry
+                    .variants
+                    .iter()
+                    .find(|v| model_file_is_downloaded(&self.models_dir.join(v.hf_file)));
                 local_variant.map(|v| self.entry_to_info(entry, v.name))
             })
             .collect()
@@ -212,13 +229,10 @@ impl ModelRegistry {
 
         let path = self.models_dir.join(variant.hf_file);
 
-        if path.exists() {
-            // Reject zero-length files (e.g. from interrupted downloads)
-            let is_valid = path.metadata().map(|m| m.len() > 0).unwrap_or(false);
-            if is_valid {
-                return Ok(path);
-            }
-            // Fall through to the "not found" error — the zero-length file is not usable
+        // A zero-length file (an interrupted download) is not a model; it
+        // falls through to the "not downloaded" error like an absent one.
+        if model_file_is_downloaded(&path) {
+            return Ok(path);
         }
 
         let size_display = format_size(variant.size_bytes);
@@ -402,7 +416,7 @@ impl ModelRegistry {
             .unwrap_or(&entry.variants[0]);
 
         let path = self.models_dir.join(variant.hf_file);
-        let is_local = path.exists();
+        let is_local = model_file_is_downloaded(&path);
 
         ModelInfo {
             name: entry.name.to_string(),
@@ -806,6 +820,82 @@ mod tests {
             msg.contains("is not downloaded"),
             "Zero-length file should not resolve: {}",
             msg
+        );
+    }
+
+    /// Every surface that answers "is this model downloaded?" answers the
+    /// same way. `list_available` used to call any existing path local —
+    /// a zero-length file, even a directory — while `list_local` and
+    /// `resolve` refused it, so `models list` said "ready" and
+    /// `inference status` counted a model that would not load.
+    #[test]
+    fn every_surface_agrees_on_what_counts_as_downloaded() {
+        let (dir, registry) = test_registry();
+        let entry = catalog::find_entry("miniLM").unwrap();
+        let default_variant = entry
+            .variants
+            .iter()
+            .find(|v| v.name == entry.default_quant)
+            .unwrap();
+        let path = dir.path().join(default_variant.hf_file);
+
+        let available_says_local = |registry: &ModelRegistry| {
+            registry
+                .list_available()
+                .into_iter()
+                .find(|info| info.name == "miniLM")
+                .unwrap()
+                .is_local
+        };
+        let local_lists_it = |registry: &ModelRegistry| {
+            registry
+                .list_local()
+                .iter()
+                .any(|info| info.name == "miniLM")
+        };
+
+        // An interrupted download's zero-length leftover.
+        std::fs::write(&path, b"").unwrap();
+        assert!(!model_file_is_downloaded(&path));
+        assert!(
+            !available_says_local(&registry),
+            "zero-length: list_available"
+        );
+        assert!(!local_lists_it(&registry), "zero-length: list_local");
+        assert_eq!(
+            registry.resolve("miniLM").unwrap_err().code(),
+            "inference.missing_model",
+            "zero-length: resolve"
+        );
+
+        // A directory squatting on the artifact's path.
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        assert!(!model_file_is_downloaded(&path));
+        assert!(
+            !available_says_local(&registry),
+            "directory: list_available"
+        );
+        assert!(!local_lists_it(&registry), "directory: list_local");
+        assert_eq!(
+            registry.resolve("miniLM").unwrap_err().code(),
+            "inference.missing_model",
+            "directory: resolve"
+        );
+
+        // The real thing.
+        std::fs::remove_dir(&path).unwrap();
+        std::fs::write(&path, b"gguf").unwrap();
+        assert!(model_file_is_downloaded(&path));
+        assert!(
+            available_says_local(&registry),
+            "downloaded: list_available"
+        );
+        assert!(local_lists_it(&registry), "downloaded: list_local");
+        assert_eq!(
+            registry.resolve("miniLM").unwrap(),
+            path,
+            "downloaded: resolve"
         );
     }
 

@@ -17,6 +17,7 @@ use std::time::{Duration, SystemTime};
 
 use sha2::{Digest, Sha256};
 
+use super::model_file_is_downloaded;
 use crate::error::InferenceError;
 
 /// Download a file from a HuggingFace repository to the local models directory.
@@ -50,13 +51,15 @@ pub fn download_hf_file_with_size(
 ) -> Result<(), InferenceError> {
     let dest = models_dir.join(hf_file);
 
-    // Already downloaded — verify it's not a zero-length leftover from a failed download
+    // Already downloaded — by the same test `resolve` applies, so what this
+    // returns `Ok` for is what `resolve` will then load.
+    if model_file_is_downloaded(&dest) {
+        return Ok(());
+    }
     if dest.exists() {
-        let file_len = dest.metadata().map(|m| m.len()).unwrap_or(0);
-        if file_len > 0 {
-            return Ok(());
-        }
-        // Zero-length file: remove and re-download
+        // A zero-length leftover from a failed download: clear it so the
+        // fresh download can land. Removal failing is not itself an error —
+        // the rename at the end of the download reports it if it matters.
         let _ = std::fs::remove_file(&dest);
     }
 
@@ -91,15 +94,17 @@ pub fn download_hf_file_with_size(
             while lock_path.exists() && start.elapsed() < max_wait {
                 std::thread::sleep(poll_interval);
             }
-
-            // Check if the file appeared
-            if dest.exists() {
-                return Ok(());
-            }
-            // If still locked after timeout, fall through and try ourselves
+            // Whether the other process's download landed is decided once,
+            // below, after our own lock is held — the same check that covers
+            // a download finishing between our first look and the lock. A
+            // separate check here used a bare `exists()`, so a zero-length
+            // file the other process left behind counted as "appeared".
         }
 
-        // Stale lock or timed out — remove and proceed
+        // Stale lock, or the other process finished or timed out — remove
+        // whatever is left and proceed. Removal failing is not itself an
+        // error: our own lock overwrites the file next, and a lock we cannot
+        // write is reported there.
         let _ = fs::remove_file(&lock_path);
     }
 
@@ -109,7 +114,7 @@ pub fn download_hf_file_with_size(
     // Re-check after acquiring lock — another process may have finished
     // downloading while we were waiting for the lock or between our initial
     // check and lock acquisition (TOCTOU race).
-    if dest.exists() && dest.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+    if model_file_is_downloaded(&dest) {
         return Ok(());
     }
 
@@ -305,7 +310,12 @@ impl Drop for LockGuard {
 
 #[cfg(test)]
 mod tests {
-    use super::{hf_download_url, stream_to_file, verify_sha256, LockGuard};
+    use std::sync::Mutex;
+
+    use super::{
+        download_hf_file_with_size, hf_download_url, model_file_is_downloaded, stream_to_file,
+        verify_sha256, LockGuard,
+    };
     use sha2::{Digest, Sha256};
 
     #[test]
@@ -422,5 +432,88 @@ mod tests {
             hf_download_url("https://mirror.internal/hf/", "org/repo", "file.gguf"),
             "https://mirror.internal/hf/org/repo/resolve/main/file.gguf"
         );
+    }
+
+    /// Serializes the tests that point `STRATA_HF_ENDPOINT` at an unroutable
+    /// address: the variable is process-global and tests run in parallel.
+    static ENDPOINT_MUTEX: Mutex<()> = Mutex::new(());
+
+    /// Runs `body` with downloads pointed at a closed loopback port, so a
+    /// download that is attempted fails at once (connection refused) and one
+    /// that is not attempted is the only way to succeed. Restores the
+    /// variable afterwards, panic or not.
+    fn without_a_reachable_hub<T>(body: impl FnOnce() -> T) -> T {
+        struct Restore(Option<String>);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                match self.0.take() {
+                    Some(value) => unsafe { std::env::set_var("STRATA_HF_ENDPOINT", value) },
+                    None => unsafe { std::env::remove_var("STRATA_HF_ENDPOINT") },
+                }
+            }
+        }
+        let _serialized = ENDPOINT_MUTEX
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _restore = Restore(std::env::var("STRATA_HF_ENDPOINT").ok());
+        unsafe { std::env::set_var("STRATA_HF_ENDPOINT", "http://127.0.0.1:1") };
+        body()
+    }
+
+    #[test]
+    fn a_downloaded_file_is_not_downloaded_again() {
+        without_a_reachable_hub(|| {
+            let dir = tempfile::tempdir().expect("tmp");
+            let dest = dir.path().join("model.gguf");
+            std::fs::write(&dest, b"gguf").expect("write");
+            assert!(model_file_is_downloaded(&dest));
+
+            download_hf_file_with_size("org/repo", "model.gguf", dir.path(), &|_, _| {}, 0, None)
+                .expect("a downloaded file needs no hub: the download is skipped");
+
+            assert_eq!(
+                std::fs::read(&dest).expect("read back"),
+                b"gguf",
+                "the file on disk is left as it was"
+            );
+            assert!(
+                !dir.path().join(".downloading").exists(),
+                "no download was started"
+            );
+        });
+    }
+
+    #[test]
+    fn a_zero_length_leftover_is_cleared_and_downloaded_again() {
+        without_a_reachable_hub(|| {
+            let dir = tempfile::tempdir().expect("tmp");
+            let dest = dir.path().join("model.gguf");
+            std::fs::write(&dest, b"").expect("write");
+            assert!(!model_file_is_downloaded(&dest));
+
+            let error = download_hf_file_with_size(
+                "org/repo",
+                "model.gguf",
+                dir.path(),
+                &|_, _| {},
+                0,
+                None,
+            )
+            .expect_err("an interrupted download's leftover is not a model: the download is attempted, and there is no hub");
+
+            assert_eq!(error.code(), "inference.download_failed");
+            assert!(
+                !dest.exists(),
+                "the zero-length leftover is cleared before the download"
+            );
+            assert!(
+                dir.path().join(".downloading").is_dir(),
+                "the download was started"
+            );
+            assert!(
+                !dir.path().join(".downloading/model.gguf.lock").exists(),
+                "the lock is released when the download fails"
+            );
+        });
     }
 }

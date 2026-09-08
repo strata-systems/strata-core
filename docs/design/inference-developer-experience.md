@@ -229,8 +229,13 @@ Accepted 2026-09-07:
 
   As built (#3218), the command is `vector collection set-embedding-model
   <collection> <model>`. It is a declaration, not a verification: the engine
-  cannot tell which model produced a stored vector, so it takes the caller's
-  word for the vectors present and holds every later write to it. It is
+  cannot tell which model produced a vector — stored or supplied later, since
+  a vector carries no model — so it takes the caller's word for both. What the
+  record holds to the model is `--text`: text is embedded with the recorded
+  model and no other, on upsert and on query. A raw `--vector` is the caller's
+  statement that the recorded model produced it; Strata records the model, it
+  cannot verify a vector against it (explicit vector provenance or a stricter
+  collection mode is a possible follow-up, #3231). It is
   one-time — redeclaring the same model commits nothing, and a different one
   is refused, because changing the model under existing vectors is the mixing
   rule 24 forbids. The missing-model refusal has its own code,

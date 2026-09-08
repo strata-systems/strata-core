@@ -146,6 +146,34 @@ fn local_refusals_share_one_actionable_phrasing() {
     }
 }
 
+/// A build without downloading refuses `pull` the same actionable way, and
+/// keeps the code that has always meant "downloads are off".
+#[test]
+#[cfg(not(feature = "download"))]
+fn a_build_without_downloading_says_so_and_what_to_do_instead() {
+    let runtime = InferenceRuntime::new(InferenceRuntimeConfig {
+        network_enabled: true,
+        ..InferenceRuntimeConfig::default()
+    });
+    let error = runtime
+        .pull_model("miniLM")
+        .expect_err("pull refuses without the download feature");
+    assert_eq!(error.code(), "inference.download_disabled");
+    let message = error.to_string();
+    assert!(
+        message.contains("strata inference install-local"),
+        "the refusal must name the command that adds local execution: {message}"
+    );
+    assert!(
+        message.contains("openai:"),
+        "the refusal must name the alternative that needs no install: {message}"
+    );
+    assert!(
+        !message.contains("cargo install"),
+        "the refusal must not send the reader to a source build: {message}"
+    );
+}
+
 /// The refusal codes are unchanged by the rewording.
 ///
 /// `InferenceError::code()` classifies `NotSupported` by substring-matching the
@@ -287,6 +315,91 @@ fn status_reports_the_build_and_every_provider() {
         status.local_remedy.is_some(),
         !status.local_execution,
         "a build lacking local execution must carry the remedy, and one with it must not"
+    );
+}
+
+/// `models_downloaded` counts what `models local` lists, judged the way
+/// `resolve` judges: a model with any non-empty variant on disk counts once;
+/// a zero-length leftover does not. The count used to walk `list_available`,
+/// which looked only at the default quant and called any existing path
+/// downloaded — so a model held as a non-default quant went uncounted while
+/// an interrupted download that `resolve` would refuse was counted.
+#[test]
+fn downloaded_count_matches_what_resolves_and_what_models_local_lists() {
+    let models_dir = tempfile::tempdir().unwrap();
+    let runtime = InferenceRuntime::new(InferenceRuntimeConfig {
+        models_dir: Some(models_dir.path().to_path_buf()),
+        ..InferenceRuntimeConfig::default()
+    });
+    // What resolution sees, over the same directory.
+    let registry = strata_inference::ModelRegistry::with_dir(models_dir.path().to_path_buf());
+    let catalog_len = strata_inference::registry::catalog::CATALOG.len();
+    // Where a variant's artifact lives, and whether it is the model's default.
+    let variant_file = |name: &str, quant: &str| {
+        let entry = strata_inference::registry::catalog::find_entry(name).unwrap();
+        let variant = entry.variants.iter().find(|v| v.name == quant).unwrap();
+        (
+            models_dir.path().join(variant.hf_file),
+            quant == entry.default_quant,
+        )
+    };
+
+    // An empty directory holds nothing.
+    let status = runtime.status();
+    assert_eq!(status.models_downloaded, 0);
+    assert_eq!(status.models_catalogued, catalog_len);
+    assert!(runtime.list_local_models().is_empty());
+
+    // A non-default quant is a downloaded model like any other.
+    let (tinyllama_q8, is_default) = variant_file("tinyllama", "q8_0");
+    assert!(
+        !is_default,
+        "the case is a model held only as a non-default quant"
+    );
+    std::fs::write(&tinyllama_q8, b"gguf").unwrap();
+    // An interrupted download of the default quant is not one.
+    let (minilm_default, is_default) = variant_file("miniLM", "f16");
+    assert!(
+        is_default,
+        "the case is a zero-length file where `models list` looks"
+    );
+    std::fs::write(&minilm_default, b"").unwrap();
+
+    let status = runtime.status();
+    let local: Vec<String> = runtime
+        .list_local_models()
+        .into_iter()
+        .map(|info| info.name)
+        .collect();
+    assert_eq!(local, vec!["tinyllama".to_owned()]);
+    assert_eq!(
+        status.models_downloaded,
+        local.len(),
+        "the status count is the `models local` listing"
+    );
+    assert_eq!(status.models_catalogued, catalog_len);
+
+    // `models list` says the same of each: the zero-length default is not
+    // "ready", and tinyllama's default quant (absent) is not either.
+    let listed = |name: &str| {
+        runtime
+            .list_models()
+            .into_iter()
+            .find(|info| info.name == name)
+            .unwrap()
+            .is_local
+    };
+    assert!(!listed("miniLM"), "a zero-length file is not downloaded");
+    assert!(
+        !listed("tinyllama"),
+        "the default quant is what `models list` reports on"
+    );
+
+    // The same models resolve — and only they.
+    assert_eq!(registry.resolve("tinyllama:q8_0").unwrap(), tinyllama_q8);
+    assert_eq!(
+        registry.resolve("miniLM").unwrap_err().code(),
+        "inference.missing_model"
     );
 }
 

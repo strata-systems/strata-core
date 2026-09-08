@@ -536,7 +536,6 @@ impl crate::InferenceService for FakeInferenceService {
     /// provider it reports is ready and every catalogued model is runnable.
     /// Keeping this deterministic is what lets fixtures replay it.
     fn status(&self) -> crate::InferenceStatus {
-        let models = self.list_models();
         crate::InferenceStatus {
             local_execution: true,
             model_download: false,
@@ -551,8 +550,9 @@ impl crate::InferenceService for FakeInferenceService {
                 model_prefix: "local:".to_owned(),
             }],
             models_dir: std::path::PathBuf::from("/fake/models"),
-            models_downloaded: models.iter().filter(|info| info.is_local).count(),
-            models_catalogued: models.len(),
+            // The same two listings the real runtime counts.
+            models_downloaded: self.list_local_models().len(),
+            models_catalogued: self.list_models().len(),
             local_remedy: None,
         }
     }

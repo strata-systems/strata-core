@@ -29,7 +29,7 @@
           "type": "string"
         },
         "models_downloaded": {
-          "description": "Catalogued models whose artifact is already on disk.",
+          "description": "Catalogued models with at least one variant downloaded — the models\n`models local` lists, judged the way resolution judges (a non-empty\nfile; an interrupted download's zero-length leftover does not count).",
           "format": "uint",
           "minimum": 0,
           "type": "integer"
