@@ -11,13 +11,21 @@ use crate::wire::{
 };
 use crate::{GenerateRequest, GenerateResponse, InferenceError, ProviderFailure, StopReason};
 
-const API_URL: &str = "https://api.anthropic.com/v1/messages";
+/// The API root every Anthropic endpoint hangs off.
+const API_BASE: &str = "https://api.anthropic.com/v1";
 const API_VERSION: &str = "2023-06-01";
+
+/// The Messages endpoint under `api_base`.
+fn messages_url(api_base: &str) -> String {
+    format!("{api_base}/messages")
+}
 
 /// Anthropic cloud provider state.
 pub(crate) struct AnthropicProvider {
     api_key: String,
     model: String,
+    /// Where requests go; [`API_BASE`] outside tests.
+    api_base: String,
 }
 
 impl std::fmt::Debug for AnthropicProvider {
@@ -41,7 +49,19 @@ impl AnthropicProvider {
                 "Anthropic model name is empty".to_string(),
             ));
         }
-        Ok(Self { api_key, model })
+        Ok(Self {
+            api_key,
+            model,
+            api_base: API_BASE.to_string(),
+        })
+    }
+
+    /// Point requests at a local stand-in for the Anthropic API, so a test can
+    /// drive the real request path against a canned response.
+    #[cfg(test)]
+    pub(crate) fn with_api_base(mut self, api_base: &str) -> Self {
+        self.api_base = api_base.to_string();
+        self
     }
 
     pub(crate) fn generate(
@@ -91,7 +111,7 @@ impl AnthropicProvider {
                 .build(),
         );
         let mut response = agent
-            .post(API_URL)
+            .post(&messages_url(&self.api_base))
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", API_VERSION)
             .header("content-type", "application/json")
@@ -1203,6 +1223,105 @@ mod tests {
     fn map_error_includes_provider_name() {
         let err = map_http_error("Anthropic", ureq::Error::StatusCode(503));
         assert!(err.to_string().contains("Anthropic"));
+    }
+
+    // -----------------------------------------------------------------------
+    // The request path, end to end against a local stand-in for the API
+    // -----------------------------------------------------------------------
+
+    use crate::provider::cloud::test_server::CannedResponse;
+
+    fn provider_at(server: &CannedResponse) -> AnthropicProvider {
+        AnthropicProvider::new("sk-ant-test-key".into(), "claude-test".into())
+            .expect("a valid provider")
+            .with_api_base(server.base_url())
+    }
+
+    fn short_request() -> GenerateRequest {
+        GenerateRequest {
+            prompt: "hi".into(),
+            max_tokens: 8,
+            ..GenerateRequest::default()
+        }
+    }
+
+    /// The whole path works: the request reaches the endpoint with the
+    /// credential and version headers, and a good answer parses.
+    #[test]
+    fn a_completion_round_trips_through_the_request_path() {
+        let server = CannedResponse::serve(
+            200,
+            r#"{"content":[{"type":"text","text":"hello"}],"stop_reason":"end_turn",
+                "usage":{"input_tokens":1,"output_tokens":1}}"#,
+        );
+        let response = provider_at(&server)
+            .generate(&short_request())
+            .expect("a parsed completion");
+        assert_eq!(response.text, "hello");
+
+        let request = server.request().to_ascii_lowercase();
+        assert!(
+            request.starts_with("post /messages "),
+            "the endpoint under the base: {request}"
+        );
+        assert!(
+            request.contains("x-api-key: sk-ant-test-key"),
+            "the credential travels in x-api-key: {request}"
+        );
+        assert!(
+            request.contains(&format!("anthropic-version: {API_VERSION}")),
+            "the API version is pinned: {request}"
+        );
+    }
+
+    /// A model Anthropic does not know is a 404 with `not_found_error`
+    /// (#3236). By status alone it was "provider unavailable, retry".
+    #[test]
+    fn an_unknown_model_is_model_not_found_not_an_outage() {
+        let server = CannedResponse::serve(
+            404,
+            r#"{"type":"error","error":{"type":"not_found_error","message":"model: claude-nope"},"request_id":"req_x"}"#,
+        );
+        let error = provider_at(&server)
+            .generate(&short_request())
+            .expect_err("unknown model");
+        assert_eq!(error.code(), "inference.provider_model_not_found");
+        assert!(
+            error.to_string().contains("claude-nope"),
+            "names the model the provider rejected: {error}"
+        );
+    }
+
+    /// Anthropic reports an empty balance as a 400 `invalid_request_error`
+    /// whose message is the only place the cause appears (#3236). By status
+    /// alone it was "invalid request", which sends the user to their prompt.
+    #[test]
+    fn an_empty_balance_is_quota_exhausted_not_an_invalid_request() {
+        let server = CannedResponse::serve(
+            400,
+            r#"{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."}}"#,
+        );
+        let error = provider_at(&server)
+            .generate(&short_request())
+            .expect_err("empty balance");
+        assert_eq!(error.code(), "inference.provider_quota_exhausted");
+        assert!(
+            error.to_string().contains("credit balance is too low"),
+            "the provider's own explanation reaches the user: {error}"
+        );
+    }
+
+    /// Direction control: a rejected key still reads as an auth failure.
+    #[test]
+    fn a_rejected_key_is_auth_failed() {
+        let server = CannedResponse::serve(
+            401,
+            r#"{"type":"error","error":{"type":"authentication_error","message":"API key is invalid."},"request_id":null}"#,
+        );
+        let error = provider_at(&server)
+            .generate(&short_request())
+            .expect_err("rejected key");
+        assert_eq!(error.code(), "inference.provider_auth_failed");
     }
 
     // -----------------------------------------------------------------------

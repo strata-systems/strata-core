@@ -10,13 +10,25 @@ use crate::wire::{
 };
 use crate::{GenerateRequest, GenerateResponse, InferenceError, ProviderFailure, StopReason};
 
-const API_URL: &str = "https://api.openai.com/v1/chat/completions";
-pub(crate) const EMBED_API_URL: &str = "https://api.openai.com/v1/embeddings";
+/// The API root every OpenAI endpoint hangs off.
+pub(crate) const API_BASE: &str = "https://api.openai.com/v1";
+
+/// The chat-completions endpoint under `api_base`.
+fn chat_url(api_base: &str) -> String {
+    format!("{api_base}/chat/completions")
+}
+
+/// The embeddings endpoint under `api_base`.
+pub(crate) fn embed_url(api_base: &str) -> String {
+    format!("{api_base}/embeddings")
+}
 
 /// OpenAI cloud provider state.
 pub(crate) struct OpenAIProvider {
     api_key: String,
     model: String,
+    /// Where requests go; [`API_BASE`] outside tests.
+    api_base: String,
 }
 
 impl std::fmt::Debug for OpenAIProvider {
@@ -40,7 +52,19 @@ impl OpenAIProvider {
                 "OpenAI model name is empty".to_string(),
             ));
         }
-        Ok(Self { api_key, model })
+        Ok(Self {
+            api_key,
+            model,
+            api_base: API_BASE.to_string(),
+        })
+    }
+
+    /// Point requests at a local stand-in for the OpenAI API, so a test can
+    /// drive the real request path against a canned response.
+    #[cfg(test)]
+    pub(crate) fn with_api_base(mut self, api_base: &str) -> Self {
+        self.api_base = api_base.to_string();
+        self
     }
 
     pub(crate) fn generate(
@@ -86,7 +110,7 @@ impl OpenAIProvider {
                 .build(),
         );
         let mut response = agent
-            .post(API_URL)
+            .post(&chat_url(&self.api_base))
             .header("Authorization", &format!("Bearer {}", self.api_key))
             .header("content-type", "application/json")
             .send(body)
@@ -1305,6 +1329,115 @@ mod tests {
     fn map_error_includes_provider_name() {
         let err = map_http_error("OpenAI", ureq::Error::StatusCode(500));
         assert!(err.to_string().contains("OpenAI"));
+    }
+
+    // -----------------------------------------------------------------------
+    // The request path, end to end against a local stand-in for the API
+    // -----------------------------------------------------------------------
+
+    use crate::provider::cloud::test_server::CannedResponse;
+
+    fn provider_at(server: &CannedResponse) -> OpenAIProvider {
+        OpenAIProvider::new("sk-test-key".into(), "gpt-4o-mini".into())
+            .expect("a valid provider")
+            .with_api_base(server.base_url())
+    }
+
+    fn short_request() -> GenerateRequest {
+        GenerateRequest {
+            prompt: "hi".into(),
+            max_tokens: 8,
+            ..GenerateRequest::default()
+        }
+    }
+
+    /// The whole path works: the request reaches the endpoint with the
+    /// credential, and a good answer parses. The control for the failure
+    /// tests below, and what keeps `send` from being replaced wholesale.
+    #[test]
+    fn a_completion_round_trips_through_the_request_path() {
+        let server = CannedResponse::serve(
+            200,
+            r#"{"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}],
+                "usage":{"prompt_tokens":1,"completion_tokens":1}}"#,
+        );
+        let response = provider_at(&server)
+            .generate(&short_request())
+            .expect("a parsed completion");
+        assert_eq!(response.text, "hello");
+
+        let request = server.request();
+        assert!(
+            request.starts_with("POST /chat/completions "),
+            "the endpoint under the base: {request}"
+        );
+        assert!(
+            request.to_ascii_lowercase().contains("authorization: bearer sk-test-key"),
+            "the credential travels as a bearer token: {request}"
+        );
+    }
+
+    /// OpenAI's no-credits answer is a 429 whose body says `insufficient_quota`
+    /// (#3236). Read by status alone it is "rate limited", which tells the
+    /// user to wait for something that will never reset on its own.
+    #[test]
+    fn no_credits_is_quota_exhausted_not_rate_limited() {
+        let server = CannedResponse::serve(
+            429,
+            r#"{"error":{"message":"You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing.",
+                "type":"insufficient_quota","param":null,"code":"credit_balance_exhausted"}}"#,
+        );
+        let error = provider_at(&server)
+            .generate(&short_request())
+            .expect_err("no credits");
+        assert_eq!(error.code(), "inference.provider_quota_exhausted");
+        assert!(
+            error.to_string().contains("no credits remaining"),
+            "the provider's own explanation reaches the user: {error}"
+        );
+    }
+
+    /// A model OpenAI does not know is a 404 with `model_not_found` (#3236).
+    /// By status alone it was "provider unavailable, retry".
+    #[test]
+    fn an_unknown_model_is_model_not_found_not_an_outage() {
+        let server = CannedResponse::serve(
+            404,
+            r#"{"error":{"message":"The model `gpt-4o-minx` does not exist or you do not have access to it.",
+                "type":"invalid_request_error","param":null,"code":"model_not_found"}}"#,
+        );
+        let error = provider_at(&server)
+            .generate(&short_request())
+            .expect_err("unknown model");
+        assert_eq!(error.code(), "inference.provider_model_not_found");
+        assert!(
+            error.to_string().contains("gpt-4o-minx"),
+            "names the model the provider rejected: {error}"
+        );
+    }
+
+    /// Direction control: a rejected key still reads as an auth failure, and
+    /// the provider's own wording rides along.
+    #[test]
+    fn a_rejected_key_is_auth_failed() {
+        let server = CannedResponse::serve(
+            401,
+            r#"{"error":{"message":"Incorrect API key provided: sk-demo-*************rong. You can find your API key at https://platform.openai.com/account/api-keys.",
+                "type":"invalid_request_error","code":"invalid_api_key","param":null},"status":401}"#,
+        );
+        let error = provider_at(&server)
+            .generate(&short_request())
+            .expect_err("rejected key");
+        assert_eq!(error.code(), "inference.provider_auth_failed");
+        let shown = error.to_string();
+        assert!(
+            shown.contains("Incorrect API key"),
+            "the provider's own explanation reaches the user: {shown}"
+        );
+        assert!(
+            !shown.contains("sk-demo"),
+            "a key echoed back by the provider is redacted: {shown}"
+        );
     }
 
     // -----------------------------------------------------------------------

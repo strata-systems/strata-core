@@ -17,6 +17,8 @@ pub struct CloudEmbeddingEngine {
     provider: ProviderKind,
     api_key: String,
     model: String,
+    /// Where requests go; the provider's own API root outside tests.
+    api_base: String,
 }
 
 impl std::fmt::Debug for CloudEmbeddingEngine {
@@ -75,10 +77,19 @@ impl CloudEmbeddingEngine {
         }
 
         Ok(Self {
+            api_base: api_base_for(provider).to_string(),
             provider,
             api_key,
             model,
         })
+    }
+
+    /// Point requests at a local stand-in for the provider's API, so a test
+    /// can drive the real request path against a canned response.
+    #[cfg(test)]
+    pub(crate) fn with_api_base(mut self, api_base: &str) -> Self {
+        self.api_base = api_base.to_string();
+        self
     }
 
     /// Which provider this engine uses.
@@ -103,7 +114,7 @@ impl CloudEmbeddingEngine {
                         .build(),
                 );
                 let mut response = agent
-                    .post(crate::provider::openai::EMBED_API_URL)
+                    .post(&crate::provider::openai::embed_url(&self.api_base))
                     .header("Authorization", &format!("Bearer {}", self.api_key))
                     .header("content-type", "application/json")
                     .send(&body)
@@ -126,7 +137,7 @@ impl CloudEmbeddingEngine {
 
             #[cfg(feature = "google")]
             ProviderKind::Google => {
-                let url = crate::provider::google::build_embed_url(&self.model);
+                let url = crate::provider::google::build_embed_url(&self.api_base, &self.model);
                 let body = crate::provider::google::build_embed_request_json(text);
                 let agent = ureq::Agent::new_with_config(
                     ureq::config::Config::builder()
@@ -178,7 +189,7 @@ impl CloudEmbeddingEngine {
                         .build(),
                 );
                 let mut response = agent
-                    .post(crate::provider::openai::EMBED_API_URL)
+                    .post(&crate::provider::openai::embed_url(&self.api_base))
                     .header("Authorization", &format!("Bearer {}", self.api_key))
                     .header("content-type", "application/json")
                     .send(&body)
@@ -195,7 +206,8 @@ impl CloudEmbeddingEngine {
 
             #[cfg(feature = "google")]
             ProviderKind::Google => {
-                let url = crate::provider::google::build_batch_embed_url(&self.model);
+                let url =
+                    crate::provider::google::build_batch_embed_url(&self.api_base, &self.model);
                 let body =
                     crate::provider::google::build_batch_embed_request_json(&self.model, texts);
                 let agent = ureq::Agent::new_with_config(
@@ -270,6 +282,21 @@ const _: () = {
     }
     let _ = assert_both;
 };
+
+/// The API root for `provider`.
+///
+/// Only reached for a provider `new` has admitted, and `new` admits exactly
+/// the providers whose feature is on, so the fall-through arm never serves a
+/// request.
+fn api_base_for(provider: ProviderKind) -> &'static str {
+    match provider {
+        #[cfg(feature = "openai")]
+        ProviderKind::OpenAI => crate::provider::openai::API_BASE,
+        #[cfg(feature = "google")]
+        ProviderKind::Google => crate::provider::google::API_BASE,
+        _ => "",
+    }
+}
 
 /// L2-normalize an embedding vector.
 ///
@@ -572,5 +599,159 @@ mod tests {
         assert!((v[1] - 0.8).abs() < 1e-6);
         let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
         assert!((norm - 1.0).abs() < 1e-6);
+    }
+
+    // -----------------------------------------------------------------------
+    // The request path, end to end against a local stand-in for the API
+    // -----------------------------------------------------------------------
+
+    #[cfg(any(feature = "openai", feature = "google"))]
+    use crate::provider::cloud::test_server::CannedResponse;
+    #[cfg(any(feature = "openai", feature = "google"))]
+    use crate::InferenceEngine;
+
+    #[cfg(any(feature = "openai", feature = "google"))]
+    fn engine_at(provider: ProviderKind, server: &CannedResponse) -> CloudEmbeddingEngine {
+        CloudEmbeddingEngine::new(provider, "test-key".into(), "embed-test".into())
+            .expect("a valid engine")
+            .with_api_base(server.base_url())
+    }
+
+    fn assert_unit(actual: &[f32], expected: &[f32]) {
+        assert_eq!(actual.len(), expected.len(), "{actual:?} vs {expected:?}");
+        for (a, e) in actual.iter().zip(expected) {
+            assert!((a - e).abs() < 1e-6, "{actual:?} vs {expected:?}");
+        }
+    }
+
+    /// A single OpenAI embedding round-trips: the endpoint under the base, the
+    /// bearer credential, and the vector normalised on the way out.
+    #[cfg(feature = "openai")]
+    #[test]
+    fn an_openai_embedding_round_trips_through_the_request_path() {
+        let server = CannedResponse::serve(
+            200,
+            r#"{"data":[{"index":0,"embedding":[3.0,4.0]}],"usage":{"prompt_tokens":1,"total_tokens":1}}"#,
+        );
+        let vector = engine_at(ProviderKind::OpenAI, &server)
+            .embed("hi")
+            .expect("an embedding");
+        assert_unit(&vector, &[0.6, 0.8]);
+
+        let request = server.request();
+        assert!(
+            request.starts_with("POST /embeddings "),
+            "the endpoint under the base: {request}"
+        );
+        assert!(
+            request.to_ascii_lowercase().contains("authorization: bearer test-key"),
+            "the credential travels as a bearer token: {request}"
+        );
+    }
+
+    /// A batch of OpenAI embeddings round-trips in one request.
+    #[cfg(feature = "openai")]
+    #[test]
+    fn an_openai_batch_round_trips_through_the_request_path() {
+        let server = CannedResponse::serve(
+            200,
+            r#"{"data":[{"index":1,"embedding":[0.0,2.0]},{"index":0,"embedding":[3.0,4.0]}],"usage":{"prompt_tokens":2,"total_tokens":2}}"#,
+        );
+        let vectors = engine_at(ProviderKind::OpenAI, &server)
+            .embed_batch(&["a", "b"])
+            .expect("two embeddings");
+        assert_eq!(vectors.len(), 2);
+        assert_unit(&vectors[0], &[0.6, 0.8]);
+        assert_unit(&vectors[1], &[0.0, 1.0]);
+        assert!(server.request().starts_with("POST /embeddings "));
+    }
+
+    /// An embedding model OpenAI does not know is a 404 `model_not_found`
+    /// (#3236). By status alone it was "provider unavailable, retry".
+    #[cfg(feature = "openai")]
+    #[test]
+    fn an_unknown_openai_embedding_model_is_model_not_found() {
+        let server = CannedResponse::serve(
+            404,
+            r#"{"error":{"message":"The model `text-embedding-nope` does not exist or you do not have access to it.","type":"invalid_request_error","param":null,"code":"model_not_found"}}"#,
+        );
+        let error = engine_at(ProviderKind::OpenAI, &server)
+            .embed("hi")
+            .expect_err("unknown model");
+        assert_eq!(error.code(), "inference.provider_model_not_found");
+    }
+
+    /// No credits on a batch embed is quota, not a rate limit (#3236).
+    #[cfg(feature = "openai")]
+    #[test]
+    fn no_credits_on_a_batch_is_quota_exhausted() {
+        let server = CannedResponse::serve(
+            429,
+            r#"{"error":{"message":"You have no credits remaining.","type":"insufficient_quota","param":null,"code":"insufficient_quota"}}"#,
+        );
+        let error = engine_at(ProviderKind::OpenAI, &server)
+            .embed_batch(&["a", "b"])
+            .expect_err("no credits");
+        assert_eq!(error.code(), "inference.provider_quota_exhausted");
+    }
+
+    /// A single Google embedding round-trips: the model's `embedContent`
+    /// endpoint under the base, the key in a header, the vector normalised.
+    #[cfg(feature = "google")]
+    #[test]
+    fn a_google_embedding_round_trips_through_the_request_path() {
+        let server = CannedResponse::serve(200, r#"{"embedding":{"values":[3.0,4.0]}}"#);
+        let vector = engine_at(ProviderKind::Google, &server)
+            .embed("hi")
+            .expect("an embedding");
+        assert_unit(&vector, &[0.6, 0.8]);
+
+        let request = server.request();
+        assert!(
+            request.starts_with("POST /embed-test:embedContent "),
+            "the model's endpoint under the base: {request}"
+        );
+        assert!(
+            request.to_ascii_lowercase().contains("x-goog-api-key: test-key"),
+            "the credential travels in x-goog-api-key: {request}"
+        );
+    }
+
+    /// A batch of Google embeddings uses `batchEmbedContents` in one request.
+    #[cfg(feature = "google")]
+    #[test]
+    fn a_google_batch_round_trips_through_the_request_path() {
+        let server = CannedResponse::serve(
+            200,
+            r#"{"embeddings":[{"values":[3.0,4.0]},{"values":[0.0,2.0]}]}"#,
+        );
+        let vectors = engine_at(ProviderKind::Google, &server)
+            .embed_batch(&["a", "b"])
+            .expect("two embeddings");
+        assert_eq!(vectors.len(), 2);
+        assert_unit(&vectors[0], &[0.6, 0.8]);
+        assert_unit(&vectors[1], &[0.0, 1.0]);
+        assert!(server
+            .request()
+            .starts_with("POST /embed-test:batchEmbedContents "));
+    }
+
+    /// A retired Google embedding model is a 404 `NOT_FOUND` (#3236) —
+    /// `text-embedding-004` today. By status alone it was an outage.
+    #[cfg(feature = "google")]
+    #[test]
+    fn a_retired_google_embedding_model_is_model_not_found() {
+        let server = CannedResponse::serve(
+            404,
+            r#"{"error":{"code":404,"message":"models/text-embedding-004 is not found for API version v1beta, or is not supported for embedContent. Call ModelService.ListModels to see the list of available models and their supported methods.","status":"NOT_FOUND"}}"#,
+        );
+        let error = engine_at(ProviderKind::Google, &server)
+            .embed("hi")
+            .expect_err("retired model");
+        assert_eq!(error.code(), "inference.provider_model_not_found");
+        assert!(
+            error.to_string().contains("text-embedding-004"),
+            "names the model the provider rejected: {error}"
+        );
     }
 }
