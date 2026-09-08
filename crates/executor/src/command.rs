@@ -909,6 +909,27 @@ pub enum Command {
         /// Collection name.
         collection: String,
     },
+    /// Declares which embedding model a collection's vectors come from (D9).
+    ///
+    /// For collections created without `embedding_model` — every collection
+    /// that predates provenance. One-time: re-declaring the recorded model is
+    /// a no-op, and declaring a different one is refused with
+    /// `failed_precondition.engine.embedding_model_mismatch`, because changing
+    /// the model under stored vectors is the mixing the record exists to
+    /// prevent.
+    VectorSetEmbeddingModel {
+        /// Target branch. Defaults to the executor handle branch.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        branch: Option<String>,
+        /// Target product space. Defaults to `"default"`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        space: Option<String>,
+        /// Collection name.
+        collection: String,
+        /// The model that produced, and will produce, this collection's
+        /// vectors.
+        model: String,
+    },
     /// Counts visible vectors in one collection.
     VectorCount {
         /// Target branch. Defaults to the executor handle branch.
@@ -2394,6 +2415,7 @@ impl Command {
             Self::VectorDeleteCollection { .. } => "vector_delete_collection",
             Self::VectorListCollections { .. } => "vector_list_collections",
             Self::VectorCollectionStats { .. } => "vector_collection_stats",
+            Self::VectorSetEmbeddingModel { .. } => "vector_set_embedding_model",
             Self::VectorCount { .. } => "vector_count",
             Self::VectorSample { .. } => "vector_sample",
             Self::VectorUpsert { .. } => "vector_upsert",
@@ -2512,6 +2534,7 @@ impl Command {
                 | Self::JsonDropIndex { .. }
                 | Self::VectorCreateCollection { .. }
                 | Self::VectorDeleteCollection { .. }
+                | Self::VectorSetEmbeddingModel { .. }
                 | Self::VectorUpsert { .. }
                 | Self::VectorUpdateMetadata { .. }
                 | Self::VectorDelete { .. }

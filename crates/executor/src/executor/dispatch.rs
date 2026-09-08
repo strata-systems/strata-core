@@ -351,6 +351,17 @@ impl Executor {
                 space.as_deref(),
                 collection,
             ),
+            Command::VectorSetEmbeddingModel {
+                branch,
+                space,
+                collection,
+                model,
+            } => self.execute_vector_set_embedding_model(
+                branch.as_deref(),
+                space.as_deref(),
+                collection,
+                model,
+            ),
             Command::VectorCount {
                 branch,
                 space,

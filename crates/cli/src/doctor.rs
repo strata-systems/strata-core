@@ -81,9 +81,9 @@ pub(crate) fn run_doctor(
 fn inference_report(issues: &mut Vec<Value>) -> Value {
     use strata_executor::{InferenceRuntime, InferenceRuntimeConfig};
 
-    // Config-file keys are copied into the environment before any inference
-    // command runs, so do the same here or doctor would under-report them.
-    crate::load_provider_keys_into_env();
+    // Config-file keys were copied into the environment at the top of
+    // `execute`, before any command — doctor included — so the runtime already
+    // sees them here; a second bridge would only find its gaps filled.
     let status = InferenceRuntime::new(InferenceRuntimeConfig::default()).status();
 
     for provider in &status.providers {

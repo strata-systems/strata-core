@@ -234,6 +234,84 @@ impl<'a> VectorService<'a> {
         }
     }
 
+    /// The model a text must be embedded with to land in this collection.
+    ///
+    /// This is the accessor the text paths call, and it — not the caller —
+    /// decides what a missing model means: a collection created without one
+    /// cannot embed text, because there is nothing to embed it *with*, and the
+    /// refusal names the command that declares one. Keeping that decision here
+    /// keeps every text surface (write, search, whatever comes next) refusing
+    /// the same way for the same reason.
+    pub fn recorded_embedding_model(
+        &mut self,
+        collection: &VectorCollectionName,
+    ) -> EngineResult<EmbeddingModelId> {
+        let record = self.branch_record()?;
+        let config = self.require_collection_config(&record, collection)?;
+        config.embedding_model().cloned().ok_or_else(|| {
+            EngineError::conflict(
+                "failed_precondition.engine.embedding_model_missing",
+                format!(
+                    "vector collection `{}` records no embedding model, so text cannot be \
+                     embedded for it; declare one with `vector collection \
+                     set-embedding-model {} <model>`, or pass a vector directly",
+                    collection.as_str(),
+                    collection.as_str(),
+                ),
+            )
+        })
+    }
+
+    /// Records which embedding model a collection's vectors come from.
+    ///
+    /// A declaration, not a verification: the engine cannot tell which model
+    /// produced a vector already stored, so this takes the caller's word for
+    /// the ones present and holds every later write to it. It is one-time —
+    /// re-declaring the recorded model is a no-op that commits nothing, and
+    /// declaring a different one is refused with `embedding_model_mismatch`
+    /// exactly as a mismatched write would be, because changing the model
+    /// under existing vectors is the very mixing rule 24 forbids. A collection
+    /// that needs a different model is a different collection.
+    ///
+    /// Rewriting the config row advances the collection generation, which
+    /// marks any sealed index manifest stale; the next query falls back to the
+    /// exact scan, which remains authoritative (rule 26).
+    pub fn declare_embedding_model(
+        &mut self,
+        collection: &VectorCollectionName,
+        model: EmbeddingModelId,
+    ) -> EngineResult<VectorCollectionInfo> {
+        self.require_embedding_model(collection, &model)?;
+        let record = self.branch_record()?;
+        let row = self
+            .collection_config_row(&record, collection, ReadSelector::Latest)?
+            .ok_or_else(|| {
+                EngineError::not_found(
+                    "not_found.engine.vector_collection",
+                    "vector collection does not exist",
+                )
+            })?;
+        let current = self.collection_info_from_row(&record, &row)?;
+        if current.config().embedding_model().is_some() {
+            return Ok(current);
+        }
+        let config = current.config().clone().with_embedding_model(model);
+        let commit = self.commit_batch(
+            &record,
+            vec![RowMutation::put(
+                self.collection_address(&record, collection),
+                encode_collection_config(collection, &config)?,
+            )],
+        )?;
+        Ok(VectorCollectionInfo::new(
+            collection.clone(),
+            config,
+            current.count(),
+            commit.version(),
+            commit.timestamp(),
+        ))
+    }
+
     /// Lists visible vector collections.
     pub fn list_collections(&mut self) -> EngineResult<Vec<VectorCollectionInfo>> {
         let record = self.branch_record()?;

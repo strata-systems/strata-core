@@ -143,6 +143,7 @@ const CONFLICT_CODES: &[&str] = &[
     "failed_precondition.engine.graph_ontology_node_type",
     "failed_precondition.engine.graph_ontology_required_property",
     "failed_precondition.engine.embedding_model_mismatch",
+    "failed_precondition.engine.embedding_model_missing",
     "failed_precondition.engine.space_not_empty",
 ];
 
@@ -405,8 +406,21 @@ fn commit_outcome_for_code(code: &str, class: EngineErrorClass) -> CommitOutcome
 /// already-exists failure reports its actual class semantics instead of the
 /// "…request is invalid" phrasing that only suits `invalid_argument` /
 /// `corruption` codes (see finding U19).
+///
+/// The embedding-model codes are here for a different reason: no keyword arm
+/// matches `embedding_model`, so without an entry each fell through to the
+/// class-generic sentence, and a caller reading only `message_template` /
+/// `suggested_fix` — the docs page, the MCP tool description — was told to
+/// "reload current state and retry", which is not a thing that fixes it.
 fn class_prefixed_message(code: &str) -> Option<&'static str> {
     Some(match code {
+        "failed_precondition.engine.embedding_model_mismatch" => {
+            "The embedding model does not match the one this vector collection records."
+        }
+        "failed_precondition.engine.embedding_model_missing" => {
+            "This vector collection records no embedding model, so text cannot be embedded for it."
+        }
+        "invalid_argument.engine.embedding_model" => "The embedding model id is invalid.",
         "not_found.engine.branch" => "The requested branch was not found.",
         "not_found.engine.graph" => "The requested graph was not found.",
         "not_found.engine.graph_node" => "The requested graph node was not found.",
@@ -425,9 +439,21 @@ fn class_prefixed_message(code: &str) -> Option<&'static str> {
     })
 }
 
-/// Suggested-fix text for `not_found.*` / `already_exists.*` codes (see U19).
+/// Suggested-fix text for `not_found.*` / `already_exists.*` codes (see U19),
+/// and for the embedding-model codes, whose fix is a specific command.
 fn class_prefixed_suggested_fix(code: &str) -> Option<&'static str> {
     Some(match code {
+        "failed_precondition.engine.embedding_model_mismatch" => {
+            "Embed with the model the collection records (see `vector collection stats`), or \
+             create a separate collection for the other model."
+        }
+        "failed_precondition.engine.embedding_model_missing" => {
+            "Declare the collection's model with `vector collection set-embedding-model \
+             <collection> <model>`, or pass a vector instead of text."
+        }
+        "invalid_argument.engine.embedding_model" => {
+            "Use a non-empty model id such as `openai:text-embedding-3-small` or `miniLM`."
+        }
         "not_found.engine.branch" => {
             "List branches or use the default branch, then retry with an existing branch name."
         }

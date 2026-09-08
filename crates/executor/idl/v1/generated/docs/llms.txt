@@ -152,9 +152,10 @@
 - [Batch check vector existence](https://stratadb.org/docs/vector/batch_exists.md): Check existence for multiple vector keys.
 - [Batch get vectors](https://stratadb.org/docs/vector/batch_get.md): Read multiple vectors by key.
 - [Batch upsert vectors](https://stratadb.org/docs/vector/batch_upsert.md): Upsert multiple vectors in one itemwise batch.
-- [Create vector collection](https://stratadb.org/docs/vector/collection/create.md): Create a vector collection with a dimension and metric.
+- [Create vector collection](https://stratadb.org/docs/vector/collection/create.md): Create a vector collection with a dimension, metric, and optionally the model that produces its vectors.
 - [Delete vector collection](https://stratadb.org/docs/vector/collection/delete.md): Delete a vector collection.
 - [List vector collections](https://stratadb.org/docs/vector/collection/list.md): List vector collections.
+- [Declare vector collection embedding model](https://stratadb.org/docs/vector/collection/set_embedding_model.md): Declare the embedding model a vector collection's vectors come from.
 - [Read vector collection stats](https://stratadb.org/docs/vector/collection/stats.md): Read facts for one vector collection.
 - [Count vectors](https://stratadb.org/docs/vector/count.md): Count visible vectors in a collection.
 - [Delete vector](https://stratadb.org/docs/vector/delete.md): Delete one vector key.

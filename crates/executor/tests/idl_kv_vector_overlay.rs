@@ -174,6 +174,7 @@ const REQUIRED_VECTOR: &[&str] = &[
     "vector.collection.delete",
     "vector.collection.list",
     "vector.collection.stats",
+    "vector.collection.set_embedding_model",
     "vector.count",
     "vector.upsert",
     "vector.get",
@@ -368,6 +369,7 @@ fn transitional_vector_collection_wire_shapes_are_explicit() {
             "json.index.drop",
             "vector.collection.create",
             "vector.collection.delete",
+            "vector.collection.set_embedding_model",
             "vector.collection.stats"
         ])
     );

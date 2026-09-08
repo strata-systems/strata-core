@@ -1,0 +1,8 @@
+caption: Declare a collection's embedding model so text can be stored and searched.
+steps:
+  - call: vector.collection.create
+    args: { collection: docs, dimension: 3, metric: cosine }
+  - call: vector.collection.set_embedding_model
+    args: { collection: docs, model: "openai:text-embedding-3-small" }
+    returns: "openai:text-embedding-3-small"
+    note: Declared once; repeating it with the same model is a no-op.

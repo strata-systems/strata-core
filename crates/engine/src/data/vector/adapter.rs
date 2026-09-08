@@ -25,7 +25,7 @@ use crate::branch::catalog::BranchCatalogRecord;
 use crate::branch::preview::base_point_for;
 use crate::control::space::read_space_index_at;
 use crate::data::kv::ProductSpace;
-use crate::data::vector::VectorCollectionName;
+use crate::data::vector::{decode_collection_config, VectorCollectionName};
 use crate::diagnostics::{EngineError, EngineResult};
 use crate::persistence::{
     decode_vector_collection_name, decode_vector_key, encode_vector_collection_entry_prefix,
@@ -156,19 +156,24 @@ impl CapabilityBranchAdapter for VectorCollectionBranchAdapter {
 /// them; without this, promoted vectors land behind a missing config and reads
 /// fail `not_found.engine.vector_collection`.
 ///
-/// A collection's entire config is `(dimension, metric)` — all structural — and
-/// is encoded deterministically, so the stored bytes are a faithful identity:
-/// identical bytes are the same collection; any difference is an incompatible
-/// dimension or metric change (contract Vector minimum: conflict on
-/// metric/dimension). Configs are diffed as a base -> source -> target three-way,
-/// exactly like data rows: a change only the source made is applied (carry a
-/// source-added config, tombstone one the source deleted); a change only the
-/// target made is kept; a change both sides made differently is a conflict —
-/// `IncompatibleCollection` (structural, refuses under every strategy) when both
-/// hold a divergent config, or `ModifyDeleteDivergence` (strategy-gated) for a
-/// modify-vs-delete. A source change that would strand a surviving target vector
-/// of the old shape is refused as structurally incompatible rather than mixing
-/// shapes.
+/// A collection's config is `(dimension, metric, embedding model)`, encoded
+/// deterministically, so identical bytes are the same collection and the bytes
+/// serve as the identity for the three-way. What the bytes cannot say is
+/// whether a *difference* matters to the vectors already stored: dimension and
+/// metric are structural — a vector of one shape is unreadable under the other
+/// (contract Vector minimum: conflict on metric/dimension) — but the model is
+/// provenance, and declaring one over model-less vectors is exactly what
+/// `declare_embedding_model` does on a single branch. The two cross-shape
+/// guards therefore decode the configs and ask
+/// [`vectors_survive_config_change`] rather than comparing bytes. Configs are
+/// diffed as a base -> source -> target three-way, exactly like data rows: a
+/// change only the source made is applied (carry a source-added config,
+/// tombstone one the source deleted); a change only the target made is kept; a
+/// change both sides made differently is a conflict — `IncompatibleCollection`
+/// (structural, refuses under every strategy) when both hold a divergent
+/// config, or `ModifyDeleteDivergence` (strategy-gated) for a modify-vs-delete.
+/// A source change that would strand a surviving target vector of the old
+/// shape is refused as structurally incompatible rather than mixing shapes.
 // One cohesive base->source->target three-way over every collection key, with an
 // add/modify/delete case per side plus the two cross-shape guards; splitting it
 // would scatter a single decision across helpers. (Mirrors the data-row three-way.)
@@ -221,9 +226,12 @@ pub(crate) fn plan_collection_promotion(
             // target-side reshape: if the target reshaped the collection and the
             // source carries old-shape vectors into it, those vectors would land
             // under the target's new config. The data three-way carries vectors
-            // shape-blind, so refuse that here as structurally incompatible.
+            // shape-blind, so refuse that here as structurally incompatible. A
+            // target that only declared a model is not a reshape: the carried
+            // vectors land under it as a raw write on the target would.
             if source_value == base_value {
                 if target_value != base_value
+                    && !vectors_survive_config_change(space, key, base_value, target_value)?
                     && source_carries_vectors(
                         persistence,
                         base_branch,
@@ -319,7 +327,9 @@ pub(crate) fn plan_collection_promotion(
                     mutations.push(RowMutation::delete(address));
                 }
                 Some(source_bytes) => {
-                    if retained {
+                    if retained
+                        && !vectors_survive_config_change(space, key, target_value, source_value)?
+                    {
                         // A reshape that would strand the target's surviving vectors
                         // is structurally incompatible — refuse rather than mix shapes.
                         conflicts.push(PreviewConflict::new(
@@ -339,6 +349,38 @@ pub(crate) fn plan_collection_promotion(
         }
     }
     Ok((mutations, conflicts))
+}
+
+/// Whether vectors stored under the `held` config may keep living under
+/// `incoming` — the question both cross-shape guards ask.
+///
+/// Dimension and metric must match: a vector of one shape under the other's
+/// config is unreadable. The embedding model may be *declared* (none → some),
+/// because that is what `declare_embedding_model` does to a collection's
+/// existing vectors on a single branch, and a raw vector write never checks
+/// the model either; it may not change or be dropped, because vectors recorded
+/// as one model's output must not be re-labelled as another's, or lose their
+/// provenance (rule 24). A missing side never survives: there is no config for
+/// the vectors to live under.
+fn vectors_survive_config_change(
+    space: &ProductSpace,
+    key: &[u8],
+    held: Option<&Vec<u8>>,
+    incoming: Option<&Vec<u8>>,
+) -> EngineResult<bool> {
+    let (Some(held), Some(incoming)) = (held, incoming) else {
+        return Ok(false);
+    };
+    let collection = decode_vector_collection_name(space, key)?;
+    let held = decode_collection_config(&collection, held)?;
+    let incoming = decode_collection_config(&collection, incoming)?;
+    let same_shape = held.dimension() == incoming.dimension() && held.metric() == incoming.metric();
+    let provenance_kept = match (held.embedding_model(), incoming.embedding_model()) {
+        (None, _) => true,
+        (Some(held), Some(incoming)) => held == incoming,
+        (Some(_), None) => false,
+    };
+    Ok(same_shape && provenance_kept)
 }
 
 /// Whether the `target` still holds a live vector in `collection` that this

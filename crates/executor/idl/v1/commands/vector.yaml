@@ -9,6 +9,7 @@ commands:
     wire_status: transitional
     errors+:
       - invalid_argument.engine.vector_dimension
+      - invalid_argument.engine.embedding_model
       - invalid_argument.executor.vector_dimension
     fixtures:
       request: requests/v1/vector/collection_create.json
@@ -16,6 +17,8 @@ commands:
       error_cases:
         - request: requests/v1/vector/collection_create_zero_dim.json
           expected_error: responses/v1/errors/vector/collection_create_zero_dim.json
+        - request: requests/v1/vector/collection_create_empty_model.json
+          expected_error: responses/v1/errors/vector/embedding_model_empty.json
   - id: vector.collection.delete
     kind: mutation.delete
     title: Delete vector collection
@@ -56,6 +59,33 @@ commands:
         - requests/v1/vector/collection_create.json
       request: requests/v1/vector/collection_stats.json
       response: responses/v1/vector/collection_list.json
+  - id: vector.collection.set_embedding_model
+    kind: mutation.put
+    title: Declare vector collection embedding model
+    input: Command::VectorSetEmbeddingModel
+    output: Output::VectorCollectionList
+    result: VectorCollectionInfo
+    prose: commands/vector.collection.set_embedding_model.md
+    wire_status: transitional
+    errors+:
+      - invalid_argument.engine.embedding_model
+      - failed_precondition.engine.embedding_model_mismatch
+    fixtures:
+      setup:
+        - requests/v1/vector/collection_create.json
+      request: requests/v1/vector/collection_set_embedding_model.json
+      response: responses/v1/vector/collection_set_embedding_model.json
+      error_cases:
+        - setup:
+            - requests/v1/vector/collection_create.json
+          request: requests/v1/vector/collection_set_embedding_model_empty.json
+          expected_error: responses/v1/errors/vector/embedding_model_empty.json
+        - setup:
+            - requests/v1/vector/collection_create_with_model.json
+          request: requests/v1/vector/collection_set_embedding_model_other.json
+          expected_error: responses/v1/errors/vector/embedding_model_mismatch.json
+        - request: requests/v1/vector/collection_set_embedding_model.json
+          expected_error: responses/v1/errors/vector/collection_missing.json
   - id: vector.count
     kind: read.status
     title: Count vectors
@@ -80,11 +110,26 @@ commands:
       - invalid_argument.engine.vector_embedding
       - invalid_argument.engine.vector_metadata
       - invalid_argument.executor.vector_dimension
+      - invalid_argument.executor.vector_input
+      - failed_precondition.engine.embedding_model_missing
     fixtures:
       setup:
         - requests/v1/vector/collection_create.json
       request: requests/v1/vector/upsert.json
       response: responses/v1/vector/upsert_applied.json
+      error_cases:
+        - setup:
+            - requests/v1/vector/collection_create.json
+          request: requests/v1/vector/upsert_text_without_model.json
+          expected_error: responses/v1/errors/vector/embedding_model_missing.json
+        - setup:
+            - requests/v1/vector/collection_create.json
+          request: requests/v1/vector/upsert_vector_and_text.json
+          expected_error: responses/v1/errors/vector/vector_input.json
+        - setup:
+            - requests/v1/vector/collection_create.json
+          request: requests/v1/vector/upsert_neither.json
+          expected_error: responses/v1/errors/vector/vector_input.json
   - id: vector.get
     kind: read.get
     title: Get vector
@@ -259,6 +304,8 @@ commands:
     errors+:
       - invalid_argument.engine.vector_filter
       - invalid_argument.executor.vector_limit
+      - invalid_argument.executor.vector_input
+      - failed_precondition.engine.embedding_model_missing
     fixtures:
       setup:
         - requests/v1/vector/collection_create.json
@@ -266,6 +313,15 @@ commands:
         - requests/v1/setup/vector_upsert_doc_b.json
       request: requests/v1/vector/query.json
       response: responses/v1/vector/search.json
+      error_cases:
+        - setup:
+            - requests/v1/vector/collection_create.json
+          request: requests/v1/vector/query_text_without_model.json
+          expected_error: responses/v1/errors/vector/embedding_model_missing.json
+        - setup:
+            - requests/v1/vector/collection_create.json
+          request: requests/v1/vector/query_vector_and_text.json
+          expected_error: responses/v1/errors/vector/vector_input.json
   - id: vector.index.query
     kind: read.diagnostics
     title: Query vector index

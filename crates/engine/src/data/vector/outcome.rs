@@ -40,7 +40,8 @@ impl VectorCollectionInfo {
     }
 
     #[must_use]
-    /// Returns the immutable collection config.
+    /// Returns the collection config. Dimension and metric are fixed at
+    /// creation; the embedding model may be declared once afterwards.
     pub const fn config(&self) -> &VectorConfig {
         &self.config
     }

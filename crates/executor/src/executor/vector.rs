@@ -125,6 +125,24 @@ impl Executor {
         })
     }
 
+    pub(super) fn execute_vector_set_embedding_model(
+        &mut self,
+        branch: Option<&str>,
+        space: Option<&str>,
+        collection: String,
+        model: String,
+    ) -> ExecutorResult<Output> {
+        let collection = vector_collection(collection)?;
+        let model = EngineEmbeddingModelId::new(model)?;
+        let mut service = self.vector_service(branch, space)?;
+        Ok(Output::VectorCollectionList {
+            items: vec![vector_collection_info(
+                &service.declare_embedding_model(&collection, model)?,
+            )],
+            page: PageInfo::terminal(),
+        })
+    }
+
     pub(super) fn execute_vector_count(
         &mut self,
         branch: Option<&str>,
@@ -187,75 +205,67 @@ impl Executor {
         text: String,
         purpose: EmbedPurpose,
     ) -> ExecutorResult<Vec<f64>> {
-        let model = {
-            let mut service = self.vector_service(branch, space)?;
-            let info = require_vector_collection_info(&mut service, collection)?;
-            info.config()
-                .embedding_model()
-                .map(|model| model.as_str().to_owned())
-        };
-        let Some(model) = model else {
-            // D9's payoff: without a recorded model there is no way to know
-            // which model to call, and guessing would silently produce vectors
-            // that are not comparable with what is stored.
-            return Err(ExecutorError::invalid_input(
-                "failed_precondition.engine.embedding_model_mismatch",
-                format!(
-                    "vector collection `{}` records no embedding model, so `text` cannot be \
-                     embedded for it. Create a collection with `--embedding-model <model>`, \
-                     or pass a vector directly.",
-                    collection.as_str()
-                ),
-            ));
-        };
-        self.embed_text_with(&model, text, purpose)
+        // What a missing model means is the engine's call
+        // (`failed_precondition.engine.embedding_model_missing`, naming the
+        // command that declares one); this only carries the answer to the
+        // provider.
+        let model = self
+            .vector_service(branch, space)?
+            .recorded_embedding_model(collection)?;
+        self.embed_text_with(model.as_str(), text, purpose)
     }
 
-    #[cfg(feature = "inference")]
+    // One function with a feature-split body rather than two `#[cfg]`
+    // variants: cargo-mutants mutates source text without evaluating cfg, so a
+    // second fn for the no-inference build would earn mutants that the
+    // featured mutation lane never compiles and no test can kill. A block
+    // inside the body is not a mutation site.
+    #[cfg_attr(
+        not(feature = "inference"),
+        allow(clippy::unused_self, clippy::needless_pass_by_value)
+    )]
     fn embed_text_with(
         &mut self,
         model: &str,
         text: String,
         purpose: EmbedPurpose,
     ) -> ExecutorResult<Vec<f64>> {
-        use strata_inference::{EmbedInput, EmbeddingsRequest};
+        #[cfg(feature = "inference")]
+        {
+            use strata_inference::{EmbedInput, EmbeddingsRequest};
 
-        let request = EmbeddingsRequest {
-            input: EmbedInput::One(text),
-            dimensions: None,
-            normalize: None,
-            // Instruction-tuned embedders produce different vectors for a
-            // stored document and a search query; saying which this is stops
-            // that difference from being silent. The mapping is a pure
-            // function with a truth table — inside this method it was a
-            // decision buried in glue that CI cannot execute.
-            input_type: Some(purpose.input_type()),
-            instruction: None,
-        };
-        let response = self.inference.embeddings(model, &request)?;
-        let item = response.data.into_iter().next().ok_or_else(|| {
-            ExecutorError::invalid_input(
-                "inference.provider_malformed_response",
-                "the embedding provider returned no vector for the text",
-            )
-        })?;
-        Ok(item.embedding.into_iter().map(f64::from).collect())
-    }
-
-    #[cfg(not(feature = "inference"))]
-    #[allow(clippy::unused_self, clippy::needless_pass_by_value)]
-    fn embed_text_with(
-        &mut self,
-        model: &str,
-        text: String,
-        purpose: EmbedPurpose,
-    ) -> ExecutorResult<Vec<f64>> {
-        let _ = (model, text, purpose);
-        Err(ExecutorError::invalid_input(
-            "inference.unsupported_operation",
-            "this build has no inference support, so `text` cannot be embedded; \
-             pass a vector directly",
-        ))
+            let request = EmbeddingsRequest {
+                input: EmbedInput::One(text),
+                dimensions: None,
+                normalize: None,
+                // Instruction-tuned embedders produce different vectors for a
+                // stored document and a search query; saying which this is
+                // stops that difference from being silent. The mapping is a
+                // pure function with a truth table — inside this method it
+                // was a decision buried in glue that CI cannot execute.
+                input_type: Some(purpose.input_type()),
+                instruction: None,
+            };
+            let response = self.inference.embeddings(model, &request)?;
+            let item = response.data.into_iter().next().ok_or_else(|| {
+                ExecutorError::invalid_input(
+                    "inference.provider_malformed_response",
+                    "the embedding provider returned no vector for the text",
+                )
+            })?;
+            Ok(item.embedding.into_iter().map(f64::from).collect())
+        }
+        #[cfg(not(feature = "inference"))]
+        {
+            // The parameters exist so both builds have one signature; without
+            // an inference runtime there is nothing to hand them to.
+            let _ = (model, text, purpose);
+            Err(ExecutorError::invalid_input(
+                "inference.unsupported_operation",
+                "this build has no inference support, so `text` cannot be \
+                 embedded; pass a vector directly",
+            ))
+        }
     }
 
     pub(super) fn execute_vector_upsert(

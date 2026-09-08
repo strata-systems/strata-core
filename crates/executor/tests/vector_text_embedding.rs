@@ -138,11 +138,11 @@ fn a_collection_without_a_model_refuses_text() {
         .expect_err("text is refused without a recorded model");
     assert_eq!(
         error.code(),
-        "failed_precondition.engine.embedding_model_mismatch"
+        "failed_precondition.engine.embedding_model_missing"
     );
     assert!(
-        error.to_string().contains("--embedding-model"),
-        "the refusal must name how to fix it: {error}"
+        error.to_string().contains("set-embedding-model"),
+        "the refusal must name the command that declares a model: {error}"
     );
 
     // Raw vectors still work on that collection — the refusal is about text

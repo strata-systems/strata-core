@@ -932,8 +932,9 @@ pub(crate) enum VectorCommand {
         /// Embed this text with the collection's recorded model instead of
         /// supplying a vector (D10).
         ///
-        /// The collection must have been created with `--embedding-model`,
-        /// which is what says which model to call.
+        /// The collection must record a model — `--embedding-model` at
+        /// create, or `vector collection set-embedding-model` later — which
+        /// is what says which model to call.
         #[arg(long, conflicts_with_all = ["vector", "file"])]
         text: Option<String>,
         /// Optional metadata JSON object.
@@ -1131,6 +1132,18 @@ pub(crate) enum VectorCollectionCommand {
     Stats {
         /// Collection name.
         collection: String,
+    },
+    /// Declare the model that produces a collection's vectors.
+    ///
+    /// Declared once: a collection that already records this model is left as
+    /// it is, and one that records a different model is refused, since its
+    /// stored vectors came from that model. A collection with no recorded
+    /// model cannot embed `--text`.
+    SetEmbeddingModel {
+        /// Collection name.
+        collection: String,
+        /// Model id, e.g. `miniLM` or `openai:text-embedding-3-small`.
+        model: String,
     },
 }
 
@@ -2461,6 +2474,7 @@ mod tests {
         "vector collection create",
         "vector collection delete",
         "vector collection list",
+        "vector collection set-embedding-model",
         "vector collection stats",
         "vector count",
         "vector delete",

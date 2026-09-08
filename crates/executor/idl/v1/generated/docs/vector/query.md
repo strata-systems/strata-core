@@ -59,6 +59,8 @@ Plus the optional scope: `branch` and `space` (default to the session branch and
 - [`not_found.engine.vector_collection`](https://stratadb.org/e/not_found.engine.vector_collection)
 - [`invalid_argument.engine.vector_filter`](https://stratadb.org/e/invalid_argument.engine.vector_filter)
 - [`invalid_argument.executor.vector_limit`](https://stratadb.org/e/invalid_argument.executor.vector_limit)
+- [`invalid_argument.executor.vector_input`](https://stratadb.org/e/invalid_argument.executor.vector_input)
+- [`failed_precondition.engine.embedding_model_missing`](https://stratadb.org/e/failed_precondition.engine.embedding_model_missing)
 
 ## Invocation
 

@@ -1,0 +1,140 @@
+{
+  "$defs": {
+    "VectorCollectionInfo": {
+      "description": "Vector collection facts.",
+      "properties": {
+        "count": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "dimension": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "embedding_model": {
+          "description": "The model that produced this collection's vectors, when recorded (D9).\n\nAbsent for collections created before provenance existed, and for any\ncreated without one. Those accept vectors from any model, so nothing\ncan check that a query is comparable with what is stored.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "metric": {
+          "$ref": "#/$defs/VectorDistanceMetric"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "dimension",
+        "metric",
+        "count"
+      ],
+      "type": "object"
+    },
+    "VectorDistanceMetric": {
+      "description": "Vector distance metric exposed through the command boundary.",
+      "oneOf": [
+        {
+          "const": "cosine",
+          "description": "Cosine similarity.",
+          "type": "string"
+        },
+        {
+          "const": "euclidean",
+          "description": "Euclidean similarity.",
+          "type": "string"
+        },
+        {
+          "const": "dot_product",
+          "description": "Raw dot product.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$id": "https://stratadb.org/idl/v1/schemas/vector.collection.set_embedding_model.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "command": "vector.collection.set_embedding_model",
+  "request": {
+    "additionalProperties": false,
+    "description": "Declares which embedding model a collection's vectors come from (D9).\n\nFor collections created without `embedding_model` — every collection\nthat predates provenance. One-time: re-declaring the recorded model is\na no-op, and declaring a different one is refused with\n`failed_precondition.engine.embedding_model_mismatch`, because changing\nthe model under stored vectors is the mixing the record exists to\nprevent.",
+    "properties": {
+      "branch": {
+        "description": "Target branch. Defaults to the executor handle branch.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "collection": {
+        "description": "Collection name.",
+        "type": "string"
+      },
+      "model": {
+        "description": "The model that produced, and will produce, this collection's\nvectors.",
+        "type": "string"
+      },
+      "space": {
+        "description": "Target product space. Defaults to `\"default\"`.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "type": {
+        "const": "vector_set_embedding_model",
+        "type": "string"
+      }
+    },
+    "required": [
+      "type",
+      "collection",
+      "model"
+    ],
+    "type": "object"
+  },
+  "response": {
+    "description": "Vector collection list.",
+    "properties": {
+      "data": {
+        "description": "Shared pagination continuation facts.",
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "items": {
+            "description": "Collections in this page.",
+            "items": {
+              "$ref": "#/$defs/VectorCollectionInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "type": "object"
+      },
+      "type": {
+        "const": "vector_collection_list",
+        "type": "string"
+      }
+    },
+    "required": [
+      "type",
+      "data"
+    ],
+    "type": "object"
+  }
+}

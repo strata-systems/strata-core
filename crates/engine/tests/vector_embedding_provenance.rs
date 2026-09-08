@@ -15,6 +15,7 @@ mod common;
 
 use strata_engine::{
     EmbeddingModelId, EngineErrorClass, VectorCollectionName, VectorConfig, VectorDistanceMetric,
+    VectorEmbedding, VectorKey,
 };
 
 use common::{branch, open_cache_database, open_durable_database, space};
@@ -215,4 +216,220 @@ fn two_collections_can_record_different_models() {
     vectors
         .require_embedding_model(&collection("small"), &model("nomic-embed"))
         .expect_err("the other collection's model is still refused here");
+}
+
+/// Text has to be embedded with *some* model, and the collection is where that
+/// is recorded. A collection that records none refuses with its own code, and
+/// the refusal names the command that declares one — a caller that reads only
+/// the code can tell "no model" from "wrong model", and one that reads the
+/// message knows what to run.
+#[test]
+fn text_needs_a_recorded_model() {
+    let mut database = open_cache_database().expect("cache open succeeds");
+    let mut vectors = database
+        .vector(branch("default"), space("default"))
+        .expect("vector service opens");
+
+    vectors
+        .create_collection(collection("legacy"), config(8))
+        .expect("collection is created");
+    vectors
+        .create_collection(
+            collection("docs"),
+            config(8).with_embedding_model(model("miniLM")),
+        )
+        .expect("collection is created");
+
+    let error = vectors
+        .recorded_embedding_model(&collection("legacy"))
+        .expect_err("a collection without a model cannot embed text");
+    assert_eq!(error.class(), EngineErrorClass::Conflict);
+    assert_eq!(
+        error.code(),
+        "failed_precondition.engine.embedding_model_missing"
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("vector collection set-embedding-model legacy"),
+        "the refusal names the command that declares a model: {error}"
+    );
+
+    assert_eq!(
+        vectors
+            .recorded_embedding_model(&collection("docs"))
+            .expect("a collection with a model reports it"),
+        model("miniLM")
+    );
+
+    let error = vectors
+        .recorded_embedding_model(&collection("absent"))
+        .expect_err("a missing collection is not a missing model");
+    assert_eq!(error.class(), EngineErrorClass::NotFound);
+    assert_eq!(error.code(), "not_found.engine.vector_collection");
+}
+
+/// Every collection that predates provenance is model-less, so there has to be
+/// a way to declare a model after the fact. Declaring is one-time: it takes
+/// the caller's word for the vectors already present, re-declaring the same
+/// model changes nothing, and declaring a different one is the mixing rule 24
+/// forbids.
+#[test]
+fn a_model_is_declared_once() {
+    let mut database = open_cache_database().expect("cache open succeeds");
+    let mut vectors = database
+        .vector(branch("default"), space("default"))
+        .expect("vector service opens");
+
+    vectors
+        .create_collection(collection("legacy"), config(2))
+        .expect("collection is created");
+    vectors
+        .upsert(
+            collection("legacy"),
+            VectorKey::new("v1").expect("key"),
+            VectorEmbedding::new(vec![1.0, 0.0]).expect("embedding"),
+            None,
+        )
+        .expect("a vector is stored before any model is declared");
+
+    let declared = vectors
+        .declare_embedding_model(&collection("legacy"), model("miniLM"))
+        .expect("a model-less collection accepts a declaration");
+    assert_eq!(
+        declared
+            .config()
+            .embedding_model()
+            .map(EmbeddingModelId::as_str),
+        Some("miniLM")
+    );
+    assert_eq!(declared.config().dimension(), 2, "the shape is untouched");
+    assert_eq!(declared.count(), 1, "the existing vector is kept");
+
+    // Stored, not just returned: a fresh lookup and the text path both see it.
+    let info = vectors
+        .collection_info(&collection("legacy"))
+        .expect("info read succeeds")
+        .expect("collection exists");
+    assert_eq!(
+        info.config()
+            .embedding_model()
+            .map(EmbeddingModelId::as_str),
+        Some("miniLM")
+    );
+    assert_eq!(
+        vectors
+            .recorded_embedding_model(&collection("legacy"))
+            .expect("the declared model is what text embeds with"),
+        model("miniLM")
+    );
+
+    // Re-declaring the recorded model is a no-op: nothing is committed, so the
+    // config row's version does not move.
+    let again = vectors
+        .declare_embedding_model(&collection("legacy"), model("miniLM"))
+        .expect("re-declaring the same model is accepted");
+    assert_eq!(again, info, "a repeated declaration commits nothing");
+
+    let error = vectors
+        .declare_embedding_model(&collection("legacy"), model("nomic-embed"))
+        .expect_err("a different model is refused");
+    assert_eq!(error.class(), EngineErrorClass::Conflict);
+    assert_eq!(
+        error.code(),
+        "failed_precondition.engine.embedding_model_mismatch"
+    );
+    assert_eq!(
+        vectors
+            .recorded_embedding_model(&collection("legacy"))
+            .expect("the recorded model is unchanged by the refusal"),
+        model("miniLM")
+    );
+
+    let error = vectors
+        .declare_embedding_model(&collection("absent"), model("miniLM"))
+        .expect_err("there is nothing to declare on");
+    assert_eq!(error.class(), EngineErrorClass::NotFound);
+    assert_eq!(error.code(), "not_found.engine.vector_collection");
+}
+
+/// A declaration is provenance like any other: it survives a reopen.
+#[test]
+fn a_declared_model_survives_a_durable_reopen() {
+    let directory = tempfile::tempdir().expect("tempdir");
+
+    {
+        let mut database = open_durable_database(directory.path()).expect("durable open");
+        let mut vectors = database
+            .vector(branch("default"), space("default"))
+            .expect("vector service opens");
+        vectors
+            .create_collection(collection("legacy"), config(384))
+            .expect("collection is created");
+        vectors
+            .declare_embedding_model(&collection("legacy"), model("miniLM"))
+            .expect("declaration succeeds");
+    }
+
+    let mut database = open_durable_database(directory.path()).expect("durable reopen");
+    assert_eq!(
+        database
+            .vector(branch("default"), space("default"))
+            .expect("vector service opens")
+            .recorded_embedding_model(&collection("legacy"))
+            .expect("the declaration survived the reopen"),
+        model("miniLM")
+    );
+}
+
+/// The registry entries are what a caller sees *without* hitting the error —
+/// the docs page, `agents errors`, an MCP tool description. No registry keyword
+/// arm matches `embedding_model`, so without their own entries these three
+/// codes fell through to the class-generic sentence and a fix of "reload
+/// current state and retry", which does not fix any of them. Each entry must
+/// say what the code means and name the actual remedy.
+#[test]
+fn the_embedding_model_codes_document_their_own_remedy() {
+    let entry = |code: &str| {
+        strata_engine::error_code_registry_entry(code)
+            .unwrap_or_else(|| panic!("{code} is registered"))
+    };
+
+    let missing = entry("failed_precondition.engine.embedding_model_missing");
+    assert!(
+        missing.message_template.contains("no embedding model"),
+        "message says what is missing: {}",
+        missing.message_template
+    );
+    assert!(
+        missing
+            .suggested_fix
+            .contains("vector collection set-embedding-model"),
+        "fix names the declaring command: {}",
+        missing.suggested_fix
+    );
+
+    let mismatch = entry("failed_precondition.engine.embedding_model_mismatch");
+    assert!(
+        mismatch.message_template.contains("does not match"),
+        "message says the model disagrees: {}",
+        mismatch.message_template
+    );
+    assert!(
+        mismatch.suggested_fix.contains("vector collection stats"),
+        "fix names where the recorded model is shown: {}",
+        mismatch.suggested_fix
+    );
+
+    let invalid = entry("invalid_argument.engine.embedding_model");
+    assert!(
+        invalid.message_template.contains("model id"),
+        "message names the field: {}",
+        invalid.message_template
+    );
+    assert!(
+        invalid.suggested_fix.contains("non-empty model id"),
+        "fix says what a valid id looks like: {}",
+        invalid.suggested_fix
+    );
 }

@@ -951,6 +951,13 @@
       "positionals": [],
       "flags": {}
     },
+    "vector collection set-embedding-model": {
+      "positionals": [
+        "collection",
+        "model"
+      ],
+      "flags": {}
+    },
     "vector collection stats": {
       "positionals": [
         "collection"

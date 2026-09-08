@@ -1890,6 +1890,19 @@
         "reproducible": true
       }
     ],
+    "vector.collection.set_embedding_model": [
+      {
+        "in": "strata vector collection create docs 3 --metric cosine",
+        "out": "{\"count\":0,\"dimension\":3,\"metric\":\"cosine\",\"name\":\"docs\"}",
+        "reproducible": true
+      },
+      {
+        "in": "strata vector collection set-embedding-model docs openai:text-embedding-3-small",
+        "out": "{\"count\":0,\"dimension\":3,\"embedding_model\":\"openai:text-embedding-3-small\",\"metric\":\"cosine\",\"name\":\"docs\"}",
+        "reproducible": true,
+        "note": "Declared once; repeating it with the same model is a no-op."
+      }
+    ],
     "vector.collection.stats": [
       {
         "in": "strata vector collection create docs 3 --metric cosine",

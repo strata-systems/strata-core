@@ -17,6 +17,7 @@ response_models:
   - MutationAck<VectorCollectionDelete>
   - Page<VectorCollectionInfo, String>
   - StatusResponse<VectorCollectionInfo>
+  - MutationAck<VectorCollectionInfo>
   - MutationAck<VectorWrite>
   - Maybe<VectorVersionedData>
   - Maybe<Vec<VectorHistoryItem>>

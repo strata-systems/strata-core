@@ -233,6 +233,9 @@ the public registry when adding, renaming, or removing a public error code.
 <a id="failed_precondition.engine.embedding_model_mismatch"></a>
 - `failed_precondition.engine.embedding_model_mismatch`
 
+<a id="failed_precondition.engine.embedding_model_missing"></a>
+- `failed_precondition.engine.embedding_model_missing`
+
 <a id="failed_precondition.engine.space_not_empty"></a>
 - `failed_precondition.engine.space_not_empty`
 

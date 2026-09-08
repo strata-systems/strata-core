@@ -155,6 +155,17 @@ fn execute(cli: Cli) -> Result<i32, CliError> {
     let command = cli.command;
     let mut context = CommandContext::new(cli.branch, cli.space);
 
+    // Keys set with `strata config set <provider>.api_key` reach the inference
+    // runtime through the environment, so they are loaded once, here, before
+    // any path that can run inference: a one-shot `inference …`, a `vector …
+    // --text` that embeds through a cloud model, a REPL or piped session, an
+    // MCP server. Loading in the `inference` dispatch arm alone left every
+    // other path reporting `inference.missing_api_key` for a key that was set.
+    // The context keeps the list of what was bridged so `inference status`
+    // can name the file as the source, one-shot or mid-session.
+    #[cfg(feature = "inference")]
+    context.set_config_backed_keys(load_provider_keys_into_env());
+
     if let Some(command) = command {
         if let Some(name) = deferred_top_command(&command) {
             return Err(deferred_command(name));
@@ -282,7 +293,7 @@ fn execute(cli: Cli) -> Result<i32, CliError> {
         }
 
         let scope = context.scope_with_overrides(None, None);
-        execute_parsed_command(&connection, command, &scope, format)?;
+        execute_parsed_command(&connection, command, &context, &scope, format)?;
         connection.close()?;
         return Ok(0);
     }
@@ -590,12 +601,18 @@ fn resolve_durable_target(
     }
 }
 
+/// The one dispatch for a parsed command, one-shot or mid-session. `scope` is
+/// the branch/space this command runs under (the session's, or the command's
+/// own overrides); `context` is the session it runs in, which only the
+/// inference arm reads.
 #[cfg(feature = "native")]
 // A flat top-level command dispatch, like its family-level siblings.
 #[allow(clippy::too_many_lines)]
+#[cfg_attr(not(feature = "inference"), allow(unused_variables))]
 pub(crate) fn execute_parsed_command(
     connection: &Connection,
     command: options::TopCommand,
+    context: &CommandContext,
     scope: &Scope,
     format: options::Format,
 ) -> Result<(), CliError> {
@@ -694,19 +711,22 @@ pub(crate) fn execute_parsed_command(
         }
         #[cfg(feature = "inference")]
         options::TopCommand::Inference(args) => {
-            // Make config-file provider keys visible to the runtime (which reads
-            // the environment). Env vars already set win — this only fills gaps.
-            let config_backed = load_provider_keys_into_env();
             let command = inference_command(args.command)?;
             let mut output = execute_with_download_offer(connection, command, format)?;
-            // The runtime saw the variables this process just set; only the
-            // CLI knows which of them it filled from the file. No config path
+            // The runtime saw the variables this process set at startup; only
+            // the CLI knows which of them it filled from the file, and the
+            // session context carries that list (a second bridge here would
+            // find every gap already filled and report none). No config path
             // means nothing could have been bridged, so there is nothing to
             // rename.
             if let (strata_executor::Output::InferenceStatus(status), Some(config_path)) =
                 (&mut output, strata_hub::global_config_path())
             {
-                name_config_key_sources(status, &config_backed, &config_path.display().to_string());
+                name_config_key_sources(
+                    status,
+                    context.config_backed_keys(),
+                    &config_path.display().to_string(),
+                );
             }
             output
         }
@@ -919,11 +939,6 @@ fn user_config_get(key: &str) -> Result<serde_json::Value, CliError> {
     Err(unknown_config_key(key))
 }
 
-/// Populate provider API-key environment variables from the global config for
-/// any that are not already set (the environment always wins). The inference
-/// runtime reads these variables, so this bridges `strata config set
-/// <provider>.api_key` to the runtime without the inference layer needing to
-/// know about `~/.strata`.
 /// Runs an inference command, offering the download when a model is missing (D8).
 ///
 /// Loading a model never downloads on its own — a silent multi-hundred-megabyte
@@ -1026,6 +1041,15 @@ fn missing_model_spec(command: &strata_executor::Command) -> Option<String> {
 /// returned is a key the environment did *not* have and the file supplied.
 /// That list is what lets `inference status` say so (see
 /// [`name_config_key_sources`]).
+///
+/// Called once per process, at the top of `execute`, because inference is no
+/// longer reachable only through `strata inference …`: `vector upsert --text`
+/// embeds through whatever model the collection recorded, and a session (REPL,
+/// pipe, MCP) runs any of these. The list it returns is recorded on the
+/// [`CommandContext`] for the same reason: a second call would find every gap
+/// already filled and report nothing, so the first call's answer is the only
+/// one. Only the CLI does this bridging; a library or SDK caller sets the
+/// variables itself (#3221).
 #[cfg(all(feature = "native", feature = "inference"))]
 fn load_provider_keys_into_env() -> Vec<&'static str> {
     let mut filled = Vec::new();
@@ -1593,6 +1617,14 @@ fn vector_collection_command(command: VectorCollectionCommand, scope: &Scope) ->
             space: scope.space.clone(),
             collection,
         },
+        VectorCollectionCommand::SetEmbeddingModel { collection, model } => {
+            Command::VectorSetEmbeddingModel {
+                branch: scope.branch.clone(),
+                space: scope.space.clone(),
+                collection,
+                model,
+            }
+        }
     }
 }
 
