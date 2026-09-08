@@ -270,7 +270,7 @@ impl EngineError {
                 retry_policy,
                 default_commit_outcome(class),
                 message,
-                default_suggested_fix(class),
+                super::registry::suggested_fix_for_code(code, class),
                 Vec::new(),
                 Vec::new(),
             ),
@@ -300,7 +300,7 @@ impl EngineError {
                 retry_policy,
                 default_commit_outcome(class),
                 message,
-                default_suggested_fix(class),
+                super::registry::suggested_fix_for_code(code, class),
                 Vec::new(),
                 Vec::new(),
             ),
@@ -549,41 +549,79 @@ const fn default_commit_outcome(class: EngineErrorClass) -> CommitOutcomeStatus 
     }
 }
 
-const fn default_suggested_fix(class: EngineErrorClass) -> &'static str {
-    match class {
-        EngineErrorClass::InvalidInput => {
-            "Correct the request input and retry the operation."
-        }
-        EngineErrorClass::NotFound => {
-            "Check that the requested branch, space, collection, graph, document, key, or model exists."
-        }
-        EngineErrorClass::Conflict => {
-            "Reload the current state and retry the operation against the latest version."
-        }
-        EngineErrorClass::Unavailable => {
-            "Wait for the required database state or backend capability to become available, then retry."
-        }
-        EngineErrorClass::AmbiguousCommit => {
-            "Re-open or inspect the database state before assuming whether the write committed."
-        }
-        EngineErrorClass::IncompatibleLayout => {
-            "Open the database with a compatible Strata version or run the required migration."
-        }
-        EngineErrorClass::Corruption => {
-            "Stop writing to the database and inspect recovery diagnostics before continuing."
-        }
-        EngineErrorClass::ClosedRuntime => {
-            "Open a new database handle before issuing more commands."
-        }
-        EngineErrorClass::Internal => {
-            "Capture the reference id and report this as a Strata bug."
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{public_class_for_legacy, EngineErrorClass, ErrorClass};
+    use super::{
+        public_class_for_legacy, CommitOutcomeStatus, EngineError, EngineErrorClass,
+        EngineErrorStatus, ErrorClass, RetryPolicy,
+    };
+    use crate::diagnostics::registry::{
+        class_for_code, error_code_registry_entries, suggested_fix_for_code,
+    };
+
+    /// The registry is the single authority for a code's remediation hint: the
+    /// hint `strata agents errors` documents must be the hint a live error
+    /// carries. Both generic constructors are swept over every registered code
+    /// so a code whose runtime hint regresses to class-generic wording fails
+    /// here instead of shipping (#3237: 145 of 161 codes did).
+    #[test]
+    fn test_constructed_errors_carry_the_registry_suggested_fix() {
+        let mut violations = Vec::new();
+        for entry in error_code_registry_entries() {
+            let class = class_for_code(entry.code).expect("registry entry has a class");
+            let plain = EngineError::new(class, entry.code, false, "probe");
+            if plain.suggested_fix() != entry.suggested_fix {
+                violations.push(format!(
+                    "{} (new): runtime `{}` != registry `{}`",
+                    entry.code,
+                    plain.suggested_fix(),
+                    entry.suggested_fix
+                ));
+            }
+            let sourced = EngineError::with_source(
+                class,
+                entry.code,
+                false,
+                "probe",
+                std::io::Error::other("probe source"),
+            );
+            if sourced.suggested_fix() != entry.suggested_fix {
+                violations.push(format!(
+                    "{} (with_source): runtime `{}` != registry `{}`",
+                    entry.code,
+                    sourced.suggested_fix(),
+                    entry.suggested_fix
+                ));
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "runtime suggested_fix diverges from the registry:\n  {}",
+            violations.join("\n  ")
+        );
+    }
+
+    /// Direction control: the registry hint is the default, not a ceiling.
+    /// A site that builds its status by hand (the persistence adapter's
+    /// variant-specific hints) keeps the more specific hint it supplied.
+    #[test]
+    fn test_with_status_keeps_the_site_supplied_suggested_fix() {
+        let code = "unavailable.engine.persistence";
+        let class = class_for_code(code).expect("registered");
+        let status = EngineErrorStatus::new(
+            public_class_for_legacy(class, code),
+            code,
+            RetryPolicy::SameRequest,
+            CommitOutcomeStatus::NotStarted,
+            "probe",
+            "Site-specific remediation.",
+            Vec::new(),
+            Vec::new(),
+        );
+        let error = EngineError::with_status(class, status, std::io::Error::other("probe"));
+        assert_eq!(error.suggested_fix(), "Site-specific remediation.");
+        assert_ne!(error.suggested_fix(), suggested_fix_for_code(code, class));
+    }
 
     #[test]
     fn public_class_for_legacy_splits_data_loss_from_corruption() {

@@ -550,7 +550,9 @@ fn message_template_for_code(code: &str, class: EngineErrorClass) -> &'static st
     }
 }
 
-fn suggested_fix_for_code(code: &str, class: EngineErrorClass) -> &'static str {
+/// The single authority for a code's remediation hint: what `strata agents
+/// errors` documents and what a live `EngineError` carries (#3237).
+pub(crate) fn suggested_fix_for_code(code: &str, class: EngineErrorClass) -> &'static str {
     if let Some(fix) = class_prefixed_suggested_fix(code) {
         return fix;
     }
@@ -785,6 +787,35 @@ mod tests {
         assert_eq!(
             public_class_for_code(EngineErrorClass::Internal, "io.probe"),
             ErrorClass::Io,
+        );
+    }
+
+    /// Hand plants anchoring the parity sweep in `error.rs`: that sweep proves
+    /// runtime == registry, these prove the registry side is per-code rather
+    /// than class-generic, so the pair cannot pass by both being generic.
+    #[test]
+    fn suggested_fix_for_code_prefers_per_code_rows_over_class_fallback() {
+        assert!(
+            suggested_fix_for_code("already_exists.engine.branch", EngineErrorClass::Conflict)
+                .contains("different branch name"),
+            "per-code row wins over the class fallback"
+        );
+        assert!(
+            suggested_fix_for_code(
+                "invalid_argument.engine.branch_name",
+                EngineErrorClass::InvalidInput,
+            )
+            .contains("non-empty branch name"),
+            "keyword row wins over the class fallback"
+        );
+        // Codes without a row of their own fall back to the class hint, which
+        // differs per class.
+        assert_ne!(
+            suggested_fix_for_code(
+                "unavailable.engine.persistence",
+                EngineErrorClass::Unavailable
+            ),
+            suggested_fix_for_code("internal.engine.persistence", EngineErrorClass::Internal),
         );
     }
 
