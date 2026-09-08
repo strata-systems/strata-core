@@ -286,8 +286,22 @@ jobs:
             --exclude "crates/executor/src/executor/hub_disabled.rs" \
             --exclude "crates/executor/src/bin/**" \
             --timeout-multiplier 2.5 --minimum-test-timeout 60 || [ $? -eq 3 ]
+          # D11 `InferenceRuntime::status` reports every provider, including the
+          # ones this build cannot call. Run C compiles NO provider feature, so
+          # `generation_provider_feature_enabled` and its embedding twin are
+          # both constant `false` there and the readiness expressions collapse:
+          # `false || false`, `false && …` and their mutants are the same
+          # value. Vacuous survivors of the feature-gated kind this gate's
+          # config header describes, not untested logic.
+          #
+          # What IS observable without a provider feature is asserted and
+          # falsification-checked in crates/inference/tests/capability_honesty.rs
+          # (`status_reports_the_build_and_every_provider`): only the local
+          # provider is keyless, a reported key source names a set variable, and
+          # `local_remedy` is present exactly when local execution is not.
           cargo mutants --no-config --in-diff pr.diff --package strata-inference \
             --features download,testkit \
+            --exclude-re 'in InferenceRuntime::status' \
             --exclude "crates/inference/src/llama/**" \
             --exclude "crates/inference/src/embed.rs" \
             --exclude "crates/inference/src/rank.rs" \

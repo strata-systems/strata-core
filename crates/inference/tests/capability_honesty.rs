@@ -221,6 +221,31 @@ fn status_reports_the_build_and_every_provider() {
 
     assert!(status.models_catalogued > 0, "the catalog is not empty");
     assert!(status.models_downloaded <= status.models_catalogued);
+
+    // Exactly the local provider needs no key. Asserting this by provider
+    // identity — rather than only that key_env_var agrees with the flag —
+    // is what catches the flag being inverted, since both are the same
+    // expression and would flip together.
+    let keyless: Vec<_> = status
+        .providers
+        .iter()
+        .filter(|provider| !provider.requires_api_key)
+        .map(|provider| provider.provider)
+        .collect();
+    assert_eq!(
+        keyless,
+        vec![strata_inference::ProviderKind::Local],
+        "only local runs without a key"
+    );
+
+    // The remedy is present exactly when local execution is absent. Without
+    // this the field could silently become None and the CLI would print
+    // nothing where it promises the way forward.
+    assert_eq!(
+        status.local_remedy.is_some(),
+        !status.local_execution,
+        "a build lacking local execution must carry the remedy, and one with it must not"
+    );
 }
 
 /// Whatever the ambient environment holds, a reported source is the variable's
