@@ -1,11 +1,41 @@
 //! Runtime CLI metadata conformance tests.
 
+use std::collections::BTreeSet;
 use std::fs;
+use std::path::Path;
 
 use serde_json::Value;
 use strata_executor::cli_metadata::{
     CliCommandCatalog, CliMetadataError, EMBEDDED_CLI_COMMAND_INDEX_JSON,
 };
+
+/// The IDL command index the embedded CLI index was generated from — the file
+/// the index's own `source` names, read from the repo. Tests that need "every
+/// command" or "every command in a family" take the set from here rather than
+/// restating a count: a literal count was bumped by every command-adding PR,
+/// and when two such PRs bumped it identically git merged them without a
+/// conflict and the count came out one short.
+fn idl_command_index(catalog: &CliCommandCatalog) -> Value {
+    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("crate lives two levels below the repo root");
+    let path = repo_root.join(&catalog.index().source.path);
+    let json = fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("IDL command index {} reads: {error}", path.display()));
+    serde_json::from_str(&json).expect("IDL command index is JSON")
+}
+
+/// Ids of the IDL commands `keep` accepts, by the command's IDL record.
+fn idl_command_ids(index: &Value, keep: impl Fn(&Value) -> bool) -> BTreeSet<&str> {
+    index["commands"]
+        .as_array()
+        .expect("IDL command index lists commands")
+        .iter()
+        .filter(|command| keep(command))
+        .map(|command| command["id"].as_str().expect("IDL command has an id"))
+        .collect()
+}
 
 #[test]
 fn embedded_cli_metadata_loads_without_generator_feature() {
@@ -16,9 +46,37 @@ fn embedded_cli_metadata_loads_without_generator_feature() {
         catalog.index().generator_version,
         "strata-executor-cli-idl.1"
     );
-    assert_eq!(catalog.index().command_count, 136);
-    assert_eq!(catalog.commands().len(), 136);
-    assert_eq!(catalog.families().len(), 11);
+
+    // Every command the IDL declares, and only those, in the embedded index
+    // and in its count.
+    let source = idl_command_index(&catalog);
+    let expected_ids = idl_command_ids(&source, |_| true);
+    assert!(!expected_ids.is_empty(), "the IDL declares commands");
+    let embedded_ids = catalog
+        .commands()
+        .iter()
+        .map(|command| command.id.as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(embedded_ids, expected_ids);
+    assert_eq!(catalog.index().command_count, expected_ids.len());
+
+    // One family group per family the IDL uses.
+    let expected_families = source["commands"]
+        .as_array()
+        .expect("IDL command index lists commands")
+        .iter()
+        .map(|command| {
+            command["family"]
+                .as_str()
+                .expect("IDL command has a family")
+        })
+        .collect::<BTreeSet<_>>();
+    let embedded_families = catalog
+        .families()
+        .iter()
+        .map(|family| family.id.as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(embedded_families, expected_families);
 }
 
 #[test]
@@ -140,10 +198,20 @@ fn command_listing_is_grouped_and_sorted() {
     assert_eq!(families[9].id, "space");
     assert_eq!(families[10].id, "vector");
 
+    // The family listing carries exactly the IDL's KV commands, and the
+    // family group agrees with it.
     let kv_commands = catalog
         .commands_for_family("kv")
         .expect("KV family commands exist");
-    assert_eq!(kv_commands.len(), 13);
+    let source = idl_command_index(&catalog);
+    let expected_kv = idl_command_ids(&source, |command| command["family"] == "kv");
+    assert_eq!(
+        kv_commands
+            .iter()
+            .map(|command| command.id.as_str())
+            .collect::<BTreeSet<_>>(),
+        expected_kv
+    );
     assert_eq!(
         kv_commands
             .iter()
