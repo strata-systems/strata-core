@@ -4,15 +4,18 @@
 
 use std::path::PathBuf;
 
+use std::collections::BTreeSet;
+
 use strata_executor::{
-    Command, CommitOutcomeStatus, ErrorClass, Executor, ExecutorError, ExecutorErrorClass, Output,
-    PageInfo, RetryPolicy,
+    public_error_code_entries, Command, CommitOutcomeStatus, ErrorClass, Executor, ExecutorError,
+    ExecutorErrorClass, Output, PageInfo, RetryPolicy,
 };
 use strata_inference::{
     ChatChoice, ChatMessage, ChatRequest, ChatResponse, EmbedInput, EmbeddingItem,
     EmbeddingsRequest, EmbeddingsResponse, FinishReason, InferenceCapability, InferenceError,
     InferenceRuntime, InferenceRuntimeConfig, ModelCacheStatus, ModelInfo, ModelTask,
-    PullModelOutput, RankRequest, RankResponse, RankRuntimeOutcome, Role, Usage,
+    ProviderFailure, PullModelOutput, RankRequest, RankResponse, RankRuntimeOutcome,
+    RegistryFailure, Role, Usage,
 };
 
 fn output_round_trip(value: &Output) -> Output {
@@ -225,6 +228,106 @@ fn inference_error_retry_policies_match_v1_contract() {
         InferenceError::LlamaCpp("context allocation failed".to_owned()).into();
     assert_eq!(local_runtime_error.code(), "inference.local_runtime_failed");
     assert_eq!(local_runtime_error.retry_policy(), RetryPolicy::Unknown);
+}
+
+/// One `InferenceError` per way the inference crate can fail. The string
+/// variants pick their code from the message, so each message here is chosen
+/// to land on a distinct code; the structured variants carry theirs.
+fn every_constructible_inference_error() -> Vec<InferenceError> {
+    let message = || "probe".to_owned();
+    let mut errors = vec![
+        InferenceError::LlamaCpp("context allocation failed".to_owned()),
+        InferenceError::LlamaCpp("model load failed".to_owned()),
+        InferenceError::Provider(message()),
+        InferenceError::Registry(message()),
+        InferenceError::Io(message()),
+        InferenceError::NotSupported(message()),
+        InferenceError::NotSupported("provider probe".to_owned()),
+        InferenceError::NotSupported("parameter probe".to_owned()),
+        InferenceError::InvalidSpec(message()),
+    ];
+    errors.extend(
+        [
+            RegistryFailure::MissingModel,
+            RegistryFailure::DownloadDisabled,
+            RegistryFailure::DownloadFailed,
+            RegistryFailure::VerificationFailed,
+            RegistryFailure::Corrupt,
+        ]
+        .into_iter()
+        .map(|kind| InferenceError::RegistryFailed {
+            kind,
+            message: message(),
+        }),
+    );
+    errors.extend(
+        [
+            ProviderFailure::MissingApiKey,
+            ProviderFailure::AuthFailed,
+            ProviderFailure::InvalidRequest,
+            ProviderFailure::RateLimited,
+            ProviderFailure::Timeout,
+            ProviderFailure::Unavailable,
+            ProviderFailure::MalformedResponse,
+        ]
+        .into_iter()
+        .map(|kind| InferenceError::ProviderFailed {
+            kind,
+            message: message(),
+        }),
+    );
+    errors
+}
+
+/// The registry is the single authority for a code's retry policy and
+/// suggested fix: what an inference error carries onto the wire must be the
+/// row `strata agents errors` documents, for every code the inference crate
+/// can produce (#3243). The sweep also proves every `inference.*` row is
+/// reachable, so a new variant cannot land outside it.
+#[test]
+fn test_inference_errors_carry_the_registry_retry_policy_and_suggested_fix() {
+    let entries: Vec<_> = public_error_code_entries().collect();
+    let mut reached = BTreeSet::new();
+    let mut mismatches = Vec::new();
+    for inference_error in every_constructible_inference_error() {
+        let error: ExecutorError = inference_error.into();
+        let entry = entries
+            .iter()
+            .find(|entry| entry.code == error.code())
+            .unwrap_or_else(|| panic!("{} is not a registered code", error.code()));
+        reached.insert(entry.code);
+        if error.retry_policy() != entry.retry_policy {
+            mismatches.push(format!(
+                "{}: retry_policy {:?} on the wire, {:?} in the registry",
+                entry.code,
+                error.retry_policy(),
+                entry.retry_policy
+            ));
+        }
+        if error.suggested_fix() != entry.suggested_fix {
+            mismatches.push(format!(
+                "{}: suggested_fix {:?} on the wire, {:?} in the registry",
+                entry.code,
+                error.suggested_fix(),
+                entry.suggested_fix
+            ));
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "inference errors disagree with the registry:\n{}",
+        mismatches.join("\n")
+    );
+
+    let unreached: Vec<_> = entries
+        .iter()
+        .map(|entry| entry.code)
+        .filter(|code| code.starts_with("inference.") && !reached.contains(code))
+        .collect();
+    assert!(
+        unreached.is_empty(),
+        "registry rows no constructible inference error reaches: {unreached:?}"
+    );
 }
 
 #[test]
