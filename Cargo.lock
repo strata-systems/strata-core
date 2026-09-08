@@ -4058,6 +4058,7 @@ dependencies = [
  "sha2 0.10.9",
  "strata-core 1.2.1",
  "tempfile",
+ "toml",
  "tracing",
  "web-time",
  "zstd",

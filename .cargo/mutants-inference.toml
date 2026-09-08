@@ -1,0 +1,20 @@
+# cargo-mutants configuration for LANE C of the mutation-on-diff CI gate:
+# strata-inference, built with `--features download,testkit`.
+#
+# **Inference exclusions belong here, not in `.cargo/mutants.toml`.** This file
+# is passed with `--config`, which replaces the default config rather than
+# adding to it, so the default config never applies to this lane. See the
+# partition table in `.cargo/mutants.toml`.
+
+exclude_globs = [
+    # `local`-gated execution: these files need cmake and model artifacts no CI
+    # lane has, so they are not compiled here and their mutants are untestable
+    # by construction — a mutant on non-compiled code always survives, and
+    # vacuously. Their strength mechanism is the real-model integration suite
+    # (`crates/inference/tests/local_integration.rs`), which runs only where a
+    # llama.cpp build and the GGUF files are present.
+    "crates/inference/src/llama/**",
+    "crates/inference/src/embed.rs",
+    "crates/inference/src/rank.rs",
+    "crates/inference/src/provider/local.rs",
+]
