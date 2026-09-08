@@ -2558,3 +2558,79 @@ fn vector_scan_page(
         page.cursor().cloned(),
     )
 }
+
+/// The recorded embedding model reaches the wire (D9).
+///
+/// The mutation gate found `VectorCollectionInfo::embedding_model` untested:
+/// returning `None`, an empty string, or a wrong name all passed. That accessor
+/// is what puts the field on the wire, so `None` would make provenance
+/// invisible to every consumer while the engine still stored it, and a wrong
+/// name would misreport which model wrote the collection.
+#[test]
+fn a_collection_reports_the_embedding_model_it_was_created_with() {
+    let mut executor = Executor::open_cache().expect("cache executor opens");
+
+    let created = executor
+        .execute(Command::VectorCreateCollection {
+            branch: None,
+            space: None,
+            collection: "docs".to_owned(),
+            dimension: 4,
+            metric: VectorDistanceMetric::Cosine,
+            embedding_model: Some("miniLM".to_owned()),
+        })
+        .expect("collection creates");
+    let Output::VectorCollectionList { items, .. } = created else {
+        panic!("expected a collection list");
+    };
+    assert_eq!(
+        items[0].embedding_model(),
+        Some("miniLM"),
+        "the create acknowledgement carries the model"
+    );
+
+    // And a fresh read, not just the creation echo — this is the path a
+    // caller actually uses to discover what wrote a collection.
+    let listed = executor
+        .execute(Command::VectorListCollections {
+            branch: None,
+            space: None,
+        })
+        .expect("collections list");
+    let Output::VectorCollectionList { items, .. } = listed else {
+        panic!("expected a collection list");
+    };
+    let docs = items
+        .iter()
+        .find(|item| item.name() == "docs")
+        .expect("the collection is listed");
+    assert_eq!(docs.embedding_model(), Some("miniLM"));
+
+    // A collection created without one reports absence, not an empty string:
+    // "no model recorded" and "recorded as nothing" are different states, and
+    // only the first legitimately accepts vectors from any model.
+    executor
+        .execute(Command::VectorCreateCollection {
+            branch: None,
+            space: None,
+            collection: "raw".to_owned(),
+            dimension: 4,
+            metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
+        })
+        .expect("collection creates");
+    let listed = executor
+        .execute(Command::VectorListCollections {
+            branch: None,
+            space: None,
+        })
+        .expect("collections list");
+    let Output::VectorCollectionList { items, .. } = listed else {
+        panic!("expected a collection list");
+    };
+    let raw = items
+        .iter()
+        .find(|item| item.name() == "raw")
+        .expect("the collection is listed");
+    assert_eq!(raw.embedding_model(), None);
+}
