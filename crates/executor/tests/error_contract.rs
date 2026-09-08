@@ -531,8 +531,9 @@ fn test_engine_errors_reach_the_wire_with_the_registry_suggested_fix() {
 
 /// Control for the executor's own codes: every non-engine code constructed
 /// through `ExecutorError::new` already carries the registry hint, so the
-/// engine-side fix is the only gap. The class argument is irrelevant — the
-/// code prefix decides the public class.
+/// engine-side fix is the only gap. The class argument cannot affect the
+/// hint — `new` always supplies its class default, which `render_status`
+/// recognises and replaces with the registry entry.
 #[test]
 fn test_executor_errors_carry_the_registry_suggested_fix() {
     let mut violations = Vec::new();
