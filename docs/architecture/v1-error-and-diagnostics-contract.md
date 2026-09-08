@@ -339,11 +339,14 @@ Layer responsibilities for the surface:
 1. Storage owns fields 1, 2, the mechanical half of 3, and the mechanical
    half of 4. It owns no reference id, no doc URL, and no user-facing phrasing.
 2. Engine composes product meaning: user-facing message and suggested fix.
-   The engine's error-code registry is the single authority for a code's
-   suggested fix: the hint `strata agents errors` documents is the hint a live
-   error constructed for that code carries. A construction site that builds
-   its status by hand may supply a *more specific* hint, never a class-generic
-   one (#3237).
+   The error-code registry (engine rows in
+   `crates/engine/src/diagnostics/registry.rs`, executor-owned rows such as
+   `inference.*` in `crates/executor/src/error_registry.rs`) is the single
+   authority for a code's suggested fix: the hint `strata agents errors`
+   documents is the hint a live error constructed for that code carries. A
+   construction site that builds its status by hand may supply a *more
+   specific* hint, never a class-generic one and never a private per-code
+   table of its own (#3237, #3243).
 3. The boundary (command/IPC/SDK/CLI status renderer) assigns the reference id,
    derives the doc link from the code, and emits the full six-field status.
 

@@ -522,14 +522,18 @@ fn source_chain_display(error: &dyn Error) -> Option<String> {
 impl From<strata_inference::InferenceError> for ExecutorError {
     fn from(value: strata_inference::InferenceError) -> Self {
         let code = value.code();
-        let class = inference_public_class(code, value.class());
+        // The registry row is the single authority for a registered code's
+        // class, retry policy and suggested fix; private per-code tables here
+        // drifted from it (#3243). A code missing from the registry renders as
+        // `internal.executor.unregistered_code`, whose row supplies all three.
+        let entry = public_error_code_entry(code);
         let status = render_status(
-            class,
+            entry.map_or(ErrorClass::Internal, |entry| entry.class),
             code,
-            inference_retry_policy(code, value.retryable()),
+            entry.map_or(RetryPolicy::Never, |entry| entry.retry_policy),
             CommitOutcomeStatus::NotApplicable,
             value.public_message(),
-            inference_suggested_fix(code),
+            entry.map_or("", |entry| entry.suggested_fix),
             None,
             Vec::new(),
             Vec::new(),
@@ -847,70 +851,6 @@ const fn default_suggested_fix(class: ErrorClass) -> &'static str {
         ErrorClass::Corruption => "Stop writing and inspect diagnostics before continuing.",
         ErrorClass::Serialization => "Correct the serialized payload or use a compatible format.",
         _ => "Capture the reference id and report this as a Strata bug.",
-    }
-}
-
-#[cfg(feature = "inference")]
-fn inference_public_class(code: &str, legacy: strata_inference::InferenceErrorClass) -> ErrorClass {
-    // The registry is the single source of truth for a code's public class, so
-    // a registered inference code drives it directly rather than restating the
-    // mapping here (which risked drifting from the registry). Only codes not yet
-    // in the registry fall back to the inference crate's legacy class.
-    if let Some(entry) = public_error_code_entry(code) {
-        return entry.class;
-    }
-    match legacy {
-        strata_inference::InferenceErrorClass::InvalidInput => ErrorClass::InvalidArgument,
-        strata_inference::InferenceErrorClass::NotFound => ErrorClass::NotFound,
-        strata_inference::InferenceErrorClass::Unavailable
-        | strata_inference::InferenceErrorClass::Retryable => ErrorClass::Unavailable,
-        strata_inference::InferenceErrorClass::Corruption => ErrorClass::Corruption,
-        strata_inference::InferenceErrorClass::Internal => ErrorClass::Internal,
-    }
-}
-
-#[cfg(feature = "inference")]
-const fn inference_retry_policy(code: &str, retryable: bool) -> RetryPolicy {
-    match code.as_bytes() {
-        b"inference.provider_timeout"
-        | b"inference.provider_unavailable"
-        | b"inference.download_failed" => RetryPolicy::SameRequest,
-        b"inference.provider_rate_limited"
-        | b"inference.missing_model"
-        | b"inference.model_load_failed"
-        | b"inference.missing_api_key"
-        | b"inference.provider_auth_failed"
-        | b"inference.download_disabled"
-        | b"inference.download_verification_failed" => RetryPolicy::AfterStateChange,
-        b"inference.provider_malformed_response"
-        | b"inference.io_failure"
-        | b"inference.local_runtime_failed" => RetryPolicy::Unknown,
-        _ if retryable => RetryPolicy::SameRequest,
-        _ => RetryPolicy::Never,
-    }
-}
-
-#[cfg(feature = "inference")]
-const fn inference_suggested_fix(code: &str) -> &'static str {
-    match code.as_bytes() {
-        b"inference.missing_api_key" => "Set the provider API key and retry.",
-        b"inference.provider_auth_failed" => "Check provider credentials and permissions.",
-        b"inference.provider_rate_limited" => "Wait for provider rate limits to reset.",
-        b"inference.provider_timeout" | b"inference.provider_unavailable" => {
-            "Retry when the provider is available."
-        }
-        b"inference.missing_model" | b"inference.model_load_failed" => {
-            "Install or configure the requested model before retrying."
-        }
-        b"inference.download_disabled" => "Enable model downloads or install the model manually.",
-        b"inference.download_verification_failed" => {
-            "Delete the corrupted download and download the model again."
-        }
-        b"inference.provider_malformed_response" => {
-            "Retry or switch providers if the response remains invalid."
-        }
-        b"inference.io_failure" => "Inspect local filesystem access and retry.",
-        _ => "Inspect inference configuration and retry with supported settings.",
     }
 }
 
