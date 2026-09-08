@@ -869,6 +869,18 @@ pub enum Command {
         dimension: u64,
         /// Distance metric.
         metric: VectorDistanceMetric,
+        /// The model that produces this collection's vectors (D9).
+        ///
+        /// What the record governs: `text` on `vector upsert` and
+        /// `vector query` is embedded with this model and no other, so text
+        /// writes and searches cannot mix models — the failure dimension
+        /// cannot catch, since two models at the same width return neighbours
+        /// that are ranked and meaningless. What it cannot govern: a `vector`
+        /// supplied directly carries no model, so Strata cannot check one
+        /// against the record; supplying a vector is the caller's statement
+        /// that this model produced it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        embedding_model: Option<String>,
     },
     /// Deletes a vector collection.
     VectorDeleteCollection {
@@ -900,6 +912,31 @@ pub enum Command {
         space: Option<String>,
         /// Collection name.
         collection: String,
+    },
+    /// Declares which embedding model a collection's vectors come from (D9).
+    ///
+    /// For collections created without `embedding_model` — every collection
+    /// that predates provenance. A declaration, not a verification: a stored
+    /// vector carries no model, so this takes the caller's word for the
+    /// vectors present, and from then on `text` is embedded with this model.
+    /// A vector supplied directly is not checked against it — it cannot be —
+    /// and remains the caller's word. One-time: re-declaring the recorded
+    /// model is a no-op, and declaring a different one is refused with
+    /// `failed_precondition.engine.embedding_model_mismatch`, because changing
+    /// the model under stored vectors is the mixing the record exists to
+    /// prevent.
+    VectorSetEmbeddingModel {
+        /// Target branch. Defaults to the executor handle branch.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        branch: Option<String>,
+        /// Target product space. Defaults to `"default"`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        space: Option<String>,
+        /// Collection name.
+        collection: String,
+        /// The model that produced, and will produce, this collection's
+        /// vectors.
+        model: String,
     },
     /// Counts visible vectors in one collection.
     VectorCount {
@@ -953,7 +990,18 @@ pub enum Command {
         key: String,
         /// Dense embedding. Accepted at wire (f64) precision and narrowed to the
         /// stored f32; a value that underflows or overflows f32 is rejected.
+        ///
+        /// Empty when `text` is supplied instead. A vector carries no model,
+        /// so when the collection records an embedding model, Strata cannot
+        /// check this vector against it: supplying one is the caller's
+        /// statement that the recorded model produced it. Only `text` is
+        /// embedded under the record.
+        #[serde(default)]
         vector: Vec<f64>,
+        /// Text to embed with the collection's recorded model, instead of
+        /// supplying a vector (D10). Exactly one of `vector` or `text`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
         /// Optional metadata.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         metadata: Option<Value>,
@@ -1137,7 +1185,31 @@ pub enum Command {
         collection: String,
         /// Query embedding. Accepted at wire (f64) precision and narrowed to the
         /// searched f32; a value that underflows or overflows f32 is rejected.
+        ///
+        /// Empty when `text` is supplied instead. A vector carries no model,
+        /// so when the collection records an embedding model, Strata cannot
+        /// check this query against it: supplying one is the caller's
+        /// statement that the recorded model produced it, and a query from
+        /// another model returns neighbours that are ranked and meaningless.
+        /// Only `text` is embedded under the record.
+        #[serde(default)]
         query: Vec<f64>,
+        /// Text to embed with the collection's recorded model, instead of
+        /// supplying a query vector (D10).
+        ///
+        /// This is the half that makes provenance worth recording: the query is
+        /// embedded with the same model the collection was written with, so a
+        /// caller cannot accidentally compare vectors from two models.
+        ///
+        /// With `as_of` or `as_of_time`, the model is the one the collection
+        /// recorded at that snapshot. A snapshot older than the model's
+        /// declaration is refused with
+        /// `failed_precondition.engine.embedding_model_missing`: the
+        /// declaration vouched for the vectors present when it was made, not
+        /// for what the collection held before. Search such a snapshot with a
+        /// `query` vector.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
         /// Maximum number of matches.
         k: u64,
         /// Optional metadata filter.
@@ -2368,6 +2440,7 @@ impl Command {
             Self::VectorDeleteCollection { .. } => "vector_delete_collection",
             Self::VectorListCollections { .. } => "vector_list_collections",
             Self::VectorCollectionStats { .. } => "vector_collection_stats",
+            Self::VectorSetEmbeddingModel { .. } => "vector_set_embedding_model",
             Self::VectorCount { .. } => "vector_count",
             Self::VectorSample { .. } => "vector_sample",
             Self::VectorUpsert { .. } => "vector_upsert",
@@ -2486,6 +2559,7 @@ impl Command {
                 | Self::JsonDropIndex { .. }
                 | Self::VectorCreateCollection { .. }
                 | Self::VectorDeleteCollection { .. }
+                | Self::VectorSetEmbeddingModel { .. }
                 | Self::VectorUpsert { .. }
                 | Self::VectorUpdateMetadata { .. }
                 | Self::VectorDelete { .. }

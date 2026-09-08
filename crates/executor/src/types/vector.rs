@@ -8,6 +8,13 @@ pub struct VectorCollectionInfo {
     dimension: u64,
     metric: VectorDistanceMetric,
     count: u64,
+    /// The model that produced this collection's vectors, when recorded (D9).
+    ///
+    /// Absent for collections created before provenance existed, and for any
+    /// created without one. Those accept vectors from any model, so nothing
+    /// can check that a query is comparable with what is stored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    embedding_model: Option<String>,
 }
 
 impl VectorCollectionInfo {
@@ -18,7 +25,20 @@ impl VectorCollectionInfo {
             dimension,
             metric,
             count,
+            embedding_model: None,
         }
+    }
+
+    #[must_use]
+    /// Records which model produced this collection's vectors.
+    pub fn with_embedding_model(mut self, model: Option<String>) -> Self {
+        self.embedding_model = model;
+        self
+    }
+
+    /// Returns the recorded embedding model, if any.
+    pub fn embedding_model(&self) -> Option<&str> {
+        self.embedding_model.as_deref()
     }
 
     /// Returns the collection name.

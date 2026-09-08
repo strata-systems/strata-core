@@ -17,6 +17,7 @@ impl Executor {
             collection: collection.into(),
             dimension,
             metric,
+            embedding_model: None,
         })
     }
 
@@ -52,6 +53,20 @@ impl Executor {
         })
     }
 
+    /// Executes a default-branch vector set-embedding-model command.
+    pub fn vector_set_embedding_model(
+        &mut self,
+        collection: impl Into<String>,
+        model: impl Into<String>,
+    ) -> ExecutorResult<Output> {
+        self.execute(Command::VectorSetEmbeddingModel {
+            branch: None,
+            space: None,
+            collection: collection.into(),
+            model: model.into(),
+        })
+    }
+
     /// Executes a default-branch vector count command.
     pub fn vector_count(&mut self, collection: impl Into<String>) -> ExecutorResult<Output> {
         self.execute(Command::VectorCount {
@@ -77,6 +92,7 @@ impl Executor {
             collection: collection.into(),
             key: key.into(),
             vector: vector.into_iter().map(f64::from).collect(),
+            text: None,
             metadata,
         })
     }
@@ -211,6 +227,7 @@ impl Executor {
             space: None,
             collection: collection.into(),
             query: query.into_iter().map(f64::from).collect(),
+            text: None,
             k,
             filter,
             as_of: None,

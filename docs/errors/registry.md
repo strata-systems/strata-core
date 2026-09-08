@@ -230,6 +230,12 @@ the public registry when adding, renaming, or removing a public error code.
 <a id="failed_precondition.engine.runtime_closed"></a>
 - `failed_precondition.engine.runtime_closed`
 
+<a id="failed_precondition.engine.embedding_model_mismatch"></a>
+- `failed_precondition.engine.embedding_model_mismatch`
+
+<a id="failed_precondition.engine.embedding_model_missing"></a>
+- `failed_precondition.engine.embedding_model_missing`
+
 <a id="failed_precondition.engine.space_not_empty"></a>
 - `failed_precondition.engine.space_not_empty`
 
@@ -443,6 +449,9 @@ the public registry when adding, renaming, or removing a public error code.
 <a id="invalid_argument.engine.vector_collection_reserved"></a>
 - `invalid_argument.engine.vector_collection_reserved`
 
+<a id="invalid_argument.engine.embedding_model"></a>
+- `invalid_argument.engine.embedding_model`
+
 <a id="invalid_argument.engine.vector_dimension"></a>
 - `invalid_argument.engine.vector_dimension`
 
@@ -634,6 +643,9 @@ the public registry when adding, renaming, or removing a public error code.
 
 <a id="invalid_argument.executor.graph_analytics_budget"></a>
 - `invalid_argument.executor.graph_analytics_budget`
+
+<a id="invalid_argument.executor.vector_input"></a>
+- `invalid_argument.executor.vector_input`
 
 <a id="invalid_argument.executor.vector_dimension"></a>
 - `invalid_argument.executor.vector_dimension`

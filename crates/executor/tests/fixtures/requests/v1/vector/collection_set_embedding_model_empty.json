@@ -1,0 +1,5 @@
+{
+  "type": "vector_set_embedding_model",
+  "collection": "docs",
+  "model": ""
+}

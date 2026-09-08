@@ -929,6 +929,14 @@ pub(crate) enum VectorCommand {
         /// Read vector from a file.
         #[arg(short = 'f', long, conflicts_with = "vector")]
         file: Option<PathBuf>,
+        /// Embed this text with the collection's recorded model instead of
+        /// supplying a vector (D10).
+        ///
+        /// The collection must record a model — `--embedding-model` at
+        /// create, or `vector collection set-embedding-model` later — which
+        /// is what says which model to call.
+        #[arg(long, conflicts_with_all = ["vector", "file"])]
+        text: Option<String>,
         /// Optional metadata JSON object.
         #[arg(long)]
         metadata: Option<String>,
@@ -1043,6 +1051,13 @@ pub(crate) enum VectorCommand {
         /// Read query vector from a file.
         #[arg(short = 'f', long, conflicts_with = "query")]
         file: Option<PathBuf>,
+        /// Embed this text with the collection's recorded model and search
+        /// with it (D10).
+        ///
+        /// Uses the same model the collection was written with, so the query
+        /// cannot accidentally be compared against another model's vectors.
+        #[arg(long, conflicts_with_all = ["query", "file"])]
+        text: Option<String>,
         /// Maximum number of matches.
         #[arg(short = 'k', long, default_value_t = 10)]
         k: u64,
@@ -1096,6 +1111,17 @@ pub(crate) enum VectorCollectionCommand {
         /// Distance metric.
         #[arg(long, value_enum, default_value_t = CliVectorMetric::Cosine)]
         metric: CliVectorMetric,
+        /// Model that produces this collection's vectors, e.g. `miniLM` or
+        /// `openai:text-embedding-3-small`.
+        ///
+        /// `--text` on `vector upsert` and `vector query` is then embedded
+        /// with this model and no other, so text writes and searches cannot
+        /// mix models — two models at the same width return neighbours that
+        /// are ranked and meaningless. A vector you supply directly carries
+        /// no model and is not checked: supplying one is your statement that
+        /// this model produced it.
+        #[arg(long)]
+        embedding_model: Option<String>,
     },
     /// Delete a collection.
     #[command(alias = "del")]
@@ -1109,6 +1135,21 @@ pub(crate) enum VectorCollectionCommand {
     Stats {
         /// Collection name.
         collection: String,
+    },
+    /// Declare the model that produces a collection's vectors.
+    ///
+    /// A declaration, not a verification: stored vectors carry no model, so
+    /// this takes your word for the ones present, and `--text` is embedded
+    /// with this model from then on. Vectors you supply directly stay your
+    /// word. Declared once: a collection that already records this model is
+    /// left as it is, and one that records a different model is refused,
+    /// since its stored vectors came from that model. A collection with no
+    /// recorded model cannot embed `--text`.
+    SetEmbeddingModel {
+        /// Collection name.
+        collection: String,
+        /// Model id, e.g. `miniLM` or `openai:text-embedding-3-small`.
+        model: String,
     },
 }
 
@@ -2439,6 +2480,7 @@ mod tests {
         "vector collection create",
         "vector collection delete",
         "vector collection list",
+        "vector collection set-embedding-model",
         "vector collection stats",
         "vector count",
         "vector delete",

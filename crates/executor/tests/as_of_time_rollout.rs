@@ -182,6 +182,7 @@ fn vector_as_of_time_matches_as_of() {
             collection: "c".to_owned(),
             dimension: 2,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         },
     );
     let upsert = |vector: Vec<f64>| Command::VectorUpsert {
@@ -190,6 +191,7 @@ fn vector_as_of_time_matches_as_of() {
         collection: "c".to_owned(),
         key: "v".to_owned(),
         vector,
+        text: None,
         metadata: None,
     };
     assert_clocks_agree(

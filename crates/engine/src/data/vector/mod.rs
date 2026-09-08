@@ -19,9 +19,9 @@ pub use outcome::{
 };
 pub use service::VectorService;
 pub use types::{
-    VectorCollectionName, VectorConfig, VectorDistanceMetric, VectorEmbedding, VectorFilter,
-    VectorFilterCondition, VectorFilterOp, VectorKey, VectorMetadata, VectorMetadataPatch,
-    VectorScalar, VectorUpsertEntry,
+    EmbeddingModelId, VectorCollectionName, VectorConfig, VectorDistanceMetric, VectorEmbedding,
+    VectorFilter, VectorFilterCondition, VectorFilterOp, VectorKey, VectorMetadata,
+    VectorMetadataPatch, VectorScalar, VectorUpsertEntry,
 };
 
 pub(crate) use adapter::{

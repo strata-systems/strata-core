@@ -188,7 +188,8 @@
         "type": "integer"
       },
       "query": {
-        "description": "Query embedding. Accepted at wire (f64) precision and narrowed to the\nsearched f32; a value that underflows or overflows f32 is rejected.",
+        "default": [],
+        "description": "Query embedding. Accepted at wire (f64) precision and narrowed to the\nsearched f32; a value that underflows or overflows f32 is rejected.\n\nEmpty when `text` is supplied instead. A vector carries no model,\nso when the collection records an embedding model, Strata cannot\ncheck this query against it: supplying one is the caller's\nstatement that the recorded model produced it, and a query from\nanother model returns neighbours that are ranked and meaningless.\nOnly `text` is embedded under the record.",
         "items": {
           "format": "double",
           "type": "number"
@@ -202,6 +203,13 @@
           "null"
         ]
       },
+      "text": {
+        "description": "Text to embed with the collection's recorded model, instead of\nsupplying a query vector (D10).\n\nThis is the half that makes provenance worth recording: the query is\nembedded with the same model the collection was written with, so a\ncaller cannot accidentally compare vectors from two models.\n\nWith `as_of` or `as_of_time`, the model is the one the collection\nrecorded at that snapshot. A snapshot older than the model's\ndeclaration is refused with\n`failed_precondition.engine.embedding_model_missing`: the\ndeclaration vouched for the vectors present when it was made, not\nfor what the collection held before. Search such a snapshot with a\n`query` vector.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "type": {
         "const": "vector_query",
         "type": "string"
@@ -210,7 +218,6 @@
     "required": [
       "type",
       "collection",
-      "query",
       "k"
     ],
     "type": "object"

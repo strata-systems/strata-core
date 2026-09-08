@@ -40,7 +40,8 @@ $ strata vector query docs [1.0,0.0,0.0] --k 2
 | `collection` | `string` | yes | Collection name. |
 | `filter` | `VectorMetadataFilter` | no | Optional metadata filter. |
 | `k` | `integer` | yes | Maximum number of matches. |
-| `query` | `number[]` | yes | Query embedding. Accepted at wire (f64) precision and narrowed to the searched f32; a value that underflows or overflows f32 is rejected. |
+| `query` | `number[]` | no | Query embedding. Accepted at wire (f64) precision and narrowed to the searched f32; a value that underflows or overflows f32 is rejected. Empty when `text` is supplied instead. A vector carries no model, so when the collection records an embedding model, Strata cannot check this query against it: supplying one is the caller's statement that the recorded model produced it, and a query from another model returns neighbours that are ranked and meaningless. Only `text` is embedded under the record. |
+| `text` | `string` | no | Text to embed with the collection's recorded model, instead of supplying a query vector (D10). This is the half that makes provenance worth recording: the query is embedded with the same model the collection was written with, so a caller cannot accidentally compare vectors from two models. With `as_of` or `as_of_time`, the model is the one the collection recorded at that snapshot. A snapshot older than the model's declaration is refused with `failed_precondition.engine.embedding_model_missing`: the declaration vouched for the vectors present when it was made, not for what the collection held before. Search such a snapshot with a `query` vector. |
 
 Plus the optional scope: `branch` and `space` (default to the session branch and the `"default"` space).
 
@@ -58,6 +59,8 @@ Plus the optional scope: `branch` and `space` (default to the session branch and
 - [`not_found.engine.vector_collection`](https://stratadb.org/e/not_found.engine.vector_collection)
 - [`invalid_argument.engine.vector_filter`](https://stratadb.org/e/invalid_argument.engine.vector_filter)
 - [`invalid_argument.executor.vector_limit`](https://stratadb.org/e/invalid_argument.executor.vector_limit)
+- [`invalid_argument.executor.vector_input`](https://stratadb.org/e/invalid_argument.executor.vector_input)
+- [`failed_precondition.engine.embedding_model_missing`](https://stratadb.org/e/failed_precondition.engine.embedding_model_missing)
 
 ## Invocation
 

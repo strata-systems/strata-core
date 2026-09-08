@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::diagnostics::{EngineError, EngineResult};
 
+use super::EmbeddingModelId;
 use super::{
     VectorCollectionName, VectorConfig, VectorDistanceMetric, VectorEmbedding, VectorKey,
     VectorMetadata,
@@ -65,6 +66,12 @@ struct StoredCollectionConfig {
     collection: String,
     dimension: usize,
     metric: VectorDistanceMetric,
+    // D9. `default` + `skip_serializing_if` is what makes this additive: rows
+    // written before provenance existed decode with no model, and rows written
+    // without one are byte-identical to what the previous version produced. No
+    // format version bump, so the golden vectors still hold.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    embedding_model: Option<EmbeddingModelId>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -78,12 +85,13 @@ struct StoredVectorRecord {
 
 pub(crate) fn encode_collection_config(
     collection: &VectorCollectionName,
-    config: VectorConfig,
+    config: &VectorConfig,
 ) -> EngineResult<Vec<u8>> {
     let stored = StoredCollectionConfig {
         collection: collection.as_str().to_owned(),
         dimension: config.dimension(),
         metric: config.metric(),
+        embedding_model: config.embedding_model().cloned(),
     };
     let mut bytes = vec![COLLECTION_FORMAT_VERSION];
     bytes.extend(serde_json::to_vec(&stored).map_err(|error| {
@@ -124,11 +132,15 @@ pub(crate) fn decode_collection_config(
             "stored vector collection name does not match its row key",
         ));
     }
-    VectorConfig::new(stored.dimension, stored.metric).map_err(|_| {
+    let config = VectorConfig::new(stored.dimension, stored.metric).map_err(|_| {
         EngineError::corruption(
             "data_loss.engine.vector_collection",
             "stored vector collection config violates engine limits",
         )
+    })?;
+    Ok(match stored.embedding_model {
+        Some(model) => config.with_embedding_model(model),
+        None => config,
     })
 }
 
@@ -228,7 +240,7 @@ mod tests {
     fn vector_record_envelopes_round_trip_and_validate_identity() {
         let collection = VectorCollectionName::new("docs").expect("valid collection");
         let config = VectorConfig::new(2, VectorDistanceMetric::Cosine).expect("valid config");
-        let encoded = encode_collection_config(&collection, config).expect("encoded config");
+        let encoded = encode_collection_config(&collection, &config).expect("encoded config");
         assert_eq!(
             decode_collection_config(&collection, &encoded).expect("decoded config"),
             config
@@ -254,7 +266,7 @@ mod tests {
         let collection = VectorCollectionName::new("docs").expect("valid collection");
         let config = VectorConfig::new(3, VectorDistanceMetric::DotProduct).expect("valid config");
         assert_eq!(
-            encode_collection_config(&collection, config).expect("encoded config"),
+            encode_collection_config(&collection, &config).expect("encoded config"),
             b"\x01{\"collection\":\"docs\",\"dimension\":3,\"metric\":\"dot_product\"}".to_vec()
         );
 

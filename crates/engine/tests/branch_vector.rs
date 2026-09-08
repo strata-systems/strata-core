@@ -4,8 +4,8 @@ mod common;
 
 use strata_engine::{
     BranchStateSelector, ComparedCapability, ConflictKind, Database, DerivedStateDisposition,
-    EngineErrorClass, PromotionStrategy, VectorCollectionName, VectorConfig, VectorDistanceMetric,
-    VectorEmbedding, VectorKey,
+    EmbeddingModelId, EngineErrorClass, PromotionStrategy, VectorCollectionName, VectorConfig,
+    VectorDistanceMetric, VectorEmbedding, VectorKey,
 };
 
 use common::{branch, open_cache_database, space};
@@ -1445,5 +1445,320 @@ fn test_promotion_carries_collection_in_a_source_only_space() {
             .count(&collection())
             .expect("count succeeds"),
         1
+    );
+}
+
+fn model(name: &str) -> EmbeddingModelId {
+    EmbeddingModelId::new(name).expect("model id")
+}
+
+fn recorded_model(database: &mut Database, branch_name: &str) -> Option<String> {
+    database
+        .vector(branch(branch_name), space("default"))
+        .expect("vector service opens")
+        .collection_info(&collection())
+        .expect("info succeeds")
+        .expect("emb present")
+        .config()
+        .embedding_model()
+        .map(|model| model.as_str().to_owned())
+}
+
+/// Declaring a model is not a reshape. The collection config carries the
+/// embedding model since D9, so a byte-level "did the config change" would
+/// read a declaration as a dimension/metric change and refuse it under the
+/// retained-vectors guard. The vectors the target keeps are exactly the ones a
+/// declaration on that branch would have covered, so the promotion carries the
+/// declaration and leaves them in place.
+#[test]
+fn test_a_model_declared_on_the_source_promotes_over_retained_target_vectors() {
+    let mut database = open_cache_database().expect("cache open succeeds");
+    database
+        .vector(branch("default"), space("default"))
+        .expect("vector service opens")
+        .create_collection(
+            collection(),
+            VectorConfig::new(2, VectorDistanceMetric::Cosine).expect("valid config"),
+        )
+        .expect("create collection");
+    upsert(&mut database, "default", "v1", vec![0.0, 1.0]);
+    database
+        .branches()
+        .expect("branch service opens")
+        .fork_current(&branch("default"), branch("feature"))
+        .expect("fork succeeds");
+    database
+        .vector(branch("feature"), space("default"))
+        .expect("vector service opens")
+        .declare_embedding_model(&collection(), model("miniLM"))
+        .expect("declaration succeeds on the source");
+
+    let outcome = database
+        .branches()
+        .expect("branch service opens")
+        .promote(
+            &branch("feature"),
+            &branch("default"),
+            PromotionStrategy::Strict,
+        )
+        .expect("a declaration promotes without conflict");
+    assert!(outcome.conflicts().is_empty());
+
+    assert_eq!(
+        recorded_model(&mut database, "default").as_deref(),
+        Some("miniLM")
+    );
+    assert_eq!(
+        database
+            .vector(branch("default"), space("default"))
+            .expect("vector service opens")
+            .count(&collection())
+            .expect("count succeeds"),
+        1,
+        "the target's vector is kept, now under the declared model"
+    );
+}
+
+/// The mirror case for the other guard: the target declared a model and the
+/// source carries vectors written under the model-less base config. They land
+/// under the declaration exactly as a raw vector write on the target would,
+/// which never checks the model either.
+#[test]
+fn test_a_model_declared_on_the_target_accepts_source_vectors() {
+    let mut database = open_cache_database().expect("cache open succeeds");
+    database
+        .vector(branch("default"), space("default"))
+        .expect("vector service opens")
+        .create_collection(
+            collection(),
+            VectorConfig::new(2, VectorDistanceMetric::Cosine).expect("valid config"),
+        )
+        .expect("create collection");
+    database
+        .branches()
+        .expect("branch service opens")
+        .fork_current(&branch("default"), branch("feature"))
+        .expect("fork succeeds");
+    database
+        .vector(branch("default"), space("default"))
+        .expect("vector service opens")
+        .declare_embedding_model(&collection(), model("miniLM"))
+        .expect("declaration succeeds on the target");
+    upsert(&mut database, "feature", "v1", vec![0.0, 1.0]);
+
+    let outcome = database
+        .branches()
+        .expect("branch service opens")
+        .promote(
+            &branch("feature"),
+            &branch("default"),
+            PromotionStrategy::Strict,
+        )
+        .expect("vectors promote into a collection that declared a model");
+    assert!(outcome.conflicts().is_empty());
+
+    assert_eq!(
+        recorded_model(&mut database, "default").as_deref(),
+        Some("miniLM")
+    );
+    assert_eq!(
+        database
+            .vector(branch("default"), space("default"))
+            .expect("vector service opens")
+            .count(&collection())
+            .expect("count succeeds"),
+        1
+    );
+}
+
+/// Two branches declaring two different models over one model-less base is a
+/// real conflict — the very mixing rule 24 exists to refuse — and it is
+/// structural: no strategy can pick a side without re-labelling the other's
+/// vectors.
+#[test]
+fn test_two_declared_models_are_an_incompatible_collection() {
+    for strategy in [PromotionStrategy::Strict, PromotionStrategy::SourceWins] {
+        let mut database = open_cache_database().expect("cache open succeeds");
+        database
+            .vector(branch("default"), space("default"))
+            .expect("vector service opens")
+            .create_collection(
+                collection(),
+                VectorConfig::new(2, VectorDistanceMetric::Cosine).expect("valid config"),
+            )
+            .expect("create collection");
+        database
+            .branches()
+            .expect("branch service opens")
+            .fork_current(&branch("default"), branch("feature"))
+            .expect("fork succeeds");
+        database
+            .vector(branch("default"), space("default"))
+            .expect("vector service opens")
+            .declare_embedding_model(&collection(), model("miniLM"))
+            .expect("target declares one model");
+        database
+            .vector(branch("feature"), space("default"))
+            .expect("vector service opens")
+            .declare_embedding_model(&collection(), model("nomic-embed"))
+            .expect("source declares another");
+
+        let preview = database
+            .branches()
+            .expect("branch service opens")
+            .preview(&branch("feature"), &branch("default"), strategy)
+            .expect("preview succeeds");
+        assert!(
+            preview
+                .conflicts()
+                .iter()
+                .any(|conflict| conflict.kind() == ConflictKind::IncompatibleCollection),
+            "{strategy:?}: two declared models are an incompatible collection"
+        );
+        let error = database
+            .branches()
+            .expect("branch service opens")
+            .promote(&branch("feature"), &branch("default"), strategy)
+            .expect_err("two declared models refuse under every strategy");
+        assert_eq!(error.class(), EngineErrorClass::Conflict);
+        assert_eq!(error.code(), "conflict.engine.promotion");
+        assert_eq!(
+            recorded_model(&mut database, "default").as_deref(),
+            Some("miniLM"),
+            "{strategy:?}: the target's declaration is untouched by the refusal"
+        );
+    }
+}
+
+/// The source recreates the collection at the same shape but with a different
+/// provenance, over vectors the target keeps. Applying it would re-label the
+/// target's `miniLM` vectors as `nomic-embed`, or strip their provenance —
+/// each refused as structurally incompatible, like a reshape.
+fn source_recreates_over_retained_target_vectors(recreated_model: Option<&str>) {
+    let mut database = open_cache_database().expect("cache open succeeds");
+    database
+        .vector(branch("default"), space("default"))
+        .expect("vector service opens")
+        .create_collection(
+            collection(),
+            VectorConfig::new(2, VectorDistanceMetric::Cosine)
+                .expect("valid config")
+                .with_embedding_model(model("miniLM")),
+        )
+        .expect("create collection");
+    database
+        .branches()
+        .expect("branch service opens")
+        .fork_current(&branch("default"), branch("feature"))
+        .expect("fork succeeds");
+    // Written after the fork, so the source's delete does not reach it and the
+    // target keeps it through the promotion.
+    upsert(&mut database, "default", "t1", vec![0.0, 1.0]);
+    database
+        .vector(branch("feature"), space("default"))
+        .expect("vector service opens")
+        .delete_collection(&collection())
+        .expect("delete emb");
+    let recreated = VectorConfig::new(2, VectorDistanceMetric::Cosine).expect("valid config");
+    let recreated = match recreated_model {
+        Some(name) => recreated.with_embedding_model(model(name)),
+        None => recreated,
+    };
+    database
+        .vector(branch("feature"), space("default"))
+        .expect("vector service opens")
+        .create_collection(collection(), recreated)
+        .expect("recreate emb with different provenance");
+
+    let error = database
+        .branches()
+        .expect("branch service opens")
+        .promote(
+            &branch("feature"),
+            &branch("default"),
+            PromotionStrategy::Strict,
+        )
+        .expect_err("changing provenance over surviving target vectors is refused");
+    assert_eq!(error.code(), "conflict.engine.promotion");
+    assert_eq!(
+        recorded_model(&mut database, "default").as_deref(),
+        Some("miniLM"),
+        "recreated as {recreated_model:?}: the target keeps its provenance"
+    );
+    assert_eq!(
+        database
+            .vector(branch("default"), space("default"))
+            .expect("vector service opens")
+            .count(&collection())
+            .expect("count succeeds"),
+        1
+    );
+}
+
+#[test]
+fn test_a_model_change_over_retained_target_vectors_is_refused() {
+    source_recreates_over_retained_target_vectors(Some("nomic-embed"));
+}
+
+#[test]
+fn test_dropping_the_model_over_retained_target_vectors_is_refused() {
+    source_recreates_over_retained_target_vectors(None);
+}
+
+/// A metric-only reshape is as incompatible as a dimension change: the same
+/// bytes score differently under another metric, so the target's surviving
+/// vectors would be ranked by a distance they were never written for.
+#[test]
+fn test_a_metric_change_over_retained_target_vectors_is_refused() {
+    let mut database = open_cache_database().expect("cache open succeeds");
+    database
+        .vector(branch("default"), space("default"))
+        .expect("vector service opens")
+        .create_collection(
+            collection(),
+            VectorConfig::new(2, VectorDistanceMetric::Cosine).expect("valid config"),
+        )
+        .expect("create collection");
+    database
+        .branches()
+        .expect("branch service opens")
+        .fork_current(&branch("default"), branch("feature"))
+        .expect("fork succeeds");
+    // Target-only, so it survives the source's delete and must be protected.
+    upsert(&mut database, "default", "t1", vec![0.0, 1.0]);
+    database
+        .vector(branch("feature"), space("default"))
+        .expect("vector service opens")
+        .delete_collection(&collection())
+        .expect("delete emb");
+    database
+        .vector(branch("feature"), space("default"))
+        .expect("vector service opens")
+        .create_collection(
+            collection(),
+            VectorConfig::new(2, VectorDistanceMetric::Euclidean).expect("valid config"),
+        )
+        .expect("recreate emb with another metric");
+
+    let error = database
+        .branches()
+        .expect("branch service opens")
+        .promote(
+            &branch("feature"),
+            &branch("default"),
+            PromotionStrategy::Strict,
+        )
+        .expect_err("a metric change over surviving target vectors is refused");
+    assert_eq!(error.code(), "conflict.engine.promotion");
+    assert_eq!(
+        database
+            .vector(branch("default"), space("default"))
+            .expect("vector service opens")
+            .collection_info(&collection())
+            .expect("info succeeds")
+            .expect("emb present")
+            .config()
+            .metric(),
+        VectorDistanceMetric::Cosine
     );
 }

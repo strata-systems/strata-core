@@ -1,0 +1,6 @@
+{
+  "type": "vector_query",
+  "collection": "docs",
+  "text": "what was written",
+  "k": 10
+}

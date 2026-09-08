@@ -75,6 +75,15 @@ strata ./mydb vector upsert embeddings doc1 @embedding.json --metadata '{"title"
 strata ./mydb vector query embeddings @query.json -k 5
 ```
 
+Record the embedding model on the collection and Strata embeds for you — text
+writes and searches then use that model and no other:
+
+```bash
+strata ./mydb vector collection create notes 1536 --embedding-model openai:text-embedding-3-small
+strata ./mydb vector upsert notes n1 --text "hello"
+strata ./mydb vector query notes --text "hi" -k 5
+```
+
 **Graph** — property graphs with real algorithms, not just traversal:
 
 ```bash

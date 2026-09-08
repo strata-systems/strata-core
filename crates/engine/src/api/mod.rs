@@ -65,13 +65,13 @@ pub use kv::{
 pub use options::{CacheOpenOptions, CachePreheat, DurabilityMode, DurableLocalOpenOptions};
 pub use space::{SpaceCreateOutcome, SpaceDeleteOutcome, SpaceService, SpaceUsageSummary};
 pub use vector::{
-    VectorArtifactSourceDiagnostic, VectorBatchDeleteOutcome, VectorBatchGetOutcome,
-    VectorBatchUpsertOutcome, VectorBulkDeleteOutcome, VectorCollectionInfo, VectorCollectionName,
-    VectorConfig, VectorDeleteOutcome, VectorDistanceMetric, VectorEmbedding, VectorEntry,
-    VectorFilter, VectorFilterCondition, VectorFilterOp, VectorHistory, VectorHistoryRow,
-    VectorIndexDiagnostics, VectorKey, VectorKeyPage, VectorMetadata, VectorMetadataPatch,
-    VectorMetadataUpdateOutcome, VectorScalar, VectorSearchMatch, VectorSearchResult,
-    VectorService, VectorUpsertEntry, VectorVersionedEntry, VectorWriteOutcome,
+    EmbeddingModelId, VectorArtifactSourceDiagnostic, VectorBatchDeleteOutcome,
+    VectorBatchGetOutcome, VectorBatchUpsertOutcome, VectorBulkDeleteOutcome, VectorCollectionInfo,
+    VectorCollectionName, VectorConfig, VectorDeleteOutcome, VectorDistanceMetric, VectorEmbedding,
+    VectorEntry, VectorFilter, VectorFilterCondition, VectorFilterOp, VectorHistory,
+    VectorHistoryRow, VectorIndexDiagnostics, VectorKey, VectorKeyPage, VectorMetadata,
+    VectorMetadataPatch, VectorMetadataUpdateOutcome, VectorScalar, VectorSearchMatch,
+    VectorSearchResult, VectorService, VectorUpsertEntry, VectorVersionedEntry, VectorWriteOutcome,
 };
 
 pub use crate::branch::{BranchName, BranchService};

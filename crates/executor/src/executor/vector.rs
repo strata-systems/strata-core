@@ -4,15 +4,46 @@ use super::{
     finish_vector_batch_get_results, finish_vector_batch_results, optional_limit,
     optional_vector_key, optional_vector_metadata, presence_exists_failed, presence_exists_item,
     query_embedding, reject_duplicate_vector_keys, require_vector_collection_info, required_usize,
-    update_effect, upsert_effect, usize_to_u64, vector_batch_get_failed, vector_batch_get_item,
-    vector_batch_item_failed, vector_batch_item_result, vector_bulk_delete_output,
-    vector_collection, vector_collection_info, vector_dimension_mismatch_error, vector_embedding,
-    vector_filter, vector_history_result, vector_index_diagnostics, vector_key,
-    vector_key_page_output, vector_match, vector_metadata_patch, vector_upsert_entry,
-    vector_versioned_data, vector_write_output, BatchVectorEntry, EngineVectorConfig, Executor,
-    ExecutorError, ExecutorResult, Maybe, Output, PageInfo, VectorDistanceMetric,
+    resolve_vector_or_text, update_effect, upsert_effect, usize_to_u64, vector_batch_get_failed,
+    vector_batch_get_item, vector_batch_item_failed, vector_batch_item_result,
+    vector_bulk_delete_output, vector_collection, vector_collection_info,
+    vector_dimension_mismatch_error, vector_embedding, vector_filter, vector_history_result,
+    vector_index_diagnostics, vector_key, vector_key_page_output, vector_match,
+    vector_metadata_patch, vector_upsert_entry, vector_versioned_data, vector_write_output,
+    BatchVectorEntry, EngineEmbeddingModelId, EngineVectorCollectionName, EngineVectorConfig,
+    Executor, ExecutorError, ExecutorResult, Maybe, Output, PageInfo, VectorDistanceMetric,
     VectorIndexQueryResult, VectorMetadataFilter, DEFAULT_VECTOR_LIST_LIMIT,
 };
+use strata_core::Timestamp;
+
+/// Whether a text is being stored or searched with (D10).
+///
+/// Instruction-tuned embedders emit different vectors for the same words
+/// depending on the role, so this has to be said rather than defaulted. It was
+/// a `&'static str` matched inside `embed_text_with`, which put a real decision
+/// inside glue that no CI lane can execute — the mutation gate found it by
+/// deleting the query arm and nothing failed.
+// Ungated: the upsert and query paths name this whether or not inference is
+// compiled in — without it they still refuse a `text`, and the refusal needs
+// the same signature. Only `input_type` touches an inference type.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum EmbedPurpose {
+    /// Text being stored in the collection.
+    Document,
+    /// Text being searched with.
+    Query,
+}
+
+#[cfg(feature = "inference")]
+impl EmbedPurpose {
+    /// The provider-facing input role.
+    pub(super) fn input_type(self) -> strata_inference::InputType {
+        match self {
+            Self::Document => strata_inference::InputType::Document,
+            Self::Query => strata_inference::InputType::Query,
+        }
+    }
+}
 
 impl Executor {
     pub(super) fn execute_vector_create_collection(
@@ -22,6 +53,7 @@ impl Executor {
         collection: String,
         dimension: u64,
         metric: VectorDistanceMetric,
+        embedding_model: Option<String>,
     ) -> ExecutorResult<Output> {
         let collection = vector_collection(collection)?;
         let config = EngineVectorConfig::new(
@@ -32,6 +64,12 @@ impl Executor {
             )?,
             engine_vector_metric(metric),
         )?;
+        // Engine validates the identifier's shape; it cannot check the model
+        // exists, because it never speaks to a provider (hard rules 2-3).
+        let config = match embedding_model {
+            Some(model) => config.with_embedding_model(EngineEmbeddingModelId::new(model)?),
+            None => config,
+        };
         let mut service = self.vector_service(branch, space)?;
         Ok(Output::VectorCollectionList {
             items: vec![vector_collection_info(
@@ -88,6 +126,24 @@ impl Executor {
         })
     }
 
+    pub(super) fn execute_vector_set_embedding_model(
+        &mut self,
+        branch: Option<&str>,
+        space: Option<&str>,
+        collection: String,
+        model: String,
+    ) -> ExecutorResult<Output> {
+        let collection = vector_collection(collection)?;
+        let model = EngineEmbeddingModelId::new(model)?;
+        let mut service = self.vector_service(branch, space)?;
+        Ok(Output::VectorCollectionList {
+            items: vec![vector_collection_info(
+                &service.declare_embedding_model(&collection, model)?,
+            )],
+            page: PageInfo::terminal(),
+        })
+    }
+
     pub(super) fn execute_vector_count(
         &mut self,
         branch: Option<&str>,
@@ -128,6 +184,102 @@ impl Executor {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Embeds text with the model the collection was created with (D10).
+    ///
+    /// **This is orchestration in the executor, which is normally forbidden**
+    /// (CLAUDE.md rule 7: engine owns semantics, executor is a thin adapter).
+    /// It is here because engine cannot import inference — hard rules 2 and 3,
+    /// and `strata-engine` has no inference dependency — and the layer that was
+    /// meant to mediate this, intelligence, is deferred with no target release
+    /// (#3171). Recorded as an explicit exception in
+    /// `docs/design/inference-developer-experience.md` (D10).
+    ///
+    /// The embedding happens **before** the write. It can fail — no key, no
+    /// network, model not installed — and when it does, nothing is written.
+    /// The store that follows is the single commit.
+    ///
+    /// `as_of` is the snapshot the caller is reading — `None` for a write,
+    /// which always lands at the head of the branch. The model is read from
+    /// the same snapshot the vectors will be, so a text search at a timestamp
+    /// is embedded with the model the collection recorded *then*, and refused
+    /// if it recorded none; the engine says why.
+    #[allow(clippy::needless_pass_by_value)]
+    fn embed_with_collection_model(
+        &mut self,
+        branch: Option<&str>,
+        space: Option<&str>,
+        collection: &EngineVectorCollectionName,
+        text: String,
+        purpose: EmbedPurpose,
+        as_of: Option<Timestamp>,
+    ) -> ExecutorResult<Vec<f64>> {
+        // What a missing model means is the engine's call
+        // (`failed_precondition.engine.embedding_model_missing`, naming the
+        // command that declares one); this only carries the answer to the
+        // provider.
+        let model = {
+            let mut service = self.vector_service(branch, space)?;
+            match as_of {
+                Some(as_of) => service.recorded_embedding_model_at(collection, as_of)?,
+                None => service.recorded_embedding_model(collection)?,
+            }
+        };
+        self.embed_text_with(model.as_str(), text, purpose)
+    }
+
+    // One function with a feature-split body rather than two `#[cfg]`
+    // variants: cargo-mutants mutates source text without evaluating cfg, so a
+    // second fn for the no-inference build would earn mutants that the
+    // featured mutation lane never compiles and no test can kill. A block
+    // inside the body is not a mutation site.
+    #[cfg_attr(
+        not(feature = "inference"),
+        allow(clippy::unused_self, clippy::needless_pass_by_value)
+    )]
+    fn embed_text_with(
+        &mut self,
+        model: &str,
+        text: String,
+        purpose: EmbedPurpose,
+    ) -> ExecutorResult<Vec<f64>> {
+        #[cfg(feature = "inference")]
+        {
+            use strata_inference::{EmbedInput, EmbeddingsRequest};
+
+            let request = EmbeddingsRequest {
+                input: EmbedInput::One(text),
+                dimensions: None,
+                normalize: None,
+                // Instruction-tuned embedders produce different vectors for a
+                // stored document and a search query; saying which this is
+                // stops that difference from being silent. The mapping is a
+                // pure function with a truth table — inside this method it
+                // was a decision buried in glue that CI cannot execute.
+                input_type: Some(purpose.input_type()),
+                instruction: None,
+            };
+            let response = self.inference.embeddings(model, &request)?;
+            let item = response.data.into_iter().next().ok_or_else(|| {
+                ExecutorError::invalid_input(
+                    "inference.provider_malformed_response",
+                    "the embedding provider returned no vector for the text",
+                )
+            })?;
+            Ok(item.embedding.into_iter().map(f64::from).collect())
+        }
+        #[cfg(not(feature = "inference"))]
+        {
+            // The parameters exist so both builds have one signature; without
+            // an inference runtime there is nothing to hand them to.
+            let _ = (model, text, purpose);
+            Err(ExecutorError::invalid_input(
+                "inference.unsupported_operation",
+                "this build has no inference support, so `text` cannot be \
+                 embedded; pass a vector directly",
+            ))
+        }
+    }
+
     pub(super) fn execute_vector_upsert(
         &mut self,
         branch: Option<&str>,
@@ -135,10 +287,23 @@ impl Executor {
         collection: String,
         key: String,
         vector: Vec<f64>,
+        text: Option<String>,
         metadata: Option<serde_json::Value>,
     ) -> ExecutorResult<Output> {
         let collection = vector_collection(collection)?;
         let key = vector_key(key)?;
+        let vector = resolve_vector_or_text(vector, text, |text| {
+            // A write lands at the head of the branch, so the model that
+            // governs it is the one recorded now.
+            self.embed_with_collection_model(
+                branch,
+                space,
+                &collection,
+                text,
+                EmbedPurpose::Document,
+                None,
+            )
+        })?;
         let embedding = vector_embedding(vector)?;
         let metadata = optional_vector_metadata(metadata)?;
         let mut service = self.vector_service(branch, space)?;
@@ -387,12 +552,32 @@ impl Executor {
         space: Option<&str>,
         collection: String,
         query: Vec<f64>,
+        text: Option<String>,
         k: u64,
         filter: Option<VectorMetadataFilter>,
         as_of: Option<u64>,
         as_of_time: Option<u64>,
     ) -> ExecutorResult<Output> {
         let collection = vector_collection(collection)?;
+        // #3112 S3b: resolve any wall-clock instant to a logical timestamp
+        // BEFORE the service borrow, so both forms run the identical as-of path.
+        // It comes before the embedding too: a text query is embedded with the
+        // model the collection recorded at the snapshot being searched, so the
+        // snapshot has to be known first.
+        let as_of = self.resolve_as_of(branch, as_of, as_of_time)?;
+        // A text query is embedded with the collection's own model, so a
+        // caller never has to know which model wrote the collection — and
+        // cannot pick the wrong one.
+        let query = resolve_vector_or_text(query, text, |text| {
+            self.embed_with_collection_model(
+                branch,
+                space,
+                &collection,
+                text,
+                EmbedPurpose::Query,
+                as_of,
+            )
+        })?;
         let query = query_embedding(query)?;
         let k = required_usize(
             k,
@@ -400,9 +585,6 @@ impl Executor {
             "vector match limit does not fit this platform",
         )?;
         let filter = filter.map(vector_filter).transpose()?;
-        // #3112 S3b: resolve any wall-clock instant to a logical timestamp
-        // BEFORE the service borrow, so both forms run the identical as-of path.
-        let as_of = self.resolve_as_of(branch, as_of, as_of_time)?;
         let mut service = self.vector_service(branch, space)?;
         let result = if let Some(as_of) = as_of {
             service.query_at(&collection, &query, k, filter.as_ref(), as_of)?
@@ -613,5 +795,29 @@ impl Executor {
         Ok(Output::VectorBatchDeleteResults(
             finish_vector_batch_results(results),
         ))
+    }
+}
+
+#[cfg(all(test, feature = "inference"))]
+mod embed_purpose_tests {
+    use super::EmbedPurpose;
+    use strata_inference::InputType;
+
+    /// The document/query distinction, which the mutation gate caught as
+    /// untested: deleting the query arm changed nothing observable, because
+    /// the only test that reaches this code needs a real model and so cannot
+    /// run in CI.
+    ///
+    /// Storing and searching must NOT map to the same role — that is the whole
+    /// reason the parameter exists.
+    #[test]
+    fn storing_and_searching_map_to_different_roles() {
+        assert_eq!(EmbedPurpose::Document.input_type(), InputType::Document);
+        assert_eq!(EmbedPurpose::Query.input_type(), InputType::Query);
+        assert_ne!(
+            EmbedPurpose::Document.input_type(),
+            EmbedPurpose::Query.input_type(),
+            "collapsing these would silently embed queries as documents"
+        );
     }
 }

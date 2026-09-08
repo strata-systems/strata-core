@@ -40,9 +40,10 @@ impl VectorCollectionInfo {
     }
 
     #[must_use]
-    /// Returns the immutable collection config.
-    pub const fn config(&self) -> VectorConfig {
-        self.config
+    /// Returns the collection config. Dimension and metric are fixed at
+    /// creation; the embedding model may be declared once afterwards.
+    pub const fn config(&self) -> &VectorConfig {
+        &self.config
     }
 
     #[must_use]
@@ -639,13 +640,13 @@ mod tests {
         let config = VectorConfig::new(2, VectorDistanceMetric::Cosine).expect("valid config");
         let info = VectorCollectionInfo::new(
             collection.clone(),
-            config,
+            config.clone(),
             3,
             CommitVersion::new(7),
             Timestamp::from_micros(70),
         );
         assert_eq!(info.name(), &collection);
-        assert_eq!(info.config(), config);
+        assert_eq!(info.config(), &config);
         assert_eq!(info.count(), 3);
         assert_eq!(info.created_version(), CommitVersion::new(7));
         assert_eq!(info.created_timestamp(), Timestamp::from_micros(70));

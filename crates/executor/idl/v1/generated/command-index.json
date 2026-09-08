@@ -8330,8 +8330,8 @@
       "op": "collection.create",
       "kind": "mutation.create",
       "title": "Create vector collection",
-      "summary": "Create a vector collection with a dimension and metric.",
-      "description": "Creates a collection for dense vectors. The dimension and metric become part of the collection contract for future upserts and queries.\n\nSuccessful mutations return an acknowledgement of the outcome: for a state-changing write, the affected target with the mutation effect and commit facts; for mutations that produce a domain result (such as a branch or a promotion outcome), that result object.",
+      "summary": "Create a vector collection with a dimension, metric, and optionally the model that produces its vectors.",
+      "description": "Creates a collection for dense vectors. The dimension and metric become part of the collection contract for future upserts and queries. Passing `embedding_model` records which model produces the collection's vectors: it lets `text` be embedded for upserts and queries, and lets a query embedded with a different model be refused rather than silently compared. A collection created without one can declare it later with `vector.collection.set_embedding_model`.\n\nSuccessful mutations return an acknowledgement of the outcome: for a state-changing write, the affected target with the mutation effect and commit facts; for mutations that produce a domain result (such as a branch or a promotion outcome), that result object.",
       "docs": "/docs/vector/collection/create",
       "cli": {
         "path": [
@@ -8388,6 +8388,10 @@
           "docs": "https://stratadb.org/e/invalid_argument.engine.vector_dimension"
         },
         {
+          "code": "invalid_argument.engine.embedding_model",
+          "docs": "https://stratadb.org/e/invalid_argument.engine.embedding_model"
+        },
+        {
           "code": "invalid_argument.executor.vector_dimension",
           "docs": "https://stratadb.org/e/invalid_argument.executor.vector_dimension"
         }
@@ -8399,6 +8403,10 @@
           {
             "request": "requests/v1/vector/collection_create_zero_dim.json",
             "expected_error": "responses/v1/errors/vector/collection_create_zero_dim.json"
+          },
+          {
+            "request": "requests/v1/vector/collection_create_empty_model.json",
+            "expected_error": "responses/v1/errors/vector/embedding_model_empty.json"
           }
         ]
       },
@@ -8549,6 +8557,106 @@
       "source": {
         "command": "crates/executor/idl/v1/commands/vector.yaml",
         "prose": "commands/vector.collection.list.md"
+      }
+    },
+    {
+      "id": "vector.collection.set_embedding_model",
+      "family": "vector",
+      "op": "collection.set_embedding_model",
+      "kind": "mutation.put",
+      "title": "Declare vector collection embedding model",
+      "summary": "Declare the embedding model a vector collection's vectors come from.",
+      "description": "Records, once, which embedding model produces this collection's vectors. A declaration, not a verification: a stored vector carries no model, so this takes the caller's word for the vectors present; from then on `text` on upsert and query is embedded with this model and no other, and a collection with no recorded model cannot embed `text` at all. A vector supplied directly is not checked against the record — it cannot be — so supplying one remains the caller's statement that the recorded model produced it. Declaring the model a collection already records is a no-op and commits nothing. Declaring a different one is refused with `failed_precondition.engine.embedding_model_mismatch`: the stored vectors came from the recorded model, so create a separate collection for the other one. The current wire response uses the collection-list output with one item.\n\nSuccessful mutations return an acknowledgement of the outcome: for a state-changing write, the affected target with the mutation effect and commit facts; for mutations that produce a domain result (such as a branch or a promotion outcome), that result object.",
+      "docs": "/docs/vector/collection/set_embedding_model",
+      "cli": {
+        "path": [
+          "vector",
+          "collection",
+          "set-embedding-model"
+        ],
+        "surface": "verb"
+      },
+      "mcp": {
+        "name": "strata_vector_collection_set_embedding_model",
+        "description": "Use this when a collection has no recorded embedding model and the user wants to store or search it by text."
+      },
+      "feature": "core",
+      "access": "write",
+      "input": "Command::VectorSetEmbeddingModel",
+      "wire": "vector_set_embedding_model",
+      "output": "Output::VectorCollectionList",
+      "outputs": [
+        "Output::VectorCollectionList"
+      ],
+      "wire_status": "transitional",
+      "response_model": "MutationAck<VectorCollectionInfo>",
+      "commit": "commits_on_success",
+      "pagination": "none",
+      "batch": "none",
+      "errors": [
+        {
+          "code": "failed_precondition.engine.runtime_closed",
+          "docs": "https://stratadb.org/e/failed_precondition.engine.runtime_closed"
+        },
+        {
+          "code": "not_found.engine.branch",
+          "docs": "https://stratadb.org/e/not_found.engine.branch"
+        },
+        {
+          "code": "invalid_argument.engine.product_space",
+          "docs": "https://stratadb.org/e/invalid_argument.engine.product_space"
+        },
+        {
+          "code": "invalid_argument.engine.vector_collection",
+          "docs": "https://stratadb.org/e/invalid_argument.engine.vector_collection"
+        },
+        {
+          "code": "invalid_argument.engine.vector_key",
+          "docs": "https://stratadb.org/e/invalid_argument.engine.vector_key"
+        },
+        {
+          "code": "not_found.engine.vector_collection",
+          "docs": "https://stratadb.org/e/not_found.engine.vector_collection"
+        },
+        {
+          "code": "invalid_argument.engine.embedding_model",
+          "docs": "https://stratadb.org/e/invalid_argument.engine.embedding_model"
+        },
+        {
+          "code": "failed_precondition.engine.embedding_model_mismatch",
+          "docs": "https://stratadb.org/e/failed_precondition.engine.embedding_model_mismatch"
+        }
+      ],
+      "fixtures": {
+        "request": "requests/v1/vector/collection_set_embedding_model.json",
+        "response": "responses/v1/vector/collection_set_embedding_model.json",
+        "setup": [
+          "requests/v1/vector/collection_create.json"
+        ],
+        "error_cases": [
+          {
+            "setup": [
+              "requests/v1/vector/collection_create.json"
+            ],
+            "request": "requests/v1/vector/collection_set_embedding_model_empty.json",
+            "expected_error": "responses/v1/errors/vector/embedding_model_empty.json"
+          },
+          {
+            "setup": [
+              "requests/v1/vector/collection_create_with_model.json"
+            ],
+            "request": "requests/v1/vector/collection_set_embedding_model_other.json",
+            "expected_error": "responses/v1/errors/vector/embedding_model_mismatch.json"
+          },
+          {
+            "request": "requests/v1/vector/collection_set_embedding_model.json",
+            "expected_error": "responses/v1/errors/vector/collection_missing.json"
+          }
+        ]
+      },
+      "source": {
+        "command": "crates/executor/idl/v1/commands/vector.yaml",
+        "prose": "commands/vector.collection.set_embedding_model.md"
       }
     },
     {
@@ -9434,6 +9542,14 @@
         {
           "code": "invalid_argument.executor.vector_limit",
           "docs": "https://stratadb.org/e/invalid_argument.executor.vector_limit"
+        },
+        {
+          "code": "invalid_argument.executor.vector_input",
+          "docs": "https://stratadb.org/e/invalid_argument.executor.vector_input"
+        },
+        {
+          "code": "failed_precondition.engine.embedding_model_missing",
+          "docs": "https://stratadb.org/e/failed_precondition.engine.embedding_model_missing"
         }
       ],
       "fixtures": {
@@ -9443,6 +9559,22 @@
           "requests/v1/vector/collection_create.json",
           "requests/v1/vector/upsert.json",
           "requests/v1/setup/vector_upsert_doc_b.json"
+        ],
+        "error_cases": [
+          {
+            "setup": [
+              "requests/v1/vector/collection_create.json"
+            ],
+            "request": "requests/v1/vector/query_text_without_model.json",
+            "expected_error": "responses/v1/errors/vector/embedding_model_missing.json"
+          },
+          {
+            "setup": [
+              "requests/v1/vector/collection_create.json"
+            ],
+            "request": "requests/v1/vector/query_vector_and_text.json",
+            "expected_error": "responses/v1/errors/vector/vector_input.json"
+          }
         ]
       },
       "source": {
@@ -9669,6 +9801,14 @@
         {
           "code": "invalid_argument.executor.vector_dimension",
           "docs": "https://stratadb.org/e/invalid_argument.executor.vector_dimension"
+        },
+        {
+          "code": "invalid_argument.executor.vector_input",
+          "docs": "https://stratadb.org/e/invalid_argument.executor.vector_input"
+        },
+        {
+          "code": "failed_precondition.engine.embedding_model_missing",
+          "docs": "https://stratadb.org/e/failed_precondition.engine.embedding_model_missing"
         }
       ],
       "fixtures": {
@@ -9676,6 +9816,29 @@
         "response": "responses/v1/vector/upsert_applied.json",
         "setup": [
           "requests/v1/vector/collection_create.json"
+        ],
+        "error_cases": [
+          {
+            "setup": [
+              "requests/v1/vector/collection_create.json"
+            ],
+            "request": "requests/v1/vector/upsert_text_without_model.json",
+            "expected_error": "responses/v1/errors/vector/embedding_model_missing.json"
+          },
+          {
+            "setup": [
+              "requests/v1/vector/collection_create.json"
+            ],
+            "request": "requests/v1/vector/upsert_vector_and_text.json",
+            "expected_error": "responses/v1/errors/vector/vector_input.json"
+          },
+          {
+            "setup": [
+              "requests/v1/vector/collection_create.json"
+            ],
+            "request": "requests/v1/vector/upsert_neither.json",
+            "expected_error": "responses/v1/errors/vector/vector_input.json"
+          }
         ]
       },
       "source": {

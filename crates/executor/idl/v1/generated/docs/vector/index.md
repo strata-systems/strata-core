@@ -13,9 +13,10 @@ section: vector
 | [Batch check vector existence](/docs/vector/batch_exists) | Check existence for multiple vector keys. |
 | [Batch get vectors](/docs/vector/batch_get) | Read multiple vectors by key. |
 | [Batch upsert vectors](/docs/vector/batch_upsert) | Upsert multiple vectors in one itemwise batch. |
-| [Create vector collection](/docs/vector/collection/create) | Create a vector collection with a dimension and metric. |
+| [Create vector collection](/docs/vector/collection/create) | Create a vector collection with a dimension, metric, and optionally the model that produces its vectors. |
 | [Delete vector collection](/docs/vector/collection/delete) | Delete a vector collection. |
 | [List vector collections](/docs/vector/collection/list) | List vector collections. |
+| [Declare vector collection embedding model](/docs/vector/collection/set_embedding_model) | Declare the embedding model a vector collection's vectors come from. |
 | [Read vector collection stats](/docs/vector/collection/stats) | Read facts for one vector collection. |
 | [Count vectors](/docs/vector/count) | Count visible vectors in a collection. |
 | [Delete vector](/docs/vector/delete) | Delete one vector key. |

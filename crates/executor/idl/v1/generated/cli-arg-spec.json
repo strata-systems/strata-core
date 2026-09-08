@@ -937,6 +937,7 @@
         "dimension"
       ],
       "flags": {
+        "embedding_model": "embedding-model",
         "metric": "metric"
       }
     },
@@ -948,6 +949,13 @@
     },
     "vector collection list": {
       "positionals": [],
+      "flags": {}
+    },
+    "vector collection set-embedding-model": {
+      "positionals": [
+        "collection",
+        "model"
+      ],
       "flags": {}
     },
     "vector collection stats": {
@@ -1030,7 +1038,8 @@
         "file": "file",
         "filter": "filter",
         "filter_file": "filter-file",
-        "k": "k"
+        "k": "k",
+        "text": "text"
       }
     },
     "vector sample": {
@@ -1070,7 +1079,8 @@
       "flags": {
         "file": "file",
         "metadata": "metadata",
-        "metadata_file": "metadata-file"
+        "metadata_file": "metadata-file",
+        "text": "text"
       }
     }
   }

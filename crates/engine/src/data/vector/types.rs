@@ -10,6 +10,7 @@ use crate::diagnostics::{EngineError, EngineResult};
 const MAX_COLLECTION_NAME_BYTES: usize = 256;
 const MAX_VECTOR_KEY_BYTES: usize = 1024;
 pub(crate) const MAX_VECTOR_DIMENSION: usize = 32_768;
+const MAX_EMBEDDING_MODEL_BYTES: usize = 256;
 const MAX_METADATA_BYTES: usize = 16 * 1024 * 1024;
 
 /// Vector collection name.
@@ -271,11 +272,72 @@ pub enum VectorDistanceMetric {
     DotProduct,
 }
 
+/// Which embedding model produced a collection's vectors.
+///
+/// Provenance, not a capability claim: engine cannot and must not check that
+/// the model exists — it never speaks to a provider (hard rules 2-3). What it
+/// can do is refuse to mix two models' vectors in one collection, which is the
+/// failure dimension checks cannot catch. `miniLM` and `nomic-embed` at the
+/// same width produce neighbours that rank confidently and mean nothing.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
+#[serde(transparent)]
+#[repr(transparent)]
+pub struct EmbeddingModelId(String);
+
+impl EmbeddingModelId {
+    /// Creates a validated embedding model identifier.
+    ///
+    /// Accepts any model spec the caller uses — `miniLM`,
+    /// `openai:text-embedding-3-small` — because the shape belongs to the
+    /// inference layer, which engine cannot see.
+    pub fn new(id: impl Into<String>) -> EngineResult<Self> {
+        let id = id.into();
+        if id.is_empty() {
+            return Err(EngineError::invalid_input(
+                "invalid_argument.engine.embedding_model",
+                "embedding model must not be empty",
+            ));
+        }
+        if id.len() > MAX_EMBEDDING_MODEL_BYTES {
+            return Err(EngineError::invalid_input(
+                "invalid_argument.engine.embedding_model",
+                "embedding model is too long",
+            ));
+        }
+        if id.bytes().any(|byte| byte == 0 || byte == b'\n') {
+            return Err(EngineError::invalid_input(
+                "invalid_argument.engine.embedding_model",
+                "embedding model contains an unsupported control byte",
+            ));
+        }
+        Ok(Self(id))
+    }
+
+    #[must_use]
+    /// Returns the model identifier as text.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for EmbeddingModelId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Self::new(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+    }
+}
+
 /// Immutable vector collection config.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct VectorConfig {
     dimension: usize,
     metric: VectorDistanceMetric,
+    // Not `Copy` since this landed: an owned model id is what lets a
+    // collection say what produced it (#3124 D9, CLAUDE.md rule 24).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    embedding_model: Option<EmbeddingModelId>,
 }
 
 impl VectorConfig {
@@ -287,19 +349,40 @@ impl VectorConfig {
                 "vector collection dimension is outside the supported range",
             ));
         }
-        Ok(Self { dimension, metric })
+        Ok(Self {
+            dimension,
+            metric,
+            embedding_model: None,
+        })
+    }
+
+    #[must_use]
+    /// Records which embedding model produces this collection's vectors.
+    ///
+    /// A collection without one accepts any vector of the right width, which
+    /// is what every collection created before this did — so it stays legal,
+    /// and only text-embedding paths that need to know the model refuse.
+    pub fn with_embedding_model(mut self, model: EmbeddingModelId) -> Self {
+        self.embedding_model = Some(model);
+        self
     }
 
     #[must_use]
     /// Returns the collection embedding dimension.
-    pub const fn dimension(self) -> usize {
+    pub const fn dimension(&self) -> usize {
         self.dimension
     }
 
     #[must_use]
     /// Returns the collection distance metric.
-    pub const fn metric(self) -> VectorDistanceMetric {
+    pub const fn metric(&self) -> VectorDistanceMetric {
         self.metric
+    }
+
+    #[must_use]
+    /// Returns the model that produces this collection's vectors, if recorded.
+    pub fn embedding_model(&self) -> Option<&EmbeddingModelId> {
+        self.embedding_model.as_ref()
     }
 }
 
@@ -312,10 +395,19 @@ impl<'de> Deserialize<'de> for VectorConfig {
         struct StoredConfig {
             dimension: usize,
             metric: VectorDistanceMetric,
+            #[serde(default)]
+            embedding_model: Option<EmbeddingModelId>,
         }
 
         let stored = StoredConfig::deserialize(deserializer)?;
-        Self::new(stored.dimension, stored.metric).map_err(serde::de::Error::custom)
+        let config =
+            Self::new(stored.dimension, stored.metric).map_err(serde::de::Error::custom)?;
+        // `default` on the field is what makes every collection written before
+        // D9 decode: no model recorded, which is a legal state.
+        Ok(match stored.embedding_model {
+            Some(model) => config.with_embedding_model(model),
+            None => config,
+        })
     }
 }
 

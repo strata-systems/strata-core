@@ -24,16 +24,17 @@ use super::{
     decode_collection_config, decode_vector_index_manifest, decode_vector_record,
     default_flat_artifact_build_budget_bytes, default_hnsw_artifact_build_budget_bytes,
     encode_collection_config, encode_vector_index_manifest, encode_vector_record,
-    query_vector_sources_with_index_artifacts, FlatVectorArtifact, HnswArtifactConfig,
-    HnswVectorArtifact, VectorArtifactId, VectorArtifactKind, VectorArtifactRef,
-    VectorArtifactSourceDiagnostic, VectorArtifactStore, VectorBatchDeleteOutcome,
-    VectorBatchGetOutcome, VectorBatchUpsertOutcome, VectorBulkDeleteOutcome, VectorCollectionInfo,
-    VectorCollectionName, VectorConfig, VectorDeleteOutcome, VectorEmbedding, VectorEntry,
-    VectorFilter, VectorFlatArtifactIdentity, VectorFlatArtifactSourceInput, VectorHistory,
-    VectorHistoryRow, VectorHnswArtifactSourceInput, VectorIndexDiagnostics, VectorIndexManifest,
-    VectorIndexManifestLookup, VectorIndexPolicy, VectorKey, VectorKeyPage, VectorMetadata,
-    VectorMetadataPatch, VectorMetadataUpdateOutcome, VectorRecord, VectorSearchResult,
-    VectorSourceId, VectorTombstone, VectorUpsertEntry, VectorVersionedEntry, VectorWriteOutcome,
+    query_vector_sources_with_index_artifacts, EmbeddingModelId, FlatVectorArtifact,
+    HnswArtifactConfig, HnswVectorArtifact, VectorArtifactId, VectorArtifactKind,
+    VectorArtifactRef, VectorArtifactSourceDiagnostic, VectorArtifactStore,
+    VectorBatchDeleteOutcome, VectorBatchGetOutcome, VectorBatchUpsertOutcome,
+    VectorBulkDeleteOutcome, VectorCollectionInfo, VectorCollectionName, VectorConfig,
+    VectorDeleteOutcome, VectorEmbedding, VectorEntry, VectorFilter, VectorFlatArtifactIdentity,
+    VectorFlatArtifactSourceInput, VectorHistory, VectorHistoryRow, VectorHnswArtifactSourceInput,
+    VectorIndexDiagnostics, VectorIndexManifest, VectorIndexManifestLookup, VectorIndexPolicy,
+    VectorKey, VectorKeyPage, VectorMetadata, VectorMetadataPatch, VectorMetadataUpdateOutcome,
+    VectorRecord, VectorSearchResult, VectorSourceId, VectorTombstone, VectorUpsertEntry,
+    VectorVersionedEntry, VectorWriteOutcome,
 };
 
 #[cfg(any(test, feature = "testkit"))]
@@ -162,7 +163,7 @@ impl<'a> VectorService<'a> {
             &record,
             vec![RowMutation::put(
                 address,
-                encode_collection_config(&name, config)?,
+                encode_collection_config(&name, &config)?,
             )],
         )?;
         Ok(VectorCollectionInfo::new(
@@ -193,6 +194,153 @@ impl<'a> VectorService<'a> {
         }
         self.commit_batch(&record, mutations)?;
         Ok(true)
+    }
+
+    /// Refuses when a caller's embedding model is not the one the collection
+    /// was built with (CLAUDE.md rule 24).
+    ///
+    /// This is the check dimension cannot do. `miniLM` and `nomic-embed` both
+    /// emit 384-wide vectors, so mixing them passes every width check and then
+    /// returns neighbours that are ranked, confident, and meaningless. Nothing
+    /// downstream can detect it — which is why the collection has to remember.
+    ///
+    /// It checks a *named* model against the record. A vector write names
+    /// none — a vector carries no model — and a text write or query does not
+    /// name one either; it reads the record and embeds with it. So the one
+    /// path that names a model, and the one caller here, is
+    /// [`Self::declare_embedding_model`].
+    ///
+    /// A collection with no recorded model accepts anything, because every
+    /// collection created before provenance existed is in that state and must
+    /// keep working. It is the text-embedding paths that refuse it, since they
+    /// are the ones that need to know which model to call.
+    pub fn require_embedding_model(
+        &mut self,
+        collection: &VectorCollectionName,
+        model: &EmbeddingModelId,
+    ) -> EngineResult<()> {
+        let record = self.branch_record()?;
+        let config = self.require_collection_config(&record, collection)?;
+        match config.embedding_model() {
+            Some(recorded) if recorded == model => Ok(()),
+            // `conflict` is the constructor; the class comes from the code's
+            // prefix, exactly as `failed_precondition.engine.space_not_empty`
+            // does.
+            Some(recorded) => Err(EngineError::conflict(
+                "failed_precondition.engine.embedding_model_mismatch",
+                format!(
+                    "vector collection `{}` stores vectors from `{}`; `{}` would mix two \
+                     models in one collection, whose distances are not comparable",
+                    collection.as_str(),
+                    recorded.as_str(),
+                    model.as_str(),
+                ),
+            )),
+            None => Ok(()),
+        }
+    }
+
+    /// The model a text must be embedded with to land in this collection.
+    ///
+    /// This is the accessor the text paths call, and it — not the caller —
+    /// decides what a missing model means: a collection created without one
+    /// cannot embed text, because there is nothing to embed it *with*, and the
+    /// refusal names the command that declares one. Keeping that decision here
+    /// keeps every text surface (write, search, whatever comes next) refusing
+    /// the same way for the same reason.
+    pub fn recorded_embedding_model(
+        &mut self,
+        collection: &VectorCollectionName,
+    ) -> EngineResult<EmbeddingModelId> {
+        self.recorded_embedding_model_with_selector(collection, ReadSelector::Latest)
+    }
+
+    /// The model a text must be embedded with to be searched against the
+    /// collection as it was at a commit timestamp.
+    ///
+    /// A snapshot read sees the collection as it was, and that includes which
+    /// model it recorded then. A declaration vouches for the vectors present
+    /// when it is made — not for whatever the collection held earlier, which
+    /// may since have been overwritten or deleted — so a snapshot older than
+    /// the declaration is a collection with no model, and text is refused for
+    /// it exactly as it was at the time. Reading the model from the head of
+    /// the branch instead would embed the query with a model nobody vouched
+    /// for the snapshot's vectors having come from.
+    pub fn recorded_embedding_model_at(
+        &mut self,
+        collection: &VectorCollectionName,
+        timestamp: Timestamp,
+    ) -> EngineResult<EmbeddingModelId> {
+        self.recorded_embedding_model_with_selector(
+            collection,
+            ReadSelector::AtTimestamp(timestamp),
+        )
+    }
+
+    fn recorded_embedding_model_with_selector(
+        &mut self,
+        collection: &VectorCollectionName,
+        selector: ReadSelector,
+    ) -> EngineResult<EmbeddingModelId> {
+        let record = self.branch_record()?;
+        let config = self.require_collection_config_with_selector(&record, collection, selector)?;
+        config.embedding_model().cloned().ok_or_else(|| {
+            EngineError::conflict(
+                "failed_precondition.engine.embedding_model_missing",
+                missing_embedding_model_message(collection, selector),
+            )
+        })
+    }
+
+    /// Records which embedding model a collection's vectors come from.
+    ///
+    /// A declaration, not a verification: the engine cannot tell which model
+    /// produced a vector — one already stored or one written later, since a
+    /// vector carries no model — so this takes the caller's word for both.
+    /// What the record holds to the model is what is embedded from text on
+    /// the collection's behalf. It is one-time — re-declaring the recorded
+    /// model is a no-op that commits nothing, and declaring a different one is
+    /// refused with `embedding_model_mismatch`, because changing the model
+    /// under existing vectors is the very mixing rule 24 forbids. A collection
+    /// that needs a different model is a different collection.
+    ///
+    /// Rewriting the config row advances the collection generation, which
+    /// marks any sealed index manifest stale; the next query falls back to the
+    /// exact scan, which remains authoritative (rule 26).
+    pub fn declare_embedding_model(
+        &mut self,
+        collection: &VectorCollectionName,
+        model: EmbeddingModelId,
+    ) -> EngineResult<VectorCollectionInfo> {
+        self.require_embedding_model(collection, &model)?;
+        let record = self.branch_record()?;
+        let row = self
+            .collection_config_row(&record, collection, ReadSelector::Latest)?
+            .ok_or_else(|| {
+                EngineError::not_found(
+                    "not_found.engine.vector_collection",
+                    "vector collection does not exist",
+                )
+            })?;
+        let current = self.collection_info_from_row(&record, &row)?;
+        if current.config().embedding_model().is_some() {
+            return Ok(current);
+        }
+        let config = current.config().clone().with_embedding_model(model);
+        let commit = self.commit_batch(
+            &record,
+            vec![RowMutation::put(
+                self.collection_address(&record, collection),
+                encode_collection_config(collection, &config)?,
+            )],
+        )?;
+        Ok(VectorCollectionInfo::new(
+            collection.clone(),
+            config,
+            current.count(),
+            commit.version(),
+            commit.timestamp(),
+        ))
     }
 
     /// Lists visible vector collections.
@@ -1089,7 +1237,7 @@ impl<'a> VectorService<'a> {
         self.index_manifest_resolution(
             &record,
             collection,
-            config,
+            &config,
             collection_generation,
             ReadSelector::Latest,
         )
@@ -1227,7 +1375,7 @@ impl<'a> VectorService<'a> {
             &record,
             collection,
             collection_generation,
-            config,
+            &config,
             &snapshot,
             policy,
         )
@@ -1248,7 +1396,7 @@ impl<'a> VectorService<'a> {
             collection,
             collection_generation,
             source_id,
-            config,
+            &config,
         )?;
         let load = self.artifacts.load_flat(
             &identity,
@@ -1300,7 +1448,7 @@ impl<'a> VectorService<'a> {
             collection,
             collection_generation,
             source_id,
-            config,
+            &config,
         )?;
         let load = self
             .artifacts
@@ -1345,7 +1493,7 @@ impl<'a> VectorService<'a> {
             collection,
             collection_generation,
             source_id,
-            config,
+            &config,
         )?;
         let stale_identity = VectorFlatArtifactIdentity::new(
             identity.artifact_id().clone(),
@@ -1420,7 +1568,7 @@ impl<'a> VectorService<'a> {
                 collection,
                 collection_generation,
                 source_id,
-                config,
+                &config,
             )?,
         };
         let rows = match rows {
@@ -1509,7 +1657,7 @@ impl<'a> VectorService<'a> {
         collection: &VectorCollectionName,
         collection_generation: CommitVersion,
         source_id: &str,
-        config: VectorConfig,
+        config: &VectorConfig,
     ) -> EngineResult<VectorFlatArtifactIdentity> {
         VectorFlatArtifactIdentity::new(
             self.flat_artifact_id_for_test(collection, source_id)?,
@@ -1634,7 +1782,7 @@ impl<'a> VectorService<'a> {
         let manifest_resolution = self.index_manifest_resolution(
             &record,
             collection,
-            config,
+            &config,
             collection_generation,
             selector,
         )?;
@@ -1854,7 +2002,7 @@ impl<'a> VectorService<'a> {
         &mut self,
         record: &BranchCatalogRecord,
         collection: &VectorCollectionName,
-        config: VectorConfig,
+        config: &VectorConfig,
         collection_generation: CommitVersion,
         selector: ReadSelector,
     ) -> EngineResult<VectorIndexManifestResolution> {
@@ -2170,7 +2318,7 @@ impl<'a> VectorService<'a> {
         record: &BranchCatalogRecord,
         collection: &VectorCollectionName,
         collection_generation: CommitVersion,
-        config: VectorConfig,
+        config: &VectorConfig,
         snapshot: &VectorQuerySnapshot,
         policy: VectorIndexPolicy,
     ) -> EngineResult<()> {
@@ -2223,7 +2371,7 @@ impl<'a> VectorService<'a> {
         record: &BranchCatalogRecord,
         collection: &VectorCollectionName,
         collection_generation: CommitVersion,
-        config: VectorConfig,
+        config: &VectorConfig,
         policy: VectorIndexPolicy,
     ) -> EngineResult<Vec<VectorArtifactRef>> {
         let start = encode_vector_collection_entry_prefix(&self.space, collection);
@@ -2267,7 +2415,7 @@ impl<'a> VectorService<'a> {
         record: &BranchCatalogRecord,
         collection: &VectorCollectionName,
         collection_generation: CommitVersion,
-        config: VectorConfig,
+        config: &VectorConfig,
         snapshot: &VectorQuerySnapshot,
     ) -> EngineResult<VectorArtifactRef> {
         let seal_version = snapshot
@@ -2305,7 +2453,7 @@ impl<'a> VectorService<'a> {
         record: &BranchCatalogRecord,
         collection: &VectorCollectionName,
         collection_generation: CommitVersion,
-        config: VectorConfig,
+        config: &VectorConfig,
         snapshot: &VectorQuerySnapshot,
     ) -> EngineResult<VectorArtifactRef> {
         let seal_version = snapshot
@@ -2342,7 +2490,7 @@ impl<'a> VectorService<'a> {
         &mut self,
         collection: &VectorCollectionName,
         collection_generation: CommitVersion,
-        config: VectorConfig,
+        config: &VectorConfig,
         source: &PersistenceImmutableSource,
         entries: &[(PersistenceReadRow, VectorEntry)],
     ) -> EngineResult<VectorArtifactRef> {
@@ -2380,7 +2528,7 @@ impl<'a> VectorService<'a> {
         &mut self,
         collection: &VectorCollectionName,
         collection_generation: CommitVersion,
-        config: VectorConfig,
+        config: &VectorConfig,
         source: &PersistenceImmutableSource,
         entries: &[(PersistenceReadRow, VectorEntry)],
     ) -> EngineResult<VectorArtifactRef> {
@@ -2926,6 +3074,31 @@ impl<'a> VectorService<'a> {
             .persistence
             .commit(&plan)?
             .with_counts(user_put_count, user_delete_count))
+    }
+}
+
+/// Why a collection cannot embed text, said for the read that asked.
+///
+/// At the head of the branch the remedy is to declare a model. At a snapshot
+/// there is no remedy: a declaration made now says nothing about the vectors
+/// the collection held then, so the only way to search that snapshot is with
+/// a vector.
+fn missing_embedding_model_message(
+    collection: &VectorCollectionName,
+    selector: ReadSelector,
+) -> String {
+    let collection = collection.as_str();
+    match selector {
+        ReadSelector::Latest => format!(
+            "vector collection `{collection}` records no embedding model, so text cannot be \
+             embedded for it; declare one with `vector collection set-embedding-model \
+             {collection} <model>`, or pass a vector directly"
+        ),
+        ReadSelector::AtVersion(_) | ReadSelector::AtTimestamp(_) => format!(
+            "vector collection `{collection}` recorded no embedding model as of the requested \
+             snapshot, so text cannot be searched against it; a model declared since does not \
+             vouch for the vectors it held then — pass a vector directly"
+        ),
     }
 }
 

@@ -13,6 +13,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "embedding_model": {
+          "description": "The model that produced this collection's vectors, when recorded (D9).\n\nAbsent for collections created before provenance existed, and for any\ncreated without one. Those accept vectors from any model, so nothing\ncan check that a query is comparable with what is stored.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "metric": {
           "$ref": "#/$defs/VectorDistanceMetric"
         },
@@ -72,6 +79,13 @@
         "format": "uint64",
         "minimum": 0,
         "type": "integer"
+      },
+      "embedding_model": {
+        "description": "The model that produces this collection's vectors (D9).\n\nWhat the record governs: `text` on `vector upsert` and\n`vector query` is embedded with this model and no other, so text\nwrites and searches cannot mix models — the failure dimension\ncannot catch, since two models at the same width return neighbours\nthat are ranked and meaningless. What it cannot govern: a `vector`\nsupplied directly carries no model, so Strata cannot check one\nagainst the record; supplying a vector is the caller's statement\nthat this model produced it.",
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "metric": {
         "$ref": "#/$defs/VectorDistanceMetric",

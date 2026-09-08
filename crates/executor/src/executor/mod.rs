@@ -21,7 +21,7 @@ use strata_engine::{
     DatabaseOpenTarget as EngineDatabaseOpenTarget,
     DerivedStateDisposition as EngineDerivedStateDisposition,
     DerivedStateReport as EngineDerivedStateReport, DurableLocalOpenOptions,
-    EventAppendOutcome as EngineEventAppendOutcome,
+    EmbeddingModelId as EngineEmbeddingModelId, EventAppendOutcome as EngineEventAppendOutcome,
     EventBatchAppendEntry as EngineEventBatchAppendEntry,
     EventBatchAppendItemOutcome as EngineEventBatchAppendItemOutcome,
     EventChainVerification as EngineEventChainVerification, EventPayload as EngineEventPayload,
@@ -203,9 +203,9 @@ use kv_json_convert::{
 };
 use vector_convert::{
     engine_vector_metric, optional_vector_key, optional_vector_metadata, output_vector_metric,
-    query_embedding, require_vector_collection_info, vector_batch_get_failed,
-    vector_batch_get_item, vector_batch_item_failed, vector_batch_item_result,
-    vector_bulk_delete_output, vector_collection, vector_collection_info,
+    query_embedding, require_vector_collection_info, resolve_vector_or_text,
+    vector_batch_get_failed, vector_batch_get_item, vector_batch_item_failed,
+    vector_batch_item_result, vector_bulk_delete_output, vector_collection, vector_collection_info,
     vector_dimension_mismatch_error, vector_embedding, vector_filter, vector_history_result,
     vector_index_diagnostics, vector_key, vector_key_page_output, vector_match,
     vector_metadata_patch, vector_upsert_entry, vector_versioned_data, vector_write_output,

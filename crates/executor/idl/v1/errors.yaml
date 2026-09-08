@@ -19,6 +19,7 @@ errors:
   - invalid_argument.engine.vector_collection
   - invalid_argument.engine.vector_collection_reserved
   - invalid_argument.engine.vector_key
+  - invalid_argument.engine.embedding_model
   - invalid_argument.engine.vector_dimension
   - invalid_argument.engine.vector_embedding
   - invalid_argument.engine.vector_filter
@@ -26,6 +27,7 @@ errors:
   - invalid_argument.engine.vector_metadata_patch
   - invalid_argument.engine.vector_batch
   - invalid_argument.executor.vector_dimension
+  - invalid_argument.executor.vector_input
   - invalid_argument.executor.vector_limit
   - not_found.engine.vector_collection
   - invalid_argument.engine.json_document_id
@@ -56,6 +58,8 @@ errors:
   - invalid_argument.engine.product_space_reserved
   - invalid_argument.engine.space_delete_default
   - invalid_argument.engine.space_delete_too_large
+  - failed_precondition.engine.embedding_model_mismatch
+  - failed_precondition.engine.embedding_model_missing
   - failed_precondition.engine.space_not_empty
   - already_exists.engine.graph
   - not_found.engine.graph

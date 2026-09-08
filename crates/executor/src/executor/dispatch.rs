@@ -321,12 +321,14 @@ impl Executor {
                 collection,
                 dimension,
                 metric,
+                embedding_model,
             } => self.execute_vector_create_collection(
                 branch.as_deref(),
                 space.as_deref(),
                 collection,
                 dimension,
                 metric,
+                embedding_model,
             ),
             Command::VectorDeleteCollection {
                 branch,
@@ -348,6 +350,17 @@ impl Executor {
                 branch.as_deref(),
                 space.as_deref(),
                 collection,
+            ),
+            Command::VectorSetEmbeddingModel {
+                branch,
+                space,
+                collection,
+                model,
+            } => self.execute_vector_set_embedding_model(
+                branch.as_deref(),
+                space.as_deref(),
+                collection,
+                model,
             ),
             Command::VectorCount {
                 branch,
@@ -374,6 +387,7 @@ impl Executor {
                 collection,
                 key,
                 vector,
+                text,
                 metadata,
             } => self.execute_vector_upsert(
                 branch.as_deref(),
@@ -381,6 +395,7 @@ impl Executor {
                 collection,
                 key,
                 vector,
+                text,
                 metadata,
             ),
             Command::VectorGet {
@@ -493,6 +508,7 @@ impl Executor {
                 space,
                 collection,
                 query,
+                text,
                 k,
                 filter,
                 as_of,
@@ -502,6 +518,7 @@ impl Executor {
                 space.as_deref(),
                 collection,
                 query,
+                text,
                 k,
                 filter,
                 as_of,

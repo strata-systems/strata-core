@@ -2645,6 +2645,11 @@ fn vector_collection_create_error_case_0_envelope_matches() {
 }
 
 #[test]
+fn vector_collection_create_error_case_1_envelope_matches() {
+    support::error_case_envelope_matches(&[], "requests/v1/vector/collection_create_empty_model.json", "responses/v1/errors/vector/embedding_model_empty.json", false);
+}
+
+#[test]
 fn vector_collection_create_replay_observes_a_declared_output() {
     support::replay_observes_declared(&[], "requests/v1/vector/collection_create.json", &["vector_collection_list"], false);
 }
@@ -2691,6 +2696,43 @@ fn vector_collection_list_request_rejects_unknown_keys_at_closed_objects() {
 #[test]
 fn vector_collection_list_replay_observes_a_declared_output() {
     support::replay_observes_declared(&["requests/v1/vector/collection_create.json"], "requests/v1/vector/collection_list.json", &["vector_collection_list"], false);
+}
+
+// ---- vector.collection.set_embedding_model ----
+
+#[test]
+fn vector_collection_set_embedding_model_request_wire_roundtrip_is_idempotent() {
+    support::request_roundtrip_idempotent("requests/v1/vector/collection_set_embedding_model.json");
+}
+
+#[test]
+fn vector_collection_set_embedding_model_response_wire_roundtrip_is_idempotent() {
+    support::response_roundtrip_idempotent("responses/v1/vector/collection_set_embedding_model.json");
+}
+
+#[test]
+fn vector_collection_set_embedding_model_request_rejects_unknown_keys_at_closed_objects() {
+    support::unknown_keys_rejected("requests/v1/vector/collection_set_embedding_model.json", &[""]);
+}
+
+#[test]
+fn vector_collection_set_embedding_model_error_case_0_envelope_matches() {
+    support::error_case_envelope_matches(&["requests/v1/vector/collection_create.json"], "requests/v1/vector/collection_set_embedding_model_empty.json", "responses/v1/errors/vector/embedding_model_empty.json", false);
+}
+
+#[test]
+fn vector_collection_set_embedding_model_error_case_1_envelope_matches() {
+    support::error_case_envelope_matches(&["requests/v1/vector/collection_create_with_model.json"], "requests/v1/vector/collection_set_embedding_model_other.json", "responses/v1/errors/vector/embedding_model_mismatch.json", false);
+}
+
+#[test]
+fn vector_collection_set_embedding_model_error_case_2_envelope_matches() {
+    support::error_case_envelope_matches(&[], "requests/v1/vector/collection_set_embedding_model.json", "responses/v1/errors/vector/collection_missing.json", false);
+}
+
+#[test]
+fn vector_collection_set_embedding_model_replay_observes_a_declared_output() {
+    support::replay_observes_declared(&["requests/v1/vector/collection_create.json"], "requests/v1/vector/collection_set_embedding_model.json", &["vector_collection_list"], false);
 }
 
 // ---- vector.collection.stats ----
@@ -2958,6 +3000,16 @@ fn vector_query_request_rejects_unknown_keys_at_closed_objects() {
 }
 
 #[test]
+fn vector_query_error_case_0_envelope_matches() {
+    support::error_case_envelope_matches(&["requests/v1/vector/collection_create.json"], "requests/v1/vector/query_text_without_model.json", "responses/v1/errors/vector/embedding_model_missing.json", false);
+}
+
+#[test]
+fn vector_query_error_case_1_envelope_matches() {
+    support::error_case_envelope_matches(&["requests/v1/vector/collection_create.json"], "requests/v1/vector/query_vector_and_text.json", "responses/v1/errors/vector/vector_input.json", false);
+}
+
+#[test]
 fn vector_query_replay_observes_a_declared_output() {
     support::replay_observes_declared(&["requests/v1/vector/collection_create.json", "requests/v1/vector/upsert.json", "requests/v1/setup/vector_upsert_doc_b.json"], "requests/v1/vector/query.json", &["vector_matches"], false);
 }
@@ -3021,6 +3073,21 @@ fn vector_upsert_response_wire_roundtrip_is_idempotent() {
 #[test]
 fn vector_upsert_request_rejects_unknown_keys_at_closed_objects() {
     support::unknown_keys_rejected("requests/v1/vector/upsert.json", &[""]);
+}
+
+#[test]
+fn vector_upsert_error_case_0_envelope_matches() {
+    support::error_case_envelope_matches(&["requests/v1/vector/collection_create.json"], "requests/v1/vector/upsert_text_without_model.json", "responses/v1/errors/vector/embedding_model_missing.json", false);
+}
+
+#[test]
+fn vector_upsert_error_case_1_envelope_matches() {
+    support::error_case_envelope_matches(&["requests/v1/vector/collection_create.json"], "requests/v1/vector/upsert_vector_and_text.json", "responses/v1/errors/vector/vector_input.json", false);
+}
+
+#[test]
+fn vector_upsert_error_case_2_envelope_matches() {
+    support::error_case_envelope_matches(&["requests/v1/vector/collection_create.json"], "requests/v1/vector/upsert_neither.json", "responses/v1/errors/vector/vector_input.json", false);
 }
 
 #[test]

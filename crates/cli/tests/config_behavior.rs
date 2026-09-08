@@ -13,10 +13,10 @@ use std::process::{Command, Output};
 use serde_json::Value;
 use tempfile::TempDir;
 
-/// Runs the `strata` binary with a hermetic config home: `HOME` points at a
-/// temp dir and every config/env override that could leak from the developer's
+/// The `strata` binary with a hermetic config home: `HOME` points at a temp
+/// dir and every config/env override that could leak from the developer's
 /// machine — including an exported provider key — is stripped.
-fn config_cli(home: &TempDir, args: &[&str], extra_env: &[(&str, &str)]) -> Output {
+fn config_command(home: &TempDir, args: &[&str], extra_env: &[(&str, &str)]) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_strata"));
     command
         .args(args)
@@ -30,7 +30,35 @@ fn config_cli(home: &TempDir, args: &[&str], extra_env: &[(&str, &str)]) -> Outp
     for (key, value) in extra_env {
         command.env(key, value);
     }
-    command.output().expect("run strata binary")
+    command
+}
+
+fn config_cli(home: &TempDir, args: &[&str], extra_env: &[(&str, &str)]) -> Output {
+    config_command(home, args, extra_env)
+        .output()
+        .expect("run strata binary")
+}
+
+/// Runs a piped session: `lines` on stdin, one command per line, the way a
+/// script or an agent drives the binary without a terminal.
+#[cfg(feature = "inference")]
+fn config_cli_piped(home: &TempDir, args: &[&str], lines: &str) -> Output {
+    use std::io::Write as _;
+    use std::process::Stdio;
+
+    let mut child = config_command(home, args, &[])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn strata binary");
+    child
+        .stdin
+        .take()
+        .expect("piped stdin")
+        .write_all(lines.as_bytes())
+        .expect("write the session's lines");
+    child.wait_with_output().expect("run strata binary")
 }
 
 fn json(output: &Output) -> Value {
@@ -151,6 +179,10 @@ fn provider_api_key_is_redacted_and_never_echoed() {
 /// The three cases are the boundary on both sides: a config-backed key names
 /// the file, an exported key keeps its variable even when the file also has
 /// one (the environment wins), and a provider with no key has no source.
+///
+/// The bridge runs once per process, before any command, and `inference
+/// status` inside a session runs long after it — so the session case is the
+/// one that catches a status arm bridging again and finding nothing to name.
 #[cfg(feature = "inference")]
 #[test]
 fn inference_status_names_the_config_file_for_keys_it_bridged() {
@@ -207,6 +239,48 @@ fn inference_status_names_the_config_file_for_keys_it_bridged() {
     let absent = provider(&json(&config_cli(&home, &status_args, &[])), "anthropic");
     assert_eq!(absent["key_present"], false);
     assert_eq!(absent["key_source"], Value::Null);
+
+    // Mid-session: the same command through the pipe path, run after the
+    // process-wide bridge, still names the file.
+    let session = config_cli_piped(&home, &["--db", db, "--json"], "inference status\n");
+    let in_session = provider(&json(&session), "openai");
+    assert_eq!(in_session["key_present"], true);
+    let source = in_session["key_source"]
+        .as_str()
+        .expect("a loaded key has a source in a session too");
+    assert!(
+        source.ends_with("strata/config.toml"),
+        "a session's `inference status` names the file for a config-backed \
+         key, like the one-shot: {source}"
+    );
+}
+
+/// `doctor` reports readiness from the same environment the runtime reads,
+/// and a key set with `config set` reaches that environment once, at startup,
+/// for every command — doctor does no bridging of its own. A config-backed
+/// key therefore makes its provider ready here exactly as an exported one
+/// does (`doctor_behavior` covers the exported case).
+#[cfg(feature = "inference")]
+#[test]
+fn doctor_sees_a_config_file_key() {
+    let home = tempfile::tempdir().expect("temp home");
+    config_cli(
+        &home,
+        &["config", "set", "openai.api_key", "sk-from-config"],
+        &[],
+    );
+
+    // Doctor's exit code reflects installation checks unrelated to keys, so
+    // read the report rather than the status.
+    let output = config_cli(&home, &["--json", "doctor"], &[]);
+    let report: Value = serde_json::from_slice(&output.stdout).expect("doctor report is JSON");
+    let ready = report["data"]["inference"]["ready_providers"]
+        .as_array()
+        .expect("ready providers array");
+    assert!(
+        ready.iter().any(|provider| provider == "openai"),
+        "a config-backed key makes its provider ready: {report}"
+    );
 }
 
 #[test]

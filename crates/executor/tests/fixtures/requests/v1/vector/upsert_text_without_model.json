@@ -1,0 +1,6 @@
+{
+  "type": "vector_upsert",
+  "collection": "docs",
+  "key": "doc-a",
+  "text": "a document to embed"
+}

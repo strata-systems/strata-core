@@ -25,6 +25,30 @@ pub(super) fn optional_vector_key(key: Option<String>) -> ExecutorResult<Option<
     key.map(vector_key).transpose()
 }
 
+/// Exactly one of a vector or a text must be supplied (D10).
+///
+/// Both is ambiguous — we would have to pick one and silently discard the
+/// other. Neither leaves nothing to store. Refusing both cases keeps the
+/// contract stateable in one sentence.
+pub(super) fn resolve_vector_or_text(
+    vector: Vec<f64>,
+    text: Option<String>,
+    embed: impl FnOnce(String) -> ExecutorResult<Vec<f64>>,
+) -> ExecutorResult<Vec<f64>> {
+    match (vector.is_empty(), text) {
+        (true, Some(text)) => embed(text),
+        (false, None) => Ok(vector),
+        (false, Some(_)) => Err(ExecutorError::invalid_input(
+            "invalid_argument.executor.vector_input",
+            "pass either a vector or a text to embed, not both",
+        )),
+        (true, None) => Err(ExecutorError::invalid_input(
+            "invalid_argument.executor.vector_input",
+            "pass a vector, or a text to embed",
+        )),
+    }
+}
+
 pub(super) fn vector_embedding(vector: Vec<f64>) -> ExecutorResult<EngineVectorEmbedding> {
     EngineVectorEmbedding::from_wire(vector).map_err(ExecutorError::from)
 }
@@ -122,6 +146,11 @@ pub(super) fn vector_collection_info(
         usize_to_u64(info.config().dimension()),
         output_vector_metric(info.config().metric()),
         info.count(),
+    )
+    .with_embedding_model(
+        info.config()
+            .embedding_model()
+            .map(|model| model.as_str().to_owned()),
     )
 }
 

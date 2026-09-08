@@ -75,6 +75,7 @@ fn vector_facade_matches_explicit_commands() {
             collection: "docs".to_owned(),
             dimension: 2,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         }
     );
     assert_facade_matches!(
@@ -103,6 +104,7 @@ fn vector_facade_matches_explicit_commands() {
             collection: "docs".to_owned(),
             key: "a".to_owned(),
             vector: vec![1.0, 0.0],
+            text: None,
             metadata: Some(metadata.clone()),
         }
     );
@@ -161,6 +163,7 @@ fn vector_facade_matches_explicit_commands() {
             space: None,
             collection: "docs".to_owned(),
             query: vec![1.0, 0.0],
+            text: None,
             k: 5,
             filter: None,
             as_of: None,

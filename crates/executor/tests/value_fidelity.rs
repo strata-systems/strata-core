@@ -60,6 +60,7 @@ fn create_collection(executor: &mut Executor, name: &str, dimension: u64) {
             collection: name.to_owned(),
             dimension,
             metric: VectorDistanceMetric::Cosine,
+            embedding_model: None,
         })
         .expect("collection creates");
 }
@@ -81,6 +82,7 @@ fn upsert(
         collection: collection.to_owned(),
         key: key.to_owned(),
         vector,
+        text: None,
         metadata,
     })
 }

@@ -192,13 +192,13 @@ pub mod event {
 /// Embeddings, collections, and similarity search.
 pub mod vector {
     pub use strata_engine::{
-        VectorArtifactSourceDiagnostic, VectorBatchDeleteOutcome, VectorBatchGetOutcome,
-        VectorBatchUpsertOutcome, VectorBulkDeleteOutcome, VectorCollectionInfo,
-        VectorCollectionName, VectorConfig, VectorDeleteOutcome, VectorDistanceMetric,
-        VectorEmbedding, VectorEntry, VectorFilter, VectorFilterCondition, VectorFilterOp,
-        VectorHistory, VectorHistoryRow, VectorIndexDiagnostics, VectorKey, VectorKeyPage,
-        VectorMetadata, VectorMetadataPatch, VectorMetadataUpdateOutcome, VectorScalar,
-        VectorSearchMatch, VectorSearchResult, VectorService, VectorUpsertEntry,
+        EmbeddingModelId, VectorArtifactSourceDiagnostic, VectorBatchDeleteOutcome,
+        VectorBatchGetOutcome, VectorBatchUpsertOutcome, VectorBulkDeleteOutcome,
+        VectorCollectionInfo, VectorCollectionName, VectorConfig, VectorDeleteOutcome,
+        VectorDistanceMetric, VectorEmbedding, VectorEntry, VectorFilter, VectorFilterCondition,
+        VectorFilterOp, VectorHistory, VectorHistoryRow, VectorIndexDiagnostics, VectorKey,
+        VectorKeyPage, VectorMetadata, VectorMetadataPatch, VectorMetadataUpdateOutcome,
+        VectorScalar, VectorSearchMatch, VectorSearchResult, VectorService, VectorUpsertEntry,
         VectorVersionedEntry, VectorWriteOutcome,
     };
 }
