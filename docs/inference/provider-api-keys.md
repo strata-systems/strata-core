@@ -2,8 +2,11 @@
 
 Strata is an **embedded** database — it runs inside your process, like SQLite or
 DuckDB, and ships **no API keys of its own**. To use a cloud inference provider
-(OpenAI, Anthropic, or Google) you bring your own key. Local models
-(`--features local`, GGUF) need no key.
+(OpenAI, Anthropic, or Google) you bring your own key. Local GGUF models need no
+key. The default binary runs cloud models only: `strata inference install-local`
+swaps in the local-capable build, `strata --cache inference status` reports
+what your build can run and how many models are downloaded, and
+`strata --cache inference models local` lists them.
 
 ## Get a key
 

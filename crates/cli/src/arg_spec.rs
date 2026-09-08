@@ -92,7 +92,7 @@ pub(crate) fn to_json(spec: &CliArgSpec) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn committed() -> CliArgSpec {
@@ -117,8 +117,9 @@ mod tests {
         std::fs::write(spec_path(), to_json(&build_from_clap())).expect("write cli-arg-spec.json");
     }
 
-    /// Collects every `.md` file's text under `dir`, recursively.
-    fn markdown_files(dir: &Path, out: &mut Vec<(PathBuf, String)>) {
+    /// Collects every `.md` file's text under `dir`, recursively. Shared with
+    /// the reader-surface guards in `options.rs`.
+    pub(crate) fn markdown_files(dir: &Path, out: &mut Vec<(PathBuf, String)>) {
         for entry in std::fs::read_dir(dir).expect("read docs dir").flatten() {
             let path = entry.path();
             if path.is_dir() {
