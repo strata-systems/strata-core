@@ -11,6 +11,7 @@
         "is_local": false,
         "local_path": null,
         "name": "fake-embed",
+        "runnable": true,
         "size_bytes": 0,
         "task": "embed"
       },
@@ -22,6 +23,7 @@
         "is_local": false,
         "local_path": null,
         "name": "fake-generate",
+        "runnable": true,
         "size_bytes": 0,
         "task": "generate"
       },
@@ -33,6 +35,7 @@
         "is_local": false,
         "local_path": null,
         "name": "fake-rank",
+        "runnable": true,
         "size_bytes": 0,
         "task": "rank"
       }

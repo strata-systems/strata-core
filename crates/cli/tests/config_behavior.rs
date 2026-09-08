@@ -15,7 +15,7 @@ use tempfile::TempDir;
 
 /// Runs the `strata` binary with a hermetic config home: `HOME` points at a
 /// temp dir and every config/env override that could leak from the developer's
-/// machine is stripped.
+/// machine — including an exported provider key — is stripped.
 fn config_cli(home: &TempDir, args: &[&str], extra_env: &[(&str, &str)]) -> Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_strata"));
     command
@@ -23,7 +23,10 @@ fn config_cli(home: &TempDir, args: &[&str], extra_env: &[(&str, &str)]) -> Outp
         .env("HOME", home.path())
         .env_remove("XDG_CONFIG_HOME")
         .env_remove("STRATA_HUB_URL")
-        .env_remove("STRATA_DB");
+        .env_remove("STRATA_DB")
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("GOOGLE_API_KEY");
     for (key, value) in extra_env {
         command.env(key, value);
     }
@@ -136,6 +139,74 @@ fn provider_api_key_is_redacted_and_never_echoed() {
     let value = json(&output);
     // Redaction keeps a short non-secret prefix (first 7 chars) plus `****`.
     assert_eq!(value["value"], "sk-tops****");
+}
+
+/// A key set with `config set <provider>.api_key` reaches the runtime through
+/// the environment — the CLI exports it a moment before the command runs. So
+/// `inference status`, which reports the variable it found a key in, would
+/// name `OPENAI_API_KEY` for a key the user never exported. The CLI corrects
+/// the source to the file for exactly the variables it filled; this drives
+/// that through the real binary, where the pure truth table cannot reach.
+///
+/// The three cases are the boundary on both sides: a config-backed key names
+/// the file, an exported key keeps its variable even when the file also has
+/// one (the environment wins), and a provider with no key has no source.
+#[cfg(feature = "inference")]
+#[test]
+fn inference_status_names_the_config_file_for_keys_it_bridged() {
+    const SECRET: &str = "sk-from-config-file";
+
+    let home = tempfile::tempdir().expect("temp home");
+    let db = home.path().join("db");
+    let db = db.to_str().expect("utf-8 temp path");
+    let status_args = ["--db", db, "--json", "inference", "status"];
+
+    let provider = |status: &Value, name: &str| -> Value {
+        status["data"]["providers"]
+            .as_array()
+            .expect("providers")
+            .iter()
+            .find(|row| row["provider"] == name)
+            .unwrap_or_else(|| panic!("provider {name} missing from status: {status}"))
+            .clone()
+    };
+
+    config_cli(&home, &["config", "set", "openai.api_key", SECRET], &[]);
+
+    // Not exported: the file supplied the key, and the source must be the file.
+    let output = config_cli(&home, &status_args, &[]);
+    let rendered = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !rendered.contains(SECRET),
+        "status must never carry a key value: {rendered}"
+    );
+    let bridged = provider(&json(&output), "openai");
+    assert_eq!(bridged["key_present"], true, "the file's key was loaded");
+    let source = bridged["key_source"]
+        .as_str()
+        .expect("a loaded key has a source");
+    assert!(
+        source.ends_with("strata/config.toml"),
+        "a config-backed key names the file, not the variable the CLI \
+         filled: {source}"
+    );
+
+    // Exported: the environment wins and its variable is the honest source,
+    // even though the file also holds a key.
+    let exported = provider(
+        &json(&config_cli(
+            &home,
+            &status_args,
+            &[("OPENAI_API_KEY", "sk-env")],
+        )),
+        "openai",
+    );
+    assert_eq!(exported["key_source"], "OPENAI_API_KEY");
+
+    // No key anywhere: no source, whatever the bridge reports.
+    let absent = provider(&json(&config_cli(&home, &status_args, &[])), "anthropic");
+    assert_eq!(absent["key_present"], false);
+    assert_eq!(absent["key_source"], Value::Null);
 }
 
 #[test]

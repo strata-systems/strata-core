@@ -1,0 +1,5 @@
+caption: Check what this build can do before running an inference command.
+steps:
+  - call: inference.status
+    args: {}
+    note: reports build, providers, keys, and on-disk models without attempting a call

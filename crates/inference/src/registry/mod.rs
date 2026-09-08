@@ -26,6 +26,21 @@ use std::path::{Path, PathBuf};
 
 use crate::error::InferenceError;
 
+/// Whether the model file at `path` is downloaded.
+///
+/// The one predicate behind every surface that answers that question —
+/// `models list`, `models local`, `inference status`, resolution, and the
+/// downloader's "already here" check — so they cannot disagree. They did:
+/// resolution refused a zero-length file as an interrupted download while
+/// the listing called the same file "ready" and the status counted it.
+///
+/// A regular file with at least one byte. A directory or an empty file at the
+/// path is a leftover, not a model.
+pub(crate) fn model_file_is_downloaded(path: &Path) -> bool {
+    path.metadata()
+        .is_ok_and(|meta| meta.is_file() && meta.len() > 0)
+}
+
 /// What a model is designed for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "wire-schemas", derive(schemars::JsonSchema))]
@@ -98,8 +113,21 @@ pub struct ModelInfo {
     pub default_quant: String,
     /// Embedding dimension, or zero for non-embedding models.
     pub embedding_dim: usize,
-    /// Whether the model artifact is present locally.
+    /// Whether this variant's artifact is downloaded — a non-empty file at
+    /// `local_path`, the same test `resolve` applies. An interrupted
+    /// download's zero-length file is not downloaded.
+    ///
+    /// This is about the *file*, not about whether it can be run: a released
+    /// binary reports `is_local: true` for models it cannot load. Check
+    /// `runnable` for that (#3124).
     pub is_local: bool,
+    /// Whether **this binary** can execute this model.
+    ///
+    /// Every model in this catalog runs through the local provider, so this is
+    /// false in any build without the `local` feature — which is every released
+    /// binary. `strata inference install-local` adds that execution; a cloud
+    /// model needs none.
+    pub runnable: bool,
     /// Local GGUF path when present.
     pub local_path: Option<PathBuf>,
     /// Approximate model artifact size in bytes.
@@ -152,13 +180,28 @@ impl ModelRegistry {
             .iter()
             .filter_map(|entry| {
                 // Find the first locally-present variant
-                let local_variant = entry.variants.iter().find(|v| {
-                    let p = self.models_dir.join(v.hf_file);
-                    p.exists() && p.metadata().map(|m| m.len() > 0).unwrap_or(false)
-                });
+                let local_variant = entry
+                    .variants
+                    .iter()
+                    .find(|v| model_file_is_downloaded(&self.models_dir.join(v.hf_file)));
                 local_variant.map(|v| self.entry_to_info(entry, v.name))
             })
             .collect()
+    }
+
+    /// Catalog facts for a model name, or `None` when the catalog has no such
+    /// model.
+    ///
+    /// Resolves the name the way `resolve` does — aliases, `family:size`, and
+    /// a quant suffix all count — so a caller reporting on a model sees the
+    /// same entry the registry would load. `capability` used to match the
+    /// spec against `list_available` names instead, so `nomic` (an alias) and
+    /// `miniLM:f16` (a quant) came back with no task and a zero dimension
+    /// while `resolve` accepted both (#3124).
+    pub(crate) fn info(&self, name: &str) -> Option<ModelInfo> {
+        // The parse error only says "unknown model"; absence is the answer.
+        let (entry, quant) = self.parse_name(name).ok()?;
+        Some(self.entry_to_info(entry, quant.unwrap_or(entry.default_quant)))
     }
 
     /// Resolve a model name to a local file path.
@@ -186,32 +229,37 @@ impl ModelRegistry {
 
         let path = self.models_dir.join(variant.hf_file);
 
-        if path.exists() {
-            // Reject zero-length files (e.g. from interrupted downloads)
-            let is_valid = path.metadata().map(|m| m.len() > 0).unwrap_or(false);
-            if is_valid {
-                return Ok(path);
-            }
-            // Fall through to the "not found" error — the zero-length file is not usable
+        // A zero-length file (an interrupted download) is not a model; it
+        // falls through to the "not downloaded" error like an absent one.
+        if model_file_is_downloaded(&path) {
+            return Ok(path);
         }
 
         let size_display = format_size(variant.size_bytes);
 
-        Err(InferenceError::Registry(format!(
-            "Model '{}' not found locally.\n\n\
-             To download it (requires internet):\n  \
-             strata models pull {}\n\n\
-             Or manually place the GGUF file at:\n  \
+        // D8: the command named here must exist (`strata models pull` never
+        // has — the verb is `strata inference models pull`), and the code is
+        // carried explicitly so rewording this text cannot change it. The
+        // previous wording classified as `missing_model` only because it
+        // happened to contain "not found locally".
+        Err(InferenceError::RegistryFailed {
+            kind: crate::RegistryFailure::MissingModel,
+            message: format!(
+                "Model '{}' is not downloaded.\n\n\
+             To download it ({}, requires internet):\n  \
+             strata inference models pull {}\n\n\
+             Or place the GGUF file at:\n  \
              {}\n\n\
-             Expected file: {} ({})\n\
+             Expected file: {}\n\
              Source: https://huggingface.co/{}",
-            name,
-            name,
-            path.display(),
-            variant.hf_file,
-            size_display,
-            entry.hf_repo
-        )))
+                name,
+                size_display,
+                name,
+                path.display(),
+                variant.hf_file,
+                entry.hf_repo
+            ),
+        })
     }
 
     /// Resolve a model name to a local path, downloading if necessary.
@@ -368,7 +416,7 @@ impl ModelRegistry {
             .unwrap_or(&entry.variants[0]);
 
         let path = self.models_dir.join(variant.hf_file);
-        let is_local = path.exists();
+        let is_local = model_file_is_downloaded(&path);
 
         ModelInfo {
             name: entry.name.to_string(),
@@ -377,6 +425,9 @@ impl ModelRegistry {
             default_quant: entry.default_quant.to_string(),
             embedding_dim: entry.embedding_dim,
             is_local,
+            // Every catalog model runs through the local provider, so what
+            // decides runnability is whether this binary has it compiled in.
+            runnable: cfg!(feature = "local"),
             local_path: if is_local { Some(path) } else { None },
             size_bytes: variant.size_bytes,
             hf_repo: entry.hf_repo.to_string(),
@@ -443,8 +494,16 @@ mod tests {
 
         let err = registry.resolve("miniLM").unwrap_err();
         let msg = format!("{}", err);
-        assert!(msg.contains("not found locally"), "Error: {}", msg);
-        assert!(msg.contains("strata models pull miniLM"), "Error: {}", msg);
+        // D8: the code is carried at the raise site, so assert it rather than
+        // the prose (CLAUDE.md rule 29). The old assertion pinned
+        // `strata models pull`, a verb that has never existed.
+        assert_eq!(err.code(), "inference.missing_model");
+        assert!(msg.contains("is not downloaded"), "Error: {}", msg);
+        assert!(
+            msg.contains("strata inference models pull miniLM"),
+            "the refusal must name the real command: {}",
+            msg
+        );
         assert!(msg.contains(".gguf"), "Error: {}", msg);
         assert!(msg.contains("huggingface.co"), "Error: {}", msg);
         assert!(
@@ -650,7 +709,7 @@ mod tests {
         let err = registry.resolve("tinyllama").unwrap_err();
         let msg = format!("{}", err);
         assert!(
-            msg.contains("not found locally"),
+            msg.contains("is not downloaded"),
             "Should fail for default quant: {}",
             msg
         );
@@ -758,9 +817,85 @@ mod tests {
         let err = registry.resolve("miniLM").unwrap_err();
         let msg = err.to_string();
         assert!(
-            msg.contains("not found locally"),
+            msg.contains("is not downloaded"),
             "Zero-length file should not resolve: {}",
             msg
+        );
+    }
+
+    /// Every surface that answers "is this model downloaded?" answers the
+    /// same way. `list_available` used to call any existing path local —
+    /// a zero-length file, even a directory — while `list_local` and
+    /// `resolve` refused it, so `models list` said "ready" and
+    /// `inference status` counted a model that would not load.
+    #[test]
+    fn every_surface_agrees_on_what_counts_as_downloaded() {
+        let (dir, registry) = test_registry();
+        let entry = catalog::find_entry("miniLM").unwrap();
+        let default_variant = entry
+            .variants
+            .iter()
+            .find(|v| v.name == entry.default_quant)
+            .unwrap();
+        let path = dir.path().join(default_variant.hf_file);
+
+        let available_says_local = |registry: &ModelRegistry| {
+            registry
+                .list_available()
+                .into_iter()
+                .find(|info| info.name == "miniLM")
+                .unwrap()
+                .is_local
+        };
+        let local_lists_it = |registry: &ModelRegistry| {
+            registry
+                .list_local()
+                .iter()
+                .any(|info| info.name == "miniLM")
+        };
+
+        // An interrupted download's zero-length leftover.
+        std::fs::write(&path, b"").unwrap();
+        assert!(!model_file_is_downloaded(&path));
+        assert!(
+            !available_says_local(&registry),
+            "zero-length: list_available"
+        );
+        assert!(!local_lists_it(&registry), "zero-length: list_local");
+        assert_eq!(
+            registry.resolve("miniLM").unwrap_err().code(),
+            "inference.missing_model",
+            "zero-length: resolve"
+        );
+
+        // A directory squatting on the artifact's path.
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        assert!(!model_file_is_downloaded(&path));
+        assert!(
+            !available_says_local(&registry),
+            "directory: list_available"
+        );
+        assert!(!local_lists_it(&registry), "directory: list_local");
+        assert_eq!(
+            registry.resolve("miniLM").unwrap_err().code(),
+            "inference.missing_model",
+            "directory: resolve"
+        );
+
+        // The real thing.
+        std::fs::remove_dir(&path).unwrap();
+        std::fs::write(&path, b"gguf").unwrap();
+        assert!(model_file_is_downloaded(&path));
+        assert!(
+            available_says_local(&registry),
+            "downloaded: list_available"
+        );
+        assert!(local_lists_it(&registry), "downloaded: list_local");
+        assert_eq!(
+            registry.resolve("miniLM").unwrap(),
+            path,
+            "downloaded: resolve"
         );
     }
 

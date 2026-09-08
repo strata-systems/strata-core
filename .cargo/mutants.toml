@@ -150,4 +150,48 @@ exclude_re = [
     "\\bdownload\\b",
     "\\bextract\\b",
     "replace <impl Drop for TempDir>::drop with \\(\\)",
+    # D8 download offer (#3124): `execute_with_download_offer` is the
+    # interactive prompt itself — print the refusal, read a line from a real
+    # terminal, re-run. A `cargo test` has no TTY to answer it and no fixtured
+    # release to pull from, so its branches survive vacuously. Same category as
+    # run_repl and run_update above.
+    #
+    # Its DECISION logic is extracted and stays mutated: `should_offer_download`
+    # (truth table over terminal / output format / error code) and
+    # `missing_model_spec` (which model the command was going to load). Both
+    # gained tests because this gate found them untested.
+    "execute_with_download_offer",
+    # D2 install-local (#3124): the same self-replacing-binary glue already
+    # excluded above for `strata update` — it downloads a release asset,
+    # verifies its checksum and overwrites the running executable, which a test
+    # runner cannot let it do. It shares `install_release_asset` with
+    # `run_update`, whose pure parts (local_asset_name, expected_sha,
+    # target_triple) stay mutated and are unit-tested.
+    "run_install_local",
+    # `has_local_execution` is `cfg!(feature = "inference-local")` and nothing
+    # else. Its test asserts exactly that, but a test can only observe the
+    # build it runs in: whichever constant the feature evaluates to in this
+    # lane's build, the mutant returning that same constant is
+    # indistinguishable from the original and survives; the other one is
+    # caught. The survivor is an artefact of mutating a feature reflection,
+    # not an untested branch.
+    "has_local_execution",
+    # `install_release_asset` is the shared body of `run_update` and
+    # `inference install-local`, both already excluded above: download an
+    # asset, verify its SHA-256, overwrite the running executable. Extracting
+    # it gave the same untestable glue a new name. Its pure parts
+    # (expected_sha, sha256_file, hex, asset_name, local_asset_name) stay
+    # mutated and are unit-tested.
+    "install_release_asset",
+    # `doctor::inference_report` has two cfg variants, and cargo-mutants
+    # mutates source text without evaluating cfg — so it also mutates the
+    # `not(all(native, inference))` fallback, which THIS lane never compiles.
+    # A vacuous survivor, same class as the loom modules and
+    # persistence_faults.rs described above.
+    #
+    # The variant that does compile is tested: planting
+    # `inference_report -> Default::default()` reds
+    # `doctor::tests::the_inference_report_carries_facts`, verified by hand.
+    # That is the strength mechanism this entry rests on.
+    "replace inference_report -> Value with Default::default\\(\\)",
 ]

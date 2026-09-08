@@ -68,22 +68,98 @@ pub(crate) fn run_update(
         Action::Install => {}
     }
 
-    // --- download into a scratch dir that is cleaned up on drop ---
+    install_release_asset(&exe, &wanted, &asset_name(&wanted, triple), triple)?;
+
+    eprintln!("updated strata {CURRENT} -> {wanted}");
+    Ok(json!({
+        "type": "update",
+        "data": { "current": CURRENT, "latest": wanted, "update_available": false, "changed": true }
+    }))
+}
+
+/// The `-local` variant's asset name for a release.
+///
+/// The release publishes two builds per target: the lean default and this one,
+/// which carries the vendored llama.cpp needed to execute GGUF models.
+fn local_asset_name(version: &str, triple: &str) -> String {
+    format!("strata-v{version}-{triple}-local.tar.gz")
+}
+
+/// Whether this binary already executes local models.
+const fn has_local_execution() -> bool {
+    cfg!(feature = "inference-local")
+}
+
+/// `strata inference install-local` (D2) — swap the running binary for the
+/// same version's local-capable build.
+///
+/// The alternative was telling people to `cargo install --features
+/// inference-local`, which needs a Rust toolchain. The callers of this surface
+/// are mostly coding agents, which have none — so a source build is not a
+/// remediation for them, it is a dead end that looks like one.
+///
+/// It installs the **same version** it is running, not the latest: adding a
+/// capability should not also move you across releases. `strata update` is
+/// still how you change version.
+///
+/// Idempotent on purpose. An agent that cannot tell whether it already ran this
+/// can run it again and get a clean no-op rather than a redundant download.
+pub(crate) fn run_install_local() -> Result<Value, CliError> {
+    let exe = std::env::current_exe().map_err(|error| {
+        CliError::usage(format!("could not locate the running binary: {error}"))
+    })?;
+
+    if has_local_execution() {
+        eprintln!("this build already runs local models ({CURRENT}).");
+        return Ok(json!({
+            "type": "inference_install_local",
+            "data": { "version": CURRENT, "local_execution": true, "changed": false }
+        }));
+    }
+    if is_homebrew_install(&exe) {
+        return Err(CliError::usage(
+            "this strata binary is managed by Homebrew; run \
+             `brew install stratalab/tap/strata-local` instead",
+        ));
+    }
+
+    let triple = target_triple()?;
+    let asset = local_asset_name(CURRENT, triple);
+    install_release_asset(&exe, CURRENT, &asset, triple)?;
+
+    eprintln!("strata {CURRENT} now runs local models; `strata inference status` confirms it");
+    Ok(json!({
+        "type": "inference_install_local",
+        "data": { "version": CURRENT, "local_execution": true, "changed": true }
+    }))
+}
+
+/// Fetch one release asset, verify its SHA-256, and atomically replace the
+/// running binary with the `strata` inside it.
+///
+/// Shared by `update` (same build, newer version) and `inference install-local`
+/// (same version, local-capable build) so both get the identical guarantee:
+/// **nothing is touched until the checksum matches.** A tampered or truncated
+/// download cannot reach the binary.
+fn install_release_asset(
+    exe: &Path,
+    version: &str,
+    asset: &str,
+    triple: &str,
+) -> Result<(), CliError> {
     let scratch = TempDir::new()?;
-    let asset = asset_name(&wanted, triple);
-    let base = format!("https://github.com/{REPO}/releases/download/v{wanted}");
-    let tarball = scratch.path().join(&asset);
+    let base = format!("https://github.com/{REPO}/releases/download/v{version}");
+    let tarball = scratch.path().join(asset);
     let sums = scratch.path().join("checksums-sha256.txt");
-    eprintln!("downloading strata {wanted} ({triple}) ...");
+    eprintln!("downloading {asset} ({triple}) ...");
     download(&format!("{base}/{asset}"), &tarball)?;
     download(&format!("{base}/checksums-sha256.txt"), &sums)?;
 
-    // --- verify sha256 BEFORE replacing anything ---
     let sums_text = std::fs::read_to_string(&sums)
         .map_err(|e| CliError::usage(format!("could not read checksums: {e}")))?;
-    let expected = expected_sha(&sums_text, &asset).ok_or_else(|| {
+    let expected = expected_sha(&sums_text, asset).ok_or_else(|| {
         CliError::usage(format!(
-            "release {wanted} has no checksum entry for {asset}"
+            "release {version} has no checksum entry for {asset}"
         ))
     })?;
     let got = sha256_file(&tarball)?;
@@ -93,7 +169,6 @@ pub(crate) fn run_update(
         )));
     }
 
-    // --- extract, then atomically replace the running binary ---
     extract(&tarball, scratch.path())?;
     let staged = scratch.path().join("strata");
     if !staged.exists() {
@@ -101,13 +176,7 @@ pub(crate) fn run_update(
             "downloaded archive did not contain a `strata` binary",
         ));
     }
-    replace_binary(&exe, &staged)?;
-
-    eprintln!("updated strata {CURRENT} -> {wanted}");
-    Ok(json!({
-        "type": "update",
-        "data": { "current": CURRENT, "latest": wanted, "update_available": false, "changed": true }
-    }))
+    replace_binary(exe, &staged)
 }
 
 /// The release asset triple for the host, or an error on an unsupported target.
@@ -312,8 +381,9 @@ impl Drop for TempDir {
 #[cfg(test)]
 mod tests {
     use super::{
-        asset_name, check_exit_code, decide, expected_sha, hex, is_newer, is_up_to_date,
-        parse_version, rejects_db_target, sha256_file, target_triple, Action,
+        asset_name, check_exit_code, decide, expected_sha, has_local_execution, hex, is_newer,
+        is_up_to_date, local_asset_name, parse_version, rejects_db_target, sha256_file,
+        target_triple, Action, CURRENT,
     };
     use std::io::Write as _;
 
@@ -419,5 +489,58 @@ def456  strata-v1.2.0-aarch64-apple-darwin.tar.gz
             Some("def456")
         );
         assert_eq!(expected_sha(sums, "strata-v1.2.0-nope.tar.gz"), None);
+    }
+
+    /// D2: the asset `install-local` downloads is the default asset's name plus
+    /// `-local`, which is exactly what the release matrix publishes. If these
+    /// two ever disagree the command fails at the checksum step with "no
+    /// checksum entry", which is a confusing way to learn about a typo.
+    #[test]
+    fn the_local_asset_is_the_default_asset_plus_a_suffix() {
+        let triple = "x86_64-unknown-linux-gnu";
+        assert_eq!(
+            local_asset_name("1.2.1", triple),
+            "strata-v1.2.1-x86_64-unknown-linux-gnu-local.tar.gz"
+        );
+        assert_eq!(
+            local_asset_name("1.2.1", triple),
+            asset_name("1.2.1", triple).replace(".tar.gz", "-local.tar.gz"),
+            "the release workflow appends `-local` to the same stem"
+        );
+    }
+
+    /// `install-local` fetches the version it is running, not the latest:
+    /// adding a capability must not also move you across releases.
+    #[test]
+    fn the_local_asset_is_pinned_to_the_running_version() {
+        let triple = "x86_64-unknown-linux-gnu";
+        assert!(
+            local_asset_name(CURRENT, triple).contains(CURRENT),
+            "install-local installs its own version, leaving `update` to change it"
+        );
+    }
+
+    /// The lean build is the one that needs `install-local`; the local build
+    /// short-circuits to a no-op, which is what makes the command safe for an
+    /// agent to run without first checking.
+    #[test]
+    fn only_a_build_without_local_execution_needs_installing() {
+        assert_eq!(has_local_execution(), cfg!(feature = "inference-local"));
+    }
+
+    /// Every checksum entry the local asset needs resolves the same way the
+    /// default one does — the shared verify path treats them identically.
+    #[test]
+    fn checksums_resolve_for_both_variants() {
+        let sums = "abc123  strata-v1.2.1-x86_64-unknown-linux-gnu.tar.gz\n\
+                    def456  strata-v1.2.1-x86_64-unknown-linux-gnu-local.tar.gz\n";
+        assert_eq!(
+            expected_sha(sums, "strata-v1.2.1-x86_64-unknown-linux-gnu.tar.gz"),
+            Some("abc123")
+        );
+        assert_eq!(
+            expected_sha(sums, "strata-v1.2.1-x86_64-unknown-linux-gnu-local.tar.gz"),
+            Some("def456")
+        );
     }
 }

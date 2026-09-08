@@ -18,5 +18,6 @@ section: inference
 | [List local models](/docs/inference/models/local) | List locally downloaded inference models. |
 | [Download a model](/docs/inference/models/pull) | Download an inference model locally. |
 | [Rank passages](/docs/inference/rank) | Rank passages against a query. |
+| [Report inference readiness](/docs/inference/status) | Report what this binary can do before anything is attempted. |
 | [Tokenize text](/docs/inference/tokenize) | Tokenize text with a local model. |
 | [Unload cached models](/docs/inference/unload) | Unload cached inference models. |

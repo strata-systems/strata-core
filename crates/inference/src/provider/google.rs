@@ -15,7 +15,7 @@ use crate::wire::{
     NamedToolChoice, ResponseFormat, Role, TokenLogProb, Tool, ToolCall, ToolCallFunction,
     ToolChoice, ToolChoiceMode, TopLogProb, Usage,
 };
-use crate::{GenerateRequest, GenerateResponse, InferenceError, StopReason};
+use crate::{GenerateRequest, GenerateResponse, InferenceError, ProviderFailure, StopReason};
 
 const API_BASE: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 
@@ -879,15 +879,68 @@ fn map_http_error(provider: &str, err: ureq::Error) -> InferenceError {
                 503 => "service unavailable",
                 _ => "HTTP error",
             };
-            InferenceError::Provider(format!("{provider}: {description} (HTTP {code})"))
+            // D6: the status IS the classification. Describing it in prose and
+            // matching the prose back is how "invalid API key" became
+            // indistinguishable from an outage.
+            InferenceError::ProviderFailed {
+                kind: ProviderFailure::from_http_status(code),
+                message: format!("{provider}: {description} (HTTP {code})"),
+            }
         }
-        _ => InferenceError::Provider(format!("{provider}: {err}")),
+        // The transport already told us it timed out.
+        ureq::Error::Timeout(_) => InferenceError::ProviderFailed {
+            kind: ProviderFailure::Timeout,
+            message: format!("{provider}: {err}"),
+        },
+        _ => InferenceError::ProviderFailed {
+            kind: ProviderFailure::Unavailable,
+            message: format!("{provider}: {err}"),
+        },
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The transport's own verdict decides the kind (D6).
+    ///
+    /// `map_http_error` turns a real `ureq::Error` into a classified failure,
+    /// and nothing tested it: deleting the `Timeout` arm let a timeout fall
+    /// through to the catch-all and report as an outage, which is the exact
+    /// collapse D6 exists to prevent — an outage invites a retry against a
+    /// server that is fine, while a timeout points at the deadline.
+    ///
+    /// `from_http_status` had a truth table, but a truth table on a pure
+    /// function proves nothing about the match that feeds it.
+    #[test]
+    fn a_transport_timeout_is_a_timeout_not_an_outage() {
+        let timeout = map_http_error("p", ureq::Error::Timeout(ureq::Timeout::Global));
+        assert_eq!(timeout.code(), "inference.provider_timeout");
+
+        // The catch-all still reports an outage, so the assertion above is
+        // about the arm and not about every error becoming a timeout.
+        let other = map_http_error("p", ureq::Error::HostNotFound);
+        assert_eq!(other.code(), "inference.provider_unavailable");
+    }
+
+    /// A status code reaches the classifier that reads it.
+    #[test]
+    fn an_http_status_is_classified_by_its_status() {
+        for (status, expected) in [
+            (401, "inference.provider_auth_failed"),
+            (403, "inference.provider_auth_failed"),
+            (429, "inference.provider_rate_limited"),
+            (503, "inference.provider_unavailable"),
+        ] {
+            let error = map_http_error("p", ureq::Error::StatusCode(status));
+            assert_eq!(error.code(), expected, "HTTP {status}");
+            assert!(
+                error.to_string().contains(&status.to_string()),
+                "the message names the status: {error}"
+            );
+        }
+    }
 
     // -----------------------------------------------------------------------
     // Construction

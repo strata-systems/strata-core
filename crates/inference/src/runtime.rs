@@ -25,11 +25,14 @@ use crate::{
 
 #[cfg(any(feature = "openai", feature = "google"))]
 use crate::embedding_provider_feature_enabled;
+#[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
+use crate::error::ProviderFailure;
 
 #[cfg(any(feature = "openai", feature = "google"))]
 use crate::InferenceEngine;
 
-#[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
+// Ungated: `status` names every provider's key variable, including for
+// providers this build cannot call — that is how it says what to set.
 use crate::api_key_env_var;
 
 #[cfg(any(
@@ -78,6 +81,69 @@ pub struct ModelCacheStatus {
     pub ranking_models: Vec<String>,
 }
 
+/// Whether one provider can be used right now, and if not, why not.
+///
+/// Never carries a key — only where one was found (#3124/D11).
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "wire-schemas", derive(schemars::JsonSchema))]
+pub struct ProviderStatus {
+    /// Which provider this row describes.
+    pub provider: ProviderKind,
+    /// Whether this binary was compiled with the provider.
+    pub feature_enabled: bool,
+    /// Whether this provider needs an API key at all.
+    pub requires_api_key: bool,
+    /// Whether a key was found. Never the key itself.
+    pub key_present: bool,
+    /// The environment variable this provider reads its key from, whether or
+    /// not one is set — so a caller can say what to do about a missing key.
+    /// `None` for providers that need no key.
+    pub key_env_var: Option<String>,
+    /// Where the key was found, when one was. Never a value. `None` when no
+    /// key is present.
+    ///
+    /// This runtime reads only the environment, so it always names the
+    /// variable. The CLI copies `strata config set <provider>.api_key` keys
+    /// into that environment before running, and replaces this with the
+    /// config file's path for the ones it copied — so a caller is told the
+    /// file, not a variable it never exported.
+    pub key_source: Option<String>,
+    /// Whether a call could be attempted right now.
+    pub ready: bool,
+    /// The model-spec prefix that selects this provider, e.g. `"openai:"`.
+    ///
+    /// A caller that finds a ready provider can use this directly: prefix any
+    /// model name with it. That is the actionable form for a coding agent,
+    /// which reads this over the human table.
+    pub model_prefix: String,
+}
+
+/// What this binary can do before anything is attempted (D11).
+///
+/// #3124: every part of this was knowable up front and reported nowhere, so a
+/// user learned their build's limits by watching an operation fail.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "wire-schemas", derive(schemars::JsonSchema))]
+pub struct InferenceStatus {
+    /// Whether this binary can execute local models.
+    pub local_execution: bool,
+    /// Whether this binary can download model artifacts.
+    pub model_download: bool,
+    /// Every provider, in a stable order.
+    pub providers: Vec<ProviderStatus>,
+    /// The model directory, shared by every database on this machine.
+    pub models_dir: PathBuf,
+    /// Catalogued models with at least one variant downloaded — the models
+    /// `models local` lists, judged the way resolution judges (a non-empty
+    /// file; an interrupted download's zero-length leftover does not count).
+    pub models_downloaded: usize,
+    /// Catalogued models in total.
+    pub models_catalogued: usize,
+    /// What to do when local execution is needed and absent. `None` when this
+    /// build already has it.
+    pub local_remedy: Option<String>,
+}
+
 /// Provider/model capability facts.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "wire-schemas", derive(schemars::JsonSchema))]
@@ -86,13 +152,17 @@ pub struct InferenceCapability {
     pub provider: ProviderKind,
     /// Model name or path after provider parsing.
     pub model: String,
-    /// Whether generation is supported.
+    /// Whether **this binary** can generate with this model right now.
+    ///
+    /// False when the provider's feature is compiled out, even for a model
+    /// that inherently generates — see `provider_feature_enabled` for why. The
+    /// model's own task is in the catalog (`inference models list`).
     pub can_generate: bool,
-    /// Whether tokenization is supported.
+    /// Whether **this binary** can tokenize with this model right now.
     pub can_tokenize: bool,
-    /// Whether embedding is supported.
+    /// Whether **this binary** can embed with this model right now.
     pub can_embed: bool,
-    /// Whether ranking is supported.
+    /// Whether **this binary** can rank with this model right now.
     pub can_rank: bool,
     /// Whether the operation requires network access.
     pub requires_network: bool,
@@ -264,6 +334,7 @@ impl InferenceRuntime {
 
         #[cfg(feature = "download")]
         {
+            // D8: `pull_model` is the one place that downloads; loading does not.
             let path = self.registry().resolve_or_pull(model)?;
             Ok(PullModelOutput {
                 model: model.to_owned(),
@@ -274,33 +345,106 @@ impl InferenceRuntime {
         #[cfg(not(feature = "download"))]
         {
             let _ = model;
-            Err(InferenceError::NotSupported(
-                "model download requires the download feature".to_owned(),
-            ))
+            // One phrasing for "this binary was not built with model
+            // downloading". Must contain "download" and must not contain
+            // "provider" — see [`local_feature_unavailable`] on why the
+            // wording is load-bearing. Inline rather than a function of its
+            // own: a function only a `not(download)` build can call is dead
+            // code to the featured lane's clippy, and a `cfg`-gated function
+            // is a mutation site that lane cannot compile or kill.
+            Err(InferenceError::NotSupported(format!(
+                "model download is not built into this binary: {LOCAL_UNAVAILABLE_REMEDY} \
+                 To use a local model anyway, fetch its GGUF file into the models \
+                 directory yourself — `strata inference status` shows the directory and \
+                 `strata inference models list` the expected repository and file name."
+            )))
+        }
+    }
+
+    /// Reports what this binary can do, before anything is attempted.
+    ///
+    /// Answers in one place the questions that previously had to be inferred
+    /// from a failure: which providers are compiled in, which have a key and
+    /// where it came from, whether local execution exists in this build, and
+    /// how many catalogued models are already on disk.
+    pub fn status(&self) -> InferenceStatus {
+        let providers = [
+            ProviderKind::OpenAI,
+            ProviderKind::Anthropic,
+            ProviderKind::Google,
+            ProviderKind::Local,
+        ]
+        .into_iter()
+        .map(|provider| {
+            let feature_enabled = generation_provider_feature_enabled(provider)
+                || embedding_provider_feature_enabled_for_capability(provider);
+            let requires_api_key = provider != ProviderKind::Local;
+            let key_env_var = requires_api_key.then(|| api_key_env_var(provider).to_owned());
+            let key_source = resolve_key_source(key_env_var.as_deref(), |name| {
+                env_holds_a_key(std::env::var_os(name).as_deref())
+            });
+            let key_present = key_source.is_some();
+            ProviderStatus {
+                provider,
+                feature_enabled,
+                requires_api_key,
+                key_present,
+                key_env_var,
+                key_source,
+                ready: provider_is_ready(feature_enabled, key_present, requires_api_key),
+                model_prefix: format!("{provider}:"),
+            }
+        })
+        .collect();
+
+        let registry = self.registry();
+        InferenceStatus {
+            local_execution: cfg!(feature = "local"),
+            model_download: cfg!(feature = "download"),
+            providers,
+            models_dir: registry.models_dir().to_path_buf(),
+            // What `models local` lists: any downloaded variant counts, not
+            // only the default quant that `list_available` reports on.
+            models_downloaded: registry.list_local().len(),
+            models_catalogued: registry.list_available().len(),
+            local_remedy: (!cfg!(feature = "local")).then(|| LOCAL_UNAVAILABLE_REMEDY.to_owned()),
         }
     }
 
     /// Returns capability facts for a model spec.
     pub fn capability(&self, model_spec: &str) -> Result<InferenceCapability, InferenceError> {
         let (provider, model) = parse_model_spec(model_spec)?;
+        // The registry's own name resolution, so an alias or a quant suffix
+        // reports the same entry it would load.
         let local_info = if provider == ProviderKind::Local {
-            self.registry()
-                .list_available()
-                .into_iter()
-                .find(|info| info.name.eq_ignore_ascii_case(&model))
+            self.registry().info(&model)
         } else {
             None
         };
         let task = local_info.as_ref().map(|info| info.task);
+        let abilities = ModelAbilities::of(provider, task);
         Ok(InferenceCapability {
             provider,
             model,
-            can_generate: provider != ProviderKind::Local || task != Some(ModelTask::Embed),
-            can_tokenize: provider == ProviderKind::Local,
-            can_embed: provider == ProviderKind::OpenAI
-                || provider == ProviderKind::Google
-                || task == Some(ModelTask::Embed),
-            can_rank: provider == ProviderKind::Local && task == Some(ModelTask::Rank),
+            // #3124: `can_*` answers "can THIS BINARY do this, now" — not
+            // "does the model support it". The two diverge whenever a provider
+            // feature is compiled out, and a released binary has `local` off:
+            // reporting `can_embed: true` beside `provider_feature_enabled:
+            // false` made every caller responsible for ANDing the two, and the
+            // more prominent field was the wrong one. What the model inherently
+            // is stays discoverable through the catalog's `task`.
+            //
+            // The two halves are separated deliberately: `ModelAbilities` is
+            // what the model supports, decided by a pure function with its own
+            // truth table, and the feature check is what this build can run.
+            // Folded together, every branch of the first half was unobservable
+            // in a build with the feature off (`x && false` is false whatever
+            // `x` is), so the mutation gate could not distinguish them.
+            can_generate: abilities.generate && generation_provider_feature_enabled(provider),
+            can_tokenize: abilities.tokenize && cfg!(feature = "local"),
+            can_embed: abilities.embed
+                && embedding_provider_feature_enabled_for_capability(provider),
+            can_rank: abilities.rank && cfg!(feature = "local"),
             requires_network: provider != ProviderKind::Local,
             requires_api_key: provider != ProviderKind::Local,
             provider_feature_enabled: generation_provider_feature_enabled(provider)
@@ -487,9 +631,7 @@ impl InferenceRuntime {
         #[cfg(not(feature = "local"))]
         {
             let _ = (model_spec, text, add_special);
-            Err(InferenceError::NotSupported(
-                "tokenization requires the local feature".to_owned(),
-            ))
+            Err(local_feature_unavailable("tokenization"))
         }
     }
 
@@ -505,9 +647,7 @@ impl InferenceRuntime {
         #[cfg(not(feature = "local"))]
         {
             let _ = (model_spec, ids);
-            Err(InferenceError::NotSupported(
-                "detokenization requires the local feature".to_owned(),
-            ))
+            Err(local_feature_unavailable("detokenization"))
         }
     }
 
@@ -529,9 +669,7 @@ impl InferenceRuntime {
                 }
                 #[cfg(not(feature = "local"))]
                 {
-                    return Err(InferenceError::NotSupported(
-                        "local embedding requires the local feature".to_owned(),
-                    ));
+                    return Err(local_feature_unavailable("local embedding"));
                 }
             }
 
@@ -582,9 +720,7 @@ impl InferenceRuntime {
                 }
                 #[cfg(not(feature = "local"))]
                 {
-                    return Err(InferenceError::NotSupported(
-                        "local embedding requires the local feature".to_owned(),
-                    ));
+                    return Err(local_feature_unavailable("local embedding"));
                 }
             } else {
                 if !self.config.network_enabled {
@@ -647,9 +783,7 @@ impl InferenceRuntime {
         #[cfg(not(feature = "local"))]
         {
             let _ = (model_spec, request);
-            Err(InferenceError::NotSupported(
-                "ranking requires the local feature".to_owned(),
-            ))
+            Err(local_feature_unavailable("ranking"))
         }
     }
 
@@ -856,9 +990,7 @@ impl InferenceRuntime {
         #[cfg(not(feature = "local"))]
         {
             let _ = (model, config);
-            Err(InferenceError::NotSupported(
-                "local generation requires the local feature".to_owned(),
-            ))
+            Err(local_feature_unavailable("local generation"))
         }
     }
 
@@ -984,6 +1116,10 @@ impl crate::InferenceService for InferenceRuntime {
     fn cache_status(&self) -> Result<crate::ModelCacheStatus, InferenceError> {
         self.cache_status()
     }
+
+    fn status(&self) -> InferenceStatus {
+        self.status()
+    }
 }
 
 #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
@@ -995,9 +1131,12 @@ fn api_key(provider: ProviderKind) -> Result<String, InferenceError> {
     }
     let env_var = api_key_env_var(provider);
     std::env::var(env_var).map_err(|_| {
-        // Keep the phrase "API key" + "not set" so the error classifies as
-        // `inference.missing_api_key`. Name the exact variable, where to get a
-        // key, and both ways to set it — Strata is embedded and ships no keys.
+        // D6: this used to carry a comment telling future editors to keep the
+        // words "API key" and "not set" in the message, because that is what
+        // made it classify as `inference.missing_api_key`. The constraint is
+        // gone: the kind is carried explicitly, so this text can say whatever
+        // serves the reader. That comment was the clearest evidence #3216 is
+        // worth fixing — the classification was a property of the prose.
         let provider_name = provider.to_string();
         let message = match crate::provider_key_info(&provider_name) {
             Some(info) => format!(
@@ -1009,7 +1148,10 @@ fn api_key(provider: ProviderKind) -> Result<String, InferenceError> {
             ),
             None => format!("{env_var} is not set: the {provider} API key is missing."),
         };
-        InferenceError::Provider(message)
+        InferenceError::ProviderFailed {
+            kind: ProviderFailure::MissingApiKey,
+            message,
+        }
     })
 }
 
@@ -1067,6 +1209,131 @@ fn remove_matching<T>(map: &mut HashMap<String, T>, model_spec: Option<&str>) ->
     }
 }
 
+/// What to tell a caller who needs local model execution and does not have it.
+///
+/// **One authoring site on purpose.** Seven refusal messages, the status
+/// renderer, and the model listing all said this, and #3124 was partly about
+/// them disagreeing. It is also the string that changes when D2 lands
+/// `strata inference install-local` — at which point this becomes a command,
+/// and only here.
+///
+/// It names `strata inference install-local` and never `cargo install`: the
+/// callers of this surface are mostly coding agents, which have no Rust
+/// toolchain and cannot answer a build prompt. A remediation an agent cannot
+/// execute is the same dead end as no remediation at all.
+///
+/// It also states that **a bare model name means a local model**, because
+/// without that the advice to "use a cloud model" is unactionable: the reader
+/// has just named a model and is being told to name one, with no way to see
+/// what should change. `miniLM` and `local:miniLM` are the same spec; the
+/// prefix is the whole difference.
+pub const LOCAL_UNAVAILABLE_REMEDY: &str =
+    "this build runs cloud models only, and a bare model name means a local \
+     model. Either name a cloud model instead — `openai:<model>`, \
+     `google:<model>` or `anthropic:<model>` — or run `strata inference \
+     install-local` to add local execution.";
+
+/// Where a provider's key came from, given which variable it reads and whether
+/// that variable holds anything.
+///
+/// A pure function on purpose: the alternative is a test that mutates the
+/// process environment, which races every other test in the binary. It also
+/// makes the one property that matters directly checkable — the result is the
+/// variable's NAME, never its value, so `status` cannot leak a key.
+fn resolve_key_source(env_var: Option<&str>, is_set: impl Fn(&str) -> bool) -> Option<String> {
+    env_var.filter(|name| is_set(name)).map(str::to_owned)
+}
+
+/// A variable that exists but holds nothing is not a key.
+///
+/// Extracted from the closure inside `status` so the rule has a truth table.
+/// No provider variable is set in CI, so `var_os` returns `None` there and the
+/// predicate's body is never reached — dropping the `!` was undetectable from
+/// `status` alone, and the mutant survived. Here it is decided on a value.
+fn env_holds_a_key(value: Option<&std::ffi::OsStr>) -> bool {
+    value.is_some_and(|value| !value.is_empty())
+}
+
+/// A provider can be called when the build has it and it has whatever key it
+/// needs.
+///
+/// Extracted for the same reason as `env_holds_a_key`: in CI `local` is off and
+/// no cloud key is set, so `feature_enabled` is false for the keyless provider
+/// and `key_present` is false for every other one. Both branches of the
+/// disjunction are false together, which makes it indistinguishable from a
+/// conjunction — the mutant survived on the environment, not on the logic.
+/// Decided on values here, it has a truth table.
+fn provider_is_ready(feature_enabled: bool, key_present: bool, requires_api_key: bool) -> bool {
+    feature_enabled && (key_present || !requires_api_key)
+}
+
+/// What a model and provider inherently support, before any question of what
+/// this binary was compiled with.
+///
+/// Split out of `capability` (#3124) so the decision has a truth table that can
+/// be tested directly. Inside the `can_*` expressions each branch was ANDed
+/// with a feature check, so in a build with that feature off the whole
+/// expression was false regardless — every mutation of this logic was
+/// equivalent, and the mutation gate rightly could not tell them apart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ModelAbilities {
+    pub(crate) generate: bool,
+    pub(crate) tokenize: bool,
+    pub(crate) embed: bool,
+    pub(crate) rank: bool,
+}
+
+impl ModelAbilities {
+    /// `task` is the catalogued task for a local model, and `None` for a cloud
+    /// spec (where the provider alone decides) or a local spec the catalog
+    /// does not know.
+    ///
+    /// A local model does exactly what its catalogued task says: a reranker
+    /// ranks, an embedding model embeds, a generation model generates, and
+    /// each of them tokenizes. An uncatalogued local spec claims nothing —
+    /// the registry cannot load it, so this binary can do nothing with it.
+    pub(crate) fn of(provider: ProviderKind, task: Option<ModelTask>) -> Self {
+        let local = provider == ProviderKind::Local;
+        Self {
+            // Every cloud provider generates; a local model only when that is
+            // its task. `!= Some(Embed)` here once claimed generation for a
+            // reranker (#3124).
+            generate: !local || task == Some(ModelTask::Generate),
+            // Tokenization is a property of a local GGUF; cloud providers do
+            // not expose it.
+            tokenize: local && task.is_some(),
+            // OpenAI and Google serve embedding endpoints; Anthropic does not.
+            // A local model embeds when that is its catalogued task.
+            embed: matches!(provider, ProviderKind::OpenAI | ProviderKind::Google)
+                || task == Some(ModelTask::Embed),
+            // Reranking is local-only, and only for a rank model.
+            rank: local && task == Some(ModelTask::Rank),
+        }
+    }
+}
+
+/// One phrasing for "this binary was not built with local model execution".
+///
+/// #3124: seven sites each said it differently ("tokenization requires the
+/// local feature", "local embedding requires the local feature", …) and none
+/// said what to do about it. A refusal a user cannot act on is a dead end, and
+/// this is the most common refusal a released binary produces.
+///
+/// **The wording is load-bearing, and has caught this change out twice.**
+/// `InferenceError::code()` classifies `NotSupported` by substring-matching the
+/// message: the word "provider" would silently make it
+/// `inference.unsupported_provider`, and "download"
+/// `inference.download_disabled`, instead of the
+/// `inference.unsupported_operation` these paths have always returned. That is
+/// why the text below names the prefixes directly rather than calling them
+/// providers. `inference_refusals_keep_their_codes` pins it; #3216 is the fix.
+pub(crate) fn local_feature_unavailable(operation: &str) -> InferenceError {
+    InferenceError::NotSupported(format!(
+        "{operation} needs local model execution: {LOCAL_UNAVAILABLE_REMEDY} \
+         `strata inference status` shows which of those are ready."
+    ))
+}
+
 fn embedding_provider_feature_enabled_for_capability(provider: ProviderKind) -> bool {
     match provider {
         ProviderKind::Local => cfg!(feature = "local"),
@@ -1080,6 +1347,98 @@ fn embedding_provider_feature_enabled_for_capability(provider: ProviderKind) -> 
 mod tests {
     use super::*;
 
+    /// Readiness, over every combination rather than the one CI happens to be in.
+    ///
+    /// The two rows that matter are the ones the environment cannot produce: a
+    /// keyless provider that is built in is ready with no key, and a keyed
+    /// provider that is built in is ready once its key arrives.
+    #[test]
+    fn a_provider_is_ready_when_built_in_and_holding_any_key_it_needs() {
+        // Keyless: readiness is the feature alone.
+        assert!(
+            provider_is_ready(true, false, false),
+            "built in, needs no key"
+        );
+        assert!(provider_is_ready(true, true, false));
+        assert!(!provider_is_ready(false, false, false), "not built in");
+        assert!(!provider_is_ready(false, true, false));
+
+        // Keyed: the feature and the key together.
+        assert!(provider_is_ready(true, true, true), "built in, key present");
+        assert!(
+            !provider_is_ready(true, false, true),
+            "built in, key missing"
+        );
+        assert!(
+            !provider_is_ready(false, true, true),
+            "key without the feature"
+        );
+        assert!(!provider_is_ready(false, false, true));
+    }
+
+    /// An empty variable is not a key.
+    ///
+    /// The distinction matters because `KEY=""` is what an unset shell variable
+    /// expands to in a script: reporting a key present there sends the caller
+    /// to a provider that will reject them, instead of to the line that sets it.
+    #[test]
+    fn an_empty_variable_does_not_count_as_a_key() {
+        use std::ffi::OsStr;
+        assert!(!env_holds_a_key(None), "unset is no key");
+        assert!(!env_holds_a_key(Some(OsStr::new(""))), "empty is no key");
+        assert!(env_holds_a_key(Some(OsStr::new("sk-abc"))));
+        assert!(
+            env_holds_a_key(Some(OsStr::new(" "))),
+            "whitespace is a value"
+        );
+    }
+
+    /// `api_key` reports exactly what the environment holds.
+    ///
+    /// Written as a relationship rather than a fixed answer so it holds whether
+    /// or not the developer running it has keys set, while still killing the
+    /// mutants: with no key set (CI) an `Ok(_)` of any kind contradicts the
+    /// error, and with one set a wrong or empty string contradicts the value.
+    #[test]
+    #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
+    fn the_reported_key_is_the_one_the_environment_holds() {
+        for provider in [
+            ProviderKind::OpenAI,
+            ProviderKind::Anthropic,
+            ProviderKind::Google,
+        ] {
+            let variable = api_key_env_var(provider);
+            let expected = std::env::var(variable);
+            let reported = api_key(provider);
+            assert_eq!(
+                reported.is_ok(),
+                expected.is_ok(),
+                "{provider} must report a key exactly when {variable} is set"
+            );
+            if let (Ok(reported), Ok(expected)) = (reported, expected) {
+                assert_eq!(
+                    reported, expected,
+                    "{provider} must report {variable} verbatim"
+                );
+            }
+        }
+    }
+
+    /// The local provider has no key to report, and says so as a refusal rather
+    /// than as an empty string that would read like a key.
+    ///
+    /// The code is `unsupported_provider` and not `unsupported_operation` for a
+    /// reason worth recording: `NotSupported` is classified by substring-matching
+    /// the message, and this one contains the word "provider". The answer happens
+    /// to be apt, but nothing chose it — rewording the sentence would move it.
+    /// One more instance of #3216, alongside the four in this PR's history.
+    #[test]
+    #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
+    fn the_local_provider_has_no_api_key() {
+        let error = api_key(ProviderKind::Local).expect_err("local uses no key");
+        assert_eq!(error.code(), "inference.unsupported_provider");
+    }
+
     #[test]
     fn default_config_allows_network() {
         let config = InferenceRuntimeConfig::default();
@@ -1087,13 +1446,120 @@ mod tests {
         assert!(config.models_dir.is_none());
     }
 
+    /// The key source is the variable's name, never its value (D11).
+    #[test]
+    fn key_source_reports_the_variable_name_never_the_value() {
+        const SECRET: &str = "sk-do-not-leak-this-value";
+
+        // Set: the source is the NAME. If this ever returned the value, a key
+        // would ride out on every `inference status`.
+        let found = resolve_key_source(Some("OPENAI_API_KEY"), |_| true);
+        assert_eq!(found.as_deref(), Some("OPENAI_API_KEY"));
+        assert_ne!(found.as_deref(), Some(SECRET));
+
+        // Unset: no source at all.
+        assert_eq!(resolve_key_source(Some("OPENAI_API_KEY"), |_| false), None);
+
+        // A provider that needs no key never reports a source, however the
+        // lookup behaves.
+        assert_eq!(resolve_key_source(None, |_| true), None);
+        assert_eq!(resolve_key_source(None, |_| false), None);
+    }
+
+    /// The truth table for what a model inherently supports (#3124).
+    ///
+    /// Observable regardless of which provider features are compiled in, which
+    /// is the point: folded into the `can_*` expressions this logic was
+    /// unreachable in a build with the feature off.
+    #[test]
+    fn model_abilities_truth_table() {
+        use ProviderKind::{Anthropic, Google, Local, OpenAI};
+
+        // Local embedding model: embeds and tokenizes, does not generate.
+        let embed = ModelAbilities::of(Local, Some(ModelTask::Embed));
+        assert_eq!(
+            embed,
+            ModelAbilities {
+                generate: false,
+                tokenize: true,
+                embed: true,
+                rank: false
+            }
+        );
+
+        // Local generation model: generates and tokenizes, does not embed.
+        let generate = ModelAbilities::of(Local, Some(ModelTask::Generate));
+        assert_eq!(
+            generate,
+            ModelAbilities {
+                generate: true,
+                tokenize: true,
+                embed: false,
+                rank: false
+            }
+        );
+
+        // Local rank model: ranks and tokenizes; neither generates nor embeds.
+        let rank = ModelAbilities::of(Local, Some(ModelTask::Rank));
+        assert_eq!(
+            rank,
+            ModelAbilities {
+                generate: false,
+                tokenize: true,
+                embed: false,
+                rank: true
+            }
+        );
+
+        // An uncatalogued local spec has no task, and the registry cannot load
+        // it: nothing is claimed.
+        let unknown = ModelAbilities::of(Local, None);
+        assert_eq!(
+            unknown,
+            ModelAbilities {
+                generate: false,
+                tokenize: false,
+                embed: false,
+                rank: false
+            }
+        );
+
+        // Cloud providers never tokenize or rank here. OpenAI and Google embed;
+        // Anthropic does not.
+        for provider in [OpenAI, Google] {
+            assert_eq!(
+                ModelAbilities::of(provider, None),
+                ModelAbilities {
+                    generate: true,
+                    tokenize: false,
+                    embed: true,
+                    rank: false
+                },
+                "{provider:?}"
+            );
+        }
+        assert_eq!(
+            ModelAbilities::of(Anthropic, None),
+            ModelAbilities {
+                generate: true,
+                tokenize: false,
+                embed: false,
+                rank: false
+            }
+        );
+    }
+
     #[test]
     fn capability_for_local_embed_model_reports_embedding() {
         let runtime = InferenceRuntime::default();
         let capability = runtime.capability("local:miniLM").expect("capability");
         assert_eq!(capability.provider, ProviderKind::Local);
-        assert!(capability.can_embed);
-        assert!(capability.can_tokenize);
+        // #3124: `can_*` reports what THIS BINARY can do, so these follow the
+        // feature rather than the model's declared task. The model's own shape
+        // stays visible through `embedding_dim`.
+        assert_eq!(capability.can_embed, cfg!(feature = "local"));
+        assert_eq!(capability.can_tokenize, cfg!(feature = "local"));
+        assert_eq!(capability.provider_feature_enabled, cfg!(feature = "local"));
         assert!(!capability.requires_api_key);
         assert_eq!(capability.embedding_dim, 384);
     }

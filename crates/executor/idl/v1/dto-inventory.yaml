@@ -108,4 +108,5 @@ response_models:
   - EmbeddingsResponse
   - RankResponse
   - UnloadResult
+  - InferenceStatus
   - ModelCacheStatus

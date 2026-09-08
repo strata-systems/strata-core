@@ -659,6 +659,9 @@ pub enum Output {
     /// Inference runtime cache diagnostics.
     #[cfg(feature = "inference")]
     InferenceCacheStatus(strata_inference::ModelCacheStatus),
+    /// What this binary can do before anything is attempted.
+    #[cfg(feature = "inference")]
+    InferenceStatus(strata_inference::InferenceStatus),
 }
 
 /// Serialized view of a database's recorded remote origin.

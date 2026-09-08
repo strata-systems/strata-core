@@ -1,0 +1,23 @@
+{
+  "data": {
+    "local_execution": true,
+    "local_remedy": null,
+    "model_download": false,
+    "models_catalogued": 3,
+    "models_dir": "/fake/models",
+    "models_downloaded": 0,
+    "providers": [
+      {
+        "feature_enabled": true,
+        "key_env_var": null,
+        "key_present": false,
+        "key_source": null,
+        "model_prefix": "local:",
+        "provider": "local",
+        "ready": true,
+        "requires_api_key": false
+      }
+    ]
+  },
+  "type": "inference_status"
+}

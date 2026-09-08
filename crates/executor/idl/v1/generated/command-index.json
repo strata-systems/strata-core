@@ -5599,6 +5599,58 @@
       }
     },
     {
+      "id": "inference.status",
+      "family": "inference",
+      "op": "status",
+      "kind": "inference.runtime_op",
+      "title": "Report inference readiness",
+      "summary": "Report what this binary can do before anything is attempted.",
+      "description": "Reports the inference facts that are knowable up front: whether this build can execute local models and download them, which providers are compiled in, which of those have an API key and where it was found, and how many catalogued models are already on disk.\n\nReleased binaries ship the cloud providers and leave local model execution out, so `local_execution` is false in them and every catalogued local model is unavailable until `strata inference install-local` adds it; `local_remedy` says so. Knowing that from `status` is the point: previously the only way to find out was to run an operation and read the failure.\n\n`key_source` names where a key was read from: the environment variable, or the config file's path when the key was set with `strata config set <provider>.api_key` and the CLI loaded it from there. The key itself is never returned.\n\nThe model directory is shared by every database on the machine, so a model downloaded once is available to all of them.",
+      "docs": "/docs/inference/status",
+      "cli": {
+        "path": [
+          "inference",
+          "status"
+        ],
+        "surface": "verb"
+      },
+      "mcp": {
+        "name": "strata_inference_status",
+        "description": "Use this when the user asks whether inference will work, which providers or models are available, or why an inference command failed."
+      },
+      "feature": "core",
+      "access": "read",
+      "input": "Command::InferenceStatus",
+      "wire": "inference_status",
+      "output": "Output::InferenceStatus",
+      "outputs": [
+        "Output::InferenceStatus"
+      ],
+      "wire_status": "stable",
+      "response_model": "InferenceStatus",
+      "commit": "none",
+      "pagination": "none",
+      "batch": "none",
+      "errors": [
+        {
+          "code": "failed_precondition.engine.runtime_closed",
+          "docs": "https://stratadb.org/e/failed_precondition.engine.runtime_closed"
+        },
+        {
+          "code": "not_found.engine.branch",
+          "docs": "https://stratadb.org/e/not_found.engine.branch"
+        }
+      ],
+      "fixtures": {
+        "request": "requests/v1/inference/status.json",
+        "response": "responses/v1/inference/status.json"
+      },
+      "source": {
+        "command": "crates/executor/idl/v1/commands/inference.yaml",
+        "prose": "commands/inference.status.md"
+      }
+    },
+    {
       "id": "inference.tokenize",
       "family": "inference",
       "op": "tokenize",

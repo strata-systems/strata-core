@@ -160,6 +160,17 @@ commands:
     fixtures:
       request: requests/v1/inference/unload.json
       response: responses/v1/inference/unload.json
+  - id: inference.status
+    kind: inference.runtime_op
+    title: Report inference readiness
+    input: Command::InferenceStatus
+    output: Output::InferenceStatus
+    result: InferenceStatus
+    response_model: InferenceStatus
+    prose: commands/inference.status.md
+    fixtures:
+      request: requests/v1/inference/status.json
+      response: responses/v1/inference/status.json
   - id: inference.cache_status
     kind: inference.runtime_op
     title: Report model cache

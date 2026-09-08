@@ -348,6 +348,9 @@ fn fake_model(name: &str, task: crate::ModelTask, embedding_dim: usize) -> crate
         default_quant: "q8_0".to_owned(),
         embedding_dim,
         is_local: false,
+        // The fake provider executes in-process, so its models really are
+        // runnable regardless of which real provider features are compiled in.
+        runnable: true,
         local_path: None,
         size_bytes: 0,
         hf_repo: "fake/fake".to_owned(),
@@ -527,6 +530,31 @@ impl crate::InferenceService for FakeInferenceService {
             embedding_models: Vec::new(),
             ranking_models: Vec::new(),
         })
+    }
+
+    /// The fake executes in-process and needs no key or network, so every
+    /// provider it reports is ready and every catalogued model is runnable.
+    /// Keeping this deterministic is what lets fixtures replay it.
+    fn status(&self) -> crate::InferenceStatus {
+        crate::InferenceStatus {
+            local_execution: true,
+            model_download: false,
+            providers: vec![crate::ProviderStatus {
+                provider: crate::ProviderKind::Local,
+                feature_enabled: true,
+                requires_api_key: false,
+                key_present: false,
+                key_env_var: None,
+                key_source: None,
+                ready: true,
+                model_prefix: "local:".to_owned(),
+            }],
+            models_dir: std::path::PathBuf::from("/fake/models"),
+            // The same two listings the real runtime counts.
+            models_downloaded: self.list_local_models().len(),
+            models_catalogued: self.list_models().len(),
+            local_remedy: None,
+        }
     }
 }
 

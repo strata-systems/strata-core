@@ -61,9 +61,12 @@ fn local_single_embedding_requires_local_feature_before_cloud_policy() {
         .expect_err("local feature is disabled");
 
     assert_eq!(err.code(), "inference.unsupported_operation");
+    // #3124 unified seven phrasings into one. The code above is the contract;
+    // what this adds is that the message tells the user what to DO, which the
+    // old sentence did not. Asserting the actionable content rather than the
+    // sentence keeps this from pinning prose (CLAUDE.md rule 29).
     assert!(
-        err.to_string()
-            .contains("local embedding requires the local feature"),
-        "{err}"
+        err.to_string().contains("strata inference install-local"),
+        "the refusal must name the command that adds local execution: {err}"
     );
 }

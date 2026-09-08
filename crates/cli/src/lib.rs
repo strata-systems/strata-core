@@ -178,6 +178,22 @@ fn execute(cli: Cli) -> Result<i32, CliError> {
             render_value(&value, format)?;
             return Ok(0);
         }
+        #[cfg(feature = "inference")]
+        if let options::TopCommand::Inference(ref args) = command {
+            // A host command like `update`: it replaces the binary and takes no
+            // database target, so it must not reach the connection below.
+            if matches!(args.command, options::InferenceCommand::InstallLocal) {
+                if update::rejects_db_target(cli.db.is_some(), cli.db_path.is_some(), cli.cache) {
+                    return Err(CliError::usage(
+                        "`inference install-local` changes the Strata binary; \
+                         it does not take a database target",
+                    ));
+                }
+                let value = update::run_install_local()?;
+                render_value(&value, format)?;
+                return Ok(0);
+            }
+        }
         if let options::TopCommand::Update(ref args) = command {
             // A host command: it replaces the binary, not a database target.
             if update::rejects_db_target(cli.db.is_some(), cli.db_path.is_some(), cli.cache) {
@@ -680,8 +696,19 @@ pub(crate) fn execute_parsed_command(
         options::TopCommand::Inference(args) => {
             // Make config-file provider keys visible to the runtime (which reads
             // the environment). Env vars already set win — this only fills gaps.
-            load_provider_keys_into_env();
-            connection.execute(inference_command(args.command)?)?
+            let config_backed = load_provider_keys_into_env();
+            let command = inference_command(args.command)?;
+            let mut output = execute_with_download_offer(connection, command, format)?;
+            // The runtime saw the variables this process just set; only the
+            // CLI knows which of them it filled from the file. No config path
+            // means nothing could have been bridged, so there is nothing to
+            // rename.
+            if let (strata_executor::Output::InferenceStatus(status), Some(config_path)) =
+                (&mut output, strata_hub::global_config_path())
+            {
+                name_config_key_sources(status, &config_backed, &config_path.display().to_string());
+            }
+            output
         }
         options::TopCommand::Command(args) => connection.execute(raw_command(args.command)?)?,
         options::TopCommand::Search(_)
@@ -897,14 +924,147 @@ fn user_config_get(key: &str) -> Result<serde_json::Value, CliError> {
 /// runtime reads these variables, so this bridges `strata config set
 /// <provider>.api_key` to the runtime without the inference layer needing to
 /// know about `~/.strata`.
+/// Runs an inference command, offering the download when a model is missing (D8).
+///
+/// Loading a model never downloads on its own — a silent multi-hundred-megabyte
+/// fetch is not something a caller can consent to mid-operation, and until this
+/// landed `embed` and `rank` did exactly that while `generate` refused.
+///
+/// So the decision moves here, where the CLI knows who is asking:
+///
+/// - **A person at a terminal** is offered the download, with its size, and
+///   answers.
+/// - **Anything else** — `--json`, a pipe, an agent — gets the refusal, which
+///   already names `strata inference models pull <model>`. An agent cannot
+///   answer a prompt, and blocking one on a hidden fetch is the failure this
+///   exists to prevent.
 #[cfg(all(feature = "native", feature = "inference"))]
-fn load_provider_keys_into_env() {
+fn execute_with_download_offer(
+    connection: &Connection,
+    command: strata_executor::Command,
+    format: options::Format,
+) -> Result<strata_executor::Output, CliError> {
+    use std::io::Write as _;
+
+    let error = match connection.execute(command.clone()) {
+        Ok(value) => return Ok(value),
+        Err(error) => error,
+    };
+
+    // Only a missing model is offerable, and only to a human on a terminal
+    // whose output is not being parsed.
+    if !should_offer_download(std::io::stdin().is_terminal(), format, error.code()) {
+        return Err(error.into());
+    }
+    let Some(model) = missing_model_spec(&command) else {
+        return Err(error.into());
+    };
+
+    eprintln!("{error}");
+    eprint!("\nDownload {model} now? [y/N] ");
+    // Rationale: the flush only makes the prompt appear before the read
+    // blocks. If stderr cannot be flushed the prompt is lost, not the answer —
+    // the read below still decides, and reporting the flush failure would go
+    // to the same broken stream.
+    let _ = std::io::stderr().flush();
+    let mut answer = String::new();
+    if std::io::stdin().read_line(&mut answer).is_err() || !answer.trim().eq_ignore_ascii_case("y")
+    {
+        return Err(error.into());
+    }
+
+    connection.execute(strata_executor::Command::InferenceModelsPull {
+        model: model.clone(),
+    })?;
+    eprintln!("pulled {model}; retrying");
+    Ok(connection.execute(command)?)
+}
+
+/// Whether a failed inference command should offer to download the model (D8).
+///
+/// A pure decision so it has a truth table. All three conditions matter and
+/// each guards a different mistake:
+///
+/// - **A terminal.** An agent cannot answer a prompt; blocking one on a hidden
+///   fetch is the failure D8 exists to prevent.
+/// - **Human output.** `--json` output is parsed. A prompt in the middle of it
+///   corrupts the stream even when a human is watching.
+/// - **The model is merely missing.** Any other failure is not fixed by
+///   downloading, so offering would be a wrong suggestion rather than no
+///   suggestion.
+#[cfg(all(feature = "native", feature = "inference"))]
+const fn should_offer_download(interactive: bool, format: options::Format, code: &str) -> bool {
+    // `const fn` cannot compare strings, so the code check is done by the
+    // caller's match below.
+    interactive && matches!(format, options::Format::Human) && is_missing_model(code)
+}
+
+/// True for the one code a download can fix.
+#[cfg(all(feature = "native", feature = "inference"))]
+const fn is_missing_model(code: &str) -> bool {
+    matches!(code.as_bytes(), b"inference.missing_model")
+}
+
+/// The model spec an inference command would load, when it has one.
+#[cfg(all(feature = "native", feature = "inference"))]
+fn missing_model_spec(command: &strata_executor::Command) -> Option<String> {
+    use strata_executor::Command;
+    match command {
+        Command::InferenceEmbed { model, .. }
+        | Command::InferenceGenerate { model, .. }
+        | Command::InferenceRank { model, .. }
+        | Command::InferenceTokenize { model, .. }
+        | Command::InferenceDetokenize { model, .. } => Some(model.clone()),
+        _ => None,
+    }
+}
+
+/// Copies config-file provider keys into the environment the runtime reads,
+/// and returns the variables it filled.
+///
+/// A variable already set wins — the file only fills gaps — so every name
+/// returned is a key the environment did *not* have and the file supplied.
+/// That list is what lets `inference status` say so (see
+/// [`name_config_key_sources`]).
+#[cfg(all(feature = "native", feature = "inference"))]
+fn load_provider_keys_into_env() -> Vec<&'static str> {
+    let mut filled = Vec::new();
     for info in strata_executor::INFERENCE_CLOUD_PROVIDER_KEYS {
         if std::env::var_os(info.env_var).is_some() {
             continue;
         }
         if let Ok(Some(key)) = strata_hub::read_global_provider_key(info.provider) {
             std::env::set_var(info.env_var, key);
+            filled.push(info.env_var);
+        }
+    }
+    filled
+}
+
+/// Reports where a bridged key actually lives.
+///
+/// The runtime reads keys from the environment and names the variable it
+/// found one in. That is true and misleading when the CLI put it there a
+/// moment ago from `strata config set <provider>.api_key`: `key from
+/// OPENAI_API_KEY` sends a user looking for an export that does not exist,
+/// and an agent that relays it repeats the mistake. For every provider whose
+/// variable is in `config_backed` — the ones [`load_provider_keys_into_env`]
+/// filled — the source becomes the file. A key that was already in the
+/// environment keeps its variable name; a provider with no key stays without
+/// a source, whatever the list says.
+#[cfg(all(feature = "native", feature = "inference"))]
+fn name_config_key_sources(
+    status: &mut strata_executor::InferenceStatus,
+    config_backed: &[&str],
+    config_path: &str,
+) {
+    for provider in &mut status.providers {
+        let bridged = provider
+            .key_env_var
+            .as_deref()
+            .is_some_and(|name| config_backed.contains(&name));
+        if bridged && provider.key_source.is_some() {
+            provider.key_source = Some(config_path.to_owned());
         }
     }
 }
@@ -2193,6 +2353,15 @@ fn inference_command(command: options::InferenceCommand) -> Result<Command, CliE
         },
         Inf::Unload { model } => Command::InferenceUnload { model },
         Inf::CacheStatus => Command::InferenceCacheStatus {},
+        Inf::Status => Command::InferenceStatus {},
+        // Handled before the connection is opened: it replaces the binary
+        // rather than executing against a database, so it has no wire command.
+        Inf::InstallLocal => {
+            return Err(CliError::usage(
+                "`inference install-local` is a host command and is handled \
+                 before dispatch; reaching here is a routing bug",
+            ))
+        }
     })
 }
 
@@ -2997,5 +3166,153 @@ mod tests {
             run(["strata", "--db", db.as_str(), "kv", "get", "hello"]),
             0
         );
+    }
+
+    /// D8's truth table: all three conditions guard a different mistake.
+    #[cfg(all(feature = "native", feature = "inference"))]
+    #[test]
+    fn the_download_offer_needs_a_terminal_human_output_and_a_missing_model() {
+        use super::should_offer_download;
+        use crate::options::Format;
+
+        const MISSING: &str = "inference.missing_model";
+
+        // The one case that offers.
+        assert!(should_offer_download(true, Format::Human, MISSING));
+
+        // Not a terminal: an agent cannot answer, so it must get the refusal
+        // (which already names the pull command) instead of a hidden fetch.
+        assert!(!should_offer_download(false, Format::Human, MISSING));
+
+        // Machine-readable output: a prompt would corrupt the stream even with
+        // a human watching.
+        for format in [Format::Json, Format::Pretty, Format::Raw] {
+            assert!(
+                !should_offer_download(true, format, MISSING),
+                "{format:?} is parsed, so it must not be interrupted"
+            );
+        }
+
+        // A failure a download cannot fix. Offering here would be a wrong
+        // suggestion, which is worse than none.
+        for code in [
+            "inference.unsupported_operation",
+            "inference.missing_api_key",
+            "inference.provider_auth_failed",
+            "inference.download_disabled",
+        ] {
+            assert!(
+                !should_offer_download(true, Format::Human, code),
+                "{code} is not fixed by downloading"
+            );
+        }
+    }
+
+    /// The truth table for where `inference status` says a key came from.
+    ///
+    /// The runtime only ever names a variable. The CLI knows which variables
+    /// it filled from the config file, and those — only those — are renamed
+    /// to the file. A key that was already exported keeps its variable name,
+    /// a provider with no key never gains a source, and a provider that reads
+    /// no variable is untouched.
+    #[cfg(all(feature = "native", feature = "inference"))]
+    #[test]
+    fn a_bridged_key_is_reported_from_the_file_not_the_variable() {
+        use strata_executor::{InferenceProviderKind, InferenceProviderStatus, InferenceStatus};
+
+        use super::name_config_key_sources;
+
+        const CONFIG: &str = "/home/u/.config/strata/config.toml";
+
+        let provider = |kind: InferenceProviderKind, env_var: Option<&str>, present: bool| {
+            InferenceProviderStatus {
+                provider: kind,
+                feature_enabled: true,
+                requires_api_key: env_var.is_some(),
+                key_present: present,
+                key_env_var: env_var.map(str::to_owned),
+                key_source: present
+                    .then(|| env_var.expect("a present key names its variable"))
+                    .map(str::to_owned),
+                ready: present || env_var.is_none(),
+                model_prefix: format!("{kind}:"),
+            }
+        };
+        let mut status = InferenceStatus {
+            local_execution: false,
+            model_download: true,
+            providers: vec![
+                // Exported by the user: the environment had it first.
+                provider(InferenceProviderKind::OpenAI, Some("OPENAI_API_KEY"), true),
+                // Bridged from the file by this process.
+                provider(
+                    InferenceProviderKind::Anthropic,
+                    Some("ANTHROPIC_API_KEY"),
+                    true,
+                ),
+                // No key anywhere.
+                provider(InferenceProviderKind::Google, Some("GOOGLE_API_KEY"), false),
+                // Needs no key, reads no variable.
+                provider(InferenceProviderKind::Local, None, false),
+            ],
+            models_dir: std::path::PathBuf::from("/models"),
+            models_downloaded: 0,
+            models_catalogued: 0,
+            local_remedy: None,
+        };
+
+        // Google is listed as bridged though it has no key: the list must not
+        // conjure a source for a key that is not there.
+        name_config_key_sources(
+            &mut status,
+            &["ANTHROPIC_API_KEY", "GOOGLE_API_KEY"],
+            CONFIG,
+        );
+
+        let sources: Vec<Option<&str>> = status
+            .providers
+            .iter()
+            .map(|provider| provider.key_source.as_deref())
+            .collect();
+        assert_eq!(
+            sources,
+            [Some("OPENAI_API_KEY"), Some(CONFIG), None, None],
+            "only the bridged, present key is attributed to the file"
+        );
+
+        // Nothing bridged: every row is exactly as the runtime reported it.
+        let untouched = status.clone();
+        name_config_key_sources(&mut status, &[], CONFIG);
+        assert_eq!(status, untouched);
+    }
+
+    /// `missing_model_spec` picks the model out of the commands that load one.
+    ///
+    /// The mutation gate found this untested: returning `None`, an empty
+    /// string, or a wrong name all passed. `None` silently disables the
+    /// download offer; a wrong name would offer to download the wrong model.
+    #[cfg(all(feature = "native", feature = "inference"))]
+    #[test]
+    fn the_offer_names_the_model_the_command_was_going_to_load() {
+        use super::missing_model_spec;
+        use strata_executor::Command;
+
+        let tokenize = Command::InferenceTokenize {
+            model: "gpt2".to_owned(),
+            text: "hi".to_owned(),
+            add_special: false,
+        };
+        assert_eq!(missing_model_spec(&tokenize).as_deref(), Some("gpt2"));
+
+        let detokenize = Command::InferenceDetokenize {
+            model: "miniLM".to_owned(),
+            ids: vec![1, 2, 3],
+        };
+        assert_eq!(missing_model_spec(&detokenize).as_deref(), Some("miniLM"));
+
+        // A command that loads no model has nothing to offer, and must not
+        // invent one.
+        assert_eq!(missing_model_spec(&Command::InferenceCacheStatus {}), None);
+        assert_eq!(missing_model_spec(&Command::Ping {}), None);
     }
 }

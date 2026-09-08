@@ -25,6 +25,126 @@ pub enum InferenceError {
     /// The model spec itself is malformed (empty, missing model name, or an
     /// unknown provider) — caller input error, not a provider outage.
     InvalidSpec(String),
+
+    /// A model-registry failure whose classification was decided **where the
+    /// failure happened**.
+    ///
+    /// D8/#3216. Rewording the not-downloaded message from "not found locally"
+    /// to "is not downloaded" silently reclassified it from `missing_model` to
+    /// `download_failed`, because `registry_code` matches "download" — and the
+    /// D8 download offer keys off `missing_model`, so the feature would have
+    /// been dead on arrival. The fourth time this design bit during one change.
+    RegistryFailed {
+        /// What went wrong, decided at the raise site.
+        kind: RegistryFailure,
+        /// Human-readable detail. Carries no classification weight.
+        message: String,
+    },
+
+    /// A cloud provider failure whose classification was decided **where the
+    /// failure happened**, instead of guessed from the message afterwards.
+    ///
+    /// D6/#3216. `Provider(String)` is classified by substring-matching its
+    /// text, which gets the answer wrong for most ways of phrasing a key
+    /// problem: "API key missing" reports as corrupt provider data, and a
+    /// rejected key is indistinguishable from an outage. The information was
+    /// never missing — an HTTP mapper knows it saw a 401 — it was thrown away
+    /// and reconstructed by guessing.
+    ///
+    /// New provider failures should use this. `Provider` remains for the paths
+    /// not yet converted.
+    ProviderFailed {
+        /// What went wrong, decided at the raise site.
+        kind: ProviderFailure,
+        /// Human-readable detail. Carries no classification weight.
+        message: String,
+    },
+}
+
+/// Why a model-registry lookup failed, as known at the point of failure.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RegistryFailure {
+    /// The model is catalogued but its artifact is not on disk.
+    MissingModel,
+    /// This build cannot download, or the runtime forbids network access.
+    DownloadDisabled,
+    /// A download was attempted and failed.
+    DownloadFailed,
+    /// A downloaded artifact did not match its expected hash.
+    VerificationFailed,
+    /// The registry's own state is unreadable.
+    Corrupt,
+}
+
+impl RegistryFailure {
+    /// The stable error code for this failure.
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::MissingModel => "inference.missing_model",
+            Self::DownloadDisabled => "inference.download_disabled",
+            Self::DownloadFailed => "inference.download_failed",
+            Self::VerificationFailed => "inference.download_verification_failed",
+            Self::Corrupt => "inference.registry_corrupt",
+        }
+    }
+}
+
+/// Why a cloud provider call failed, as known at the point of failure.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderFailure {
+    /// No API key was available for the provider.
+    MissingApiKey,
+    /// A key was supplied and the provider rejected it (401/403).
+    AuthFailed,
+    /// The provider refused the request itself (400).
+    InvalidRequest,
+    /// The provider asked us to slow down (429).
+    RateLimited,
+    /// The request did not complete in time.
+    Timeout,
+    /// The provider is unreachable or erroring (5xx, transport failure).
+    Unavailable,
+    /// The provider answered, but not with something we can read.
+    MalformedResponse,
+}
+
+impl ProviderFailure {
+    /// The stable error code for this failure.
+    ///
+    /// A direct mapping, which is the entire point: no message is consulted,
+    /// so rewording a diagnostic cannot change what it is.
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::MissingApiKey => "inference.missing_api_key",
+            Self::AuthFailed => "inference.provider_auth_failed",
+            Self::InvalidRequest => "inference.invalid_request",
+            Self::RateLimited => "inference.provider_rate_limited",
+            Self::Timeout => "inference.provider_timeout",
+            Self::Unavailable => "inference.provider_unavailable",
+            Self::MalformedResponse => "inference.provider_malformed_response",
+        }
+    }
+
+    /// The failure a cloud HTTP status means.
+    ///
+    /// The status is the authority. Reading it here rather than describing it
+    /// in prose and matching the prose back is the whole of D6.
+    #[must_use]
+    pub const fn from_http_status(status: u16) -> Self {
+        match status {
+            400 => Self::InvalidRequest,
+            401 | 403 => Self::AuthFailed,
+            429 => Self::RateLimited,
+            408 | 504 => Self::Timeout,
+            _ => Self::Unavailable,
+        }
+    }
 }
 
 impl fmt::Debug for InferenceError {
@@ -54,6 +174,16 @@ impl fmt::Debug for InferenceError {
                 .debug_tuple("InvalidSpec")
                 .field(&redact_secrets(message))
                 .finish(),
+            Self::RegistryFailed { kind, message } => formatter
+                .debug_struct("RegistryFailed")
+                .field("kind", kind)
+                .field("message", &redact_secrets(message))
+                .finish(),
+            Self::ProviderFailed { kind, message } => formatter
+                .debug_struct("ProviderFailed")
+                .field("kind", kind)
+                .field("message", &redact_secrets(message))
+                .finish(),
         }
     }
 }
@@ -74,6 +204,12 @@ impl fmt::Display for InferenceError {
             }
             Self::InvalidSpec(message) => {
                 write!(formatter, "invalid model spec: {}", redact_secrets(message))
+            }
+            Self::RegistryFailed { message, .. } => {
+                write!(formatter, "registry error: {}", redact_secrets(message))
+            }
+            Self::ProviderFailed { message, .. } => {
+                write!(formatter, "provider error: {}", redact_secrets(message))
             }
         }
     }
@@ -121,6 +257,30 @@ impl serde::Serialize for InferenceError {
                 "InvalidSpec",
                 &redact_secrets(message),
             ),
+            Self::RegistryFailed { kind, message } => {
+                use serde::ser::SerializeStructVariant as _;
+                let mut variant = serializer.serialize_struct_variant(
+                    "InferenceError",
+                    7,
+                    "RegistryFailed",
+                    2,
+                )?;
+                variant.serialize_field("kind", kind)?;
+                variant.serialize_field("message", &redact_secrets(message))?;
+                variant.end()
+            }
+            Self::ProviderFailed { kind, message } => {
+                use serde::ser::SerializeStructVariant as _;
+                let mut variant = serializer.serialize_struct_variant(
+                    "InferenceError",
+                    6,
+                    "ProviderFailed",
+                    2,
+                )?;
+                variant.serialize_field("kind", kind)?;
+                variant.serialize_field("message", &redact_secrets(message))?;
+                variant.end()
+            }
         }
     }
 }
@@ -161,6 +321,8 @@ impl InferenceError {
             Self::Io(_) => "inference.io_failure",
             Self::NotSupported(message) => not_supported_code(message),
             Self::InvalidSpec(_) => "inference.invalid_request",
+            Self::ProviderFailed { kind, .. } => kind.code(),
+            Self::RegistryFailed { kind, .. } => kind.code(),
         }
     }
 

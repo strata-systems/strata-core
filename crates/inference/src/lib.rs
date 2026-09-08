@@ -66,12 +66,12 @@ mod provider;
 ))]
 mod generate;
 
-pub use error::{InferenceError, InferenceErrorClass};
+pub use error::{InferenceError, InferenceErrorClass, ProviderFailure, RegistryFailure};
 pub use registry::{ModelInfo, ModelRegistry, ModelTask};
 pub use runtime::{
     EmbedRequest, EmbedResponse, EmbedRuntimeOutcome, InferenceCapability, InferenceRuntime,
-    InferenceRuntimeConfig, ModelCacheStatus, PullModelOutput, RankRequest, RankResponse,
-    RankRuntimeOutcome,
+    InferenceRuntimeConfig, InferenceStatus, ModelCacheStatus, ProviderStatus, PullModelOutput,
+    RankRequest, RankResponse, RankRuntimeOutcome, LOCAL_UNAVAILABLE_REMEDY,
 };
 pub use wire::{
     ChatChoice, ChatMessage, ChatRequest, ChatResponse, EmbedInput, EmbeddingItem,
@@ -350,6 +350,9 @@ pub trait InferenceService: Send {
 
     /// Reports the model cache status.
     fn cache_status(&self) -> Result<ModelCacheStatus, InferenceError>;
+
+    /// Reports what this binary can do before anything is attempted.
+    fn status(&self) -> InferenceStatus;
 }
 
 /// Parse a `"provider:model_name"` spec into its components.
@@ -386,7 +389,11 @@ pub fn parse_model_spec(spec: &str) -> Result<(ProviderKind, String), InferenceE
 }
 
 /// Environment variable name for a provider's API key.
-#[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
+///
+/// Not gated on the cloud features: `status` reports every provider, including
+/// the ones this build cannot call, and naming the variable is exactly how it
+/// says what a caller would need to set. A pure name mapping with no
+/// dependencies, so there is nothing to gate.
 pub(crate) fn api_key_env_var(provider: ProviderKind) -> &'static str {
     match provider {
         ProviderKind::Anthropic => "ANTHROPIC_API_KEY",
@@ -496,10 +503,16 @@ pub fn load(model_spec: &str) -> Result<Box<dyn InferenceEngine>, InferenceError
             }
             let env_var = api_key_env_var(cloud_provider);
             let api_key = std::env::var(env_var).map_err(|_| {
-                InferenceError::Provider(format!(
-                    "{} not set (required for {}:{})",
-                    env_var, cloud_provider, model
-                ))
+                // D6: a configuration problem, not a provider outage — and
+                // saying so must not depend on the words "not set".
+                InferenceError::ProviderFailed {
+                    kind: ProviderFailure::MissingApiKey,
+                    message: format!(
+                        "no API key for {cloud_provider} (model {model}): set one \
+                         with `strata config set {cloud_provider}.api_key <key>`, or \
+                         export {env_var}"
+                    ),
+                }
             })?;
             Ok(Box::new(GenerationEngine::cloud(
                 cloud_provider,
@@ -568,10 +581,16 @@ pub fn load_embedder(
                 None => {
                     let env_var = api_key_env_var(cloud_provider);
                     std::env::var(env_var).map_err(|_| {
-                        InferenceError::Provider(format!(
-                            "{} not set (required for {}:{})",
-                            env_var, cloud_provider, model
-                        ))
+                        // D6: a configuration problem, not a provider outage — and
+                        // saying so must not depend on the words "not set".
+                        InferenceError::ProviderFailed {
+                            kind: ProviderFailure::MissingApiKey,
+                            message: format!(
+                                "no API key for {cloud_provider} (model {model}): set one \
+                                 with `strata config set {cloud_provider}.api_key <key>`, or \
+                                 export {env_var}"
+                            ),
+                        }
                     })?
                 }
             };

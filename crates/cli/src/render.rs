@@ -125,6 +125,7 @@ fn render_human(value: &Value, out: &mut String) -> Result<(), CliError> {
             "inference_embeddings" => print_embeddings_summary(data, out),
             "inference_ranking" => print_ranking(data, out),
             "inference_models" => print_inference_models(data, out),
+            "inference_status" => print_inference_status(data, out),
             "inference_model_pulled" => print_model_pulled(data, out),
             "inference_unload_result" => line!(
                 out,
@@ -418,6 +419,7 @@ fn print_inference_models(data: &Value, out: &mut String) {
         line!(out, "(none)");
         return;
     }
+    let mut unavailable = 0usize;
     for item in items {
         let text = |key: &str| {
             item.get(key)
@@ -425,10 +427,19 @@ fn print_inference_models(data: &Value, out: &mut String) {
                 .unwrap_or("-")
                 .to_owned()
         };
-        let local = if item.get("is_local").and_then(Value::as_bool) == Some(true) {
-            "local"
-        } else {
-            "remote"
+        // #3124: the old column showed `is_local`, which is about the file on
+        // disk, and read as "you can use this". A released binary reports the
+        // file present for eleven models it cannot load. Report what the user
+        // can actually do instead.
+        let downloaded = item.get("is_local").and_then(Value::as_bool) == Some(true);
+        let runnable = item.get("runnable").and_then(Value::as_bool) != Some(false);
+        let status = match (runnable, downloaded) {
+            (false, _) => {
+                unavailable += 1;
+                "unavailable"
+            }
+            (true, true) => "ready",
+            (true, false) => "not downloaded",
         };
         let size = item.get("size_bytes").and_then(Value::as_u64).map_or_else(
             || "-".to_owned(),
@@ -441,8 +452,109 @@ fn print_inference_models(data: &Value, out: &mut String) {
             text("task"),
             text("architecture"),
             text("default_quant"),
-            local,
+            status,
             size
+        );
+    }
+    if unavailable > 0 {
+        line!(
+            out,
+            "\n{unavailable} model(s) unavailable: this build cannot run local \
+             models -- a bare name like these means a local model. Add local \
+             execution with `strata inference install-local`, or name a cloud \
+             model instead (`openai:<model>`, `google:<model>`, \
+             `anthropic:<model>`)."
+        );
+    }
+}
+
+/// D11 (#3124): the answer to "will this work", before anything is attempted.
+///
+/// Every hint names a command that exists today — `local_remedy` arrives from
+/// the runtime already pointing at `strata inference install-local` (D1/D2),
+/// and the key hints below at `strata config set`. A hint naming something
+/// that cannot be run would repeat the defect this command exists to fix.
+fn print_inference_status(data: &Value, out: &mut String) {
+    let flag = |key: &str| data.get(key).and_then(Value::as_bool) == Some(true);
+    let local = flag("local_execution");
+
+    line!(
+        out,
+        "build\t{}",
+        if local {
+            "local + cloud"
+        } else {
+            "cloud providers only"
+        }
+    );
+    if let Some(remedy) = data.get("local_remedy").and_then(Value::as_str) {
+        line!(out, "\tlocal models: {remedy}");
+    }
+
+    line!(out, "\nproviders");
+    let providers = data.get("providers").and_then(Value::as_array);
+    for provider in providers.into_iter().flatten() {
+        let name = provider
+            .get("provider")
+            .and_then(Value::as_str)
+            .unwrap_or("-");
+        let enabled = provider.get("feature_enabled").and_then(Value::as_bool) == Some(true);
+        let needs_key = provider.get("requires_api_key").and_then(Value::as_bool) == Some(true);
+        let ready = provider.get("ready").and_then(Value::as_bool) == Some(true);
+        let detail = if !enabled {
+            "not in this build".to_owned()
+        } else if ready {
+            let prefix = provider
+                .get("model_prefix")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            provider
+                .get("key_source")
+                .and_then(Value::as_str)
+                .map_or_else(
+                    || format!("ready -- use {prefix}<model>"),
+                    |from| format!("ready -- key from {from}; use {prefix}<model>"),
+                )
+        } else if needs_key {
+            // `strata config set` is the persistent path and the one an agent
+            // can take: it writes the key at 0600 and every later run picks it
+            // up. The environment variable still wins when both are set.
+            provider
+                .get("key_env_var")
+                .and_then(Value::as_str)
+                .map_or_else(
+                    || "no key".to_owned(),
+                    |var| {
+                        format!(
+                            "no key -- `strata config set {name}.api_key <key>`, or export {var}"
+                        )
+                    },
+                )
+        } else {
+            "not ready".to_owned()
+        };
+        line!(out, "  {name}\t{detail}");
+    }
+
+    let dir = data
+        .get("models_dir")
+        .and_then(Value::as_str)
+        .unwrap_or("-");
+    let downloaded = data
+        .get("models_downloaded")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let catalogued = data
+        .get("models_catalogued")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    line!(out, "\nmodels\t{dir} (shared by every database)");
+    line!(out, "  downloaded\t{downloaded} of {catalogued} catalogued");
+    if !flag("model_download") && downloaded < catalogued {
+        line!(
+            out,
+            "\tthis build cannot download models -- `strata inference \
+             install-local` adds downloading along with local execution"
         );
     }
 }
@@ -997,6 +1109,7 @@ mod tests {
         "inference_model_pulled",
         "inference_models",
         "inference_ranking",
+        "inference_status",
         "inference_text",
         "inference_token_ids",
         "inference_unload_result",
@@ -1500,14 +1613,112 @@ mod tests {
             "type": "inference_models",
             "data": { "items": [{
                 "name": "m", "task": "chat", "architecture": "llama",
-                "default_quant": "q4", "is_local": true, "size_bytes": 1_048_576
+                "default_quant": "q4", "is_local": true, "runnable": true,
+                "size_bytes": 1_048_576
             }] }
         });
-        assert_eq!(human(&list), "m\tchat\tllama\tq4\tlocal\t1.0 MB\n");
+        assert_eq!(human(&list), "m\tchat\tllama\tq4\tready\t1.0 MB\n");
         let none = json!({ "type": "inference_models", "data": { "items": [] } });
         assert_eq!(human(&none), "(none)\n");
         let nil = json!({ "type": "inference_models", "data": {} });
         assert_eq!(human(&nil), "(nil)\n");
+    }
+
+    /// #3124: a released binary lists models it cannot load. The row must say
+    /// so, and the footer must name both ways forward.
+    #[test]
+    fn human_inference_models_marks_what_this_build_cannot_run() {
+        let list = json!({
+            "type": "inference_models",
+            "data": { "items": [
+                {
+                    "name": "miniLM", "task": "embed", "architecture": "bert",
+                    "default_quant": "f16", "is_local": true, "runnable": false,
+                    "size_bytes": 1_048_576
+                },
+                {
+                    "name": "gpt2", "task": "generate", "architecture": "gpt2",
+                    "default_quant": "q8_0", "is_local": false, "runnable": false,
+                    "size_bytes": 2_097_152
+                }
+            ] }
+        });
+        let rendered = human(&list);
+        // The file being present must not read as "usable".
+        assert!(
+            rendered.contains("miniLM\tembed\tbert\tf16\tunavailable\t1.0 MB"),
+            "a downloaded but unrunnable model must still read unavailable: {rendered}"
+        );
+        assert!(rendered.contains("2 model(s) unavailable"));
+        assert!(rendered.contains("strata inference install-local"));
+        assert!(
+            rendered.contains("openai:"),
+            "the footer names the no-rebuild path"
+        );
+    }
+
+    /// A build that can run local models says nothing about unavailability, and
+    /// distinguishes downloaded from not.
+    #[test]
+    fn human_inference_models_separates_ready_from_not_downloaded() {
+        let list = json!({
+            "type": "inference_models",
+            "data": { "items": [
+                {
+                    "name": "here", "task": "embed", "architecture": "bert",
+                    "default_quant": "f16", "is_local": true, "runnable": true,
+                    "size_bytes": 1_048_576
+                },
+                {
+                    "name": "absent", "task": "embed", "architecture": "bert",
+                    "default_quant": "f16", "is_local": false, "runnable": true,
+                    "size_bytes": 1_048_576
+                }
+            ] }
+        });
+        let rendered = human(&list);
+        assert!(rendered.contains("here\tembed\tbert\tf16\tready\t1.0 MB"));
+        assert!(rendered.contains("absent\tembed\tbert\tf16\tnot downloaded\t1.0 MB"));
+        assert!(
+            !rendered.contains("unavailable"),
+            "nothing is unavailable in a build that can run them: {rendered}"
+        );
+    }
+
+    /// The download footer fires only when this build cannot download AND
+    /// something is missing — the mutation gate found both halves untested.
+    #[test]
+    fn the_models_footer_tracks_both_download_ability_and_what_is_missing() {
+        const FOOTER: &str = "cannot download models";
+
+        let status = |can_download: bool, downloaded: u64, catalogued: u64| {
+            human(&json!({
+                "type": "inference_status",
+                "data": {
+                    "local_execution": false,
+                    "model_download": can_download,
+                    "providers": [],
+                    "models_dir": "/models",
+                    "models_downloaded": downloaded,
+                    "models_catalogued": catalogued,
+                }
+            }))
+        };
+
+        // Cannot download, and models are missing: say so.
+        assert!(status(false, 1, 3).contains(FOOTER));
+
+        // Cannot download, but nothing is missing — nothing to say.
+        assert!(
+            !status(false, 3, 3).contains(FOOTER),
+            "a complete set needs no download advice"
+        );
+
+        // Can download: the advice is irrelevant however many are missing.
+        assert!(
+            !status(true, 1, 3).contains(FOOTER),
+            "a build that can download does not need telling"
+        );
     }
 
     #[test]

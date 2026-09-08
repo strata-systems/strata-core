@@ -1,0 +1,48 @@
+---
+title: "Report inference readiness"
+description: "Report what this binary can do before anything is attempted."
+source: strata-core@1.2.1
+section: inference
+---
+
+Reports the inference facts that are knowable up front: whether this build can execute local models and download them, which providers are compiled in, which of those have an API key and where it was found, and how many catalogued models are already on disk.
+
+Released binaries ship the cloud providers and leave local model execution out, so `local_execution` is false in them and every catalogued local model is unavailable until `strata inference install-local` adds it; `local_remedy` says so. Knowing that from `status` is the point: previously the only way to find out was to run an operation and read the failure.
+
+`key_source` names where a key was read from: the environment variable, or the config file's path when the key was set with `strata config set <provider>.api_key` and the CLI loaded it from there. The key itself is never returned.
+
+The model directory is shared by every database on the machine, so a model downloaded once is available to all of them.
+
+## Examples
+
+Check what this build can do before running an inference command.
+
+### CLI
+
+```console
+$ strata inference status  # reports build, providers, keys, and on-disk models without attempting a call
+```
+
+### Wire
+
+```json
+{"type":"inference_status"}
+```
+
+## Parameters
+
+_No parameters._
+
+## Returns
+
+`InferenceStatus`.
+
+## Errors
+
+- [`failed_precondition.engine.runtime_closed`](https://stratadb.org/e/failed_precondition.engine.runtime_closed)
+- [`not_found.engine.branch`](https://stratadb.org/e/not_found.engine.branch)
+
+## Invocation
+
+- CLI: `strata inference status`
+- Wire type: `inference_status`
