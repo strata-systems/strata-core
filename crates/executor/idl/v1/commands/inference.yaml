@@ -126,9 +126,13 @@ commands:
       - inference.model_load_failed
       - inference.local_runtime_failed
       - inference.missing_api_key
+      - inference.provider_auth_failed
       - inference.provider_unavailable
+      - inference.provider_timeout
+      - inference.provider_rate_limited
       - inference.provider_quota_exhausted
       - inference.provider_model_not_found
+      - inference.invalid_request
       - inference.provider_malformed_response
       - inference.unsupported_provider
       - inference.unsupported_parameter
