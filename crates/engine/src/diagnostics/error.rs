@@ -583,7 +583,50 @@ const fn default_suggested_fix(class: EngineErrorClass) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{public_class_for_legacy, EngineErrorClass, ErrorClass};
+    use super::{public_class_for_legacy, EngineError, EngineErrorClass, ErrorClass};
+    use crate::diagnostics::registry::{class_for_code, error_code_registry_entries};
+
+    /// The registry is the single authority for a code's remediation hint: the
+    /// hint `strata agents errors` documents must be the hint a live error
+    /// carries. Both generic constructors are swept over every registered code
+    /// so a code whose runtime hint regresses to class-generic wording fails
+    /// here instead of shipping (#3237: 145 of 161 codes did).
+    #[test]
+    fn test_constructed_errors_carry_the_registry_suggested_fix() {
+        let mut violations = Vec::new();
+        for entry in error_code_registry_entries() {
+            let class = class_for_code(entry.code).expect("registry entry has a class");
+            let plain = EngineError::new(class, entry.code, false, "probe");
+            if plain.suggested_fix() != entry.suggested_fix {
+                violations.push(format!(
+                    "{} (new): runtime `{}` != registry `{}`",
+                    entry.code,
+                    plain.suggested_fix(),
+                    entry.suggested_fix
+                ));
+            }
+            let sourced = EngineError::with_source(
+                class,
+                entry.code,
+                false,
+                "probe",
+                std::io::Error::other("probe source"),
+            );
+            if sourced.suggested_fix() != entry.suggested_fix {
+                violations.push(format!(
+                    "{} (with_source): runtime `{}` != registry `{}`",
+                    entry.code,
+                    sourced.suggested_fix(),
+                    entry.suggested_fix
+                ));
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "runtime suggested_fix diverges from the registry:\n  {}",
+            violations.join("\n  ")
+        );
+    }
 
     #[test]
     fn public_class_for_legacy_splits_data_loss_from_corruption() {

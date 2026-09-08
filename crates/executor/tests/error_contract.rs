@@ -489,6 +489,77 @@ fn feature_disabled_codes_are_unsupported_with_state_change_retry() {
 }
 
 // ---------------------------------------------------------------------------
+// Suggested-fix parity: the hint on the wire is the hint in the registry
+// ---------------------------------------------------------------------------
+
+fn registry_suggested_fix(code: &str) -> &'static str {
+    public_error_code_entries()
+        .find(|entry| entry.code == code)
+        .unwrap_or_else(|| panic!("`{code}` must be registered"))
+        .suggested_fix
+}
+
+/// Engine-raised errors cross the executor boundary carrying the registry's
+/// per-code remediation, not class-generic wording. Driven through the wire
+/// because that is the layer the divergence was observed at: `strata agents
+/// errors` documented one hint while the live error carried another (#3237).
+#[test]
+fn test_engine_errors_reach_the_wire_with_the_registry_suggested_fix() {
+    let mut executor = Executor::open_cache().expect("cache executor opens");
+    let create = serde_json::json!({"type": "branch_create", "branch": "feature"});
+    run(&mut executor, &create).expect("first create succeeds");
+    let duplicate = run(&mut executor, &create).expect_err("duplicate create fails");
+    assert_eq!(field(&duplicate, "code"), "already_exists.engine.branch");
+    assert_eq!(
+        field(&duplicate, "suggested_fix"),
+        registry_suggested_fix("already_exists.engine.branch"),
+        "duplicate branch: {duplicate}"
+    );
+
+    let missing = run(
+        &mut executor,
+        &serde_json::json!({"type": "branch_delete", "branch": "nope"}),
+    )
+    .expect_err("deleting a missing branch fails");
+    assert_eq!(field(&missing, "code"), "not_found.engine.branch");
+    assert_eq!(
+        field(&missing, "suggested_fix"),
+        registry_suggested_fix("not_found.engine.branch"),
+        "missing branch: {missing}"
+    );
+}
+
+/// Control for the executor's own codes: every non-engine code constructed
+/// through `ExecutorError::new` already carries the registry hint, so the
+/// engine-side fix is the only gap. The class argument is irrelevant — the
+/// code prefix decides the public class.
+#[test]
+fn test_executor_errors_carry_the_registry_suggested_fix() {
+    let mut violations = Vec::new();
+    for entry in public_error_code_entries().filter(|entry| !entry.code.contains(".engine.")) {
+        let error = ExecutorError::new(
+            strata_executor::ExecutorErrorClass::Internal,
+            entry.code,
+            false,
+            "probe",
+        );
+        if error.suggested_fix() != entry.suggested_fix {
+            violations.push(format!(
+                "{}: runtime `{}` != registry `{}`",
+                entry.code,
+                error.suggested_fix(),
+                entry.suggested_fix
+            ));
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "executor suggested_fix diverges from the registry:\n  {}",
+        violations.join("\n  ")
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Sabotage: the checker must reject the historical #2699 envelope
 // ---------------------------------------------------------------------------
 
