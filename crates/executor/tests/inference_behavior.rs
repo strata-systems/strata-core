@@ -270,6 +270,8 @@ fn every_constructible_inference_error() -> Vec<InferenceError> {
             ProviderFailure::AuthFailed,
             ProviderFailure::InvalidRequest,
             ProviderFailure::RateLimited,
+            ProviderFailure::QuotaExhausted,
+            ProviderFailure::ModelNotFound,
             ProviderFailure::Timeout,
             ProviderFailure::Unavailable,
             ProviderFailure::MalformedResponse,

@@ -32,6 +32,8 @@ Embeds text with an embedding-capable model and returns one vector per input, in
 - [`inference.local_runtime_failed`](https://stratadb.org/e/inference.local_runtime_failed)
 - [`inference.missing_api_key`](https://stratadb.org/e/inference.missing_api_key)
 - [`inference.provider_unavailable`](https://stratadb.org/e/inference.provider_unavailable)
+- [`inference.provider_quota_exhausted`](https://stratadb.org/e/inference.provider_quota_exhausted)
+- [`inference.provider_model_not_found`](https://stratadb.org/e/inference.provider_model_not_found)
 - [`inference.provider_malformed_response`](https://stratadb.org/e/inference.provider_malformed_response)
 - [`inference.unsupported_provider`](https://stratadb.org/e/inference.unsupported_provider)
 - [`inference.unsupported_parameter`](https://stratadb.org/e/inference.unsupported_parameter)

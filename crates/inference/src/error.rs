@@ -105,6 +105,16 @@ pub enum ProviderFailure {
     InvalidRequest,
     /// The provider asked us to slow down (429).
     RateLimited,
+    /// The account behind the key has no credit or quota left to spend.
+    ///
+    /// Arrives as a 429 or a 400 whose body names billing (#3236); unlike a
+    /// rate limit it does not clear by waiting.
+    QuotaExhausted,
+    /// The provider does not serve the requested model (404).
+    ///
+    /// Distinct from `inference.missing_model`, which is a local model not on
+    /// disk.
+    ModelNotFound,
     /// The request did not complete in time.
     Timeout,
     /// The provider is unreachable or erroring (5xx, transport failure).
@@ -125,21 +135,28 @@ impl ProviderFailure {
             Self::AuthFailed => "inference.provider_auth_failed",
             Self::InvalidRequest => "inference.invalid_request",
             Self::RateLimited => "inference.provider_rate_limited",
+            Self::QuotaExhausted => "inference.provider_quota_exhausted",
+            Self::ModelNotFound => "inference.provider_model_not_found",
             Self::Timeout => "inference.provider_timeout",
             Self::Unavailable => "inference.provider_unavailable",
             Self::MalformedResponse => "inference.provider_malformed_response",
         }
     }
 
-    /// The failure a cloud HTTP status means.
+    /// The failure a cloud HTTP status means when the response body says
+    /// nothing more specific.
     ///
     /// The status is the authority. Reading it here rather than describing it
-    /// in prose and matching the prose back is the whole of D6.
+    /// in prose and matching the prose back is the whole of D6. A body that
+    /// names its cause outranks it (#3236): see `provider::cloud::classify`.
     #[must_use]
     pub const fn from_http_status(status: u16) -> Self {
         match status {
             400 => Self::InvalidRequest,
             401 | 403 => Self::AuthFailed,
+            // Every cloud endpoint Strata calls is fixed; the only thing that
+            // can be missing is the model.
+            404 => Self::ModelNotFound,
             429 => Self::RateLimited,
             408 | 504 => Self::Timeout,
             _ => Self::Unavailable,
@@ -332,9 +349,9 @@ impl InferenceError {
             "inference.invalid_request"
             | "inference.unsupported_parameter"
             | "inference.download_disabled" => InferenceErrorClass::InvalidInput,
-            "inference.missing_model" | "inference.unsupported_provider" => {
-                InferenceErrorClass::NotFound
-            }
+            "inference.missing_model"
+            | "inference.unsupported_provider"
+            | "inference.provider_model_not_found" => InferenceErrorClass::NotFound,
             "inference.provider_rate_limited" | "inference.provider_timeout" => {
                 InferenceErrorClass::Retryable
             }

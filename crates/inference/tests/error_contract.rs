@@ -4,7 +4,7 @@
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use strata_inference::{InferenceError, InferenceErrorClass};
+use strata_inference::{InferenceError, InferenceErrorClass, ProviderFailure};
 
 fn round_trip<T>(value: &T) -> T
 where
@@ -87,6 +87,26 @@ fn every_stable_error_code_has_class_and_retry_policy() {
             InferenceError::Provider("invalid JSON response".to_owned()),
             "inference.provider_malformed_response",
             InferenceErrorClass::Corruption,
+            false,
+        ),
+        // Billing is not throttling: no retry policy clears it (#3236).
+        (
+            InferenceError::ProviderFailed {
+                kind: ProviderFailure::QuotaExhausted,
+                message: "OpenAI: You have no credits remaining. (HTTP 429)".to_owned(),
+            },
+            "inference.provider_quota_exhausted",
+            InferenceErrorClass::Unavailable,
+            false,
+        ),
+        // A model the provider does not serve is the caller's to fix (#3236).
+        (
+            InferenceError::ProviderFailed {
+                kind: ProviderFailure::ModelNotFound,
+                message: "Anthropic: model: claude-nope (HTTP 404)".to_owned(),
+            },
+            "inference.provider_model_not_found",
+            InferenceErrorClass::NotFound,
             false,
         ),
         (

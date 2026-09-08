@@ -196,14 +196,16 @@ fn the_code_follows_the_kind_not_the_message() {
 #[test]
 fn every_failure_kind_has_its_own_code() {
     use ProviderFailure::{
-        AuthFailed, InvalidRequest, MalformedResponse, MissingApiKey, RateLimited, Timeout,
-        Unavailable,
+        AuthFailed, InvalidRequest, MalformedResponse, MissingApiKey, ModelNotFound,
+        QuotaExhausted, RateLimited, Timeout, Unavailable,
     };
     let kinds = [
         MissingApiKey,
         AuthFailed,
         InvalidRequest,
         RateLimited,
+        QuotaExhausted,
+        ModelNotFound,
         Timeout,
         Unavailable,
         MalformedResponse,
@@ -215,16 +217,19 @@ fn every_failure_kind_has_its_own_code() {
     assert_eq!(codes.len(), distinct, "two kinds share a code: {codes:?}");
 }
 
-/// The HTTP status decides the kind. This is the mapping the four
-/// `map_http_error` functions now use instead of describing the status in
-/// prose and matching the prose back.
+/// The HTTP status decides the kind when the body says nothing. This is the
+/// fallback the one cloud transport uses instead of describing the status in
+/// prose and matching the prose back; a body that names its cause outranks it.
 #[test]
 fn http_status_decides_the_kind() {
-    use ProviderFailure::{AuthFailed, InvalidRequest, RateLimited, Timeout, Unavailable};
+    use ProviderFailure::{
+        AuthFailed, InvalidRequest, ModelNotFound, RateLimited, Timeout, Unavailable,
+    };
     let cases = [
         (400, InvalidRequest),
         (401, AuthFailed),
         (403, AuthFailed),
+        (404, ModelNotFound), // every endpoint is fixed; only the model can be missing
         (408, Timeout),
         (429, RateLimited),
         (500, Unavailable),

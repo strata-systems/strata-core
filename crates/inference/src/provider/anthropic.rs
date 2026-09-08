@@ -4,20 +4,28 @@
 //! maps the response to [`GenerateResponse`] (completion) or [`ChatResponse`]
 //! (chat, with native tools and structured outputs).
 
-use crate::provider::cloud::reject_local_only;
+use crate::provider::cloud::{post_json, reject_local_only, CloudPost};
 use crate::wire::{
     ChatChoice, ChatMessage, ChatRequest, ChatResponse, FinishReason, FunctionDef, NamedToolChoice,
     ResponseFormat, Role, Tool, ToolCall, ToolCallFunction, ToolChoice, ToolChoiceMode, Usage,
 };
-use crate::{GenerateRequest, GenerateResponse, InferenceError, ProviderFailure, StopReason};
+use crate::{GenerateRequest, GenerateResponse, InferenceError, StopReason};
 
-const API_URL: &str = "https://api.anthropic.com/v1/messages";
+/// The API root every Anthropic endpoint hangs off.
+const API_BASE: &str = "https://api.anthropic.com/v1";
 const API_VERSION: &str = "2023-06-01";
+
+/// The Messages endpoint under `api_base`.
+fn messages_url(api_base: &str) -> String {
+    format!("{api_base}/messages")
+}
 
 /// Anthropic cloud provider state.
 pub(crate) struct AnthropicProvider {
     api_key: String,
     model: String,
+    /// Where requests go; [`API_BASE`] outside tests.
+    api_base: String,
 }
 
 impl std::fmt::Debug for AnthropicProvider {
@@ -25,6 +33,7 @@ impl std::fmt::Debug for AnthropicProvider {
         f.debug_struct("AnthropicProvider")
             .field("model", &self.model)
             .field("api_key", &"[REDACTED]")
+            .field("api_base", &self.api_base)
             .finish()
     }
 }
@@ -41,7 +50,19 @@ impl AnthropicProvider {
                 "Anthropic model name is empty".to_string(),
             ));
         }
-        Ok(Self { api_key, model })
+        Ok(Self {
+            api_key,
+            model,
+            api_base: API_BASE.to_string(),
+        })
+    }
+
+    /// Point requests at a local stand-in for the Anthropic API, so a test can
+    /// drive the real request path against a canned response.
+    #[cfg(test)]
+    pub(crate) fn with_api_base(mut self, api_base: &str) -> Self {
+        self.api_base = api_base.to_string();
+        self
     }
 
     pub(crate) fn generate(
@@ -85,21 +106,15 @@ impl AnthropicProvider {
     /// POST a prepared JSON body to the Messages endpoint and return the raw
     /// response body (shared by the completion and chat parsers).
     fn send(&self, body: String) -> Result<String, InferenceError> {
-        let agent = ureq::Agent::new_with_config(
-            ureq::config::Config::builder()
-                .timeout_global(Some(std::time::Duration::from_secs(30)))
-                .build(),
-        );
-        let mut response = agent
-            .post(API_URL)
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", API_VERSION)
-            .header("content-type", "application/json")
-            .send(body)
-            .map_err(|e| map_http_error("Anthropic", e))?;
-
-        response.body_mut().read_to_string().map_err(|e| {
-            InferenceError::Provider(format!("Anthropic: failed to read response: {e}"))
+        post_json(&CloudPost {
+            provider: "Anthropic",
+            url: &messages_url(&self.api_base),
+            headers: &[
+                ("x-api-key", &self.api_key),
+                ("anthropic-version", API_VERSION),
+            ],
+            body: &body,
+            timeout: std::time::Duration::from_secs(30),
         })
     }
 
@@ -628,82 +643,9 @@ pub(crate) fn parse_chat_response_json(
     })
 }
 
-/// Map ureq HTTP errors to InferenceError::Provider with descriptive messages.
-fn map_http_error(provider: &str, err: ureq::Error) -> InferenceError {
-    match &err {
-        ureq::Error::StatusCode(status) => {
-            let code = *status;
-            let description = match code {
-                401 => "invalid API key",
-                403 => "forbidden (check API key permissions)",
-                429 => "rate limited (too many requests)",
-                500 => "server error",
-                502 => "bad gateway",
-                503 => "service unavailable",
-                _ => "HTTP error",
-            };
-            // D6: the status IS the classification. Describing it in prose and
-            // matching the prose back is how "invalid API key" became
-            // indistinguishable from an outage.
-            InferenceError::ProviderFailed {
-                kind: ProviderFailure::from_http_status(code),
-                message: format!("{provider}: {description} (HTTP {code})"),
-            }
-        }
-        // The transport already told us it timed out.
-        ureq::Error::Timeout(_) => InferenceError::ProviderFailed {
-            kind: ProviderFailure::Timeout,
-            message: format!("{provider}: {err}"),
-        },
-        _ => InferenceError::ProviderFailed {
-            kind: ProviderFailure::Unavailable,
-            message: format!("{provider}: {err}"),
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The transport's own verdict decides the kind (D6).
-    ///
-    /// `map_http_error` turns a real `ureq::Error` into a classified failure,
-    /// and nothing tested it: deleting the `Timeout` arm let a timeout fall
-    /// through to the catch-all and report as an outage, which is the exact
-    /// collapse D6 exists to prevent — an outage invites a retry against a
-    /// server that is fine, while a timeout points at the deadline.
-    ///
-    /// `from_http_status` had a truth table, but a truth table on a pure
-    /// function proves nothing about the match that feeds it.
-    #[test]
-    fn a_transport_timeout_is_a_timeout_not_an_outage() {
-        let timeout = map_http_error("p", ureq::Error::Timeout(ureq::Timeout::Global));
-        assert_eq!(timeout.code(), "inference.provider_timeout");
-
-        // The catch-all still reports an outage, so the assertion above is
-        // about the arm and not about every error becoming a timeout.
-        let other = map_http_error("p", ureq::Error::HostNotFound);
-        assert_eq!(other.code(), "inference.provider_unavailable");
-    }
-
-    /// A status code reaches the classifier that reads it.
-    #[test]
-    fn an_http_status_is_classified_by_its_status() {
-        for (status, expected) in [
-            (401, "inference.provider_auth_failed"),
-            (403, "inference.provider_auth_failed"),
-            (429, "inference.provider_rate_limited"),
-            (503, "inference.provider_unavailable"),
-        ] {
-            let error = map_http_error("p", ureq::Error::StatusCode(status));
-            assert_eq!(error.code(), expected, "HTTP {status}");
-            assert!(
-                error.to_string().contains(&status.to_string()),
-                "the message names the status: {error}"
-            );
-        }
-    }
 
     // -----------------------------------------------------------------------
     // Construction
@@ -1177,32 +1119,102 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // HTTP error mapping
+    // The request path, end to end against a local stand-in for the API
     // -----------------------------------------------------------------------
 
-    #[test]
-    fn map_401_mentions_api_key() {
-        let err = map_http_error("Anthropic", ureq::Error::StatusCode(401));
-        assert!(err.to_string().contains("invalid API key"));
-        assert!(err.to_string().contains("401"));
+    use crate::provider::cloud::test_server::CannedResponse;
+
+    fn provider_at(server: &CannedResponse) -> AnthropicProvider {
+        AnthropicProvider::new("sk-ant-test-key".into(), "claude-test".into())
+            .expect("a valid provider")
+            .with_api_base(server.base_url())
     }
 
-    #[test]
-    fn map_429_mentions_rate_limit() {
-        let err = map_http_error("Anthropic", ureq::Error::StatusCode(429));
-        assert!(err.to_string().contains("rate limited"));
+    fn short_request() -> GenerateRequest {
+        GenerateRequest {
+            prompt: "hi".into(),
+            max_tokens: 8,
+            ..GenerateRequest::default()
+        }
     }
 
+    /// The whole path works: the request reaches the endpoint with the
+    /// credential and version headers, and a good answer parses.
     #[test]
-    fn map_500_mentions_server_error() {
-        let err = map_http_error("Anthropic", ureq::Error::StatusCode(500));
-        assert!(err.to_string().contains("server error"));
+    fn a_completion_round_trips_through_the_request_path() {
+        let server = CannedResponse::serve(
+            200,
+            r#"{"content":[{"type":"text","text":"hello"}],"stop_reason":"end_turn",
+                "usage":{"input_tokens":1,"output_tokens":1}}"#,
+        );
+        let response = provider_at(&server)
+            .generate(&short_request())
+            .expect("a parsed completion");
+        assert_eq!(response.text, "hello");
+
+        let request = server.request().to_ascii_lowercase();
+        assert!(
+            request.starts_with("post /messages "),
+            "the endpoint under the base: {request}"
+        );
+        assert!(
+            request.contains("x-api-key: sk-ant-test-key"),
+            "the credential travels in x-api-key: {request}"
+        );
+        assert!(
+            request.contains(&format!("anthropic-version: {API_VERSION}")),
+            "the API version is pinned: {request}"
+        );
     }
 
+    /// A model Anthropic does not know is a 404 with `not_found_error`
+    /// (#3236). By status alone it was "provider unavailable, retry".
     #[test]
-    fn map_error_includes_provider_name() {
-        let err = map_http_error("Anthropic", ureq::Error::StatusCode(503));
-        assert!(err.to_string().contains("Anthropic"));
+    fn an_unknown_model_is_model_not_found_not_an_outage() {
+        let server = CannedResponse::serve(
+            404,
+            r#"{"type":"error","error":{"type":"not_found_error","message":"model: claude-nope"},"request_id":"req_x"}"#,
+        );
+        let error = provider_at(&server)
+            .generate(&short_request())
+            .expect_err("unknown model");
+        assert_eq!(error.code(), "inference.provider_model_not_found");
+        assert!(
+            error.to_string().contains("claude-nope"),
+            "names the model the provider rejected: {error}"
+        );
+    }
+
+    /// Anthropic reports an empty balance as a 400 `invalid_request_error`
+    /// whose message is the only place the cause appears (#3236). By status
+    /// alone it was "invalid request", which sends the user to their prompt.
+    #[test]
+    fn an_empty_balance_is_quota_exhausted_not_an_invalid_request() {
+        let server = CannedResponse::serve(
+            400,
+            r#"{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."}}"#,
+        );
+        let error = provider_at(&server)
+            .generate(&short_request())
+            .expect_err("empty balance");
+        assert_eq!(error.code(), "inference.provider_quota_exhausted");
+        assert!(
+            error.to_string().contains("credit balance is too low"),
+            "the provider's own explanation reaches the user: {error}"
+        );
+    }
+
+    /// Direction control: a rejected key still reads as an auth failure.
+    #[test]
+    fn a_rejected_key_is_auth_failed() {
+        let server = CannedResponse::serve(
+            401,
+            r#"{"type":"error","error":{"type":"authentication_error","message":"API key is invalid."},"request_id":null}"#,
+        );
+        let error = provider_at(&server)
+            .generate(&short_request())
+            .expect_err("rejected key");
+        assert_eq!(error.code(), "inference.provider_auth_failed");
     }
 
     // -----------------------------------------------------------------------

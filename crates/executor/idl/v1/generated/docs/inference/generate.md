@@ -55,6 +55,8 @@ Runs a text-generation request against a local or cloud model and returns the co
 - [`inference.provider_unavailable`](https://stratadb.org/e/inference.provider_unavailable)
 - [`inference.provider_timeout`](https://stratadb.org/e/inference.provider_timeout)
 - [`inference.provider_rate_limited`](https://stratadb.org/e/inference.provider_rate_limited)
+- [`inference.provider_quota_exhausted`](https://stratadb.org/e/inference.provider_quota_exhausted)
+- [`inference.provider_model_not_found`](https://stratadb.org/e/inference.provider_model_not_found)
 - [`inference.invalid_request`](https://stratadb.org/e/inference.invalid_request)
 - [`inference.provider_malformed_response`](https://stratadb.org/e/inference.provider_malformed_response)
 - [`inference.unsupported_provider`](https://stratadb.org/e/inference.unsupported_provider)

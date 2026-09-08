@@ -3,20 +3,32 @@
 //! Sends generation requests to `https://api.openai.com/v1/chat/completions`
 //! and maps the response to [`GenerateResponse`].
 
-use crate::provider::cloud::reject_local_only;
+use crate::provider::cloud::{post_json, reject_local_only, CloudPost};
 use crate::wire::{
     ChatChoice, ChatMessage, ChatRequest, ChatResponse, FinishReason, LogProbs, ResponseFormat,
     Role, TokenLogProb, ToolCall, ToolCallFunction, TopLogProb, Usage,
 };
-use crate::{GenerateRequest, GenerateResponse, InferenceError, ProviderFailure, StopReason};
+use crate::{GenerateRequest, GenerateResponse, InferenceError, StopReason};
 
-const API_URL: &str = "https://api.openai.com/v1/chat/completions";
-pub(crate) const EMBED_API_URL: &str = "https://api.openai.com/v1/embeddings";
+/// The API root every OpenAI endpoint hangs off.
+pub(crate) const API_BASE: &str = "https://api.openai.com/v1";
+
+/// The chat-completions endpoint under `api_base`.
+fn chat_url(api_base: &str) -> String {
+    format!("{api_base}/chat/completions")
+}
+
+/// The embeddings endpoint under `api_base`.
+pub(crate) fn embed_url(api_base: &str) -> String {
+    format!("{api_base}/embeddings")
+}
 
 /// OpenAI cloud provider state.
 pub(crate) struct OpenAIProvider {
     api_key: String,
     model: String,
+    /// Where requests go; [`API_BASE`] outside tests.
+    api_base: String,
 }
 
 impl std::fmt::Debug for OpenAIProvider {
@@ -24,6 +36,7 @@ impl std::fmt::Debug for OpenAIProvider {
         f.debug_struct("OpenAIProvider")
             .field("model", &self.model)
             .field("api_key", &"[REDACTED]")
+            .field("api_base", &self.api_base)
             .finish()
     }
 }
@@ -40,7 +53,19 @@ impl OpenAIProvider {
                 "OpenAI model name is empty".to_string(),
             ));
         }
-        Ok(Self { api_key, model })
+        Ok(Self {
+            api_key,
+            model,
+            api_base: API_BASE.to_string(),
+        })
+    }
+
+    /// Point requests at a local stand-in for the OpenAI API, so a test can
+    /// drive the real request path against a canned response.
+    #[cfg(test)]
+    pub(crate) fn with_api_base(mut self, api_base: &str) -> Self {
+        self.api_base = api_base.to_string();
+        self
     }
 
     pub(crate) fn generate(
@@ -80,22 +105,13 @@ impl OpenAIProvider {
     /// POST a prepared JSON body to the chat-completions endpoint and return the
     /// raw response body (shared by the completion and chat parsers).
     fn send(&self, body: String) -> Result<String, InferenceError> {
-        let agent = ureq::Agent::new_with_config(
-            ureq::config::Config::builder()
-                .timeout_global(Some(std::time::Duration::from_secs(30)))
-                .build(),
-        );
-        let mut response = agent
-            .post(API_URL)
-            .header("Authorization", &format!("Bearer {}", self.api_key))
-            .header("content-type", "application/json")
-            .send(body)
-            .map_err(|e| map_http_error("OpenAI", e))?;
-
-        response
-            .body_mut()
-            .read_to_string()
-            .map_err(|e| InferenceError::Provider(format!("OpenAI: failed to read response: {e}")))
+        post_json(&CloudPost {
+            provider: "OpenAI",
+            url: &chat_url(&self.api_base),
+            headers: &[("Authorization", &format!("Bearer {}", self.api_key))],
+            body: &body,
+            timeout: std::time::Duration::from_secs(30),
+        })
     }
 
     pub(crate) fn model(&self) -> &str {
@@ -575,82 +591,9 @@ pub(crate) fn parse_embed_response_json(body: &str) -> Result<Vec<Vec<f32>>, Inf
     Ok(indexed.into_iter().map(|(_, emb)| emb).collect())
 }
 
-/// Map ureq HTTP errors to InferenceError::Provider with descriptive messages.
-fn map_http_error(provider: &str, err: ureq::Error) -> InferenceError {
-    match &err {
-        ureq::Error::StatusCode(status) => {
-            let code = *status;
-            let description = match code {
-                401 => "invalid API key",
-                403 => "forbidden (check API key permissions)",
-                429 => "rate limited (too many requests)",
-                500 => "server error",
-                502 => "bad gateway",
-                503 => "service unavailable",
-                _ => "HTTP error",
-            };
-            // D6: the status IS the classification. Describing it in prose and
-            // matching the prose back is how "invalid API key" became
-            // indistinguishable from an outage.
-            InferenceError::ProviderFailed {
-                kind: ProviderFailure::from_http_status(code),
-                message: format!("{provider}: {description} (HTTP {code})"),
-            }
-        }
-        // The transport already told us it timed out.
-        ureq::Error::Timeout(_) => InferenceError::ProviderFailed {
-            kind: ProviderFailure::Timeout,
-            message: format!("{provider}: {err}"),
-        },
-        _ => InferenceError::ProviderFailed {
-            kind: ProviderFailure::Unavailable,
-            message: format!("{provider}: {err}"),
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The transport's own verdict decides the kind (D6).
-    ///
-    /// `map_http_error` turns a real `ureq::Error` into a classified failure,
-    /// and nothing tested it: deleting the `Timeout` arm let a timeout fall
-    /// through to the catch-all and report as an outage, which is the exact
-    /// collapse D6 exists to prevent — an outage invites a retry against a
-    /// server that is fine, while a timeout points at the deadline.
-    ///
-    /// `from_http_status` had a truth table, but a truth table on a pure
-    /// function proves nothing about the match that feeds it.
-    #[test]
-    fn a_transport_timeout_is_a_timeout_not_an_outage() {
-        let timeout = map_http_error("p", ureq::Error::Timeout(ureq::Timeout::Global));
-        assert_eq!(timeout.code(), "inference.provider_timeout");
-
-        // The catch-all still reports an outage, so the assertion above is
-        // about the arm and not about every error becoming a timeout.
-        let other = map_http_error("p", ureq::Error::HostNotFound);
-        assert_eq!(other.code(), "inference.provider_unavailable");
-    }
-
-    /// A status code reaches the classifier that reads it.
-    #[test]
-    fn an_http_status_is_classified_by_its_status() {
-        for (status, expected) in [
-            (401, "inference.provider_auth_failed"),
-            (403, "inference.provider_auth_failed"),
-            (429, "inference.provider_rate_limited"),
-            (503, "inference.provider_unavailable"),
-        ] {
-            let error = map_http_error("p", ureq::Error::StatusCode(status));
-            assert_eq!(error.code(), expected, "HTTP {status}");
-            assert!(
-                error.to_string().contains(&status.to_string()),
-                "the message names the status: {error}"
-            );
-        }
-    }
 
     // -----------------------------------------------------------------------
     // Construction
@@ -1285,26 +1228,114 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // HTTP error mapping
+    // The request path, end to end against a local stand-in for the API
     // -----------------------------------------------------------------------
 
-    #[test]
-    fn map_401_mentions_api_key() {
-        let err = map_http_error("OpenAI", ureq::Error::StatusCode(401));
-        assert!(err.to_string().contains("invalid API key"));
-        assert!(err.to_string().contains("401"));
+    use crate::provider::cloud::test_server::CannedResponse;
+
+    fn provider_at(server: &CannedResponse) -> OpenAIProvider {
+        OpenAIProvider::new("sk-test-key".into(), "gpt-4o-mini".into())
+            .expect("a valid provider")
+            .with_api_base(server.base_url())
     }
 
-    #[test]
-    fn map_429_mentions_rate_limit() {
-        let err = map_http_error("OpenAI", ureq::Error::StatusCode(429));
-        assert!(err.to_string().contains("rate limited"));
+    fn short_request() -> GenerateRequest {
+        GenerateRequest {
+            prompt: "hi".into(),
+            max_tokens: 8,
+            ..GenerateRequest::default()
+        }
     }
 
+    /// The whole path works: the request reaches the endpoint with the
+    /// credential, and a good answer parses. The control for the failure
+    /// tests below, and what keeps `send` from being replaced wholesale.
     #[test]
-    fn map_error_includes_provider_name() {
-        let err = map_http_error("OpenAI", ureq::Error::StatusCode(500));
-        assert!(err.to_string().contains("OpenAI"));
+    fn a_completion_round_trips_through_the_request_path() {
+        let server = CannedResponse::serve(
+            200,
+            r#"{"choices":[{"message":{"content":"hello"},"finish_reason":"stop"}],
+                "usage":{"prompt_tokens":1,"completion_tokens":1}}"#,
+        );
+        let response = provider_at(&server)
+            .generate(&short_request())
+            .expect("a parsed completion");
+        assert_eq!(response.text, "hello");
+
+        let request = server.request();
+        assert!(
+            request.starts_with("POST /chat/completions "),
+            "the endpoint under the base: {request}"
+        );
+        assert!(
+            request
+                .to_ascii_lowercase()
+                .contains("authorization: bearer sk-test-key"),
+            "the credential travels as a bearer token: {request}"
+        );
+    }
+
+    /// OpenAI's no-credits answer is a 429 whose body says `insufficient_quota`
+    /// (#3236). Read by status alone it is "rate limited", which tells the
+    /// user to wait for something that will never reset on its own.
+    #[test]
+    fn no_credits_is_quota_exhausted_not_rate_limited() {
+        let server = CannedResponse::serve(
+            429,
+            r#"{"error":{"message":"You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing.",
+                "type":"insufficient_quota","param":null,"code":"credit_balance_exhausted"}}"#,
+        );
+        let error = provider_at(&server)
+            .generate(&short_request())
+            .expect_err("no credits");
+        assert_eq!(error.code(), "inference.provider_quota_exhausted");
+        assert!(
+            error.to_string().contains("no credits remaining"),
+            "the provider's own explanation reaches the user: {error}"
+        );
+    }
+
+    /// A model OpenAI does not know is a 404 with `model_not_found` (#3236).
+    /// By status alone it was "provider unavailable, retry".
+    #[test]
+    fn an_unknown_model_is_model_not_found_not_an_outage() {
+        let server = CannedResponse::serve(
+            404,
+            r#"{"error":{"message":"The model `gpt-4o-minx` does not exist or you do not have access to it.",
+                "type":"invalid_request_error","param":null,"code":"model_not_found"}}"#,
+        );
+        let error = provider_at(&server)
+            .generate(&short_request())
+            .expect_err("unknown model");
+        assert_eq!(error.code(), "inference.provider_model_not_found");
+        assert!(
+            error.to_string().contains("gpt-4o-minx"),
+            "names the model the provider rejected: {error}"
+        );
+    }
+
+    /// Direction control: a rejected key still reads as an auth failure, and
+    /// the provider's own wording rides along.
+    #[test]
+    fn a_rejected_key_is_auth_failed() {
+        let server = CannedResponse::serve(
+            401,
+            r#"{"error":{"message":"Incorrect API key provided: sk-demo-*************rong. You can find your API key at https://platform.openai.com/account/api-keys.",
+                "type":"invalid_request_error","code":"invalid_api_key","param":null},"status":401}"#,
+        );
+        let error = provider_at(&server)
+            .generate(&short_request())
+            .expect_err("rejected key");
+        assert_eq!(error.code(), "inference.provider_auth_failed");
+        let shown = error.to_string();
+        assert!(
+            shown.contains("Incorrect API key"),
+            "the provider's own explanation reaches the user: {shown}"
+        );
+        assert!(
+            !shown.contains("sk-demo"),
+            "a key echoed back by the provider is redacted: {shown}"
+        );
     }
 
     // -----------------------------------------------------------------------

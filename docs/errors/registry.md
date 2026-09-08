@@ -698,6 +698,12 @@ the public registry when adding, renaming, or removing a public error code.
 <a id="inference.provider_malformed_response"></a>
 - `inference.provider_malformed_response`
 
+<a id="inference.provider_model_not_found"></a>
+- `inference.provider_model_not_found`
+
+<a id="inference.provider_quota_exhausted"></a>
+- `inference.provider_quota_exhausted`
+
 <a id="inference.provider_rate_limited"></a>
 - `inference.provider_rate_limited`
 

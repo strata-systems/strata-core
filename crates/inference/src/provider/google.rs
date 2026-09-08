@@ -9,20 +9,23 @@
 
 use std::collections::HashMap;
 
-use crate::provider::cloud::reject_local_only;
+use crate::provider::cloud::{post_json, reject_local_only, CloudPost};
 use crate::wire::{
     ChatChoice, ChatMessage, ChatRequest, ChatResponse, FinishReason, FunctionDef, LogProbs,
     NamedToolChoice, ResponseFormat, Role, TokenLogProb, Tool, ToolCall, ToolCallFunction,
     ToolChoice, ToolChoiceMode, TopLogProb, Usage,
 };
-use crate::{GenerateRequest, GenerateResponse, InferenceError, ProviderFailure, StopReason};
+use crate::{GenerateRequest, GenerateResponse, InferenceError, StopReason};
 
-const API_BASE: &str = "https://generativelanguage.googleapis.com/v1beta/models";
+/// The API root every Gemini model endpoint hangs off.
+pub(crate) const API_BASE: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 
 /// Google cloud provider state.
 pub(crate) struct GoogleProvider {
     api_key: String,
     model: String,
+    /// Where requests go; [`API_BASE`] outside tests.
+    api_base: String,
 }
 
 impl std::fmt::Debug for GoogleProvider {
@@ -30,6 +33,7 @@ impl std::fmt::Debug for GoogleProvider {
         f.debug_struct("GoogleProvider")
             .field("model", &self.model)
             .field("api_key", &"[REDACTED]")
+            .field("api_base", &self.api_base)
             .finish()
     }
 }
@@ -46,7 +50,19 @@ impl GoogleProvider {
                 "Google model name is empty".to_string(),
             ));
         }
-        Ok(Self { api_key, model })
+        Ok(Self {
+            api_key,
+            model,
+            api_base: API_BASE.to_string(),
+        })
+    }
+
+    /// Point requests at a local stand-in for the Gemini API, so a test can
+    /// drive the real request path against a canned response.
+    #[cfg(test)]
+    pub(crate) fn with_api_base(mut self, api_base: &str) -> Self {
+        self.api_base = api_base.to_string();
+        self
     }
 
     pub(crate) fn generate(
@@ -88,24 +104,13 @@ impl GoogleProvider {
     /// the raw response body (shared by the completion and chat parsers). The
     /// URL carries the model name, so it is built here from `self.model`.
     fn send(&self, body: String) -> Result<String, InferenceError> {
-        let url = build_url(&self.model);
-
-        let agent = ureq::Agent::new_with_config(
-            ureq::config::Config::builder()
-                .timeout_global(Some(std::time::Duration::from_secs(30)))
-                .build(),
-        );
-        let mut response = agent
-            .post(&url)
-            .header("x-goog-api-key", &self.api_key)
-            .header("content-type", "application/json")
-            .send(body)
-            .map_err(|e| map_http_error("Google", e))?;
-
-        response
-            .body_mut()
-            .read_to_string()
-            .map_err(|e| InferenceError::Provider(format!("Google: failed to read response: {e}")))
+        post_json(&CloudPost {
+            provider: "Google",
+            url: &build_url(&self.api_base, &self.model),
+            headers: &[("x-goog-api-key", &self.api_key)],
+            body: &body,
+            timeout: std::time::Duration::from_secs(30),
+        })
     }
 
     pub(crate) fn model(&self) -> &str {
@@ -114,8 +119,8 @@ impl GoogleProvider {
 }
 
 /// Build the full URL with the model name (API key sent via header).
-pub(crate) fn build_url(model: &str) -> String {
-    format!("{API_BASE}/{}:generateContent", model_path(model))
+pub(crate) fn build_url(api_base: &str, model: &str) -> String {
+    format!("{api_base}/{}:generateContent", model_path(model))
 }
 
 /// Build the Google Gemini API request JSON.
@@ -731,13 +736,13 @@ fn gemini_logprob(entry: &serde_json::Value) -> f32 {
 // =========================================================================
 
 /// Build the URL for the Google embedContent API (single text).
-pub(crate) fn build_embed_url(model: &str) -> String {
-    format!("{API_BASE}/{}:embedContent", model_path(model))
+pub(crate) fn build_embed_url(api_base: &str, model: &str) -> String {
+    format!("{api_base}/{}:embedContent", model_path(model))
 }
 
 /// Build the URL for the Google batchEmbedContents API (multiple texts).
-pub(crate) fn build_batch_embed_url(model: &str) -> String {
-    format!("{API_BASE}/{}:batchEmbedContents", model_path(model))
+pub(crate) fn build_batch_embed_url(api_base: &str, model: &str) -> String {
+    format!("{api_base}/{}:batchEmbedContents", model_path(model))
 }
 
 /// Build the Google embedContent request JSON for a single text.
@@ -866,81 +871,9 @@ pub(crate) fn parse_batch_embed_response_json(body: &str) -> Result<Vec<Vec<f32>
         .collect()
 }
 
-/// Map ureq HTTP errors to InferenceError::Provider with descriptive messages.
-fn map_http_error(provider: &str, err: ureq::Error) -> InferenceError {
-    match &err {
-        ureq::Error::StatusCode(status) => {
-            let code = *status;
-            let description = match code {
-                400 => "bad request (check model name and parameters)",
-                401 | 403 => "invalid or unauthorized API key",
-                429 => "rate limited (too many requests)",
-                500 => "server error",
-                503 => "service unavailable",
-                _ => "HTTP error",
-            };
-            // D6: the status IS the classification. Describing it in prose and
-            // matching the prose back is how "invalid API key" became
-            // indistinguishable from an outage.
-            InferenceError::ProviderFailed {
-                kind: ProviderFailure::from_http_status(code),
-                message: format!("{provider}: {description} (HTTP {code})"),
-            }
-        }
-        // The transport already told us it timed out.
-        ureq::Error::Timeout(_) => InferenceError::ProviderFailed {
-            kind: ProviderFailure::Timeout,
-            message: format!("{provider}: {err}"),
-        },
-        _ => InferenceError::ProviderFailed {
-            kind: ProviderFailure::Unavailable,
-            message: format!("{provider}: {err}"),
-        },
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The transport's own verdict decides the kind (D6).
-    ///
-    /// `map_http_error` turns a real `ureq::Error` into a classified failure,
-    /// and nothing tested it: deleting the `Timeout` arm let a timeout fall
-    /// through to the catch-all and report as an outage, which is the exact
-    /// collapse D6 exists to prevent — an outage invites a retry against a
-    /// server that is fine, while a timeout points at the deadline.
-    ///
-    /// `from_http_status` had a truth table, but a truth table on a pure
-    /// function proves nothing about the match that feeds it.
-    #[test]
-    fn a_transport_timeout_is_a_timeout_not_an_outage() {
-        let timeout = map_http_error("p", ureq::Error::Timeout(ureq::Timeout::Global));
-        assert_eq!(timeout.code(), "inference.provider_timeout");
-
-        // The catch-all still reports an outage, so the assertion above is
-        // about the arm and not about every error becoming a timeout.
-        let other = map_http_error("p", ureq::Error::HostNotFound);
-        assert_eq!(other.code(), "inference.provider_unavailable");
-    }
-
-    /// A status code reaches the classifier that reads it.
-    #[test]
-    fn an_http_status_is_classified_by_its_status() {
-        for (status, expected) in [
-            (401, "inference.provider_auth_failed"),
-            (403, "inference.provider_auth_failed"),
-            (429, "inference.provider_rate_limited"),
-            (503, "inference.provider_unavailable"),
-        ] {
-            let error = map_http_error("p", ureq::Error::StatusCode(status));
-            assert_eq!(error.code(), expected, "HTTP {status}");
-            assert!(
-                error.to_string().contains(&status.to_string()),
-                "the message names the status: {error}"
-            );
-        }
-    }
 
     // -----------------------------------------------------------------------
     // Construction
@@ -979,7 +912,7 @@ mod tests {
 
     #[test]
     fn url_contains_model_not_key() {
-        let url = build_url("gemini-pro");
+        let url = build_url(API_BASE, "gemini-pro");
         assert!(url.contains("gemini-pro"));
         assert!(!url.contains("key="), "API key should not appear in URL");
         assert!(url.contains("generateContent"));
@@ -987,7 +920,7 @@ mod tests {
 
     #[test]
     fn url_has_no_query_params() {
-        let url = build_url("model");
+        let url = build_url(API_BASE, "model");
         assert!(!url.contains('?'), "URL should have no query parameters");
     }
 
@@ -1948,31 +1881,107 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // HTTP error mapping
+    // The request path, end to end against a local stand-in for the API
     // -----------------------------------------------------------------------
 
-    #[test]
-    fn map_400_mentions_bad_request() {
-        let err = map_http_error("Google", ureq::Error::StatusCode(400));
-        assert!(err.to_string().contains("bad request"));
+    use crate::provider::cloud::test_server::CannedResponse;
+
+    fn provider_at(server: &CannedResponse) -> GoogleProvider {
+        GoogleProvider::new("AIzaTestKey".into(), "gemini-test".into())
+            .expect("a valid provider")
+            .with_api_base(server.base_url())
     }
 
-    #[test]
-    fn map_403_mentions_unauthorized() {
-        let err = map_http_error("Google", ureq::Error::StatusCode(403));
-        assert!(err.to_string().contains("unauthorized"));
+    fn short_request() -> GenerateRequest {
+        GenerateRequest {
+            prompt: "hi".into(),
+            max_tokens: 8,
+            ..GenerateRequest::default()
+        }
     }
 
+    /// The whole path works: the request reaches the model's endpoint with
+    /// the credential in a header, not the URL, and a good answer parses.
     #[test]
-    fn map_429_mentions_rate_limit() {
-        let err = map_http_error("Google", ureq::Error::StatusCode(429));
-        assert!(err.to_string().contains("rate limited"));
+    fn a_completion_round_trips_through_the_request_path() {
+        let server = CannedResponse::serve(
+            200,
+            r#"{"candidates":[{"content":{"parts":[{"text":"hello"}]},"finishReason":"STOP"}],
+                "usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1}}"#,
+        );
+        let response = provider_at(&server)
+            .generate(&short_request())
+            .expect("a parsed completion");
+        assert_eq!(response.text, "hello");
+
+        let request = server.request();
+        assert!(
+            request.starts_with("POST /gemini-test:generateContent "),
+            "the model's endpoint under the base: {request}"
+        );
+        assert!(
+            request
+                .to_ascii_lowercase()
+                .contains("x-goog-api-key: aizatestkey"),
+            "the credential travels in x-goog-api-key: {request}"
+        );
+        assert!(
+            !request.contains("key="),
+            "the credential never rides in the URL: {request}"
+        );
     }
 
+    /// Google rejects a bad key with a 400 whose body says `API_KEY_INVALID`
+    /// (#3236). By status alone it was "invalid request", which told the user
+    /// to check their model name.
     #[test]
-    fn map_error_includes_provider_name() {
-        let err = map_http_error("Google", ureq::Error::StatusCode(500));
-        assert!(err.to_string().contains("Google"));
+    fn a_rejected_key_is_auth_failed_not_an_invalid_request() {
+        let server = CannedResponse::serve(
+            400,
+            r#"{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT",
+                "details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"API_KEY_INVALID","domain":"googleapis.com","metadata":{"service":"generativelanguage.googleapis.com"}},
+                           {"@type":"type.googleapis.com/google.rpc.LocalizedMessage","locale":"en-US","message":"API key not valid. Please pass a valid API key."}]}}"#,
+        );
+        let error = provider_at(&server)
+            .generate(&short_request())
+            .expect_err("rejected key");
+        assert_eq!(error.code(), "inference.provider_auth_failed");
+        assert!(
+            error.to_string().contains("API key not valid"),
+            "the provider's own explanation reaches the user: {error}"
+        );
+    }
+
+    /// A model Google does not know is a 404 `NOT_FOUND` (#3236). By status
+    /// alone it was "provider unavailable, retry".
+    #[test]
+    fn an_unknown_model_is_model_not_found_not_an_outage() {
+        let server = CannedResponse::serve(
+            404,
+            r#"{"error":{"code":404,"message":"models/gemini-nope is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.","status":"NOT_FOUND"}}"#,
+        );
+        let error = provider_at(&server)
+            .generate(&short_request())
+            .expect_err("unknown model");
+        assert_eq!(error.code(), "inference.provider_model_not_found");
+        assert!(
+            error.to_string().contains("gemini-nope"),
+            "names the model the provider rejected: {error}"
+        );
+    }
+
+    /// Direction control: a genuine rate limit is still one. Google's
+    /// `RESOURCE_EXHAUSTED` is its per-minute quota, which does reset.
+    #[test]
+    fn a_rate_limit_is_still_rate_limited() {
+        let server = CannedResponse::serve(
+            429,
+            r#"{"error":{"code":429,"message":"Resource has been exhausted (e.g. check quota).","status":"RESOURCE_EXHAUSTED"}}"#,
+        );
+        let error = provider_at(&server)
+            .generate(&short_request())
+            .expect_err("rate limited");
+        assert_eq!(error.code(), "inference.provider_rate_limited");
     }
 
     // -----------------------------------------------------------------------
@@ -2130,7 +2139,7 @@ mod tests {
 
     #[test]
     fn embed_url_single_contains_model() {
-        let url = build_embed_url("text-embedding-004");
+        let url = build_embed_url(API_BASE, "text-embedding-004");
         assert!(url.contains("text-embedding-004"));
         assert!(url.contains("embedContent"));
         assert!(!url.contains("batch"));
@@ -2138,7 +2147,7 @@ mod tests {
 
     #[test]
     fn batch_embed_url_contains_model() {
-        let url = build_batch_embed_url("text-embedding-004");
+        let url = build_batch_embed_url(API_BASE, "text-embedding-004");
         assert!(url.contains("text-embedding-004"));
         assert!(url.contains("batchEmbedContents"));
     }

@@ -588,17 +588,19 @@ Required error classes:
 5. Missing API key.
 6. Provider authentication failure.
 7. Provider rate limit.
-8. Provider timeout.
-9. Provider unavailable.
-10. Provider malformed response.
-11. Local native runtime failure.
-12. Local model load failure.
-13. Missing model.
-14. Registry corruption.
-15. Download disabled.
-16. Download failed.
-17. Download verification failed.
-18. IO failure.
+8. Provider quota exhausted (billing, not throttling).
+9. Provider model not found (the provider does not serve that name).
+10. Provider timeout.
+11. Provider unavailable.
+12. Provider malformed response.
+13. Local native runtime failure.
+14. Local model load failure.
+15. Missing model.
+16. Registry corruption.
+17. Download disabled.
+18. Download failed.
+19. Download verification failed.
+20. IO failure.
 
 Required global starter codes:
 
@@ -611,15 +613,17 @@ Required global starter codes:
 7. `inference.missing_api_key`
 8. `inference.provider_auth_failed`
 9. `inference.provider_rate_limited`
-10. `inference.provider_timeout`
-11. `inference.provider_unavailable`
-12. `inference.provider_malformed_response`
-13. `inference.download_disabled`
-14. `inference.download_failed`
-15. `inference.download_verification_failed`
-16. `inference.local_runtime_failed`
-17. `inference.registry_corrupt`
-18. `inference.io_failure`
+10. `inference.provider_quota_exhausted`
+11. `inference.provider_model_not_found`
+12. `inference.provider_timeout`
+13. `inference.provider_unavailable`
+14. `inference.provider_malformed_response`
+15. `inference.download_disabled`
+16. `inference.download_failed`
+17. `inference.download_verification_failed`
+18. `inference.local_runtime_failed`
+19. `inference.registry_corrupt`
+20. `inference.io_failure`
 
 The authoritative class and retry-policy mapping lives in
 `v1-error-and-diagnostics-contract.md`. Inference must not introduce a
