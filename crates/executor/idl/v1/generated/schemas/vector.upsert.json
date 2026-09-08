@@ -174,7 +174,7 @@
       },
       "vector": {
         "default": [],
-        "description": "Dense embedding. Accepted at wire (f64) precision and narrowed to the\nstored f32; a value that underflows or overflows f32 is rejected.\n\nEmpty when `text` is supplied instead.",
+        "description": "Dense embedding. Accepted at wire (f64) precision and narrowed to the\nstored f32; a value that underflows or overflows f32 is rejected.\n\nEmpty when `text` is supplied instead. A vector carries no model,\nso when the collection records an embedding model, Strata cannot\ncheck this vector against it: supplying one is the caller's\nstatement that the recorded model produced it. Only `text` is\nembedded under the record.",
         "items": {
           "format": "double",
           "type": "number"

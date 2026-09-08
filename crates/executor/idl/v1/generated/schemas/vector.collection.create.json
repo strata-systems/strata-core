@@ -81,7 +81,7 @@
         "type": "integer"
       },
       "embedding_model": {
-        "description": "The model that will produce this collection's vectors (D9).\n\nRecording it lets Strata refuse a query embedded with a different\nmodel — the failure dimension cannot catch, since two models at the\nsame width return neighbours that are ranked and meaningless. It is\nalso what `--text` needs, to know which model to call.",
+        "description": "The model that produces this collection's vectors (D9).\n\nWhat the record governs: `text` on `vector upsert` and\n`vector query` is embedded with this model and no other, so text\nwrites and searches cannot mix models — the failure dimension\ncannot catch, since two models at the same width return neighbours\nthat are ranked and meaningless. What it cannot govern: a `vector`\nsupplied directly carries no model, so Strata cannot check one\nagainst the record; supplying a vector is the caller's statement\nthat this model produced it.",
         "type": [
           "string",
           "null"

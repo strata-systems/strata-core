@@ -8566,7 +8566,7 @@
       "kind": "mutation.put",
       "title": "Declare vector collection embedding model",
       "summary": "Declare the embedding model a vector collection's vectors come from.",
-      "description": "Records, once, which embedding model produces this collection's vectors. A collection created without a model accepts vectors from anywhere, so nothing can check that a query is comparable with what is stored, and `text` cannot be embedded for it; declaring the model fixes both. Declaring the model a collection already records is a no-op and commits nothing. Declaring a different one is refused with `failed_precondition.engine.embedding_model_mismatch`: the stored vectors came from the recorded model, so create a separate collection for the other one. The current wire response uses the collection-list output with one item.\n\nSuccessful mutations return an acknowledgement of the outcome: for a state-changing write, the affected target with the mutation effect and commit facts; for mutations that produce a domain result (such as a branch or a promotion outcome), that result object.",
+      "description": "Records, once, which embedding model produces this collection's vectors. A declaration, not a verification: a stored vector carries no model, so this takes the caller's word for the vectors present; from then on `text` on upsert and query is embedded with this model and no other, and a collection with no recorded model cannot embed `text` at all. A vector supplied directly is not checked against the record — it cannot be — so supplying one remains the caller's statement that the recorded model produced it. Declaring the model a collection already records is a no-op and commits nothing. Declaring a different one is refused with `failed_precondition.engine.embedding_model_mismatch`: the stored vectors came from the recorded model, so create a separate collection for the other one. The current wire response uses the collection-list output with one item.\n\nSuccessful mutations return an acknowledgement of the outcome: for a state-changing write, the affected target with the mutation effect and commit facts; for mutations that produce a domain result (such as a branch or a promotion outcome), that result object.",
       "docs": "/docs/vector/collection/set_embedding_model",
       "cli": {
         "path": [
@@ -8578,7 +8578,7 @@
       },
       "mcp": {
         "name": "strata_vector_collection_set_embedding_model",
-        "description": "Use this when a collection has no recorded embedding model and the user wants to store or search it by text, or wants queries checked against the model that produced the stored vectors."
+        "description": "Use this when a collection has no recorded embedding model and the user wants to store or search it by text."
       },
       "feature": "core",
       "access": "write",

@@ -189,7 +189,7 @@
       },
       "query": {
         "default": [],
-        "description": "Query embedding. Accepted at wire (f64) precision and narrowed to the\nsearched f32; a value that underflows or overflows f32 is rejected.\n\nEmpty when `text` is supplied instead.",
+        "description": "Query embedding. Accepted at wire (f64) precision and narrowed to the\nsearched f32; a value that underflows or overflows f32 is rejected.\n\nEmpty when `text` is supplied instead. A vector carries no model,\nso when the collection records an embedding model, Strata cannot\ncheck this query against it: supplying one is the caller's\nstatement that the recorded model produced it, and a query from\nanother model returns neighbours that are ranked and meaningless.\nOnly `text` is embedded under the record.",
         "items": {
           "format": "double",
           "type": "number"

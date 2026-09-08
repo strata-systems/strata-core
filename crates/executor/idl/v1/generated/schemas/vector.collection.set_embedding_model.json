@@ -61,7 +61,7 @@
   "command": "vector.collection.set_embedding_model",
   "request": {
     "additionalProperties": false,
-    "description": "Declares which embedding model a collection's vectors come from (D9).\n\nFor collections created without `embedding_model` — every collection\nthat predates provenance. One-time: re-declaring the recorded model is\na no-op, and declaring a different one is refused with\n`failed_precondition.engine.embedding_model_mismatch`, because changing\nthe model under stored vectors is the mixing the record exists to\nprevent.",
+    "description": "Declares which embedding model a collection's vectors come from (D9).\n\nFor collections created without `embedding_model` — every collection\nthat predates provenance. A declaration, not a verification: a stored\nvector carries no model, so this takes the caller's word for the\nvectors present, and from then on `text` is embedded with this model.\nA vector supplied directly is not checked against it — it cannot be —\nand remains the caller's word. One-time: re-declaring the recorded\nmodel is a no-op, and declaring a different one is refused with\n`failed_precondition.engine.embedding_model_mismatch`, because changing\nthe model under stored vectors is the mixing the record exists to\nprevent.",
     "properties": {
       "branch": {
         "description": "Target branch. Defaults to the executor handle branch.",

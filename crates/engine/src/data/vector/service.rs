@@ -204,6 +204,12 @@ impl<'a> VectorService<'a> {
     /// returns neighbours that are ranked, confident, and meaningless. Nothing
     /// downstream can detect it — which is why the collection has to remember.
     ///
+    /// It checks a *named* model against the record. A vector write names
+    /// none — a vector carries no model — and a text write or query does not
+    /// name one either; it reads the record and embeds with it. So the one
+    /// path that names a model, and the one caller here, is
+    /// [`Self::declare_embedding_model`].
+    ///
     /// A collection with no recorded model accepts anything, because every
     /// collection created before provenance existed is in that state and must
     /// keep working. It is the text-embedding paths that refuse it, since they
@@ -289,11 +295,12 @@ impl<'a> VectorService<'a> {
     /// Records which embedding model a collection's vectors come from.
     ///
     /// A declaration, not a verification: the engine cannot tell which model
-    /// produced a vector already stored, so this takes the caller's word for
-    /// the ones present and holds every later write to it. It is one-time —
-    /// re-declaring the recorded model is a no-op that commits nothing, and
-    /// declaring a different one is refused with `embedding_model_mismatch`
-    /// exactly as a mismatched write would be, because changing the model
+    /// produced a vector — one already stored or one written later, since a
+    /// vector carries no model — so this takes the caller's word for both.
+    /// What the record holds to the model is what is embedded from text on
+    /// the collection's behalf. It is one-time — re-declaring the recorded
+    /// model is a no-op that commits nothing, and declaring a different one is
+    /// refused with `embedding_model_mismatch`, because changing the model
     /// under existing vectors is the very mixing rule 24 forbids. A collection
     /// that needs a different model is a different collection.
     ///

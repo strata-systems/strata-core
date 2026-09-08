@@ -37,7 +37,7 @@ $ strata vector exists docs a
 | `key` | `string` | yes | Vector key. |
 | `metadata` | `any` | no | Optional metadata. |
 | `text` | `string` | no | Text to embed with the collection's recorded model, instead of supplying a vector (D10). Exactly one of `vector` or `text`. |
-| `vector` | `number[]` | no | Dense embedding. Accepted at wire (f64) precision and narrowed to the stored f32; a value that underflows or overflows f32 is rejected. Empty when `text` is supplied instead. |
+| `vector` | `number[]` | no | Dense embedding. Accepted at wire (f64) precision and narrowed to the stored f32; a value that underflows or overflows f32 is rejected. Empty when `text` is supplied instead. A vector carries no model, so when the collection records an embedding model, Strata cannot check this vector against it: supplying one is the caller's statement that the recorded model produced it. Only `text` is embedded under the record. |
 
 Plus the optional scope: `branch` and `space` (default to the session branch and the `"default"` space).
 

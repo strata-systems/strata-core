@@ -33,7 +33,7 @@ $ strata vector collection stats docs
 |---|---|---|---|
 | `collection` | `string` | yes | Collection name. |
 | `dimension` | `integer` | yes | Embedding dimension. |
-| `embedding_model` | `string` | no | The model that will produce this collection's vectors (D9). Recording it lets Strata refuse a query embedded with a different model — the failure dimension cannot catch, since two models at the same width return neighbours that are ranked and meaningless. It is also what `--text` needs, to know which model to call. |
+| `embedding_model` | `string` | no | The model that produces this collection's vectors (D9). What the record governs: `text` on `vector upsert` and `vector query` is embedded with this model and no other, so text writes and searches cannot mix models — the failure dimension cannot catch, since two models at the same width return neighbours that are ranked and meaningless. What it cannot govern: a `vector` supplied directly carries no model, so Strata cannot check one against the record; supplying a vector is the caller's statement that this model produced it. |
 | `metric` | `VectorDistanceMetric` | yes | Distance metric. |
 
 Plus the optional scope: `branch` and `space` (default to the session branch and the `"default"` space).

@@ -869,12 +869,16 @@ pub enum Command {
         dimension: u64,
         /// Distance metric.
         metric: VectorDistanceMetric,
-        /// The model that will produce this collection's vectors (D9).
+        /// The model that produces this collection's vectors (D9).
         ///
-        /// Recording it lets Strata refuse a query embedded with a different
-        /// model — the failure dimension cannot catch, since two models at the
-        /// same width return neighbours that are ranked and meaningless. It is
-        /// also what `--text` needs, to know which model to call.
+        /// What the record governs: `text` on `vector upsert` and
+        /// `vector query` is embedded with this model and no other, so text
+        /// writes and searches cannot mix models — the failure dimension
+        /// cannot catch, since two models at the same width return neighbours
+        /// that are ranked and meaningless. What it cannot govern: a `vector`
+        /// supplied directly carries no model, so Strata cannot check one
+        /// against the record; supplying a vector is the caller's statement
+        /// that this model produced it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         embedding_model: Option<String>,
     },
@@ -912,8 +916,12 @@ pub enum Command {
     /// Declares which embedding model a collection's vectors come from (D9).
     ///
     /// For collections created without `embedding_model` — every collection
-    /// that predates provenance. One-time: re-declaring the recorded model is
-    /// a no-op, and declaring a different one is refused with
+    /// that predates provenance. A declaration, not a verification: a stored
+    /// vector carries no model, so this takes the caller's word for the
+    /// vectors present, and from then on `text` is embedded with this model.
+    /// A vector supplied directly is not checked against it — it cannot be —
+    /// and remains the caller's word. One-time: re-declaring the recorded
+    /// model is a no-op, and declaring a different one is refused with
     /// `failed_precondition.engine.embedding_model_mismatch`, because changing
     /// the model under stored vectors is the mixing the record exists to
     /// prevent.
@@ -983,7 +991,11 @@ pub enum Command {
         /// Dense embedding. Accepted at wire (f64) precision and narrowed to the
         /// stored f32; a value that underflows or overflows f32 is rejected.
         ///
-        /// Empty when `text` is supplied instead.
+        /// Empty when `text` is supplied instead. A vector carries no model,
+        /// so when the collection records an embedding model, Strata cannot
+        /// check this vector against it: supplying one is the caller's
+        /// statement that the recorded model produced it. Only `text` is
+        /// embedded under the record.
         #[serde(default)]
         vector: Vec<f64>,
         /// Text to embed with the collection's recorded model, instead of
@@ -1174,7 +1186,12 @@ pub enum Command {
         /// Query embedding. Accepted at wire (f64) precision and narrowed to the
         /// searched f32; a value that underflows or overflows f32 is rejected.
         ///
-        /// Empty when `text` is supplied instead.
+        /// Empty when `text` is supplied instead. A vector carries no model,
+        /// so when the collection records an embedding model, Strata cannot
+        /// check this query against it: supplying one is the caller's
+        /// statement that the recorded model produced it, and a query from
+        /// another model returns neighbours that are ranked and meaningless.
+        /// Only `text` is embedded under the record.
         #[serde(default)]
         query: Vec<f64>,
         /// Text to embed with the collection's recorded model, instead of

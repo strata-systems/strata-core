@@ -1114,9 +1114,12 @@ pub(crate) enum VectorCollectionCommand {
         /// Model that produces this collection's vectors, e.g. `miniLM` or
         /// `openai:text-embedding-3-small`.
         ///
-        /// Recording it lets Strata refuse a query embedded with a different
-        /// model. Two models at the same width otherwise return neighbours
-        /// that are ranked and meaningless.
+        /// `--text` on `vector upsert` and `vector query` is then embedded
+        /// with this model and no other, so text writes and searches cannot
+        /// mix models — two models at the same width return neighbours that
+        /// are ranked and meaningless. A vector you supply directly carries
+        /// no model and is not checked: supplying one is your statement that
+        /// this model produced it.
         #[arg(long)]
         embedding_model: Option<String>,
     },
@@ -1135,10 +1138,13 @@ pub(crate) enum VectorCollectionCommand {
     },
     /// Declare the model that produces a collection's vectors.
     ///
-    /// Declared once: a collection that already records this model is left as
-    /// it is, and one that records a different model is refused, since its
-    /// stored vectors came from that model. A collection with no recorded
-    /// model cannot embed `--text`.
+    /// A declaration, not a verification: stored vectors carry no model, so
+    /// this takes your word for the ones present, and `--text` is embedded
+    /// with this model from then on. Vectors you supply directly stay your
+    /// word. Declared once: a collection that already records this model is
+    /// left as it is, and one that records a different model is refused,
+    /// since its stored vectors came from that model. A collection with no
+    /// recorded model cannot embed `--text`.
     SetEmbeddingModel {
         /// Collection name.
         collection: String,

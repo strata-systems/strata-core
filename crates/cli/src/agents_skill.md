@@ -110,9 +110,12 @@ db.ai.capability("openai:gpt-4o-mini")         # offline: what a model supports
 Or record the model on the collection and let Strata do the embedding: create
 it with `--embedding-model` (or declare one later with
 `vector collection set-embedding-model`), then pass `--text` to `vector upsert`
-and `vector query`. A collection with no recorded model refuses `--text`, and a
-different model is refused rather than compared — two models at the same width
-return neighbours that are ranked and meaningless.
+and `vector query`. Text is embedded with the recorded model and no other, so
+text writes and searches cannot mix models — two models at the same width
+return neighbours that are ranked and meaningless. A collection with no
+recorded model refuses `--text`. A vector you supply directly carries no model,
+so Strata cannot check it against the record: supplying one is your statement
+that the recorded model produced it.
 
 ## CLI equivalents
 

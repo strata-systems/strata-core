@@ -75,8 +75,8 @@ strata ./mydb vector upsert embeddings doc1 @embedding.json --metadata '{"title"
 strata ./mydb vector query embeddings @query.json -k 5
 ```
 
-Record the embedding model on the collection and Strata embeds for you — and
-refuses a query embedded with a different model:
+Record the embedding model on the collection and Strata embeds for you — text
+writes and searches then use that model and no other:
 
 ```bash
 strata ./mydb vector collection create notes 1536 --embedding-model openai:text-embedding-3-small
