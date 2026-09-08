@@ -273,9 +273,25 @@ jobs:
           # inside it, which pulled its whole-body mutant into the diff. Excluded
           # by NAME (unique; verify_error_case is a distinct name); the pure
           # helper it calls (mask_committed_at) stays mutated.
+          #
+          # D10 `embed_text_with` (#3124) is the embedding round-trip itself:
+          # build the request, call the embedder, take the first vector.
+          # Reaching it needs a real model or a cloud key and no CI lane has
+          # either — the test that does exercise it,
+          # crates/executor/tests/vector_text_embedding.rs, is gated on
+          # `inference-local` plus STRATA_RUN_LOCAL_INFERENCE_INTEGRATION, like
+          # crates/inference/tests/local_integration.rs. Same category as
+          # run_update / run_clone / mcp::serve in .cargo/mutants.toml, but it
+          # has to live HERE: run B passes --no-config, so that file's
+          # exclusions never apply to executor mutants.
+          #
+          # Its decision logic stays mutated and is tested: EmbedPurpose's
+          # document/query mapping (a truth table this gate's earlier round
+          # forced), resolve_vector_or_text, and require_embedding_model.
           cargo mutants --no-config --in-diff pr.diff --package strata-executor \
             --features idl-tooling,inference,testkit \
             --exclude-re 'verify_case' \
+            --exclude-re 'embed_text_with' \
             --exclude-re 'serialize_failure_envelope|internal_panic_error|static_wire_request_error' \
             --exclude-re 'in (listener_loop|handle_connection)' \
             --exclude-re 'delete ! in IpcServer::stop' \
