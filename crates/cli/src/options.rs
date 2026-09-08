@@ -2309,7 +2309,7 @@ pub(crate) enum InferenceModelsCommand {
 
 #[cfg(test)]
 mod tests {
-    use clap::CommandFactory;
+    use clap::{CommandFactory, Parser};
 
     /// Collects every leaf verb path (a subcommand with no further
     /// subcommands) from the clap tree, e.g. `"kv get"`, `"config set"`.
@@ -2502,5 +2502,402 @@ mod tests {
         let actual = leaf_verbs();
         let expected: Vec<String> = EXPECTED_VERBS.iter().map(|v| (*v).to_owned()).collect();
         assert_eq!(actual, expected, "\nACTUAL VERBS:\n{}", actual.join("\n"));
+    }
+
+    // ---- Reader-facing surfaces (#3238) ------------------------------------
+    //
+    // The README (packaged into every release tarball) and the inference guides
+    // are read by coding agents that run whatever command the page prints
+    // (`docs/design/inference-developer-experience.md` §3b). Two guards keep
+    // those pages honest: every fenced `strata …` example must parse under the
+    // real clap tree, and no page may send the reader to a Rust toolchain —
+    // the lean binary's remedy is `strata inference install-local`. The runtime
+    // half (a parsed verb that still refuses to run bare) is #3233's.
+
+    /// Workspace-relative surfaces an agent copies verbatim. A directory is
+    /// walked recursively for `.md` files.
+    const READER_SURFACES: &[&str] = &["README.md", "docs/inference"];
+
+    fn reader_surfaces() -> Vec<(std::path::PathBuf, String)> {
+        // CARGO_MANIFEST_DIR = crates/cli.
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .expect("workspace root resolves");
+        let mut out = Vec::new();
+        for surface in READER_SURFACES {
+            let path = root.join(surface);
+            if path.is_dir() {
+                crate::arg_spec::tests::markdown_files(&path, &mut out);
+            } else {
+                let text = std::fs::read_to_string(&path)
+                    .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
+                out.push((path, text));
+            }
+        }
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        assert!(
+            !out.is_empty(),
+            "no reader-facing markdown found under {READER_SURFACES:?}"
+        );
+        out
+    }
+
+    /// Whether a fence's info string marks a block an agent would paste into a
+    /// shell: untagged, or tagged with a shell name. `rust`, `json`, `toml`,
+    /// `text` and the like are not commands.
+    fn is_shell_fence(info: &str) -> bool {
+        matches!(
+            info.split_whitespace().next().unwrap_or(""),
+            "" | "bash" | "sh" | "shell" | "console" | "zsh"
+        )
+    }
+
+    /// Every logical line inside a shell fence, with the 1-based number of the
+    /// physical line it starts on. A leading `$ ` prompt is dropped and, as in
+    /// bash, a trailing `\` is removed and the next physical line appended
+    /// with nothing in between. A continuation never crosses a fence: one
+    /// left dangling at the fence (or the end of the text) is flushed as it
+    /// stands, so no line goes unchecked.
+    fn fenced_shell_lines(markdown: &str) -> Vec<(usize, String)> {
+        let mut fence: Option<bool> = None; // Some(is_shell) while inside a fence.
+        let mut pending: Option<(usize, String)> = None;
+        let mut out = Vec::new();
+        for (index, raw) in markdown.lines().enumerate() {
+            let trimmed = raw.trim_start();
+            if let Some(info) = trimmed.strip_prefix("```") {
+                fence = if fence.is_some() {
+                    None
+                } else {
+                    Some(is_shell_fence(info))
+                };
+                out.extend(pending.take());
+                continue;
+            }
+            if fence != Some(true) {
+                continue;
+            }
+            let (line_no, joined) = if let Some((line_no, head)) = pending.take() {
+                (line_no, head + raw)
+            } else {
+                (
+                    index + 1,
+                    trimmed.strip_prefix("$ ").unwrap_or(trimmed).to_owned(),
+                )
+            };
+            if let Some(head) = joined.strip_suffix('\\') {
+                pending = Some((line_no, head.to_owned()));
+            } else {
+                out.push((line_no, joined));
+            }
+        }
+        out.extend(pending);
+        out
+    }
+
+    /// Whether a whole shell word separates commands: `|` `||` `;` `&` `&&`,
+    /// or a redirection (`>`, `>out`, `2>&1`, `<in`). Words are `shlex`'s,
+    /// so an unspaced `ping;` or `k>out` stays one word (bash would split
+    /// it) and a quoted `"|"` argument is indistinguishable from the
+    /// operator; the reader surfaces do neither.
+    fn is_shell_operator(word: &str) -> bool {
+        word.trim_start_matches(|c: char| c.is_ascii_digit())
+            .starts_with(['|', ';', '&', '<', '>'])
+    }
+
+    /// Whether a shell word is a `NAME=value` environment prefix.
+    fn is_env_assignment(word: &str) -> bool {
+        let Some((name, _)) = word.split_once('=') else {
+            return false;
+        };
+        let mut chars = name.chars();
+        chars
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+    }
+
+    /// The argv of every `strata` command on one shell line, in order: the
+    /// line is split like a shell (`shlex`: quotes, escapes, a `#` comment),
+    /// cut at each operator, and each command's leading `NAME=value` prefixes
+    /// are skipped. `None` means the line does not tokenize (an unbalanced
+    /// quote) — an agent pasting it would hit the same error.
+    fn strata_invocations(line: &str) -> Option<Vec<Vec<String>>> {
+        let words = shlex::split(line)?;
+        Some(
+            words
+                .split(|word| is_shell_operator(word))
+                .map(|command| {
+                    command
+                        .iter()
+                        .skip_while(|word| is_env_assignment(word))
+                        .cloned()
+                        .collect::<Vec<_>>()
+                })
+                .filter(|argv| argv.first().is_some_and(|head| head == "strata"))
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn fenced_shell_lines_harvest_shell_fences_only() {
+        let markdown = "\
+prose `strata kv get` mention
+```bash
+$ strata --cache ping
+export KEY=value
+strata config path   # comment
+```
+strata outside a fence
+```rust
+strata::not_a_command();
+```
+```
+strata init
+strata ./mydb kv put user:ada \\
+    '{\"role\":\"engineer\"}' \\
+  --branch agent-a
+```
+";
+        assert_eq!(
+            fenced_shell_lines(markdown),
+            vec![
+                (3, "strata --cache ping".to_owned()),
+                (4, "export KEY=value".to_owned()),
+                (5, "strata config path   # comment".to_owned()),
+                (12, "strata init".to_owned()),
+                (
+                    13,
+                    r#"strata ./mydb kv put user:ada     '{"role":"engineer"}'   --branch agent-a"#
+                        .to_owned()
+                ),
+            ]
+        );
+        // Tagged shell fences are harvested; other languages are not.
+        for tag in ["sh", "shell", "console", "zsh", "bash filename=x"] {
+            assert_eq!(
+                fenced_shell_lines(&format!("```{tag}\nstrata ping\n```\n")),
+                vec![(2, "strata ping".to_owned())],
+                "fence tag {tag:?}"
+            );
+        }
+        for tag in ["json", "toml", "text", "python"] {
+            assert_eq!(
+                fenced_shell_lines(&format!("```{tag}\nstrata ping\n```\n")),
+                Vec::<(usize, String)>::new(),
+                "fence tag {tag:?}"
+            );
+        }
+        // A continuation joins with nothing added, as bash does, and never
+        // leaks across a fence boundary: one dangling at the fence, or at the
+        // end of the text, is flushed as it stands rather than dropped.
+        assert_eq!(
+            fenced_shell_lines("```\nstrata ping\\\n--json\n```\n"),
+            vec![(2, "strata ping--json".to_owned())]
+        );
+        assert_eq!(
+            fenced_shell_lines("```\nstrata ping \\\n```\n```\nstrata init\n```\n"),
+            vec![
+                (2, "strata ping ".to_owned()),
+                (5, "strata init".to_owned())
+            ]
+        );
+        assert_eq!(
+            fenced_shell_lines("```\nstrata ping \\"),
+            vec![(2, "strata ping ".to_owned())]
+        );
+        assert_eq!(fenced_shell_lines(""), Vec::<(usize, String)>::new());
+    }
+
+    #[test]
+    fn shell_operator_and_env_assignment_words() {
+        for word in [
+            "|",
+            "||",
+            ";",
+            "&",
+            "&&",
+            ">",
+            ">out.json",
+            "2>&1",
+            "2>/dev/null",
+            "<in",
+        ] {
+            assert!(is_shell_operator(word), "{word:?} is an operator");
+        }
+        for word in ["strata", "a|b", "k>out", "5", "-k", "", "--as-of=1"] {
+            assert!(!is_shell_operator(word), "{word:?} is not an operator");
+        }
+        for word in ["KEY=value", "OPENAI_API_KEY=sk-...", "_x=", "a1="] {
+            assert!(is_env_assignment(word), "{word:?} is an assignment");
+        }
+        for word in [
+            "strata",
+            "--as-of=1",
+            "=v",
+            "1a=b",
+            "a-b=c",
+            "openai.api_key",
+            "",
+        ] {
+            assert!(!is_env_assignment(word), "{word:?} is not an assignment");
+        }
+    }
+
+    #[test]
+    fn strata_invocations_split_like_a_shell() {
+        let argv = |line: &str| strata_invocations(line).expect("tokenizes");
+        assert_eq!(
+            argv(r#"strata ./mydb kv put user:ada '{"role":"engineer"}'"#),
+            [[
+                "strata",
+                "./mydb",
+                "kv",
+                "put",
+                "user:ada",
+                r#"{"role":"engineer"}"#
+            ]]
+        );
+        assert_eq!(
+            argv(r#"strata --cache inference generate openai:gpt-4o-mini "Hello there""#),
+            [[
+                "strata",
+                "--cache",
+                "inference",
+                "generate",
+                "openai:gpt-4o-mini",
+                "Hello there"
+            ]]
+        );
+        assert_eq!(
+            argv("strata config path   # where the config file lives"),
+            [["strata", "config", "path"]]
+        );
+        assert_eq!(
+            argv(r#"strata ./mydb json set config '$.model' '"claude"'"#),
+            [[
+                "strata",
+                "./mydb",
+                "json",
+                "set",
+                "config",
+                "$.model",
+                r#""claude""#
+            ]]
+        );
+        // A `#` inside a word or a quote is data, not a comment.
+        assert_eq!(
+            argv("strata kv put k '#1' v#2"),
+            [["strata", "kv", "put", "k", "#1", "v#2"]]
+        );
+        // Operators end a command; every `strata` on the line is returned and
+        // the shell's other commands are not.
+        assert_eq!(
+            argv("strata ./mydb kv get k | jq .value"),
+            [["strata", "./mydb", "kv", "get", "k"]]
+        );
+        assert_eq!(
+            argv("strata ./mydb kv get k > out.json 2>&1"),
+            [["strata", "./mydb", "kv", "get", "k"]]
+        );
+        assert_eq!(
+            argv("cd mydb && strata ping ; strata info || echo down"),
+            [vec!["strata", "ping"], vec!["strata", "info"]]
+        );
+        assert_eq!(
+            argv(r#"strata kv put k "a|b" 'c>d'"#),
+            [["strata", "kv", "put", "k", "a|b", "c>d"]]
+        );
+        // A leading environment prefix is the shell's, not the command's.
+        assert_eq!(
+            argv("OPENAI_API_KEY=sk-... STRATA_LOG=debug strata ping"),
+            [["strata", "ping"]]
+        );
+        assert_eq!(
+            argv("export OPENAI_API_KEY=sk-..."),
+            Vec::<Vec<String>>::new()
+        );
+        assert_eq!(
+            argv("curl -fsSL https://stratadb.org/install.sh | sh"),
+            Vec::<Vec<String>>::new()
+        );
+        assert_eq!(argv("   "), Vec::<Vec<String>>::new());
+        // An unbalanced quote does not tokenize.
+        assert_eq!(strata_invocations(r#"strata kv put k "open"#), None);
+    }
+
+    /// An agent copies these lines verbatim, so every `strata` command on a
+    /// reader surface must parse under the real clap tree, and every shell
+    /// line must tokenize. Help and version are what those verbs print, so
+    /// they count as parsed. Gated on `inference` because it is the only
+    /// feature that shapes the clap tree, and the docs describe the shipped
+    /// binary, which carries it.
+    #[cfg(feature = "inference")]
+    #[test]
+    fn reader_surfaces_name_only_commands_the_clap_tree_parses() {
+        use clap::error::ErrorKind;
+
+        let mut failures = Vec::new();
+        let mut checked = 0;
+        for (path, text) in reader_surfaces() {
+            for (line_no, line) in fenced_shell_lines(&text) {
+                let Some(invocations) = strata_invocations(&line) else {
+                    failures.push(format!(
+                        "{}:{line_no}: {line}\n    does not tokenize (unbalanced quote)",
+                        path.display()
+                    ));
+                    continue;
+                };
+                for argv in invocations {
+                    checked += 1;
+                    match super::Cli::try_parse_from(&argv) {
+                        Ok(_) => {}
+                        Err(err)
+                            if matches!(
+                                err.kind(),
+                                ErrorKind::DisplayHelp
+                                    | ErrorKind::DisplayVersion
+                                    | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+                            ) => {}
+                        Err(err) => failures.push(format!(
+                            "{}:{line_no}: {}\n    {:?}",
+                            path.display(),
+                            argv.join(" "),
+                            err.kind()
+                        )),
+                    }
+                }
+            }
+        }
+        assert!(
+            checked > 0,
+            "no fenced `strata …` examples found on the reader surfaces"
+        );
+        assert!(
+            failures.is_empty(),
+            "fenced examples an agent would copy do not parse:\n{}",
+            failures.join("\n")
+        );
+    }
+
+    /// A reader-facing surface never names a cargo feature flag: the remedy
+    /// for a lean binary is `strata inference install-local`, and
+    /// `--features` is the crate's business, not the reader's (#3238).
+    #[test]
+    fn reader_surfaces_never_name_a_cargo_feature_flag() {
+        let mut offenders = Vec::new();
+        for (path, text) in reader_surfaces() {
+            for (index, line) in text.lines().enumerate() {
+                if line.contains("--features") {
+                    offenders.push(format!("{}:{}: {}", path.display(), index + 1, line.trim()));
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "reader-facing surfaces must name `strata inference install-local`, \
+             not a cargo feature flag:\n{}",
+            offenders.join("\n")
+        );
     }
 }
