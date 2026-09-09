@@ -3,6 +3,11 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Dry run (#3266): exercises format-gate, every build job and packaging on
+  # any ref, without publishing. The `release` and `update-homebrew` jobs run
+  # only for a tag push. The `-local` variant had never been built by this
+  # workflow when it first broke — dispatch this before tagging, not after.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -34,7 +39,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build:
     needs: format-gate
-    name: Build strata (${{ matrix.target }})
+    name: Build strata (${{ matrix.target }}${{ matrix.suffix }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -78,6 +83,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # llama.cpp is a git submodule (`crates/inference/vendor/llama.cpp`);
+          # a plain checkout leaves it empty and `crates/inference/build.rs`
+          # refuses to build (#3266). Only the local variant compiles it.
+          submodules: ${{ matrix.variant == 'local' }}
       - name: Authorize private git dependencies
         run: git config --global url."https://x-access-token:${{ secrets.STRATAHUB_READ_TOKEN }}@github.com/stratalab/stratahub".insteadOf "https://github.com/stratalab/stratahub"
       - uses: dtolnay/rust-toolchain@1.94.1
@@ -160,7 +170,7 @@ jobs:
   #    the v0.6.x install.sh contract)
   # ---------------------------------------------------------------------------
   package:
-    name: Package (${{ matrix.target }})
+    name: Package (${{ matrix.target }}${{ matrix.suffix }})
     needs: build
     runs-on: ubuntu-latest
     strategy:
@@ -175,12 +185,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: README.md
+          sparse-checkout: |
+            README.md
+            Cargo.toml
           sparse-checkout-cone-mode: false
 
       - name: Determine version
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        # A tag names the version. A dry run (workflow_dispatch) has only a
+        # branch name, which may contain `/`, so it packages under the
+        # workspace version instead.
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)-dry-run" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Download strata binary
         uses: actions/download-artifact@v4
@@ -208,6 +228,8 @@ jobs:
   release:
     name: Create Release
     needs: [package, build-wasm]
+    # Publishing is for tag pushes only; a dry run stops at packaging.
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -264,6 +286,9 @@ jobs:
   update-homebrew:
     name: Update Homebrew Tap
     needs: release
+    # Skipped with `release` on a dry run; stated here so the gate is
+    # visible on the job and not only inherited through `needs`.
+    if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
       - name: Download packaged artifacts
