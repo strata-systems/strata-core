@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use strata_executor::cli_metadata::CliCommandCatalog;
+use strata_executor::cli_metadata::{CliCommandCatalog, CliCommandEntry};
 use strata_executor::{
     public_error_code_entries, Command, CommitOutcomeStatus, ErrorClass, Executor, ExecutorError,
     ExecutorErrorClass, Output, PageInfo, RetryPolicy,
@@ -402,14 +402,107 @@ fn test_commands_that_reach_a_cloud_provider_declare_every_provider_failure_code
         "commands that reach a cloud provider declare only some of its failure codes:\n{}",
         partial.join("\n")
     );
-    // Both cloud-calling commands must have been held to the rule, or the
+    // Every cloud-calling command must have been held to the rule, or the
     // pass above is vacuous. The classifier is declaration-driven — a command
     // that reaches a provider but declares no provider code is invisible to
     // it — so a new command that calls the cloud transport is added here.
-    for id in ["inference.generate", "inference.embed"] {
+    // The two vector commands reach it when given `--text` (#3247).
+    for id in [
+        "inference.generate",
+        "inference.embed",
+        "vector.upsert",
+        "vector.query",
+    ] {
         assert!(
             reaches_provider.contains(id),
             "{id} was not classified as reaching a provider: {reaches_provider:?}"
+        );
+    }
+}
+
+/// `vector.upsert --text` and `vector.query --text` embed the text through the
+/// same `Inference::embeddings` call `inference.embed` dispatches to, so
+/// everything `embed` can fail with, they can fail with — yet they declared
+/// only the engine's missing-model precondition and no `inference.*` code at
+/// all (#3247). The rule: a command on the text-embedding path declares
+/// exactly the `inference.*` codes `inference.embed` declares — no fewer, and
+/// no extra ones either, since it has no inference path `embed` lacks. The
+/// list is copied by hand into each command's YAML because the IDL has no
+/// named error set to reference (#3250); this test is what keeps the copies
+/// aligned until it does.
+///
+/// `failed_precondition.engine.embedding_model_missing` is the marker: it is
+/// raised only when a command resolves a collection's recorded model in order
+/// to embed text, so declaring it *is* being on that path.
+#[test]
+fn test_commands_that_embed_text_declare_every_inference_embed_error_code() {
+    const MARKER: &str = "failed_precondition.engine.embedding_model_missing";
+
+    fn inference_codes(command: &CliCommandEntry) -> BTreeSet<&str> {
+        command
+            .errors
+            .iter()
+            .map(|error| error.code.as_str())
+            .filter(|code| code.starts_with("inference."))
+            .collect()
+    }
+
+    let catalog = CliCommandCatalog::embedded().expect("embedded command catalog loads");
+    let embed = catalog
+        .commands()
+        .iter()
+        .find(|command| command.id == "inference.embed")
+        .expect("inference.embed is in the embedded catalog");
+    let embed_codes = inference_codes(embed);
+    // The set being copied has to be a real one, or a hollowed-out `embed`
+    // would make every text-embedding command pass trivially. The floor is
+    // what the runtime can construct on the provider and not-supported paths;
+    // the local-runtime `inference.io_failure` is not held here yet (#3249).
+    let runtime_codes: BTreeSet<&str> = every_constructible_inference_error()
+        .iter()
+        .filter(|error| {
+            matches!(
+                error,
+                InferenceError::ProviderFailed { .. } | InferenceError::NotSupported(_)
+            )
+        })
+        .map(InferenceError::code)
+        .collect();
+    let undeclared: Vec<_> = runtime_codes.difference(&embed_codes).copied().collect();
+    assert!(
+        undeclared.is_empty(),
+        "inference.embed declares every provider and not-supported code; missing {undeclared:?}"
+    );
+
+    let mut embeds_text = BTreeSet::new();
+    let mut misaligned = Vec::new();
+    for command in catalog.commands() {
+        if !command.errors.iter().any(|error| error.code == MARKER) {
+            continue;
+        }
+        embeds_text.insert(command.id.as_str());
+        let codes = inference_codes(command);
+        let missing: Vec<_> = embed_codes.difference(&codes).copied().collect();
+        let extra: Vec<_> = codes.difference(&embed_codes).copied().collect();
+        if !missing.is_empty() || !extra.is_empty() {
+            misaligned.push(format!(
+                "{}: missing {missing:?}, extra {extra:?}",
+                command.id
+            ));
+        }
+    }
+    assert!(
+        misaligned.is_empty(),
+        "commands that embed text do not declare inference.embed's inference.* codes exactly:\n{}",
+        misaligned.join("\n")
+    );
+    // Both text-embedding commands must have been held to the rule, or the
+    // pass above is vacuous. A new command that embeds text through the
+    // collection's model declares the marker and is added here.
+    for id in ["vector.upsert", "vector.query"] {
+        assert!(
+            embeds_text.contains(id),
+            "{id} was not classified as embedding text: {embeds_text:?}"
         );
     }
 }

@@ -4,7 +4,7 @@
   "generator_version": "strata-executor-cli-idl.1",
   "source": {
     "path": "crates/executor/idl/v1/generated/command-index.json",
-    "checksum_sha256": "e702790d031b734321fe7601f51b58c7accd628cda585ecf9bed93443a7dab93",
+    "checksum_sha256": "8158f37484dcdfc755150f43609a7f5d21e72fd070c4653993a966858403d4f8",
     "schema_version": "strata.idl.v1",
     "generator_version": "strata-executor-idl.1"
   },
@@ -8414,7 +8414,7 @@
       "kind": "read.search",
       "title": "Query vectors",
       "summary": "Search a vector collection.",
-      "description": "Runs vector search through the engine planner and returns the best matches with scores and optional metadata.\n\nSearch responses return a bounded list of matches ordered by the engine. They are not cursor pages unless a later command explicitly advertises pagination.",
+      "description": "Runs vector search through the engine planner and returns the best matches with scores and optional metadata. With `text` instead of a query vector, the text is embedded through the collection's recorded model on the same inference path as `inference.embed`, so the `inference.*` failures listed below apply only to that form; a supplied vector never reaches the inference runtime.\n\nSearch responses return a bounded list of matches ordered by the engine. They are not cursor pages unless a later command explicitly advertises pagination.",
       "docs": "/docs/vector/query",
       "feature": "core",
       "access": "read",
@@ -8467,6 +8467,70 @@
         {
           "code": "failed_precondition.engine.embedding_model_missing",
           "docs": "https://stratadb.org/e/failed_precondition.engine.embedding_model_missing"
+        },
+        {
+          "code": "inference.unsupported_operation",
+          "docs": "https://stratadb.org/e/inference.unsupported_operation"
+        },
+        {
+          "code": "inference.missing_model",
+          "docs": "https://stratadb.org/e/inference.missing_model"
+        },
+        {
+          "code": "inference.model_load_failed",
+          "docs": "https://stratadb.org/e/inference.model_load_failed"
+        },
+        {
+          "code": "inference.local_runtime_failed",
+          "docs": "https://stratadb.org/e/inference.local_runtime_failed"
+        },
+        {
+          "code": "inference.missing_api_key",
+          "docs": "https://stratadb.org/e/inference.missing_api_key"
+        },
+        {
+          "code": "inference.provider_auth_failed",
+          "docs": "https://stratadb.org/e/inference.provider_auth_failed"
+        },
+        {
+          "code": "inference.provider_unavailable",
+          "docs": "https://stratadb.org/e/inference.provider_unavailable"
+        },
+        {
+          "code": "inference.provider_timeout",
+          "docs": "https://stratadb.org/e/inference.provider_timeout"
+        },
+        {
+          "code": "inference.provider_rate_limited",
+          "docs": "https://stratadb.org/e/inference.provider_rate_limited"
+        },
+        {
+          "code": "inference.provider_quota_exhausted",
+          "docs": "https://stratadb.org/e/inference.provider_quota_exhausted"
+        },
+        {
+          "code": "inference.provider_model_not_found",
+          "docs": "https://stratadb.org/e/inference.provider_model_not_found"
+        },
+        {
+          "code": "inference.invalid_request",
+          "docs": "https://stratadb.org/e/inference.invalid_request"
+        },
+        {
+          "code": "inference.provider_malformed_response",
+          "docs": "https://stratadb.org/e/inference.provider_malformed_response"
+        },
+        {
+          "code": "inference.unsupported_provider",
+          "docs": "https://stratadb.org/e/inference.unsupported_provider"
+        },
+        {
+          "code": "inference.unsupported_parameter",
+          "docs": "https://stratadb.org/e/inference.unsupported_parameter"
+        },
+        {
+          "code": "inference.registry_corrupt",
+          "docs": "https://stratadb.org/e/inference.registry_corrupt"
         }
       ],
       "fixtures": {
@@ -8702,7 +8766,7 @@
       "kind": "mutation.put",
       "title": "Upsert vector",
       "summary": "Insert or replace one vector.",
-      "description": "Upserts one vector key with a dense embedding and optional metadata. The vector dimension must match the collection configuration.\n\nSuccessful mutations return an acknowledgement of the outcome: for a state-changing write, the affected target with the mutation effect and commit facts; for mutations that produce a domain result (such as a branch or a promotion outcome), that result object.",
+      "description": "Upserts one vector key with a dense embedding and optional metadata. The vector dimension must match the collection configuration. With `text` instead of a vector, the text is embedded through the collection's recorded model on the same inference path as `inference.embed`, so the `inference.*` failures listed below apply only to that form; a supplied vector never reaches the inference runtime.\n\nSuccessful mutations return an acknowledgement of the outcome: for a state-changing write, the affected target with the mutation effect and commit facts; for mutations that produce a domain result (such as a branch or a promotion outcome), that result object.",
       "docs": "/docs/vector/upsert",
       "feature": "core",
       "access": "write",
@@ -8763,6 +8827,70 @@
         {
           "code": "failed_precondition.engine.embedding_model_missing",
           "docs": "https://stratadb.org/e/failed_precondition.engine.embedding_model_missing"
+        },
+        {
+          "code": "inference.unsupported_operation",
+          "docs": "https://stratadb.org/e/inference.unsupported_operation"
+        },
+        {
+          "code": "inference.missing_model",
+          "docs": "https://stratadb.org/e/inference.missing_model"
+        },
+        {
+          "code": "inference.model_load_failed",
+          "docs": "https://stratadb.org/e/inference.model_load_failed"
+        },
+        {
+          "code": "inference.local_runtime_failed",
+          "docs": "https://stratadb.org/e/inference.local_runtime_failed"
+        },
+        {
+          "code": "inference.missing_api_key",
+          "docs": "https://stratadb.org/e/inference.missing_api_key"
+        },
+        {
+          "code": "inference.provider_auth_failed",
+          "docs": "https://stratadb.org/e/inference.provider_auth_failed"
+        },
+        {
+          "code": "inference.provider_unavailable",
+          "docs": "https://stratadb.org/e/inference.provider_unavailable"
+        },
+        {
+          "code": "inference.provider_timeout",
+          "docs": "https://stratadb.org/e/inference.provider_timeout"
+        },
+        {
+          "code": "inference.provider_rate_limited",
+          "docs": "https://stratadb.org/e/inference.provider_rate_limited"
+        },
+        {
+          "code": "inference.provider_quota_exhausted",
+          "docs": "https://stratadb.org/e/inference.provider_quota_exhausted"
+        },
+        {
+          "code": "inference.provider_model_not_found",
+          "docs": "https://stratadb.org/e/inference.provider_model_not_found"
+        },
+        {
+          "code": "inference.invalid_request",
+          "docs": "https://stratadb.org/e/inference.invalid_request"
+        },
+        {
+          "code": "inference.provider_malformed_response",
+          "docs": "https://stratadb.org/e/inference.provider_malformed_response"
+        },
+        {
+          "code": "inference.unsupported_provider",
+          "docs": "https://stratadb.org/e/inference.unsupported_provider"
+        },
+        {
+          "code": "inference.unsupported_parameter",
+          "docs": "https://stratadb.org/e/inference.unsupported_parameter"
+        },
+        {
+          "code": "inference.registry_corrupt",
+          "docs": "https://stratadb.org/e/inference.registry_corrupt"
         }
       ],
       "fixtures": {
