@@ -456,8 +456,9 @@ fn test_commands_that_embed_text_declare_every_inference_embed_error_code() {
     let embed_codes = inference_codes(embed);
     // The set being copied has to be a real one, or a hollowed-out `embed`
     // would make every text-embedding command pass trivially. The floor is
-    // what the runtime can construct on the provider and not-supported paths;
-    // the local-runtime `inference.io_failure` is not held here yet (#3249).
+    // what the runtime can construct on the provider and not-supported paths.
+    // (`inference.io_failure` has had no producer since #3249; its fate is
+    // #3252.)
     let runtime_codes: BTreeSet<&str> = every_constructible_inference_error()
         .iter()
         .filter(|error| {
