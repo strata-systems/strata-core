@@ -655,8 +655,11 @@ mod tests {
         result
     }
 
+    /// Shared with the other test modules in this binary: every test that
+    /// touches a key variable must serialize on the same `ENV_LOCK`, or one
+    /// module's unset races another's read.
     #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
-    fn with_env_unset<T>(env_var: &str, test: impl FnOnce() -> T) -> T {
+    pub(crate) fn with_env_unset<T>(env_var: &str, test: impl FnOnce() -> T) -> T {
         let _guard = ENV_LOCK.lock().expect("env lock poisoned");
         let previous = std::env::var_os(env_var);
         std::env::remove_var(env_var);

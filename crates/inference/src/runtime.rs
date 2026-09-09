@@ -16,7 +16,7 @@ use std::path::PathBuf;
     feature = "openai",
     feature = "google"
 ))]
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use crate::{
     generation_provider_feature_enabled, parse_model_spec, GenerateRequest, GenerateResponse,
@@ -477,7 +477,7 @@ impl InferenceRuntime {
         {
             let (provider, _model) = parse_model_spec(model_spec)?;
             if provider == ProviderKind::Local {
-                let mut cache = self.lock_generation()?;
+                let mut cache = self.lock_generation();
                 let engine = self.cached_generation_engine(&mut cache, model_spec, None)?;
                 return engine.generate(request);
             }
@@ -536,7 +536,7 @@ impl InferenceRuntime {
         {
             let (provider, _model) = parse_model_spec(model_spec)?;
             if provider == ProviderKind::Local {
-                let mut cache = self.lock_generation()?;
+                let mut cache = self.lock_generation();
                 let engine = self.cached_generation_engine(
                     &mut cache,
                     model_spec,
@@ -623,7 +623,7 @@ impl InferenceRuntime {
     ) -> Result<Vec<u32>, InferenceError> {
         #[cfg(feature = "local")]
         {
-            let mut cache = self.lock_generation()?;
+            let mut cache = self.lock_generation();
             let engine = self.cached_generation_engine(&mut cache, model_spec, None)?;
             engine.encode(text, add_special)
         }
@@ -639,7 +639,7 @@ impl InferenceRuntime {
     pub fn detokenize(&self, model_spec: &str, ids: &[u32]) -> Result<String, InferenceError> {
         #[cfg(feature = "local")]
         {
-            let mut cache = self.lock_generation()?;
+            let mut cache = self.lock_generation();
             let engine = self.cached_generation_engine(&mut cache, model_spec, None)?;
             engine.decode(ids)
         }
@@ -663,7 +663,7 @@ impl InferenceRuntime {
             if provider == ProviderKind::Local {
                 #[cfg(feature = "local")]
                 {
-                    let mut cache = self.lock_embeddings()?;
+                    let mut cache = self.lock_embeddings();
                     let engine = self.cached_embedding_engine(&mut cache, model_spec)?;
                     return engine.embed(&request.text);
                 }
@@ -714,7 +714,7 @@ impl InferenceRuntime {
             let embeddings = if provider == ProviderKind::Local {
                 #[cfg(feature = "local")]
                 {
-                    let mut cache = self.lock_embeddings()?;
+                    let mut cache = self.lock_embeddings();
                     let engine = self.cached_embedding_engine(&mut cache, model_spec)?;
                     engine.embed_batch(&refs)?
                 }
@@ -768,7 +768,7 @@ impl InferenceRuntime {
         #[cfg(feature = "local")]
         {
             let refs: Vec<&str> = request.passages.iter().map(String::as_str).collect();
-            let mut cache = self.lock_rankers()?;
+            let mut cache = self.lock_rankers();
             let engine = self.cached_ranking_engine(&mut cache, model_spec)?;
             let scores = engine.rank(&request.query, &refs)?;
             Ok(RankResponse {
@@ -810,14 +810,14 @@ impl InferenceRuntime {
             feature = "google"
         ))]
         {
-            let mut cache = self.lock_generation()?;
+            let mut cache = self.lock_generation();
             unloaded |= remove_matching(&mut cache, _model_spec);
         }
         #[cfg(feature = "local")]
         {
-            let mut cache = self.lock_embeddings()?;
+            let mut cache = self.lock_embeddings();
             unloaded |= remove_matching(&mut cache, _model_spec);
-            let mut cache = self.lock_rankers()?;
+            let mut cache = self.lock_rankers();
             unloaded |= remove_matching(&mut cache, _model_spec);
         }
         Ok(unloaded)
@@ -834,7 +834,7 @@ impl InferenceRuntime {
                     feature = "google"
                 ))]
                 {
-                    let cache = self.lock_generation()?;
+                    let cache = self.lock_generation();
                     sorted_keys(&cache)
                 }
                 #[cfg(not(any(
@@ -850,7 +850,7 @@ impl InferenceRuntime {
             embedding_models: {
                 #[cfg(feature = "local")]
                 {
-                    let cache = self.lock_embeddings()?;
+                    let cache = self.lock_embeddings();
                     sorted_keys(&cache)
                 }
                 #[cfg(not(feature = "local"))]
@@ -861,7 +861,7 @@ impl InferenceRuntime {
             ranking_models: {
                 #[cfg(feature = "local")]
                 {
-                    let cache = self.lock_rankers()?;
+                    let cache = self.lock_rankers();
                     sorted_keys(&cache)
                 }
                 #[cfg(not(feature = "local"))]
@@ -885,30 +885,18 @@ impl InferenceRuntime {
         feature = "openai",
         feature = "google"
     ))]
-    fn lock_generation(
-        &self,
-    ) -> Result<std::sync::MutexGuard<'_, HashMap<String, GenerationEngine>>, InferenceError> {
-        self.generation
-            .lock()
-            .map_err(|err| InferenceError::Io(format!("generation cache mutex poisoned: {err}")))
+    fn lock_generation(&self) -> MutexGuard<'_, HashMap<String, GenerationEngine>> {
+        lock_model_cache(&self.generation, "generation")
     }
 
     #[cfg(feature = "local")]
-    fn lock_embeddings(
-        &self,
-    ) -> Result<std::sync::MutexGuard<'_, HashMap<String, EmbeddingEngine>>, InferenceError> {
-        self.embeddings
-            .lock()
-            .map_err(|err| InferenceError::Io(format!("embedding cache mutex poisoned: {err}")))
+    fn lock_embeddings(&self) -> MutexGuard<'_, HashMap<String, EmbeddingEngine>> {
+        lock_model_cache(&self.embeddings, "embedding")
     }
 
     #[cfg(feature = "local")]
-    fn lock_rankers(
-        &self,
-    ) -> Result<std::sync::MutexGuard<'_, HashMap<String, RankingEngine>>, InferenceError> {
-        self.rankers
-            .lock()
-            .map_err(|err| InferenceError::Io(format!("ranking cache mutex poisoned: {err}")))
+    fn lock_rankers(&self) -> MutexGuard<'_, HashMap<String, RankingEngine>> {
+        lock_model_cache(&self.rankers, "ranking")
     }
 
     #[cfg(any(
@@ -1207,6 +1195,45 @@ fn remove_matching<T>(map: &mut HashMap<String, T>, model_spec: Option<&str>) ->
             had_entries
         }
     }
+}
+
+/// Locks a model cache, recovering if a panic on another thread poisoned it.
+///
+/// The lock is held across every engine load and call, so a poisoned lock
+/// means a thread unwound while it had one entry borrowed — a local
+/// llama.cpp context possibly mid-decode. `PoisonError` does not say which
+/// entry, so the whole map is treated as suspect: every cached engine is
+/// dropped rather than reused (the engine precedents in `persistence/` keep
+/// their data because it holds no invariant a panic can break; a native
+/// context does), the poison flag is cleared, and the next caller sees an
+/// empty, working cache. A model reload is the price of one panic. Before
+/// #3249 the poison was reported as `inference.io_failure` ("inspect
+/// filesystem permissions") on every later call for the rest of the process.
+#[cfg(any(
+    feature = "local",
+    feature = "anthropic",
+    feature = "openai",
+    feature = "google"
+))]
+fn lock_model_cache<'a, T>(
+    cache: &'a Mutex<HashMap<String, T>>,
+    kind: &'static str,
+) -> MutexGuard<'a, HashMap<String, T>> {
+    cache.lock().unwrap_or_else(|poisoned| {
+        let mut guard = poisoned.into_inner();
+        tracing::warn!(
+            cache = kind,
+            dropped_models = guard.len(),
+            "model cache lock was poisoned by a panic on another thread; dropping its cached models"
+        );
+        // Clear before un-poisoning: if an engine's Drop panics mid-clear,
+        // the guard's unwind re-poisons the lock and the next caller recovers
+        // again from the half-cleared map. The other order would let a clean
+        // flag outlive a failed recovery.
+        guard.clear();
+        cache.clear_poison();
+        guard
+    })
 }
 
 /// What to tell a caller who needs local model execution and does not have it.
@@ -1584,5 +1611,254 @@ mod tests {
             runtime.cache_status().expect("cache status"),
             ModelCacheStatus::default()
         );
+    }
+
+    /// Poisons a lock the way production does: a panic on another thread
+    /// while it holds the guard.
+    #[cfg(any(
+        feature = "local",
+        feature = "anthropic",
+        feature = "openai",
+        feature = "google"
+    ))]
+    fn poison<T: Send>(lock: &Mutex<T>) {
+        let outcome = std::thread::scope(|scope| {
+            scope
+                .spawn(|| {
+                    let _guard = lock.lock().expect("lock is clean before poisoning");
+                    panic!("simulated panic while holding a model cache lock");
+                })
+                .join()
+        });
+        assert!(outcome.is_err(), "the poisoning thread panicked");
+        assert!(lock.is_poisoned());
+    }
+
+    /// Caches an engine under `spec` the way a loaded local model is cached.
+    ///
+    /// A cloud engine stands in because it constructs offline; a local one
+    /// needs a model file. Production caches only local engines here —
+    /// `generate` builds cloud engines per call — so the stand-in is a test
+    /// convenience, not a production state.
+    #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
+    fn cache_stand_in_engine(runtime: &InferenceRuntime, spec: &str) {
+        #[cfg(feature = "openai")]
+        let provider = ProviderKind::OpenAI;
+        #[cfg(all(feature = "anthropic", not(feature = "openai")))]
+        let provider = ProviderKind::Anthropic;
+        #[cfg(all(
+            feature = "google",
+            not(feature = "openai"),
+            not(feature = "anthropic")
+        ))]
+        let provider = ProviderKind::Google;
+        let engine =
+            GenerationEngine::cloud(provider, "test-key".to_owned(), "test-model".to_owned())
+                .expect("cloud engine constructs offline");
+        runtime
+            .generation
+            .lock()
+            .expect("lock is clean")
+            .insert(spec.to_owned(), engine);
+    }
+
+    /// A panic on one thread while it held a model cache must not fail every
+    /// later caller of the runtime (#3249): the runtime kept reporting the
+    /// poisoned lock as `inference.io_failure` — "inspect filesystem
+    /// permissions" — on every call for the rest of the process. The engines
+    /// that thread was using are dropped and the lock is cleaned instead, so
+    /// the next caller sees an empty, working cache.
+    #[test]
+    #[cfg(any(
+        feature = "local",
+        feature = "anthropic",
+        feature = "openai",
+        feature = "google"
+    ))]
+    fn test_a_poisoned_model_cache_does_not_fail_later_callers() {
+        let runtime = InferenceRuntime::default();
+        // A local-only build exercises recovery of an empty cache.
+        #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
+        cache_stand_in_engine(&runtime, "test-model");
+        poison(&runtime.generation);
+
+        let status = runtime
+            .cache_status()
+            .expect("cache status survives a poisoned generation cache");
+        assert!(
+            status.generation_models.is_empty(),
+            "models cached during the panic are dropped: {status:?}"
+        );
+        assert!(
+            !runtime.generation.is_poisoned(),
+            "recovery leaves the lock clean for the next caller"
+        );
+        let unloaded = runtime
+            .unload(None)
+            .expect("unload survives a poisoned generation cache");
+        assert!(!unloaded, "nothing was cached to unload");
+    }
+
+    /// `unload` is the other public entry point onto the cache; it must
+    /// recover on its own, not only after `cache_status` already has.
+    #[test]
+    #[cfg(any(
+        feature = "local",
+        feature = "anthropic",
+        feature = "openai",
+        feature = "google"
+    ))]
+    fn test_unload_recovers_a_poisoned_model_cache_first() {
+        let runtime = InferenceRuntime::default();
+        poison(&runtime.generation);
+
+        let unloaded = runtime
+            .unload(None)
+            .expect("unload survives a poisoned generation cache");
+        assert!(
+            !unloaded,
+            "the panicking thread's models were already dropped"
+        );
+        assert!(!runtime.generation.is_poisoned());
+    }
+
+    #[cfg(any(
+        feature = "local",
+        feature = "anthropic",
+        feature = "openai",
+        feature = "google"
+    ))]
+    fn populated_cache() -> Mutex<HashMap<String, u32>> {
+        Mutex::new(HashMap::from([
+            ("tinyllama".to_owned(), 1),
+            ("minilm".to_owned(), 2),
+        ]))
+    }
+
+    /// Recovery drops what the panicking thread was using and cleans the lock,
+    /// so the first caller after the panic and every caller after that see the
+    /// same empty, unpoisoned cache.
+    #[test]
+    #[cfg(any(
+        feature = "local",
+        feature = "anthropic",
+        feature = "openai",
+        feature = "google"
+    ))]
+    fn test_lock_model_cache_recovers_a_poisoned_cache_by_dropping_its_models() {
+        let cache = populated_cache();
+        poison(&cache);
+
+        let guard = lock_model_cache(&cache, "test");
+        assert!(guard.is_empty(), "models held during the panic are dropped");
+        drop(guard);
+        assert!(!cache.is_poisoned(), "the poison flag is cleared");
+
+        let guard = lock_model_cache(&cache, "test");
+        assert!(
+            guard.is_empty(),
+            "the cache stays empty for the next caller"
+        );
+    }
+
+    /// Direction control: a clean lock is passed through untouched. Recovery
+    /// must never drop the cached models of a runtime that did not panic.
+    #[test]
+    #[cfg(any(
+        feature = "local",
+        feature = "anthropic",
+        feature = "openai",
+        feature = "google"
+    ))]
+    fn test_lock_model_cache_leaves_a_clean_cache_alone() {
+        let cache = populated_cache();
+
+        let guard = lock_model_cache(&cache, "test");
+        assert_eq!(sorted_keys(&guard), ["minilm", "tinyllama"]);
+        assert_eq!(guard.get("tinyllama"), Some(&1));
+        drop(guard);
+        assert!(!cache.is_poisoned());
+    }
+
+    /// `unload` says whether it dropped anything, so a caller can tell
+    /// "unloaded" from "nothing was loaded". Nothing else observes the fold
+    /// across the caches: with it broken, every unload reports nothing dropped.
+    #[test]
+    #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
+    fn unload_reports_whether_it_dropped_a_cached_model() {
+        let runtime = InferenceRuntime::default();
+        cache_stand_in_engine(&runtime, "test-model");
+
+        assert!(
+            !runtime.unload(Some("other-model")).expect("unload"),
+            "a spec that is not cached drops nothing"
+        );
+        assert!(
+            runtime.unload(Some("test-model")).expect("unload"),
+            "the cached model is dropped"
+        );
+        let status = runtime.cache_status().expect("cache status");
+        assert!(status.generation_models.is_empty(), "{status:?}");
+        assert!(
+            !runtime.unload(None).expect("unload"),
+            "nothing is left to drop"
+        );
+    }
+
+    /// `generate` and `chat` fork on the spec's provider: a local spec goes
+    /// to the model cache, anything else to a cloud engine. A flipped fork
+    /// still fails both calls in a keyless build, so each side is pinned by
+    /// the code its own path produces, not by failure alone.
+    ///
+    /// A cloud spec reaches the provider path, which asks for a key before
+    /// anything else; sent down the local path instead it is refused as not
+    /// a local model (`inference.unsupported_operation`).
+    #[test]
+    #[cfg(feature = "openai")]
+    fn a_cloud_spec_is_served_by_its_provider_not_the_model_cache() {
+        let runtime = InferenceRuntime::default();
+        let request = GenerateRequest::default();
+        let chat = crate::wire::ChatRequest {
+            prompt: Some("hi".to_owned()),
+            ..Default::default()
+        };
+
+        crate::tests::with_env_unset("OPENAI_API_KEY", || {
+            let error = runtime
+                .generate("openai:gpt-test", &request)
+                .expect_err("no key is set");
+            assert_eq!(error.code(), "inference.missing_api_key");
+            let error = runtime
+                .chat("openai:gpt-test", &chat)
+                .expect_err("no key is set");
+            assert_eq!(error.code(), "inference.missing_api_key");
+        });
+    }
+
+    /// The other side of the fork: a local spec reaches the local loader,
+    /// which this build does not have (`inference.unsupported_operation`);
+    /// sent down the provider path instead it is refused as a provider this
+    /// build lacks (`inference.unsupported_provider`).
+    #[test]
+    #[cfg(all(
+        any(feature = "anthropic", feature = "openai", feature = "google"),
+        not(feature = "local")
+    ))]
+    fn a_local_spec_is_served_by_the_model_cache_not_a_provider() {
+        let runtime = InferenceRuntime::default();
+        let request = GenerateRequest::default();
+        let chat = crate::wire::ChatRequest {
+            prompt: Some("hi".to_owned()),
+            ..Default::default()
+        };
+
+        let error = runtime
+            .generate("tinyllama", &request)
+            .expect_err("no local execution in this build");
+        assert_eq!(error.code(), "inference.unsupported_operation");
+        let error = runtime
+            .chat("tinyllama", &chat)
+            .expect_err("no local execution in this build");
+        assert_eq!(error.code(), "inference.unsupported_operation");
     }
 }

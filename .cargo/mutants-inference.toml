@@ -18,3 +18,31 @@ exclude_globs = [
     "crates/inference/src/rank.rs",
     "crates/inference/src/provider/local.rs",
 ]
+
+# Reasoned exclusions (regexes over mutant names). `runtime.rs` is a MIXED
+# file: most of it compiles here, but its `#[cfg(feature = "local")]` items are
+# in exactly the position of the files above — never compiled in this lane, so
+# their mutants survive vacuously. cargo-mutants mutates source text without
+# evaluating cfg, and a glob cannot exclude part of a file, so those items are
+# named here as they surface. Vacuity is proven, not assumed: a
+# `compile_error!` planted in each item builds clean under this lane's
+# features and fails the build when moved to a compiled neighbour (#3253).
+# These entries are the incident log for #3254, which is where the class gets
+# fixed (compile the lane with `local`, or move the gated code into files the
+# globs above already cover); retire them there.
+exclude_re = [
+    # The `local`-only model-cache guards (#3249). Beyond being uncompiled
+    # here, every replacement cargo-mutants can write for a `MutexGuard`
+    # return is unviable — this lane judged all ten of the compiled twin
+    # `lock_generation`'s that way — so nothing is lost by not judging these.
+    # Their strength mechanism is the real-model integration suite, like the
+    # files above.
+    "replace InferenceRuntime::lock_embeddings -> MutexGuard",
+    "replace InferenceRuntime::lock_rankers -> MutexGuard",
+    # `unload` folds "dropped anything?" across three caches with `|=`; two of
+    # the three folds sit in its `local`-only block. A mutant's name carries no
+    # cfg context, so this entry also covers the compiled generation fold —
+    # which is pinned directly instead: planting `&=` there reds
+    # `unload_reports_whether_it_dropped_a_cached_model`, verified by hand.
+    "replace \\|= with &= in InferenceRuntime::unload",
+]
