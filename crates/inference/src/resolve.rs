@@ -241,7 +241,7 @@ impl ResolvedModel {
     fn task_not_supported_message(&self, requested: ModelUse) -> String {
         match &self.source {
             ModelSource::Catalog { entry, .. } => format!(
-                "`{}` is a {} model; it cannot {}. Run `strata inference models list` to \
+                "`{}`'s task is `{}`; it cannot {}. Run `strata inference models list` to \
                  see each model's task.",
                 self.spec, entry.task, requested
             ),
@@ -718,6 +718,49 @@ mod tests {
         }
     }
 
+    /// The refusal says what the model does instead: a catalogued model names
+    /// its task and where every model's task is listed; a cloud model names
+    /// the provider that lacks the task.
+    #[test]
+    fn the_wrong_task_refusal_says_what_the_model_does_instead() {
+        let (_dir, registry) = registry();
+        let err = resolve_in(
+            &registry,
+            true,
+            true,
+            "miniLM",
+            Some(ModelUse::Run(ModelTask::Generate)),
+        )
+        .require_ready()
+        .expect_err("miniLM embeds");
+        assert_eq!(err.code(), "inference.unsupported_operation");
+        let message = err.to_string();
+        assert!(message.contains("`miniLM`'s task is `embed`"), "{message}");
+        assert!(message.contains("cannot generate"), "{message}");
+        assert!(
+            message.contains("strata inference models list"),
+            "{message}"
+        );
+
+        let err = resolve_in(
+            &registry,
+            true,
+            true,
+            "anthropic:m",
+            Some(ModelUse::Run(ModelTask::Embed)),
+        )
+        .require_ready()
+        .expect_err("anthropic has no embedding API");
+        assert_eq!(err.code(), "inference.unsupported_operation");
+        let message = err.to_string();
+        assert!(message.contains("served by anthropic"), "{message}");
+        assert!(message.contains("cannot embed"), "{message}");
+        assert!(
+            !message.contains("strata inference models list"),
+            "the catalog does not list cloud models: {message}"
+        );
+    }
+
     #[test]
     fn every_catalogued_model_tokenizes_but_only_for_its_own_task_runs() {
         for entry in crate::registry::catalog::CATALOG {
@@ -954,6 +997,36 @@ mod tests {
     }
 
     // --- helpers --------------------------------------------------------------
+
+    /// `is_cloud` decides which engine a ready model is handed to; every
+    /// source answers it, and only `Cloud` answers yes. (The dispatch it
+    /// gates runs only against a real engine or a live provider, so the
+    /// decision is pinned here, at the source.)
+    #[test]
+    fn only_the_cloud_source_is_cloud() {
+        let (_dir, registry) = registry();
+        let path = plant_minilm(&registry);
+        let path_spec = path.to_str().expect("utf-8 tempdir").to_owned();
+        let table = [
+            ("miniLM", false, true),
+            (path_spec.as_str(), false, true),
+            ("no-such-model", false, false),
+            ("openai:m", true, false),
+        ];
+        let mut seen = std::collections::HashSet::new();
+        for (spec, cloud, has_path) in table {
+            let resolved = resolve_in(&registry, true, true, spec, None);
+            assert_eq!(resolved.source.is_cloud(), cloud, "{:?}", resolved.source);
+            assert_eq!(
+                resolved.local_path().is_some(),
+                has_path,
+                "{:?}",
+                resolved.source
+            );
+            seen.insert(std::mem::discriminant(&resolved.source));
+        }
+        assert_eq!(seen.len(), 4, "the table covers every source variant");
+    }
 
     #[test]
     fn a_path_is_recognised_by_extension_separator_or_existence() {

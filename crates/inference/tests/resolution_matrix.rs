@@ -22,10 +22,11 @@
 //! directory or keys (the loaders did exactly that until #3260), and no test
 //! mutates the environment of the process `cargo test` runs. Nothing sends a
 //! request or downloads a model: cloud cells stop at the network gate or the
-//! key check, `pull` runs with the network off unless the file is already
-//! present, and every "present" model is a junk file, so a cell that reaches
-//! a loader observes `model_load_failed` — proof the resolver said Ready,
-//! never a loaded model.
+//! key check, the model hub is a closed loopback port (`STRATA_HF_ENDPOINT`)
+//! so a `pull` that attempts a download observes `download_failed` at once,
+//! and every "present" model is a junk file, so a cell that reaches a loader
+//! observes `model_load_failed` — proof the resolver said Ready, never a
+//! loaded model.
 //!
 //! Written to be correct under either feature set: the expectation for a cell
 //! is computed from `cfg!`, so the same file grades a `local,download` build
@@ -75,6 +76,7 @@ const UNSUPPORTED_OPERATION: &str = "inference.unsupported_operation";
 const UNSUPPORTED_PROVIDER: &str = "inference.unsupported_provider";
 const MISSING_API_KEY: &str = "inference.missing_api_key";
 const DOWNLOAD_DISABLED: &str = "inference.download_disabled";
+const DOWNLOAD_FAILED: &str = "inference.download_failed";
 const MODEL_LOAD_FAILED: &str = "inference.model_load_failed";
 
 // ---------------------------------------------------------------------------
@@ -284,8 +286,7 @@ enum Expect {
     Ok,
     /// The verb refuses with this code.
     Code(&'static str),
-    /// The cell would send a request or download a model. Never executed;
-    /// the string says why.
+    /// The cell would send a request. Never executed; the string says why.
     NeverRun(&'static str),
 }
 
@@ -300,7 +301,11 @@ enum Expect {
 /// - **Q10 — `pull` is task-neutral and needs no execution build.** It
 ///   resolves first and downloads only when a catalogued model is not
 ///   downloaded; a present file is returned without network; a cloud spec is
-///   `unsupported_operation` (R6); a path is returned when present.
+///   `unsupported_operation` (R6); a path is returned when present. The
+///   download itself is observed, not skipped: the child's hub is a closed
+///   loopback port, so the cell that must attempt it answers
+///   `download_failed` — a `pull` that did not attempt would answer `Ok` or
+///   `download_disabled` instead.
 /// - **Q11 — network before key.** With the network off, a cloud verb is
 ///   refused as `unsupported_operation` (a `NetworkDisabled` availability the
 ///   design must add) before any key is looked at.
@@ -324,7 +329,7 @@ fn expected(identity: Identity, dir: Dir, net: Net, verb: Verb) -> Expect {
                 Verb::Capability => Expect::Ok,
                 Verb::Pull if downloaded => Expect::Ok,
                 Verb::Pull if net == Net::Off || !DOWNLOAD_BUILT => Expect::Code(DOWNLOAD_DISABLED),
-                Verb::Pull => Expect::NeverRun("would download the model"),
+                Verb::Pull => Expect::Code(DOWNLOAD_FAILED),
                 _ if !verb.applies_to(task) => Expect::Code(UNSUPPORTED_OPERATION),
                 _ if !LOCAL_BUILT => Expect::Code(UNSUPPORTED_OPERATION),
                 _ if downloaded => Expect::Code(MODEL_LOAD_FAILED),
@@ -632,14 +637,19 @@ fn run(cell: &Cell) -> Observed {
 
 const CHILD_MODE: &str = "STRATA_RESOLUTION_MATRIX_CHILD";
 const FAKE_KEY: &str = "matrix-fake-key-never-sent";
+/// The model hub the registry downloads from. Pointed at a closed loopback
+/// port in the child, so a download that is attempted is refused at once and
+/// one that is not attempted is the only way a `pull` can succeed.
+const HUB_ENDPOINT: &str = "STRATA_HF_ENDPOINT";
+const UNREACHABLE_HUB: &str = "http://127.0.0.1:1";
 
 fn keys_in_env() -> bool {
     std::env::var(CHILD_MODE).as_deref() == Ok("keys")
 }
 
 /// The environment the parent built, as the surfaces that report it see it:
-/// no key unless this is the keys phase, and a models directory that is not
-/// the developer's.
+/// no key unless this is the keys phase, a models directory that is not the
+/// developer's, and a hub that cannot be reached.
 fn assert_child_environment(mode: &str) {
     for key in CLOUD_PROVIDER_KEYS {
         assert_eq!(
@@ -649,6 +659,11 @@ fn assert_child_environment(mode: &str) {
             key.env_var
         );
     }
+    assert_eq!(
+        std::env::var(HUB_ENDPOINT).as_deref(),
+        Ok(UNREACHABLE_HUB),
+        "no cell may reach the real hub"
+    );
 
     // The key dimension as observed today: `status` reports presence, never
     // the key. (S3 moves this onto `capability` as an availability.)
@@ -801,7 +816,8 @@ fn run_child(mode: &str) {
         .env_clear()
         .env(CHILD_MODE, mode)
         .env("HOME", &home)
-        .env("STRATA_MODELS_DIR", &models);
+        .env("STRATA_MODELS_DIR", &models)
+        .env(HUB_ENDPOINT, UNREACHABLE_HUB);
     // Keep the parent's temp-dir convention so the child's tempdirs land in
     // the same place; nothing else from the environment crosses over.
     if let Some(tmpdir) = std::env::var_os("TMPDIR") {

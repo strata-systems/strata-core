@@ -500,11 +500,12 @@ malformed-spec error; at executor level it is `(code, class, details keys)`.
   flag, the build and the verb — there is no hand-written table to drift. The
   harness builds `InferenceRuntime::new(config)` over a `tempdir` and runs the
   cells in a child process with a scrubbed environment (`env_clear`, `HOME`
-  and `STRATA_MODELS_DIR` under the tempdir), once with no key and once with
-  a fake key exported into every `CLOUD_PROVIDER_KEYS` variable; the second
-  run must differ from the first only on key cells. Nothing in the process
-  environment is mutated in place. Until R4 lands, "key" means "env var";
-  the config source is S3's dimension.
+  and `STRATA_MODELS_DIR` under the tempdir, `STRATA_HF_ENDPOINT` pointed at
+  a closed loopback port so an attempted download is refused at once), once
+  with no key and once with a fake key exported into every
+  `CLOUD_PROVIDER_KEYS` variable; the second run must differ from the first
+  only on key cells. Nothing in the process environment is mutated in place.
+  Until R4 lands, "key" means "env var"; the config source is S3's dimension.
 - `crates/executor/tests/inference_resolution_wire.rs` (feature `inference`):
   the executor-level cells, live rather than replayed. Specs are derived from
   `CATALOG` and `CLOUD_PROVIDER_KEYS` plus the malformed and path forms
@@ -530,7 +531,10 @@ malformed-spec error; at executor level it is `(code, class, details keys)`.
   leave `unreplayed-error-codes.yaml` (budget 114 → ~107) and the IDL's
   existing guards reach resolution for the first time. No parallel harness.
 - Cloud `Ready` cells assert `capability` only; nothing in the matrix sends a
-  request.
+  request. The 21 cells that would (a key present, the network on) are the
+  matrix's only never-run cells; they need a runtime-level provider base URL
+  the way downloads have `STRATA_HF_ENDPOINT` — **#3270**, proposed for S3
+  beside R4.
 
 ### 5.3 Known red, and falsification
 
@@ -596,7 +600,12 @@ the developer's real `~/.strata/models` (a present `miniLM` made a
 network-off `pull` succeed, which is now the contract); both were made
 hermetic with a temp models directory. The executor wire matrix gained the
 `detokenize` verb, which is what found that its `invalid_request` declaration
-was missing.
+was missing. The S1 mutation report then moved the last download cells from
+"never run" to observed: `pull` of a catalogued model that is not on disk,
+with the network on in a `download` build, is expected to *attempt* the
+download and answer `download_failed` against the unreachable hub (a `pull`
+that skipped the attempt would answer `Ok` or `download_disabled`), which is
+what caught the surviving `pull_variant` mutant.
 
 ### 5.4 Cells where contract and code disagree today
 
@@ -692,7 +701,7 @@ Verified against `main` at `98f8f324`; the first three rows updated for S1.
 | Keys | `strata config set <provider>.api_key` stored 0600; env wins | reaches inference only via the CLI's `set_var` bridge (#3221) |
 | No-database use | `install-local` intercepted pre-open | every other inference verb refuses without a DB target (#3233); docs disagree with each other |
 | Sizes | one decimal formatter in inference | CLI has a second, mislabelled one (#3235) |
-| Test reach | parser pinned (`api_contract.rs`); capability honesty pinned; wire==registry pinned; **S0 matrix** (`resolution_matrix.rs`, `inference_resolution_wire.rs`) with `KNOWN_RED` as the bug inventory | zero inference codes replayed; no CI lane builds `local`, so the local-lane cells run only on a developer machine; mutation gate blind to `local` arms (#3254/#3258) |
+| Test reach | parser pinned (`api_contract.rs`); capability honesty pinned; wire==registry pinned; **S0 matrix** (`resolution_matrix.rs`, `inference_resolution_wire.rs`) with `KNOWN_RED` as the bug inventory | zero inference codes replayed; no CI lane builds `local`, so the local-lane cells run only on a developer machine; mutation gate blind to `local` arms (#3254/#3258) and to guards that are equivalent programs in every CI lane (#3267); cloud dispatch after `require_ready` observable only with a live key (#3270) |
 
 ---
 
