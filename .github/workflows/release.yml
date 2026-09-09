@@ -39,7 +39,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build:
     needs: format-gate
-    name: Build strata (${{ matrix.target }})
+    name: Build strata (${{ matrix.target }}${{ matrix.suffix }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -170,7 +170,7 @@ jobs:
   #    the v0.6.x install.sh contract)
   # ---------------------------------------------------------------------------
   package:
-    name: Package (${{ matrix.target }})
+    name: Package (${{ matrix.target }}${{ matrix.suffix }})
     needs: build
     runs-on: ubuntu-latest
     strategy:
