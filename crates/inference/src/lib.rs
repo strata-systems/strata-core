@@ -29,6 +29,7 @@ mod error;
 #[cfg_attr(not(feature = "local"), allow(dead_code))]
 mod grammar;
 pub mod registry;
+mod resolve;
 pub mod runtime;
 #[cfg(any(test, feature = "testkit"))]
 pub mod testkit;
@@ -66,8 +67,11 @@ mod provider;
 ))]
 mod generate;
 
-pub use error::{InferenceError, InferenceErrorClass, ProviderFailure, RegistryFailure};
+pub use error::{
+    InferenceError, InferenceErrorClass, ProviderFailure, RegistryFailure, UnsupportedKind,
+};
 pub use registry::{ModelInfo, ModelRegistry, ModelTask};
+pub use resolve::{Availability, ModelSource, ModelUse, ResolvedModel};
 pub use runtime::{
     EmbedRequest, EmbedResponse, EmbedRuntimeOutcome, InferenceCapability, InferenceRuntime,
     InferenceRuntimeConfig, InferenceStatus, ModelCacheStatus, ProviderStatus, PullModelOutput,
@@ -473,173 +477,6 @@ pub(crate) fn embedding_provider_feature_enabled(provider: ProviderKind) -> bool
     }
 }
 
-/// Load an inference engine from a `"provider:model_name"` spec.
-///
-/// Returns a trait object supporting generation. For cloud providers, reads
-/// the API key from environment variables (`ANTHROPIC_API_KEY`, etc.).
-///
-/// # Examples
-///
-/// ```ignore
-/// let mut engine = strata_inference::load("local:qwen3:1.7b")?;
-/// let mut engine = strata_inference::load("anthropic:claude-sonnet-4-6")?;
-/// ```
-#[cfg(any(
-    feature = "local",
-    feature = "anthropic",
-    feature = "openai",
-    feature = "google"
-))]
-pub fn load(model_spec: &str) -> Result<Box<dyn InferenceEngine>, InferenceError> {
-    let (provider, model) = parse_model_spec(model_spec)?;
-
-    match provider {
-        #[cfg(feature = "local")]
-        ProviderKind::Local => Ok(Box::new(GenerationEngine::from_registry(&model)?)),
-        #[cfg(not(feature = "local"))]
-        ProviderKind::Local => Err(InferenceError::NotSupported(
-            "local provider requires the 'local' feature".to_string(),
-        )),
-        #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
-        cloud_provider => {
-            if !generation_provider_feature_enabled(cloud_provider) {
-                return Err(InferenceError::NotSupported(format!(
-                    "{cloud_provider} provider not enabled"
-                )));
-            }
-            let env_var = api_key_env_var(cloud_provider);
-            let api_key = std::env::var(env_var).map_err(|_| {
-                // D6: a configuration problem, not a provider outage — and
-                // saying so must not depend on the words "not set".
-                InferenceError::ProviderFailed {
-                    kind: ProviderFailure::MissingApiKey,
-                    message: format!(
-                        "no API key for {cloud_provider} (model {model}): set one \
-                         with `strata config set {cloud_provider}.api_key <key>`, or \
-                         export {env_var}"
-                    ),
-                }
-            })?;
-            Ok(Box::new(GenerationEngine::cloud(
-                cloud_provider,
-                api_key,
-                model,
-            )?))
-        }
-        #[cfg(not(any(feature = "anthropic", feature = "openai", feature = "google")))]
-        other => {
-            let _ = model;
-            Err(InferenceError::NotSupported(format!(
-                "{other} provider not enabled"
-            )))
-        }
-    }
-}
-
-/// Load an embedding engine from a `"provider:model_name"` spec.
-///
-/// Supports local models (via llama.cpp), OpenAI, and Google embedding APIs.
-/// Anthropic does not offer an embedding API and returns `NotSupported`.
-///
-/// # Examples
-///
-/// ```ignore
-/// let engine = strata_inference::load_embedder("local:miniLM", None)?;
-/// let embedding = engine.embed("hello world")?;
-///
-/// let engine = strata_inference::load_embedder("openai:text-embedding-3-small", Some("sk-..."))?;
-/// let embedding = engine.embed("hello world")?;
-/// ```
-#[cfg(any(
-    feature = "local",
-    feature = "openai",
-    feature = "google",
-    feature = "anthropic"
-))]
-pub fn load_embedder(
-    model_spec: &str,
-    _api_key: Option<&str>,
-) -> Result<Box<dyn InferenceEngine>, InferenceError> {
-    let (provider, model) = parse_model_spec(model_spec)?;
-
-    match provider {
-        #[cfg(feature = "local")]
-        ProviderKind::Local => Ok(Box::new(EmbeddingEngine::from_registry(&model)?)),
-        #[cfg(not(feature = "local"))]
-        ProviderKind::Local => Err(InferenceError::NotSupported(
-            "local provider requires the 'local' feature".to_string(),
-        )),
-
-        ProviderKind::Anthropic => Err(InferenceError::NotSupported(
-            "Anthropic does not offer an embedding API".to_string(),
-        )),
-
-        #[cfg(any(feature = "openai", feature = "google"))]
-        cloud_provider => {
-            if !embedding_provider_feature_enabled(cloud_provider) {
-                return Err(InferenceError::NotSupported(format!(
-                    "{cloud_provider} embedding provider not enabled"
-                )));
-            }
-            // Use provided API key, fall back to environment variable.
-            let key = match _api_key.filter(|k| !k.is_empty()) {
-                Some(k) => k.to_string(),
-                None => {
-                    let env_var = api_key_env_var(cloud_provider);
-                    std::env::var(env_var).map_err(|_| {
-                        // D6: a configuration problem, not a provider outage — and
-                        // saying so must not depend on the words "not set".
-                        InferenceError::ProviderFailed {
-                            kind: ProviderFailure::MissingApiKey,
-                            message: format!(
-                                "no API key for {cloud_provider} (model {model}): set one \
-                                 with `strata config set {cloud_provider}.api_key <key>`, or \
-                                 export {env_var}"
-                            ),
-                        }
-                    })?
-                }
-            };
-            Ok(Box::new(CloudEmbeddingEngine::new(
-                cloud_provider,
-                key,
-                model,
-            )?))
-        }
-
-        #[cfg(not(any(feature = "openai", feature = "google")))]
-        other => {
-            let _ = model;
-            Err(InferenceError::NotSupported(format!(
-                "cloud embedding requires 'openai' or 'google' feature (provider: {other})"
-            )))
-        }
-    }
-}
-
-/// Load a ranking engine from a `"provider:model_name"` spec.
-///
-/// Currently only local cross-encoder models are supported.
-///
-/// # Examples
-///
-/// ```ignore
-/// let engine = strata_inference::load_ranker("local:jina-reranker-v1-tiny")?;
-/// let scores = engine.rank("query", &["passage 1", "passage 2"])?;
-/// ```
-#[cfg(feature = "local")]
-pub fn load_ranker(model_spec: &str) -> Result<Box<dyn InferenceEngine>, InferenceError> {
-    let (provider, model) = parse_model_spec(model_spec)?;
-
-    match provider {
-        ProviderKind::Local => Ok(Box::new(RankingEngine::from_registry(&model)?)),
-        other => Err(InferenceError::NotSupported(format!(
-            "cloud ranking not yet supported (provider: {})",
-            other
-        ))),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -651,19 +488,10 @@ mod tests {
     #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
-    #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
-    fn with_env_set<T>(env_var: &str, value: &str, test: impl FnOnce() -> T) -> T {
-        let _guard = ENV_LOCK.lock().expect("env lock poisoned");
-        let previous = std::env::var_os(env_var);
-        std::env::set_var(env_var, value);
-        let result = test();
-        restore_env(env_var, previous);
-        result
-    }
-
     /// Shared with the other test modules in this binary: every test that
     /// touches a key variable must serialize on the same `ENV_LOCK`, or one
-    /// module's unset races another's read.
+    /// module's unset races another's read. Setting a key is deliberately
+    /// not offered: an engine that needs one takes it as an argument.
     #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
     pub(crate) fn with_env_unset<T>(env_var: &str, test: impl FnOnce() -> T) -> T {
         let _guard = ENV_LOCK.lock().expect("env lock poisoned");
@@ -1133,198 +961,69 @@ string ::= "\"" [a-zA-Z]+ "\""
         assert_eq!(model, "qwen3:1.7b:q8_0");
     }
 
-    // --- load ---
+    // --- InferenceEngine trait defaults, over a cloud generation engine ---
 
     #[cfg(feature = "openai")]
-    fn enabled_generation_spec() -> (&'static str, &'static str, &'static str) {
-        (
-            "OPENAI_API_KEY",
-            "sk-test-fake-key-12345",
-            "openai:gpt-4o-mini",
-        )
-    }
+    const ENABLED_PROVIDER: (ProviderKind, &str) = (ProviderKind::OpenAI, "gpt-4o-mini");
 
     #[cfg(all(not(feature = "openai"), feature = "anthropic"))]
-    fn enabled_generation_spec() -> (&'static str, &'static str, &'static str) {
-        (
-            "ANTHROPIC_API_KEY",
-            "sk-ant-test-fake-key-12345",
-            "anthropic:claude-sonnet-4-6",
-        )
-    }
+    const ENABLED_PROVIDER: (ProviderKind, &str) = (ProviderKind::Anthropic, "claude-sonnet-4-6");
 
     #[cfg(all(
         not(feature = "openai"),
         not(feature = "anthropic"),
         feature = "google"
     ))]
-    fn enabled_generation_spec() -> (&'static str, &'static str, &'static str) {
-        (
-            "GOOGLE_API_KEY",
-            "AIza-test-fake-key-12345",
-            "google:gemini-2.5-flash",
+    const ENABLED_PROVIDER: (ProviderKind, &str) = (ProviderKind::Google, "gemini-2.5-flash");
+
+    /// A cloud engine built with a fake key. Nothing here sends a request.
+    #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
+    fn cloud_generation_engine() -> Box<dyn InferenceEngine> {
+        let (provider, model) = ENABLED_PROVIDER;
+        Box::new(
+            GenerationEngine::cloud(provider, "test-fake-key-12345".to_owned(), model.to_owned())
+                .expect("a cloud engine constructs without contacting the provider"),
         )
     }
 
     #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
     #[test]
-    fn model_spec_load_cloud_missing_api_key() {
-        let (env_var, _api_key, model_spec) = enabled_generation_spec();
-        let err = with_env_unset(env_var, || load(model_spec).unwrap_err());
-        assert!(
-            err.to_string().contains(env_var),
-            "error should mention env var: {err}"
-        );
-    }
-
-    #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
-    #[test]
-    fn model_spec_load_cloud_with_api_key_constructs() {
-        let (env_var, api_key, model_spec) = enabled_generation_spec();
-        let result = with_env_set(env_var, api_key, || load(model_spec));
-        assert!(
-            result.is_ok(),
-            "load should succeed with API key set: {:?}",
-            result.err()
-        );
-    }
-
-    // --- InferenceEngine trait ---
-
-    #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
-    #[test]
-    fn trait_load_returns_box_dyn() {
-        let (env_var, api_key, model_spec) = enabled_generation_spec();
-        let engine: Box<dyn InferenceEngine> =
-            with_env_set(env_var, api_key, || load(model_spec).unwrap());
-        // Cloud engine should not support embed
+    fn trait_embed_default_returns_not_supported() {
+        let engine = cloud_generation_engine();
         let err = engine.embed("test").unwrap_err();
-        assert!(
-            err.to_string().contains("not supported"),
-            "embed on cloud should be NotSupported: {err}"
-        );
+        assert_eq!(err.code(), "inference.unsupported_operation", "{err}");
+        assert!(!engine.supports_embed());
     }
-
-    #[cfg(feature = "openai")]
-    #[test]
-    fn load_embedder_openai_constructs_with_api_key() {
-        let result = with_env_set("OPENAI_API_KEY", "sk-test-embed-key", || {
-            load_embedder("openai:text-embedding-3-small", None)
-        });
-        assert!(
-            result.is_ok(),
-            "load_embedder should succeed for OpenAI: {:?}",
-            result.err()
-        );
-        let engine = result.unwrap();
-        assert!(engine.supports_embed());
-        assert!(!engine.supports_generate());
-    }
-
-    #[cfg(feature = "openai")]
-    #[test]
-    fn load_embedder_openai_missing_api_key() {
-        let err = with_env_unset("OPENAI_API_KEY", || {
-            load_embedder("openai:text-embedding-3-small", None).unwrap_err()
-        });
-        assert!(
-            err.to_string().contains("OPENAI_API_KEY"),
-            "error should mention env var: {err}"
-        );
-    }
-
-    #[cfg(feature = "google")]
-    #[test]
-    fn load_embedder_google_constructs_with_api_key() {
-        let result = with_env_set("GOOGLE_API_KEY", "AIza-test-embed-key", || {
-            load_embedder("google:text-embedding-004", None)
-        });
-        assert!(
-            result.is_ok(),
-            "load_embedder should succeed for Google: {:?}",
-            result.err()
-        );
-        let engine = result.unwrap();
-        assert!(engine.supports_embed());
-    }
-
-    #[cfg(feature = "google")]
-    #[test]
-    fn load_embedder_google_missing_api_key() {
-        let err = with_env_unset("GOOGLE_API_KEY", || {
-            load_embedder("google:text-embedding-004", None).unwrap_err()
-        });
-        assert!(
-            err.to_string().contains("GOOGLE_API_KEY"),
-            "error should mention env var: {err}"
-        );
-    }
-
-    #[cfg(feature = "anthropic")]
-    #[test]
-    fn load_embedder_anthropic_returns_not_supported() {
-        let err = with_env_set("ANTHROPIC_API_KEY", "sk-ant-test", || {
-            load_embedder("anthropic:some-model", None).unwrap_err()
-        });
-        assert!(
-            err.to_string().contains("Anthropic"),
-            "error should mention Anthropic: {err}"
-        );
-        assert!(
-            matches!(err, InferenceError::NotSupported(_)),
-            "should be NotSupported: {err}"
-        );
-    }
-
-    // --- load_ranker ---
-
-    #[cfg(feature = "local")]
-    #[test]
-    fn load_ranker_cloud_not_supported() {
-        let err = load_ranker("openai:some-reranker").unwrap_err();
-        assert!(
-            err.to_string().contains("not yet supported"),
-            "cloud ranker should fail: {err}"
-        );
-    }
-
-    #[cfg(feature = "local")]
-    #[test]
-    fn load_ranker_unknown_model_returns_error() {
-        let err = load_ranker("local:nonexistent-reranker").unwrap_err();
-        assert!(
-            matches!(err, InferenceError::Registry(_)),
-            "should be Registry error, got: {err}"
-        );
-    }
-
-    // --- InferenceEngine rank defaults ---
 
     #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
     #[test]
     fn trait_rank_default_returns_not_supported() {
-        let (env_var, api_key, model_spec) = enabled_generation_spec();
-        let engine: Box<dyn InferenceEngine> =
-            with_env_set(env_var, api_key, || load(model_spec).unwrap());
+        let engine = cloud_generation_engine();
         let err = engine.rank("query", &["passage"]).unwrap_err();
-        assert!(
-            err.to_string().contains("not supported"),
-            "rank on generation engine should be NotSupported: {err}"
-        );
+        assert_eq!(err.code(), "inference.unsupported_operation", "{err}");
         assert!(!engine.supports_rank());
     }
 
     #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
     #[test]
-    fn trait_generation_engine_generate_not_supported_default() {
-        // Cloud GenerationEngine via trait should support generate (not return NotSupported)
-        // We can't actually call generate without a real API key hitting the server,
-        // but we can verify the trait object is constructable
-        let (env_var, api_key, model_spec) = enabled_generation_spec();
-        let engine: Box<dyn InferenceEngine> =
-            with_env_set(env_var, api_key, || load(model_spec).unwrap());
-        // Verify it's a trait object we can hold
-        assert!(!engine.supports_embed());
+    fn a_cloud_generation_engine_is_a_generator() {
+        let engine = cloud_generation_engine();
         assert!(engine.supports_generate());
+        assert!(!engine.supports_embed());
+    }
+
+    #[cfg(feature = "openai")]
+    #[test]
+    fn a_cloud_embedding_engine_embeds_and_does_not_generate() {
+        let engine: Box<dyn InferenceEngine> = Box::new(
+            CloudEmbeddingEngine::new(
+                ProviderKind::OpenAI,
+                "test-fake-key".to_owned(),
+                "text-embedding-3-small".to_owned(),
+            )
+            .expect("constructs without contacting the provider"),
+        );
+        assert!(engine.supports_embed());
+        assert!(!engine.supports_generate());
     }
 }

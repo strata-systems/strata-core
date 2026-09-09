@@ -24,6 +24,7 @@ pub mod download;
 
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "download")]
 use crate::error::InferenceError;
 
 /// Whether the model file at `path` is downloaded.
@@ -114,7 +115,7 @@ pub struct ModelInfo {
     /// Embedding dimension, or zero for non-embedding models.
     pub embedding_dim: usize,
     /// Whether this variant's artifact is downloaded — a non-empty file at
-    /// `local_path`, the same test `resolve` applies. An interrupted
+    /// `local_path`, the same test resolution applies. An interrupted
     /// download's zero-length file is not downloaded.
     ///
     /// This is about the *file*, not about whether it can be run: a released
@@ -136,7 +137,76 @@ pub struct ModelInfo {
     pub hf_repo: String,
 }
 
+/// What [`ModelRegistry::lookup`] found for a local model name.
+#[derive(Debug, Clone)]
+pub(crate) enum CatalogLookup {
+    /// A catalogued model and the variant the name selects (the default when
+    /// the name carries no quant suffix).
+    Found {
+        /// The catalog entry the name matched.
+        entry: &'static CatalogEntry,
+        /// The variant the name selects.
+        variant: &'static QuantVariant,
+        /// Where the variant's file lives, whether or not it is there.
+        path: PathBuf,
+        /// Whether that file is present and non-empty
+        /// ([`model_file_is_downloaded`]).
+        downloaded: bool,
+    },
+    /// No catalog entry has this name.
+    UnknownModel,
+    /// The model is catalogued, but it has no variant by the quant the name
+    /// asks for.
+    UnknownQuant {
+        /// The entry the name's model part matched.
+        entry: &'static CatalogEntry,
+    },
+}
+
+/// Delete a catalogued model file whose size says it is not the model.
+///
+/// Called after a load fails: a file more than 10% off the catalogued size is
+/// a truncated or corrupt download, and removing it lets the next
+/// `strata inference models pull` fetch a fresh copy instead of tripping over
+/// it forever. A file within tolerance is left alone — the load failed for
+/// some other reason. Variants with no catalogued size, and files that are
+/// already gone, are left alone too.
+///
+/// Only a local build loads models, so only a local build has a failed load
+/// to react to; the tests exercise the predicate in every build.
+#[cfg(any(feature = "local", test))]
+pub(crate) fn discard_if_corrupt(variant: &QuantVariant, path: &Path) {
+    let expected = variant.size_bytes;
+    if expected == 0 {
+        return;
+    }
+
+    let actual = match std::fs::metadata(path) {
+        Ok(m) => m.len(),
+        Err(_) => return,
+    };
+
+    let ratio = actual as f64 / expected as f64;
+    if !(0.9..=1.1).contains(&ratio) {
+        tracing::warn!(
+            file = variant.hf_file,
+            expected_bytes = expected,
+            actual_bytes = actual,
+            "Model file appears corrupted (size mismatch) \u{2014} deleting for re-download"
+        );
+        if let Err(e) = std::fs::remove_file(path) {
+            tracing::warn!(
+                file = variant.hf_file,
+                path = %path.display(),
+                error = %e,
+                "Failed to delete corrupted model file"
+            );
+        }
+    }
+}
+
 /// Model registry for resolving names to local GGUF file paths.
+#[derive(Debug)]
 pub struct ModelRegistry {
     models_dir: PathBuf,
 }
@@ -189,197 +259,53 @@ impl ModelRegistry {
             .collect()
     }
 
-    /// Catalog facts for a model name, or `None` when the catalog has no such
-    /// model.
+    /// What the catalog and the models directory say about a local model name.
     ///
-    /// Resolves the name the way `resolve` does — aliases, `family:size`, and
-    /// a quant suffix all count — so a caller reporting on a model sees the
-    /// same entry the registry would load. `capability` used to match the
-    /// spec against `list_available` names instead, so `nomic` (an alias) and
-    /// `miniLM:f16` (a quant) came back with no task and a zero dimension
-    /// while `resolve` accepted both (#3124).
-    pub(crate) fn info(&self, name: &str) -> Option<ModelInfo> {
-        // The parse error only says "unknown model"; absence is the answer.
-        let (entry, quant) = self.parse_name(name).ok()?;
-        Some(self.entry_to_info(entry, quant.unwrap_or(entry.default_quant)))
-    }
-
-    /// Resolve a model name to a local file path.
-    ///
-    /// Returns `Ok(path)` if the model file exists locally.
-    /// Returns `Err` with a helpful message including download instructions
-    /// if the model is not available locally.
-    pub fn resolve(&self, name: &str) -> Result<PathBuf, InferenceError> {
-        let (entry, quant) = self.parse_name(name)?;
-        let quant_name = quant.unwrap_or(entry.default_quant);
-
-        let variant = entry
-            .variants
-            .iter()
-            .find(|v| v.name.eq_ignore_ascii_case(quant_name))
-            .ok_or_else(|| {
-                let available: Vec<&str> = entry.variants.iter().map(|v| v.name).collect();
-                InferenceError::Registry(format!(
-                    "Unknown quant '{}' for model '{}'. Available: {}",
-                    quant_name,
-                    entry.name,
-                    available.join(", ")
-                ))
-            })?;
-
-        let path = self.models_dir.join(variant.hf_file);
-
-        // A zero-length file (an interrupted download) is not a model; it
-        // falls through to the "not downloaded" error like an absent one.
-        if model_file_is_downloaded(&path) {
-            return Ok(path);
-        }
-
-        let size_display = format_size(variant.size_bytes);
-
-        // D8: the command named here must exist (`strata models pull` never
-        // has — the verb is `strata inference models pull`), and the code is
-        // carried explicitly so rewording this text cannot change it. The
-        // previous wording classified as `missing_model` only because it
-        // happened to contain "not found locally".
-        Err(InferenceError::RegistryFailed {
-            kind: crate::RegistryFailure::MissingModel,
-            message: format!(
-                "Model '{}' is not downloaded.\n\n\
-             To download it ({}, requires internet):\n  \
-             strata inference models pull {}\n\n\
-             Or place the GGUF file at:\n  \
-             {}\n\n\
-             Expected file: {}\n\
-             Source: https://huggingface.co/{}",
-                name,
-                size_display,
-                name,
-                path.display(),
-                variant.hf_file,
-                entry.hf_repo
-            ),
-        })
-    }
-
-    /// Resolve a model name to a local path, downloading if necessary.
-    ///
-    /// Tries local resolution first. If the model is in the catalog but not
-    /// downloaded, automatically pulls it from HuggingFace with an INFO log
-    /// so users know why the first operation is slow.
-    #[cfg(feature = "download")]
-    pub fn resolve_or_pull(&self, name: &str) -> Result<PathBuf, InferenceError> {
-        // Fast path: already on disk
-        if let Ok(path) = self.resolve(name) {
-            return Ok(path);
-        }
-
-        // Verify the model is in the catalog before attempting download.
-        // This propagates "Unknown model" / "Unknown quant" errors immediately.
-        let (entry, quant) = self.parse_name(name)?;
-        let quant_name = quant.unwrap_or(entry.default_quant);
-        let variant = entry
-            .variants
-            .iter()
-            .find(|v| v.name.eq_ignore_ascii_case(quant_name))
-            .ok_or_else(|| {
-                let available: Vec<&str> = entry.variants.iter().map(|v| v.name).collect();
-                InferenceError::Registry(format!(
-                    "Unknown quant '{}' for model '{}'. Available: {}",
-                    quant_name,
-                    entry.name,
-                    available.join(", ")
-                ))
-            })?;
-
-        let size_display = format_size(variant.size_bytes);
-        tracing::info!(
-            model = entry.name,
-            size = %size_display,
-            "Downloading embedding model from HuggingFace \u{2014} this only happens once"
-        );
-
-        self.pull(name)
-    }
-
-    /// Check whether a model file appears corrupted (size mismatch vs catalog).
-    ///
-    /// If the file exists but its size differs from the catalog expectation by
-    /// more than 10%, the file is deleted so the next load attempt can
-    /// re-download a fresh copy.
-    pub fn check_and_clean_corrupt(&self, name: &str, path: &Path) {
-        let (entry, quant) = match self.parse_name(name) {
-            Ok(v) => v,
-            Err(_) => return,
+    /// Identity only: the name is matched against the catalog (aliases,
+    /// `family:size`, and a case-insensitive quant suffix all count) and the
+    /// variant's file is checked for presence. Whether the model can be *used*
+    /// — the build, the task, the network — is the resolver's question
+    /// (`crate::resolve`), which composes this answer and never re-parses the
+    /// name. Before that resolver existed, `resolve`, `resolve_or_pull`,
+    /// `info`, `pull` and `check_and_clean_corrupt` each parsed the name for
+    /// themselves, and disagreed about what an unknown one meant (#3264).
+    pub(crate) fn lookup(&self, name: &str) -> CatalogLookup {
+        let parts: Vec<&str> = name.split(':').collect();
+        let Some((entry, quant)) = catalog::find_entry_by_parts(&parts) else {
+            return CatalogLookup::UnknownModel;
         };
         let quant_name = quant.unwrap_or(entry.default_quant);
-        let variant = match entry
+        match entry
             .variants
             .iter()
             .find(|v| v.name.eq_ignore_ascii_case(quant_name))
         {
-            Some(v) => v,
-            None => return,
-        };
-
-        let expected = variant.size_bytes;
-        if expected == 0 {
-            return;
-        }
-
-        let actual = match std::fs::metadata(path) {
-            Ok(m) => m.len(),
-            Err(_) => return,
-        };
-
-        let ratio = actual as f64 / expected as f64;
-        if !(0.9..=1.1).contains(&ratio) {
-            tracing::warn!(
-                model = name,
-                expected_bytes = expected,
-                actual_bytes = actual,
-                "Model file appears corrupted (size mismatch) \u{2014} deleting for re-download"
-            );
-            if let Err(e) = std::fs::remove_file(path) {
-                tracing::warn!(
-                    model = name,
-                    path = %path.display(),
-                    error = %e,
-                    "Failed to delete corrupted model file"
-                );
+            Some(variant) => {
+                let path = self.models_dir.join(variant.hf_file);
+                CatalogLookup::Found {
+                    entry,
+                    variant,
+                    downloaded: model_file_is_downloaded(&path),
+                    path,
+                }
             }
+            None => CatalogLookup::UnknownQuant { entry },
         }
     }
 
-    /// Download a model and return its local path.
-    #[cfg(feature = "download")]
-    pub fn pull(&self, name: &str) -> Result<PathBuf, InferenceError> {
-        self.pull_with_progress(name, |_, _| {})
-    }
-
-    /// Download a model with a progress callback and return its local path.
+    /// Download one catalogued variant into the models directory and return
+    /// its path.
     ///
-    /// The callback receives `(bytes_downloaded, total_bytes)`.
+    /// The callback receives `(bytes_downloaded, total_bytes)`. The caller
+    /// has already looked the variant up, so nothing here can fail for a
+    /// reason other than the download itself.
     #[cfg(feature = "download")]
-    pub fn pull_with_progress(
+    pub(crate) fn pull_variant(
         &self,
-        name: &str,
+        entry: &CatalogEntry,
+        variant: &QuantVariant,
         cb: impl Fn(u64, u64),
     ) -> Result<PathBuf, InferenceError> {
-        let (entry, quant) = self.parse_name(name)?;
-        let quant_name = quant.unwrap_or(entry.default_quant);
-
-        let variant = entry
-            .variants
-            .iter()
-            .find(|v| v.name.eq_ignore_ascii_case(quant_name))
-            .ok_or_else(|| {
-                InferenceError::Registry(format!(
-                    "Unknown quant '{}' for model '{}'",
-                    quant_name, entry.name
-                ))
-            })?;
-
         download::download_hf_file_with_size(
             entry.hf_repo,
             variant.hf_file,
@@ -392,19 +318,20 @@ impl ModelRegistry {
         Ok(self.models_dir.join(variant.hf_file))
     }
 
-    /// Parse a model name string into a catalog entry and optional quant override.
-    fn parse_name<'a>(
-        &self,
-        name: &'a str,
-    ) -> Result<(&'static CatalogEntry, Option<&'a str>), InferenceError> {
-        let parts: Vec<&str> = name.split(':').collect();
-
-        catalog::find_entry_by_parts(&parts).ok_or_else(|| {
-            InferenceError::Registry(format!(
-                "Unknown model '{}'. Run `strata models list` to see available models.",
-                name
-            ))
-        })
+    /// The on-disk path of a catalog model that is already downloaded, for
+    /// the ignored smoke tests that load a real model when one is present.
+    #[cfg(all(test, feature = "local"))]
+    pub(crate) fn downloaded_catalog_path(name: &str) -> Option<PathBuf> {
+        match Self::new().lookup(name) {
+            CatalogLookup::Found {
+                path,
+                downloaded: true,
+                ..
+            } => Some(path),
+            CatalogLookup::Found { .. }
+            | CatalogLookup::UnknownModel
+            | CatalogLookup::UnknownQuant { .. } => None,
+        }
     }
 
     /// Convert a catalog entry to a ModelInfo with local availability check.
@@ -486,153 +413,148 @@ mod tests {
         (dir, registry)
     }
 
-    // ===== resolve() tests =====
+    // ===== lookup() tests =====
+    //
+    // `lookup` answers identity and presence; what a caller may do with the
+    // answer, and the error each outcome becomes, is `crate::resolve`'s and
+    // is tested there.
 
-    #[test]
-    fn resolve_not_found_gives_helpful_error() {
-        let (_dir, registry) = test_registry();
+    /// The variant and path `lookup` finds for `name`, with whether the file
+    /// is downloaded. Panics when the name is not catalogued.
+    fn found(registry: &ModelRegistry, name: &str) -> (&'static QuantVariant, PathBuf, bool) {
+        match registry.lookup(name) {
+            CatalogLookup::Found {
+                variant,
+                path,
+                downloaded,
+                ..
+            } => (variant, path, downloaded),
+            other => panic!("{name}: expected a catalogued model, got {other:?}"),
+        }
+    }
 
-        let err = registry.resolve("miniLM").unwrap_err();
-        let msg = format!("{}", err);
-        // D8: the code is carried at the raise site, so assert it rather than
-        // the prose (CLAUDE.md rule 29). The old assertion pinned
-        // `strata models pull`, a verb that has never existed.
-        assert_eq!(err.code(), "inference.missing_model");
-        assert!(msg.contains("is not downloaded"), "Error: {}", msg);
+    fn assert_unknown_model(registry: &ModelRegistry, name: &str) {
+        let lookup = registry.lookup(name);
         assert!(
-            msg.contains("strata inference models pull miniLM"),
-            "the refusal must name the real command: {}",
-            msg
-        );
-        assert!(msg.contains(".gguf"), "Error: {}", msg);
-        assert!(msg.contains("huggingface.co"), "Error: {}", msg);
-        assert!(
-            msg.contains("MB") || msg.contains("GB"),
-            "Should show size: {}",
-            msg
+            matches!(lookup, CatalogLookup::UnknownModel),
+            "{name:?}: expected UnknownModel, got {lookup:?}"
         );
     }
 
     #[test]
-    fn resolve_found_when_file_exists() {
+    fn lookup_reports_a_catalogued_model_that_is_not_downloaded() {
+        let (dir, registry) = test_registry();
+
+        let entry = catalog::find_entry("miniLM").unwrap();
+        let (variant, path, downloaded) = found(&registry, "miniLM");
+        assert_eq!(variant.name, entry.default_quant);
+        assert_eq!(path, dir.path().join(variant.hf_file));
+        assert!(!downloaded);
+    }
+
+    #[test]
+    fn lookup_found_when_file_exists() {
         let (dir, registry) = test_registry();
 
         let entry = catalog::find_entry("miniLM").unwrap();
         let variant = &entry.variants[0];
         std::fs::write(dir.path().join(variant.hf_file), b"fake gguf").unwrap();
 
-        let path = registry.resolve("miniLM").unwrap();
+        let (_, path, downloaded) = found(&registry, "miniLM");
+        assert!(downloaded);
         assert!(path.exists());
         assert_eq!(path.file_name().unwrap(), variant.hf_file);
     }
 
     #[test]
-    fn resolve_with_quant_override() {
+    fn lookup_with_quant_override() {
         let (dir, registry) = test_registry();
 
         let entry = catalog::find_entry("tinyllama").unwrap();
         let q8_variant = entry.variants.iter().find(|v| v.name == "q8_0").unwrap();
         std::fs::write(dir.path().join(q8_variant.hf_file), b"fake gguf").unwrap();
 
-        let path = registry.resolve("tinyllama:q8_0").unwrap();
-        assert!(path.exists());
+        let (variant, path, downloaded) = found(&registry, "tinyllama:q8_0");
+        assert_eq!(variant.name, "q8_0");
+        assert!(downloaded);
         assert_eq!(path.file_name().unwrap(), q8_variant.hf_file);
     }
 
     #[test]
-    fn resolve_case_insensitive_quant() {
+    fn lookup_case_insensitive_quant() {
         let (dir, registry) = test_registry();
 
         let entry = catalog::find_entry("tinyllama").unwrap();
         let q8_variant = entry.variants.iter().find(|v| v.name == "q8_0").unwrap();
         std::fs::write(dir.path().join(q8_variant.hf_file), b"fake").unwrap();
 
-        let path = registry.resolve("tinyllama:Q8_0").unwrap();
-        assert!(path.exists());
+        let (variant, _, downloaded) = found(&registry, "tinyllama:Q8_0");
+        assert_eq!(variant.name, "q8_0");
+        assert!(downloaded);
     }
 
     #[test]
-    fn resolve_via_alias() {
+    fn lookup_via_alias() {
         let (dir, registry) = test_registry();
 
         let entry = catalog::find_entry("nomic-embed").unwrap();
         let variant = &entry.variants[0];
         std::fs::write(dir.path().join(variant.hf_file), b"fake").unwrap();
 
-        let path = registry.resolve("nomic").unwrap();
-        assert!(path.exists());
+        let (_, path, downloaded) = found(&registry, "nomic");
+        assert!(downloaded);
         assert_eq!(path.file_name().unwrap(), variant.hf_file);
     }
 
     #[test]
-    fn resolve_via_alias_case_insensitive() {
+    fn lookup_via_alias_case_insensitive() {
         let (dir, registry) = test_registry();
 
         let entry = catalog::find_entry("tinyllama").unwrap();
         let variant = &entry.variants[0];
         std::fs::write(dir.path().join(variant.hf_file), b"fake").unwrap();
 
-        let path = registry.resolve("TINY-LLAMA").unwrap();
-        assert!(path.exists());
+        let (_, _, downloaded) = found(&registry, "TINY-LLAMA");
+        assert!(downloaded);
     }
 
     #[test]
-    fn resolve_unknown_quant_lists_available() {
+    fn lookup_unknown_quant_names_the_entry() {
         let (_dir, registry) = test_registry();
 
-        let err = registry.resolve("tinyllama:iq2_xs").unwrap_err();
-        let msg = format!("{}", err);
-        assert!(msg.contains("Unknown quant"), "Error: {}", msg);
-        assert!(msg.contains("q4_k_m"), "Should list q4_k_m: {}", msg);
-        assert!(msg.contains("q8_0"), "Should list q8_0: {}", msg);
+        match registry.lookup("tinyllama:iq2_xs") {
+            CatalogLookup::UnknownQuant { entry } => assert_eq!(entry.name, "tinyllama"),
+            other => panic!("expected UnknownQuant, got {other:?}"),
+        }
     }
 
     #[test]
-    fn resolve_unknown_model_gives_error() {
+    fn lookup_unknown_model() {
         let (_dir, registry) = test_registry();
-
-        let err = registry.resolve("nonexistent-model").unwrap_err();
-        let msg = format!("{}", err);
-        assert!(msg.contains("Unknown model"), "Error: {}", msg);
+        assert_unknown_model(&registry, "nonexistent-model");
     }
 
     #[test]
-    fn resolve_empty_string() {
+    fn lookup_empty_string() {
         let (_dir, registry) = test_registry();
-
-        let err = registry.resolve("").unwrap_err();
-        let msg = format!("{}", err);
-        assert!(msg.contains("Unknown model"), "Error: {}", msg);
+        assert_unknown_model(&registry, "");
     }
 
     #[test]
-    fn resolve_whitespace_only() {
+    fn lookup_whitespace_only() {
         let (_dir, registry) = test_registry();
-
-        let err = registry.resolve("  ").unwrap_err();
-        let msg = format!("{}", err);
-        assert!(msg.contains("Unknown model"), "Error: {}", msg);
+        assert_unknown_model(&registry, "  ");
     }
 
     #[test]
-    fn resolve_trailing_colon() {
+    fn lookup_trailing_colon() {
         let (_dir, registry) = test_registry();
-
-        // "qwen3:" — no single entry "qwen3", so Unknown model error
-        let err = registry.resolve("qwen3:").unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            matches!(err, InferenceError::Registry(_)),
-            "should be Registry error, got: {msg}"
-        );
-        assert!(
-            msg.contains("Unknown model"),
-            "trailing colon should give Unknown model error: {msg}"
-        );
+        // "qwen3:" — no single entry "qwen3".
+        assert_unknown_model(&registry, "qwen3:");
     }
 
     #[test]
-    fn resolve_trailing_colon_known_single_name() {
+    fn lookup_trailing_colon_known_single_name() {
         let (dir, registry) = test_registry();
 
         // "tinyllama:" — trailing colon on a known single-name entry
@@ -645,13 +567,13 @@ mod tests {
             .unwrap();
         std::fs::write(dir.path().join(default_variant.hf_file), b"fake").unwrap();
 
-        let path = registry.resolve("tinyllama:").unwrap();
-        assert!(path.exists());
-        assert_eq!(path.file_name().unwrap(), default_variant.hf_file);
+        let (variant, _, downloaded) = found(&registry, "tinyllama:");
+        assert!(downloaded);
+        assert_eq!(variant.hf_file, default_variant.hf_file);
     }
 
     #[test]
-    fn resolve_trailing_colon_colon() {
+    fn lookup_trailing_colon_colon() {
         let (dir, registry) = test_registry();
 
         // "qwen3:8b:" — trailing colon on a two-part name
@@ -663,41 +585,32 @@ mod tests {
             .unwrap();
         std::fs::write(dir.path().join(default_variant.hf_file), b"fake").unwrap();
 
-        let path = registry.resolve("qwen3:8b:").unwrap();
-        assert!(path.exists());
-        assert_eq!(path.file_name().unwrap(), default_variant.hf_file);
+        let (variant, _, downloaded) = found(&registry, "qwen3:8b:");
+        assert!(downloaded);
+        assert_eq!(variant.hf_file, default_variant.hf_file);
     }
 
     #[test]
-    fn resolve_leading_colon() {
+    fn lookup_leading_colon() {
         let (_dir, registry) = test_registry();
-
-        let err = registry.resolve(":miniLM").unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            matches!(err, InferenceError::Registry(_)),
-            "should be Registry error, got: {msg}"
-        );
-        assert!(
-            msg.contains("Unknown model"),
-            "leading colon should give Unknown model error: {msg}"
-        );
+        assert_unknown_model(&registry, ":miniLM");
     }
 
     #[test]
-    fn resolve_colon_name_with_quant() {
+    fn lookup_colon_name_with_quant() {
         let (dir, registry) = test_registry();
 
         let entry = catalog::find_entry("qwen3:8b").unwrap();
         let q6k_variant = entry.variants.iter().find(|v| v.name == "q6_k").unwrap();
         std::fs::write(dir.path().join(q6k_variant.hf_file), b"fake").unwrap();
 
-        let path = registry.resolve("qwen3:8b:q6_k").unwrap();
-        assert!(path.exists());
+        let (variant, _, downloaded) = found(&registry, "qwen3:8b:q6_k");
+        assert_eq!(variant.name, "q6_k");
+        assert!(downloaded);
     }
 
     #[test]
-    fn resolve_default_quant_not_found_but_other_exists() {
+    fn lookup_default_quant_not_found_but_other_exists() {
         let (dir, registry) = test_registry();
 
         let entry = catalog::find_entry("tinyllama").unwrap();
@@ -705,18 +618,15 @@ mod tests {
         let q8_variant = entry.variants.iter().find(|v| v.name == "q8_0").unwrap();
         std::fs::write(dir.path().join(q8_variant.hf_file), b"fake").unwrap();
 
-        // resolve("tinyllama") without quant override → looks for default (q4_k_m) → not found
-        let err = registry.resolve("tinyllama").unwrap_err();
-        let msg = format!("{}", err);
-        assert!(
-            msg.contains("is not downloaded"),
-            "Should fail for default quant: {}",
-            msg
-        );
+        // "tinyllama" without a quant selects the default (q4_k_m), which is
+        // not there; the explicit q8_0 is.
+        let (variant, _, downloaded) = found(&registry, "tinyllama");
+        assert_eq!(variant.name, "q4_k_m");
+        assert!(!downloaded);
 
-        // But explicit q8_0 should work
-        let path = registry.resolve("tinyllama:q8_0").unwrap();
-        assert!(path.exists());
+        let (variant, _, downloaded) = found(&registry, "tinyllama:q8_0");
+        assert_eq!(variant.name, "q8_0");
+        assert!(downloaded);
     }
 
     // ===== list_available() / list_local() tests =====
@@ -806,7 +716,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_rejects_zero_length_file() {
+    fn lookup_rejects_zero_length_file() {
         let (dir, registry) = test_registry();
 
         let entry = catalog::find_entry("miniLM").unwrap();
@@ -814,19 +724,14 @@ mod tests {
         // Create a zero-length file
         std::fs::write(dir.path().join(variant.hf_file), b"").unwrap();
 
-        let err = registry.resolve("miniLM").unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("is not downloaded"),
-            "Zero-length file should not resolve: {}",
-            msg
-        );
+        let (_, _, downloaded) = found(&registry, "miniLM");
+        assert!(!downloaded, "a zero-length file is not a downloaded model");
     }
 
     /// Every surface that answers "is this model downloaded?" answers the
     /// same way. `list_available` used to call any existing path local —
     /// a zero-length file, even a directory — while `list_local` and
-    /// `resolve` refused it, so `models list` said "ready" and
+    /// `lookup` refused it, so `models list` said "ready" and
     /// `inference status` counted a model that would not load.
     #[test]
     fn every_surface_agrees_on_what_counts_as_downloaded() {
@@ -862,11 +767,7 @@ mod tests {
             "zero-length: list_available"
         );
         assert!(!local_lists_it(&registry), "zero-length: list_local");
-        assert_eq!(
-            registry.resolve("miniLM").unwrap_err().code(),
-            "inference.missing_model",
-            "zero-length: resolve"
-        );
+        assert!(!found(&registry, "miniLM").2, "zero-length: lookup");
 
         // A directory squatting on the artifact's path.
         std::fs::remove_file(&path).unwrap();
@@ -877,11 +778,7 @@ mod tests {
             "directory: list_available"
         );
         assert!(!local_lists_it(&registry), "directory: list_local");
-        assert_eq!(
-            registry.resolve("miniLM").unwrap_err().code(),
-            "inference.missing_model",
-            "directory: resolve"
-        );
+        assert!(!found(&registry, "miniLM").2, "directory: lookup");
 
         // The real thing.
         std::fs::remove_dir(&path).unwrap();
@@ -892,11 +789,9 @@ mod tests {
             "downloaded: list_available"
         );
         assert!(local_lists_it(&registry), "downloaded: list_local");
-        assert_eq!(
-            registry.resolve("miniLM").unwrap(),
-            path,
-            "downloaded: resolve"
-        );
+        let (_, found_path, downloaded) = found(&registry, "miniLM");
+        assert!(downloaded, "downloaded: lookup");
+        assert_eq!(found_path, path, "downloaded: lookup path");
     }
 
     #[test]
@@ -909,48 +804,38 @@ mod tests {
         assert!(local.is_empty(), "Should not match random files");
     }
 
-    // ===== parse_name() tests =====
+    // ===== name-shape tests =====
 
     #[test]
-    fn parse_name_single_part() {
+    fn lookup_single_part_selects_the_default_quant() {
         let (_dir, registry) = test_registry();
 
-        let (entry, quant) = registry.parse_name("miniLM").unwrap();
-        assert_eq!(entry.name, "miniLM");
-        assert!(quant.is_none());
+        let entry = catalog::find_entry("miniLM").unwrap();
+        let (variant, _, _) = found(&registry, "miniLM");
+        assert_eq!(variant.name, entry.default_quant);
     }
 
     #[test]
-    fn parse_name_two_part_combined() {
+    fn lookup_two_part_combined_name() {
         let (_dir, registry) = test_registry();
 
-        let (entry, quant) = registry.parse_name("qwen3:8b").unwrap();
-        assert_eq!(entry.name, "qwen3:8b");
-        assert!(quant.is_none());
+        let entry = catalog::find_entry("qwen3:8b").unwrap();
+        let (variant, _, _) = found(&registry, "qwen3:8b");
+        assert_eq!(variant.name, entry.default_quant);
     }
 
     #[test]
-    fn parse_name_three_part() {
+    fn lookup_three_part_name() {
         let (_dir, registry) = test_registry();
 
-        let (entry, quant) = registry.parse_name("qwen3:8b:q6_k").unwrap();
-        assert_eq!(entry.name, "qwen3:8b");
-        assert_eq!(quant, Some("q6_k"));
+        let (variant, _, _) = found(&registry, "qwen3:8b:q6_k");
+        assert_eq!(variant.name, "q6_k");
     }
 
     #[test]
-    fn parse_name_four_parts_fails() {
+    fn lookup_four_parts_is_unknown() {
         let (_dir, registry) = test_registry();
-        let err = registry.parse_name("a:b:c:d").unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            matches!(err, InferenceError::Registry(_)),
-            "should be Registry error, got: {msg}"
-        );
-        assert!(
-            msg.contains("Unknown model"),
-            "four-part name should give Unknown model error: {msg}"
-        );
+        assert_unknown_model(&registry, "a:b:c:d");
     }
 
     // ===== ModelInfo fields tests =====
@@ -1132,39 +1017,20 @@ mod tests {
         assert_eq!(cloned.hf_repo, info.hf_repo);
     }
 
-    // ===== resolve error type tests =====
-
-    #[test]
-    fn resolve_errors_are_registry_variant() {
-        let (_dir, registry) = test_registry();
-
-        let err = registry.resolve("nonexistent").unwrap_err();
-        assert!(
-            matches!(err, InferenceError::Registry(_)),
-            "should be Registry error, got: {err}"
-        );
-
-        let err = registry.resolve("tinyllama:bad_quant").unwrap_err();
-        assert!(
-            matches!(err, InferenceError::Registry(_)),
-            "should be Registry error for bad quant, got: {err}"
-        );
-    }
-
     // ===== Additional depth tests =====
 
     #[test]
-    fn resolve_path_is_under_models_dir() {
+    fn lookup_path_is_under_models_dir() {
         let (dir, registry) = test_registry();
 
         let entry = catalog::find_entry("miniLM").unwrap();
         let variant = &entry.variants[0];
         std::fs::write(dir.path().join(variant.hf_file), b"fake").unwrap();
 
-        let path = registry.resolve("miniLM").unwrap();
+        let (_, path, _) = found(&registry, "miniLM");
         assert!(
             path.starts_with(dir.path()),
-            "resolved path should be under models_dir: {}",
+            "looked-up path should be under models_dir: {}",
             path.display()
         );
     }
@@ -1250,7 +1116,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_two_part_name_with_quant_fallback() {
+    fn lookup_two_part_name_with_quant_fallback() {
         let (dir, registry) = test_registry();
 
         // "miniLM:f16" → no combined "miniLM:f16" entry, falls back to miniLM + quant=f16
@@ -1258,16 +1124,17 @@ mod tests {
         let variant = entry.variants.iter().find(|v| v.name == "f16").unwrap();
         std::fs::write(dir.path().join(variant.hf_file), b"fake").unwrap();
 
-        let path = registry.resolve("miniLM:f16").unwrap();
-        assert!(path.exists());
+        let (found_variant, path, downloaded) = found(&registry, "miniLM:f16");
+        assert!(downloaded);
+        assert_eq!(found_variant.name, "f16");
         assert_eq!(path.file_name().unwrap(), variant.hf_file);
     }
 
-    // ===== check_and_clean_corrupt() tests =====
+    // ===== discard_if_corrupt() tests =====
 
     #[test]
-    fn check_corrupt_deletes_undersized_file() {
-        let (dir, registry) = test_registry();
+    fn discard_deletes_undersized_file() {
+        let (dir, _registry) = test_registry();
 
         let entry = catalog::find_entry("miniLM").unwrap();
         let variant = &entry.variants[0];
@@ -1276,7 +1143,7 @@ mod tests {
         std::fs::write(&path, b"tiny").unwrap();
         assert!(path.exists());
 
-        registry.check_and_clean_corrupt("miniLM", &path);
+        discard_if_corrupt(variant, &path);
         assert!(
             !path.exists(),
             "undersized file should be deleted as corrupted"
@@ -1284,8 +1151,8 @@ mod tests {
     }
 
     #[test]
-    fn check_corrupt_keeps_correctly_sized_file() {
-        let (dir, registry) = test_registry();
+    fn discard_keeps_correctly_sized_file() {
+        let (dir, _registry) = test_registry();
 
         let entry = catalog::find_entry("miniLM").unwrap();
         let variant = &entry.variants[0];
@@ -1295,41 +1162,48 @@ mod tests {
         std::fs::write(&path, &fake_data).unwrap();
         assert!(path.exists());
 
-        registry.check_and_clean_corrupt("miniLM", &path);
+        discard_if_corrupt(variant, &path);
         assert!(path.exists(), "correctly-sized file should not be deleted");
     }
 
     #[test]
-    fn check_corrupt_noop_for_unknown_model() {
-        let (dir, registry) = test_registry();
+    fn discard_noop_without_a_catalogued_size() {
+        let (dir, _registry) = test_registry();
 
         let path = dir.path().join("fake.gguf");
         std::fs::write(&path, b"data").unwrap();
 
-        // Should not panic or delete the file
-        registry.check_and_clean_corrupt("nonexistent-model", &path);
-        assert!(path.exists(), "unknown model should be a no-op");
+        let no_size = QuantVariant {
+            name: "q0",
+            hf_file: "fake.gguf",
+            size_bytes: 0,
+            sha256: None,
+        };
+        discard_if_corrupt(&no_size, &path);
+        assert!(path.exists(), "no expected size means no verdict");
     }
 
     #[test]
-    fn check_corrupt_noop_for_missing_file() {
-        let (dir, registry) = test_registry();
+    fn discard_noop_for_missing_file() {
+        let (dir, _registry) = test_registry();
 
+        let entry = catalog::find_entry("miniLM").unwrap();
         let path = dir.path().join("no-such-file.gguf");
         // Should not panic when file doesn't exist
-        registry.check_and_clean_corrupt("miniLM", &path);
+        discard_if_corrupt(&entry.variants[0], &path);
+        assert!(!path.exists());
     }
 
     #[test]
-    fn check_corrupt_deletes_zero_length_file() {
-        let (dir, registry) = test_registry();
+    fn discard_deletes_zero_length_file() {
+        let (dir, _registry) = test_registry();
 
         let entry = catalog::find_entry("miniLM").unwrap();
         let variant = &entry.variants[0];
         let path = dir.path().join(variant.hf_file);
         std::fs::write(&path, b"").unwrap();
 
-        registry.check_and_clean_corrupt("miniLM", &path);
+        discard_if_corrupt(variant, &path);
         assert!(
             !path.exists(),
             "zero-length file should be deleted as corrupted"

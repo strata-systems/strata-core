@@ -87,49 +87,58 @@ Current files and responsibilities:
    - `ProviderKind`
    - `InferenceEngine`
    - `parse_model_spec`
-   - `load`
-   - `load_embedder`
-   - `load_ranker`
 
-2. `src/generate.rs`
+   The free loaders `load`, `load_embedder` and `load_ranker` were removed
+   with the resolver: every model is reached through `InferenceRuntime`,
+   which resolves the spec once and hands the loaders a resolved model.
+
+2. `src/resolve.rs`
+   - `InferenceRuntime::resolve` — the one answer to "can this model be used
+     here, and if not, why not?" (`ResolvedModel`, `ModelSource`,
+     `Availability`, `require_ready`)
+   - identity-first check order: malformed → unknown → wrong task → not
+     built → network → key → not downloaded
+   - design: `docs/design/inference-model-resolution.md`
+
+3. `src/generate.rs`
    - `GenerationEngine`
    - local generation dispatch
    - cloud generation dispatch
    - provider selection
 
-3. `src/embed.rs`
+4. `src/embed.rs`
    - `EmbeddingEngine`
    - local llama.cpp embedding
    - batch embedding
    - embedding dimension and health checks
 
-4. `src/cloud_embed.rs`
+5. `src/cloud_embed.rs`
    - cloud embedding for OpenAI and Google
 
-5. `src/rank.rs`
+6. `src/rank.rs`
    - local cross-encoder ranking
 
-6. `src/provider/`
+7. `src/provider/`
    - local provider wrapper
    - Anthropic adapter
    - OpenAI adapter
    - Google adapter
    - provider request/response JSON mapping
 
-7. `src/llama/`
+8. `src/llama/`
    - llama.cpp FFI definitions
    - context lifecycle
    - tokenization
    - local generation, embedding, and ranking helpers
 
-8. `src/registry/`
+9. `src/registry/`
    - model catalog
    - aliases and quantization variants
    - model directory resolution through `STRATA_MODELS_DIR` or default user
      model directory
    - optional model download support
 
-9. `build.rs`
+10. `build.rs`
    - feature-gated local llama.cpp native build
    - vendor build configuration
    - skip hook for check-only builds through

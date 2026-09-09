@@ -4,7 +4,7 @@
   "generator_version": "strata-executor-cli-idl.1",
   "source": {
     "path": "crates/executor/idl/v1/generated/command-index.json",
-    "checksum_sha256": "8158f37484dcdfc755150f43609a7f5d21e72fd070c4653993a966858403d4f8",
+    "checksum_sha256": "b8b1f630a2fc273d29e8958c17c0259043c88e72f5aa79ecda8a7acd62945349",
     "schema_version": "strata.idl.v1",
     "generator_version": "strata-executor-idl.1"
   },
@@ -4393,6 +4393,10 @@
           "docs": "https://stratadb.org/e/not_found.engine.branch"
         },
         {
+          "code": "inference.invalid_request",
+          "docs": "https://stratadb.org/e/inference.invalid_request"
+        },
+        {
           "code": "inference.unsupported_operation",
           "docs": "https://stratadb.org/e/inference.unsupported_operation"
         },
@@ -4731,7 +4735,7 @@
       "kind": "inference.runtime_op",
       "title": "Download a model",
       "summary": "Download an inference model locally.",
-      "description": "Resolves a catalog name or model spec and downloads the model artifact into the local model directory, returning the resolved local path. Honors `STRATA_MODELS_DIR` for the destination and `STRATA_HF_ENDPOINT` and `STRATA_HF_TOKEN` (or `HF_TOKEN`) for gated HuggingFace repositories. Downloading requires network access and a build with the local execution feature; cloud-only builds return `inference.unsupported_operation`.",
+      "description": "Resolves a catalog name or model spec and downloads the model artifact into the local model directory, returning the resolved local path. A model that is already present is not downloaded again: the command returns its path in every build, with or without network access. Honors `STRATA_MODELS_DIR` for the destination and `STRATA_HF_ENDPOINT` and `STRATA_HF_TOKEN` (or `HF_TOKEN`) for gated HuggingFace repositories. The spec is resolved before anything else is checked: a malformed spec returns `inference.invalid_request`, a cloud provider spec returns `inference.unsupported_operation` (there is nothing to download), and a name that is not in the catalog returns `inference.missing_model`. A missing model is downloaded only when the runtime has network access and the build can download; otherwise the command returns `inference.download_disabled`.",
       "docs": "/docs/inference/models/pull",
       "feature": "core",
       "access": "read",
@@ -4752,6 +4756,14 @@
         {
           "code": "not_found.engine.branch",
           "docs": "https://stratadb.org/e/not_found.engine.branch"
+        },
+        {
+          "code": "inference.invalid_request",
+          "docs": "https://stratadb.org/e/inference.invalid_request"
+        },
+        {
+          "code": "inference.unsupported_operation",
+          "docs": "https://stratadb.org/e/inference.unsupported_operation"
         },
         {
           "code": "inference.download_disabled",
@@ -4818,6 +4830,10 @@
         {
           "code": "not_found.engine.branch",
           "docs": "https://stratadb.org/e/not_found.engine.branch"
+        },
+        {
+          "code": "inference.invalid_request",
+          "docs": "https://stratadb.org/e/inference.invalid_request"
         },
         {
           "code": "inference.unsupported_operation",
@@ -4922,6 +4938,10 @@
         {
           "code": "not_found.engine.branch",
           "docs": "https://stratadb.org/e/not_found.engine.branch"
+        },
+        {
+          "code": "inference.invalid_request",
+          "docs": "https://stratadb.org/e/inference.invalid_request"
         },
         {
           "code": "inference.unsupported_operation",

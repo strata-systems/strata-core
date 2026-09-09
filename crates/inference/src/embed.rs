@@ -71,36 +71,6 @@ impl EmbeddingEngine {
         })
     }
 
-    /// Load an embedding engine by model name from the registry.
-    ///
-    /// Resolves the name (e.g., `"miniLM"`) to a local GGUF file path,
-    /// automatically downloading from HuggingFace if the model is not
-    /// present locally. On load failure, checks for corrupted files
-    /// (size mismatch vs catalog) and deletes them so the next attempt
-    /// can re-download a fresh copy.
-    pub fn from_registry(name: &str) -> Result<Self, InferenceError> {
-        let registry = crate::registry::ModelRegistry::new();
-
-        // D8: loading resolves what is on disk and never downloads. A silent
-        // multi-hundred-megabyte fetch is not something a caller — least of all
-        // an agent — can consent to mid-operation. `inference models pull` is
-        // the explicit path, and the CLI offers it interactively. The download
-        // feature no longer changes this, so the split on it is gone; it used
-        // to make embedding and ranking auto-pull while generation refused.
-        let path = registry.resolve(name)?;
-
-        match Self::from_gguf(&path) {
-            Ok(engine) => Ok(engine),
-            Err(e) => {
-                // If loading failed, the file may be corrupted/truncated.
-                // Delete it if size doesn't match catalog so next retry
-                // can re-download a fresh copy.
-                registry.check_and_clean_corrupt(name, &path);
-                Err(e)
-            }
-        }
-    }
-
     /// Produce an L2-normalized embedding vector for the given text.
     ///
     /// Steps:
@@ -566,45 +536,6 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn from_registry_known_model_not_local_returns_error_or_succeeds() {
-        // Known model but not downloaded → Registry error with helpful message.
-        // If the model is already on disk, this succeeds — that's fine.
-        let result = EmbeddingEngine::from_registry("miniLM");
-        if let Err(err) = result {
-            let msg = err.to_string();
-            assert!(
-                matches!(
-                    err,
-                    InferenceError::Registry(_) | InferenceError::LlamaCpp(_)
-                ),
-                "should be Registry or LlamaCpp error, got: {msg}"
-            );
-        }
-    }
-
-    #[test]
-    fn from_registry_unknown_model_returns_registry_error() {
-        let result = EmbeddingEngine::from_registry("nonexistent-model");
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(
-            matches!(err, InferenceError::Registry(_)),
-            "should be Registry error, got: {err}"
-        );
-        assert!(
-            err.to_string().contains("Unknown model"),
-            "error should mention unknown model: {err}"
-        );
-    }
-
-    #[test]
-    fn from_registry_empty_name_returns_error() {
-        let result = EmbeddingEngine::from_registry("");
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), InferenceError::Registry(_)));
-    }
-
-    #[test]
     fn from_gguf_nonexistent_file_returns_descriptive_error() {
         let result = EmbeddingEngine::from_gguf("/nonexistent/path/model.gguf");
         assert!(result.is_err());
@@ -686,13 +617,11 @@ mod tests {
     #[test]
     #[ignore]
     fn smoke_embed_minilm() {
-        let engine = match EmbeddingEngine::from_registry("miniLM") {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("skipping smoke_embed_minilm: {e}");
-                return;
-            }
+        let Some(path) = crate::registry::ModelRegistry::downloaded_catalog_path("miniLM") else {
+            eprintln!("skipping smoke_embed_minilm: miniLM is not downloaded");
+            return;
         };
+        let engine = EmbeddingEngine::from_gguf(path).expect("miniLM should load");
 
         // Verify engine metadata
         assert_eq!(engine.embedding_dim(), 384, "MiniLM should have 384 dims");
@@ -759,13 +688,11 @@ mod tests {
     #[test]
     #[ignore]
     fn smoke_embed_batch_minilm() {
-        let engine = match EmbeddingEngine::from_registry("miniLM") {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("skipping smoke_embed_batch_minilm: {e}");
-                return;
-            }
+        let Some(path) = crate::registry::ModelRegistry::downloaded_catalog_path("miniLM") else {
+            eprintln!("skipping smoke_embed_batch_minilm: miniLM is not downloaded");
+            return;
         };
+        let engine = EmbeddingEngine::from_gguf(path).expect("miniLM should load");
 
         // --- Empty batch ---
         let empty = engine.embed_batch(&[]).expect("empty batch should succeed");

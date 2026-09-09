@@ -45,4 +45,42 @@ exclude_re = [
     # which is pinned directly instead: planting `&=` there reds
     # `unload_reports_whether_it_dropped_a_cached_model`, verified by hand.
     "replace \\|= with &= in InferenceRuntime::unload",
+    # The `local`-only load path (#3269, S1 of #3261): the two engine caches
+    # and the loader they share are `#[cfg(feature = "local")]` items in
+    # `runtime.rs`, and `downloaded_catalog_path` is a
+    # `#[cfg(all(test, feature = "local"))]` helper for the ignored real-model
+    # smoke tests. Proven vacuous the same way: four `compile_error!` plants
+    # built clean under `--features download,testkit --all-targets` while a
+    # fifth, in the compiled neighbour `cached_generation_engine`, failed the
+    # same build. Their strength mechanism is the `local,download` lane of
+    # `crates/inference/tests/resolution_matrix.rs`, whose junk-file cells
+    # observe `model_load_failed` from exactly these paths (#3267 is the lane
+    # that would run it in CI).
+    "\\bInferenceRuntime::cached_embedding_engine\\b",
+    "\\bInferenceRuntime::cached_ranking_engine\\b",
+    "\\bload_local\\b",
+    "\\bModelRegistry::downloaded_catalog_path\\b",
+    # `cached_generation_engine` IS compiled here (the cloud providers need
+    # the generation cache) but is dead by control flow: its only caller sits
+    # behind `!is_cloud()` on a *ready* model, and `resolve_local`'s
+    # `!cfg!(feature = "local")` guard refuses every local run in this lane,
+    # so the twin it calls, `local_generation_engine`, is `unreachable!` here.
+    # A mutant in it (e.g. `delete !` on the cache probe) can only be
+    # observed by a local run that reaches the loader — the same
+    # `local,download` matrix cells as above.
+    "\\bInferenceRuntime::cached_generation_engine\\b",
+    # Two resolver guards whose mutants are *equivalent programs* in this
+    # lane rather than uncompiled: `!cfg!(feature = "local")` is `true` here,
+    # so "replace with true" changes nothing; and with every cloud provider
+    # feature on (the crate's default), `!generation_provider_feature_enabled`
+    # is `false` for each provider, so "replace with false" changes nothing.
+    # Only a build that flips the feature can tell the mutant from the
+    # original: the `local` lane for the first (#3267), a
+    # `--no-default-features` lane for the second (no such lane exists; also
+    # noted on #3267). The resolver's own tests pin both decisions in the
+    # builds where they differ (`not_built_comes_before_not_downloaded` and
+    # `cloud_checks_run_task_then_build_then_network_then_key` compute their
+    # expectation from `cfg!`).
+    "replace match guard !cfg!\\(feature = \"local\"\\) with true in resolve_local",
+    "replace match guard !generation_provider_feature_enabled\\(provider\\) with false in resolve_cloud",
 ]

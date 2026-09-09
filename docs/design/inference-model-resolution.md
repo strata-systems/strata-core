@@ -196,11 +196,11 @@ leaves the root to produce the next row.
 
 | # | Decision | Closes / enables |
 |---|---|---|
-| R1 | One `resolve(spec, task) -> ResolvedModel` in `strata-inference`; `Availability` is a typed enum; `require_ready()` is the only place an availability becomes an error | A: #3255, #3260; the substrate for everything below |
+| R1 | One `resolve(spec, use) -> ResolvedModel` in `strata-inference`; `Availability` is a typed enum; `require_ready()` is the only place an availability becomes an error | A: #3255, #3260; the substrate for everything below |
 | R2 | Split `inference.missing_model` (catalogued, not downloaded) from a new `inference.unknown_model` (not in catalog / path absent) | #3256 |
 | R3 | Inference errors carry `details` under `strata.error.details.inference.v1`, defined by one Rust type; `capability` returns the same data; D8 reads details, not codes and command fields | #3226, #3256, #3216 p.1, #3244 (data not sentinel) |
 | R4 | Provider keys come from an injected `ProviderKeySource`; executor installs env-then-config; the CLI `set_var` bridge is deleted | #3221, rule 9 |
-| R5 | One `ModelRegistry`, built once in `InferenceRuntime::new`, threaded into every loader | #3260 |
+| R5 | One `ModelRegistry`, built once in `InferenceRuntime::new`; the loaders take the resolved path and look nothing up | #3260 |
 | R6 | `pull_model` goes through the resolver; a cloud spec is `unsupported_operation`; network-disabled is the typed `DownloadDisabled` | #3255 |
 | R7 | One size formatter (decimal), exported from inference, used by the CLI | #3235 |
 | R8 | Prose derives or points: rule 14 becomes a two-sentence grammar plus a pointer to the matrix; commands named in docs and hints must parse; catalog repos are checked nightly | #3257, #3233, #3045, `strata models pull` |
@@ -208,8 +208,22 @@ leaves the root to produce the next row.
 
 ### R1 — the resolver
 
+As built in S1 (`crates/inference/src/resolve.rs`); the shape below is the
+code, not the proposal it replaced. Where S1 departed from the first draft the
+reason is given inline.
+
 ```rust
-// crates/inference/src/resolve.rs (new)
+// crates/inference/src/resolve.rs
+
+/// What a caller is about to do with a model. `None` at a call site means
+/// the caller only needs to *locate* it (`pull`, `capability`).
+pub enum ModelUse {
+    Run(ModelTask),
+    /// Encode or decode with the vocabulary: needs local execution and the
+    /// file, but any catalogued task's model will do. A `ModelTask` could
+    /// not say this, which is why `use` replaced `task`.
+    Tokenize,
+}
 
 pub struct ResolvedModel {
     /// The spec as given, outer whitespace removed.
@@ -222,51 +236,77 @@ pub struct ResolvedModel {
 }
 
 pub enum ModelSource {
-    Catalog { entry: &'static CatalogEntry, variant: &'static QuantVariant },
+    /// `path` is `models_dir/<hf_file>`, present or not: the loaders take a
+    /// path and nothing else, so the resolver is the one place that joins it.
+    Catalog { entry: &'static CatalogEntry, variant: &'static QuantVariant, path: PathBuf },
     GgufPath(PathBuf),
+    /// A local name the catalog does not know; `entry` is the model matched
+    /// when only the quant suffix was unknown, so the refusal can list the
+    /// quants that exist (the `tinyllama:q99` row, #3264).
+    Uncatalogued { entry: Option<&'static CatalogEntry> },
     Cloud,
 }
 
-/// Why the model can or cannot be used for `task` by this binary, right now.
-/// Adding a variant forces a decision in `require_ready` and in the wire
-/// rendering — the compiler is the guard.
+/// At most one reason, decided in the order the variants are listed (Q9).
 pub enum Availability {
     Ready,
-    NotDownloaded { pull_spec: String, size_bytes: u64 },
     NotInCatalog,
     PathMissing,
+    TaskNotSupported { requested: ModelUse },
     LocalExecutionNotBuilt,
     ProviderNotBuilt,
-    TaskNotSupported { task: ModelTask },
-    /// Cloud model with `allow_network = false`. Added by S0: the matrix
-    /// found the network gate had no availability to speak through (Q11).
     NetworkDisabled,
-    KeyMissing { env_var: &'static str, config_key: &'static str },
+    /// `config_key` is built from the provider (`"<provider>.api_key"`), so
+    /// it is a `String`, not a static.
+    KeyMissing { env_var: &'static str, config_key: String },
+    NotDownloaded { pull_spec: String, size_bytes: u64 },
 }
 
 impl InferenceRuntime {
     /// Errs only for a malformed spec (`inference.invalid_request`). Every
     /// other outcome is data.
-    /// `task` is `None` for task-neutral verbs (`pull`, `unload`).
-    pub fn resolve(&self, spec: &str, task: Option<ModelTask>) -> Result<ResolvedModel, InferenceError>;
+    pub fn resolve(&self, spec: &str, use_: Option<ModelUse>) -> Result<ResolvedModel, InferenceError>;
 }
 
 impl ResolvedModel {
     /// Total match over `Availability` → typed `InferenceError`.
     pub fn require_ready(&self) -> Result<(), InferenceError>;
+    /// The file a local model loads from, present or not; `None` for cloud
+    /// models and names the catalog does not know.
+    pub fn local_path(&self) -> Option<&Path>;
 }
 ```
 
-`resolve` composes what already exists: `parse_model_spec`, `find_entry` /
-`find_entry_by_parts`, `model_file_is_downloaded`, `looks_like_path`, the
-`cfg!` feature checks, and the key source (R4). It reads the catalog as an
-input (`&[CatalogEntry]`, default `CATALOG`) so that a test or the testkit fake
-can supply a small one. Every runtime entry point in §2 calls `resolve` first;
-`capability` returns it; the loaders receive it and never look anything up
-again.
+`resolve` composes what already exists: `parse_model_spec`,
+`ModelRegistry::lookup` (one call that answers found / unknown model / unknown
+quant, with the file's path and presence), `looks_like_path`, the `cfg!`
+feature checks, and the key predicate. Every runtime entry point in §2 calls
+`resolve` first; `capability` returns it; the loaders receive the resolved
+path and never look anything up again.
 
-`resolve` is a pure function of (spec, task, catalog, directory listing, key
-source, build). That is what makes the matrix in §5 possible.
+`resolve` is a pure function of (spec, use, catalog, directory listing, key
+presence, build): the free `pub(crate) fn resolve(registry, network_enabled,
+key_present: &dyn Fn(ProviderKind) -> bool, spec, use_)` takes each as an
+argument, and `InferenceRuntime::resolve` supplies the runtime's registry, its
+network setting and an environment-variable predicate. R4 replaces that
+predicate with the `ProviderKeySource`; nothing else moves. That is what makes
+the matrix in §5 possible.
+
+**Locate versus run.** `use_ == None` checks identity and presence only:
+malformed → not in catalog → (local) not downloaded / path missing. A cloud
+model asked only to be located is `Ready` whatever the build, the network or
+the key say — every remaining check is about reaching the provider, which
+only a run does — so `pull` refuses a cloud spec on its *source*, not on its
+availability, and `capability` never refuses at all. A local model asked only
+to be located still reports `NotDownloaded`, because that is a fact about the
+file, but not `LocalExecutionNotBuilt` or `TaskNotSupported`, which are facts
+about running it.
+
+**Not built: loaders that resolve.** The first draft had the loaders take the
+registry. S1 deleted the free `load` / `load_embedder` / `load_ranker`
+functions and the `from_registry*` constructors instead: a loader takes a
+path (`from_gguf`), and the only thing that turns a name into a path is
+`resolve`. Two answerers for the same question is what R1 is against.
 
 ### R2 — two codes for two facts
 
@@ -284,6 +324,13 @@ source, build). That is what makes the matrix in §5 possible.
 first, then task, then build, then network, then key, then download state.
 The order is part of the contract because the matrix pins one answer per
 cell, and the answer for a cell that fails two checks is the earlier one.
+
+S1 shipped the order with today's codes: `NotInCatalog` and `PathMissing`
+render as `inference.missing_model` until S2 adds `unknown_model`, and the
+matrix carries exactly those cells as `KNOWN_RED` under #3256 (210 in every
+lane). The typed variant behind `unsupported_operation` / `unsupported_provider`
+is `InferenceError::Unsupported { kind: UnsupportedKind, message }` — the code
+comes from the kind, so a reworded message cannot move it (#3216).
 
 `unknown_model` is a wire change: `errors.yaml`, a registry row, the IDL error
 sets (via the named set #3250 proposes, so it is added once), a CHANGELOG line,
@@ -373,19 +420,24 @@ impl InferenceRuntimeConfig { pub key_source: Arc<dyn ProviderKeySource> }
 
 ### R5, R6, R7 — mechanical
 
-- R5: `InferenceRuntime::new` builds `registry: ModelRegistry` once from
-  `config.models_dir` (else `STRATA_MODELS_DIR`, else `~/.strata/models`);
-  `GenerationEngine::from_registry_with_config`, `EmbeddingEngine::from_registry`,
-  `RankingEngine::from_registry` take `&ModelRegistry` (or the `ResolvedModel`)
-  and the three `ModelRegistry::new()` calls in `generate.rs:164`,
-  `embed.rs:82`, `rank.rs:75` are deleted (#3260).
-- R6: `pull_model(spec)` → `resolve(spec, None)`; `Cloud` →
-  `unsupported_operation` (declared on `inference.models.pull`, which today
-  lists only the download/registry codes, `inference.yaml:30-36`);
-  `NotInCatalog` → `unknown_model`; `NotDownloaded` → download; `Ready` →
-  return the path. Network disabled → `RegistryFailed { DownloadDisabled }`
-  instead of `NotSupported("… network access")` classified by the word
-  "network" (#3255).
+- R5 (built in S1): `InferenceRuntime::new` builds `registry: ModelRegistry`
+  once from `config.models_dir` (else `STRATA_MODELS_DIR`, else
+  `~/.strata/models`). The loaders' own `ModelRegistry::new()` calls went with
+  the loaders' registry-taking constructors (R1, "not built"): the runtime
+  resolves, then hands `from_gguf` the resolved path (#3260).
+  `ModelRegistry::resolve` — the registry's own name-to-path renderer — is
+  deleted; `require_ready` is the only place a lookup becomes a message.
+- R6 (built in S1): `pull_model(spec)` → `resolve(spec, None)`; `Cloud` →
+  `unsupported_operation`; `NotInCatalog` / `PathMissing` → `missing_model`
+  (S2: `unknown_model`); `Ready` → return the path, in every build, network on
+  or off; `NotDownloaded` → download when the network is on and the build
+  carries `download`, else `RegistryFailed { DownloadDisabled }` — the typed
+  kind, not `NotSupported("… network access")` classified by the word
+  "network" (#3255). The IDL declares `invalid_request` and
+  `unsupported_operation` on `inference.models.pull`, and `invalid_request`
+  on `tokenize` / `detokenize` / `rank`: the resolver runs before the
+  local-execution check, so a malformed spec reaches those verbs as what it
+  is (#3262's precedence, delivered here; its `unknown_model` half is S2's).
 - R7: `format_size` (`registry/mod.rs:445`, decimal MB/GB) becomes `pub`,
   re-exported by executor as `format_model_size`; `render.rs:413-446` uses it
   and the `"1.0 MB"` assertion at :1681 moves to the one formatter (#3235).
@@ -448,11 +500,12 @@ malformed-spec error; at executor level it is `(code, class, details keys)`.
   flag, the build and the verb — there is no hand-written table to drift. The
   harness builds `InferenceRuntime::new(config)` over a `tempdir` and runs the
   cells in a child process with a scrubbed environment (`env_clear`, `HOME`
-  and `STRATA_MODELS_DIR` under the tempdir), once with no key and once with
-  a fake key exported into every `CLOUD_PROVIDER_KEYS` variable; the second
-  run must differ from the first only on key cells. Nothing in the process
-  environment is mutated in place. Until R4 lands, "key" means "env var";
-  the config source is S3's dimension.
+  and `STRATA_MODELS_DIR` under the tempdir, `STRATA_HF_ENDPOINT` pointed at
+  a closed loopback port so an attempted download is refused at once), once
+  with no key and once with a fake key exported into every
+  `CLOUD_PROVIDER_KEYS` variable; the second run must differ from the first
+  only on key cells. Nothing in the process environment is mutated in place.
+  Until R4 lands, "key" means "env var"; the config source is S3's dimension.
 - `crates/executor/tests/inference_resolution_wire.rs` (feature `inference`):
   the executor-level cells, live rather than replayed. Specs are derived from
   `CATALOG` and `CLOUD_PROVIDER_KEYS` plus the malformed and path forms
@@ -478,7 +531,10 @@ malformed-spec error; at executor level it is `(code, class, details keys)`.
   leave `unreplayed-error-codes.yaml` (budget 114 → ~107) and the IDL's
   existing guards reach resolution for the first time. No parallel harness.
 - Cloud `Ready` cells assert `capability` only; nothing in the matrix sends a
-  request.
+  request. The 21 cells that would (a key present, the network on) are the
+  matrix's only never-run cells; they need a runtime-level provider base URL
+  the way downloads have `STRATA_HF_ENDPOINT` — **#3270**, proposed for S3
+  beside R4.
 
 ### 5.3 Known red, and falsification
 
@@ -531,6 +587,26 @@ skips 17 that would download or send, and carries 397. No CI lane builds
   is why the matrix asserts only `provider` identity on it today and why R3
   makes it the carrier of the answer.
 
+**What S1 changed (2026-09-09).** With every verb going through `resolve`,
+`KNOWN_RED` shrank to the two #3256 entries (unknown names and absent paths
+answer `missing_model` until S2): 210 known-red cells in each of the default,
+`download`, and `local,download` lanes, down from 323 / 321 / 397. The
+#3255, #3260, #3262-precedence, #3263 and #3264 entries left because their
+cells now match the contract, not because the contract moved — with one
+exception, decided rather than discovered: a cloud spec asked only to be
+located (`pull`, `capability`) is `Ready`, so `pull` refuses it on its source
+(R1, "locate versus run"). Two tests outside the matrix had been passing on
+the developer's real `~/.strata/models` (a present `miniLM` made a
+network-off `pull` succeed, which is now the contract); both were made
+hermetic with a temp models directory. The executor wire matrix gained the
+`detokenize` verb, which is what found that its `invalid_request` declaration
+was missing. The S1 mutation report then moved the last download cells from
+"never run" to observed: `pull` of a catalogued model that is not on disk,
+with the network on in a `download` build, is expected to *attempt* the
+download and answer `download_failed` against the unreachable hub (a `pull`
+that skipped the attempt would answer `Ok` or `download_disabled`), which is
+what caught the surviving `pull_variant` mutant.
+
 ### 5.4 Cells where contract and code disagree today
 
 These are decided in S0, not discovered later:
@@ -572,8 +648,8 @@ column are **not** to be `/audit-fix`ed individually while this plan runs.
 
 | Slice | Content | Wire change | Held issues it closes |
 |---|---|---|---|
-| **S0** | Matrix (inference level, all cells) + `KNOWN_RED`; executor-level wire cells (pass-through, registry row, IDL declaration); falsification by re-planting #3222 — **done**, §5.3 | none | — (filed #3262, #3263, #3264) |
-| **S1** | R1 `resolve` / `ResolvedModel` / `Availability` / `require_ready`; R5 one registry; R6 pull through the resolver; loaders take the registry | none (codes unchanged except cloud `pull` → `unsupported_operation`, declared on `inference.models.pull`) | #3255, #3260, #3263 |
+| **S0** | Matrix (inference level, all cells) + `KNOWN_RED`; executor-level wire cells (pass-through, registry row, IDL declaration); falsification by re-planting #3222 — **done** (PR #3265), §5.3 | none | — (filed #3262, #3263, #3264) |
+| **S1** | R1 `resolve` / `ResolvedModel` / `Availability` / `require_ready`; R5 one registry; R6 pull through the resolver; the free loaders and `from_registry*` deleted — **done** (PR #3269), §5.3 | declarations only: `pull` gains `unsupported_operation` (cloud spec) and `invalid_request`; `tokenize` / `detokenize` / `rank` gain `invalid_request` | #3255, #3260, #3263 |
 | **S2** | R2 `unknown_model`; R3 `AvailabilityDetails` on the wire and in `capability`; D8 reads details; testkit fake composes the real resolver; replay fixtures for resolution-time codes; #3252 decided (Q4) | **yes** — new code, new details, `capability` fields; CHANGELOG + release note | #3256, #3226, #3252, #3262, #3264 |
 | **S3** | R4 key source (executor installs env-then-config; CLI bridge deleted); R9 implicit cache for inference verbs; key dimension at executor level; docs drop `--cache` | `status` key-source field semantics (same values, produced by the runtime) | #3221, #3233 |
 | **S4** | R7 one size formatter; R8 rule 14 rewrite, clap-parse guard over docs and hints, nightly catalog check, dead-entry decision; `STRATA_LOCAL_API_KEY` removed; `strata models pull` fixed | none | #3235, #3257, #3045 |
@@ -612,20 +688,20 @@ CLI, by test (R8).
 
 ## 8. Where we stand
 
-Verified against `main` at `98f8f324`.
+Verified against `main` at `98f8f324`; the first three rows updated for S1.
 
 | Area | State | Gap |
 |---|---|---|
 | Parser | `parse_model_spec` correct after #3259; lenient on case and whitespace | rule 14 contradicts it (#3257) |
-| Catalog / registry | sound predicates; case-insensitive lookup; one directory resolver | three loaders bypass the configured directory (#3260); `pull` bypasses the parser (#3255) |
-| Availability | decided per entry point; `capability` has `can_*` but no "why not" | no `Availability`; `info()` returns `None` on miss |
+| Catalog / registry | sound predicates; case-insensitive lookup; one directory resolver; **S1**: one registry per runtime, `lookup` the only catalog question, loaders take a path | — |
+| Availability | **S1**: `resolve` → `ResolvedModel` / `Availability` for every verb, `require_ready` the only renderer; `capability` still exposes `can_*` only | `Availability` does not reach the wire or `capability` (R3, S2) |
 | Error codes | typed kinds exist (#3217) but 6 of 8 variants are strings, ~240 of ~250 construction sites; substring classifiers load-bearing | `missing_model` conflates two facts (#3256); `io_failure` unproducible (#3252) |
 | Wire details | schema name declared on every row | no definition, no producer — every inference error has empty `details` |
 | D8 offer | works for five `Inference*` verbs on a TTY | keyed on a code literal + command field; misses `vector --text` (#3226); offers uncatalogued names (#3256) |
 | Keys | `strata config set <provider>.api_key` stored 0600; env wins | reaches inference only via the CLI's `set_var` bridge (#3221) |
 | No-database use | `install-local` intercepted pre-open | every other inference verb refuses without a DB target (#3233); docs disagree with each other |
 | Sizes | one decimal formatter in inference | CLI has a second, mislabelled one (#3235) |
-| Test reach | parser pinned (`api_contract.rs`); capability honesty pinned; wire==registry pinned; **S0 matrix** (`resolution_matrix.rs`, `inference_resolution_wire.rs`) with `KNOWN_RED` as the bug inventory | zero inference codes replayed; no CI lane builds `local`, so the local-lane cells run only on a developer machine; mutation gate blind to `local` arms (#3254/#3258) |
+| Test reach | parser pinned (`api_contract.rs`); capability honesty pinned; wire==registry pinned; **S0 matrix** (`resolution_matrix.rs`, `inference_resolution_wire.rs`) with `KNOWN_RED` as the bug inventory | zero inference codes replayed; no CI lane builds `local`, so the local-lane cells run only on a developer machine; mutation gate blind to `local` arms (#3254/#3258) and to guards that are equivalent programs in every CI lane (#3267); cloud dispatch after `require_ready` observable only with a live key (#3270) |
 
 ---
 

@@ -61,6 +61,44 @@ pub enum InferenceError {
         /// Human-readable detail. Carries no classification weight.
         message: String,
     },
+
+    /// A refusal whose classification was decided **where it was raised**.
+    ///
+    /// `NotSupported(String)` is classified by substring: the word "provider"
+    /// in the message makes it `unsupported_provider`, "download" makes it
+    /// `download_disabled`. That is workable for fixed text and not for a
+    /// message that names the spec the caller typed — `provider.gguf` would
+    /// reclassify its own refusal. The resolver (`crate::resolve`) names the
+    /// spec, so it raises this instead.
+    Unsupported {
+        /// What is unsupported, decided at the raise site.
+        kind: UnsupportedKind,
+        /// Human-readable detail. Carries no classification weight.
+        message: String,
+    },
+}
+
+/// What a typed refusal is about, as known at the point of refusal.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnsupportedKind {
+    /// The operation cannot be performed here: the build lacks it, the
+    /// runtime forbids it, or the model does not do it.
+    Operation,
+    /// The provider is not compiled into this binary.
+    Provider,
+}
+
+impl UnsupportedKind {
+    /// The stable error code for this refusal.
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::Operation => "inference.unsupported_operation",
+            Self::Provider => "inference.unsupported_provider",
+        }
+    }
 }
 
 /// Why a model-registry lookup failed, as known at the point of failure.
@@ -203,6 +241,11 @@ impl fmt::Debug for InferenceError {
                 .field("kind", kind)
                 .field("message", &redact_secrets(message))
                 .finish(),
+            Self::Unsupported { kind, message } => formatter
+                .debug_struct("Unsupported")
+                .field("kind", kind)
+                .field("message", &redact_secrets(message))
+                .finish(),
         }
     }
 }
@@ -229,6 +272,9 @@ impl fmt::Display for InferenceError {
             }
             Self::ProviderFailed { message, .. } => {
                 write!(formatter, "provider error: {}", redact_secrets(message))
+            }
+            Self::Unsupported { message, .. } => {
+                write!(formatter, "not supported: {}", redact_secrets(message))
             }
         }
     }
@@ -300,6 +346,14 @@ impl serde::Serialize for InferenceError {
                 variant.serialize_field("message", &redact_secrets(message))?;
                 variant.end()
             }
+            Self::Unsupported { kind, message } => {
+                use serde::ser::SerializeStructVariant as _;
+                let mut variant =
+                    serializer.serialize_struct_variant("InferenceError", 8, "Unsupported", 2)?;
+                variant.serialize_field("kind", kind)?;
+                variant.serialize_field("message", &redact_secrets(message))?;
+                variant.end()
+            }
         }
     }
 }
@@ -342,6 +396,7 @@ impl InferenceError {
             Self::InvalidSpec(_) => "inference.invalid_request",
             Self::ProviderFailed { kind, .. } => kind.code(),
             Self::RegistryFailed { kind, .. } => kind.code(),
+            Self::Unsupported { kind, .. } => kind.code(),
         }
     }
 

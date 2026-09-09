@@ -18,9 +18,19 @@ fn anthropic_generation_requires_anthropic_feature_before_api_key() {
         .expect_err("anthropic feature is disabled");
     assert_eq!(err.code(), "inference.unsupported_provider");
 
-    let err = strata_inference::load("anthropic:claude-sonnet-4-6")
-        .expect_err("anthropic feature is disabled");
-    assert_eq!(err.code(), "inference.unsupported_provider");
+    // The resolver says the same before any request is made.
+    let resolved = runtime
+        .resolve(
+            "anthropic:claude-sonnet-4-6",
+            Some(strata_inference::ModelUse::Run(
+                strata_inference::ModelTask::Generate,
+            )),
+        )
+        .expect("a well-formed spec resolves");
+    assert_eq!(
+        resolved.availability,
+        strata_inference::Availability::ProviderNotBuilt
+    );
 }
 
 #[test]
@@ -37,9 +47,19 @@ fn google_embedding_requires_google_feature_before_api_key() {
         .expect_err("google feature is disabled");
     assert_eq!(err.code(), "inference.unsupported_provider");
 
-    let err = strata_inference::load_embedder("google:gemini-embedding-001", None)
-        .expect_err("google feature is disabled");
-    assert_eq!(err.code(), "inference.unsupported_provider");
+    // The resolver says the same before any request is made.
+    let resolved = runtime
+        .resolve(
+            "google:gemini-embedding-001",
+            Some(strata_inference::ModelUse::Run(
+                strata_inference::ModelTask::Embed,
+            )),
+        )
+        .expect("a well-formed spec resolves");
+    assert_eq!(
+        resolved.availability,
+        strata_inference::Availability::ProviderNotBuilt
+    );
 }
 
 #[test]

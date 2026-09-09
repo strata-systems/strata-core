@@ -151,8 +151,11 @@ fn defaults_deserialize_without_network_or_download() {
     assert!(request.stop_tokens.is_empty());
     assert!(request.grammar.is_none());
 
+    // An empty models directory, so the model is not on disk: a pull of a
+    // downloaded model is a no-op success whatever the network says.
+    let models_dir = tempfile::tempdir().expect("temp models dir");
     let config = InferenceRuntimeConfig {
-        models_dir: None,
+        models_dir: Some(models_dir.path().to_path_buf()),
         network_enabled: false,
     };
     let runtime = InferenceRuntime::new(config);
