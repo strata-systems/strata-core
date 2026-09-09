@@ -22,8 +22,10 @@ pub enum InferenceError {
     /// Requested provider, model, or operation is unavailable.
     NotSupported(String),
 
-    /// The model spec itself is malformed (empty, missing model name, or an
-    /// unknown provider) — caller input error, not a provider outage.
+    /// The model spec itself is malformed (empty, or a provider prefix with
+    /// no model name after it) — caller input error, not a provider outage.
+    /// A prefix that is not a provider name is not malformed: the spec is a
+    /// local model name and the registry decides whether it exists (#3222).
     InvalidSpec(String),
 
     /// A model-registry failure whose classification was decided **where the

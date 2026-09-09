@@ -358,9 +358,14 @@ pub trait InferenceService: Send {
 /// Parse a `"provider:model_name"` spec into its components.
 ///
 /// Format: `"provider:model_name"` where provider is one of: local, anthropic, openai, google.
-/// A bare name without a colon (e.g., `"miniLM"`) defaults to `local`.
-/// For local models with colons in the name (e.g., `"local:qwen3:1.7b:q8_0"`), only the
-/// first colon separates provider from model — the rest is part of the model name.
+/// Only the first colon separates provider from model — the rest is part of the model
+/// name (e.g., `"local:qwen3:1.7b:q8_0"`).
+///
+/// A spec whose first segment is not a provider name is a local model name in full:
+/// a bare name (`"miniLM"`), a catalog `family:size` or `name:quant` form
+/// (`"qwen3:1.7b"`, `"tinyllama:q8_0"`), or a GGUF path. The provider set is a closed
+/// enum, so nothing else the segment could be is a provider; whether the name exists
+/// is the registry's decision (#3222).
 pub fn parse_model_spec(spec: &str) -> Result<(ProviderKind, String), InferenceError> {
     let spec = spec.trim();
     if spec.is_empty() {
@@ -370,14 +375,15 @@ pub fn parse_model_spec(spec: &str) -> Result<(ProviderKind, String), InferenceE
     }
 
     // Split on first colon only
-    let (provider_str, model) = match spec.find(':') {
-        Some(idx) => (&spec[..idx], &spec[idx + 1..]),
-        None => return Ok((ProviderKind::Local, spec.to_string())),
+    let (provider, model) = match spec.split_once(':') {
+        Some((provider_str, model)) => match provider_str.parse::<ProviderKind>() {
+            Ok(provider) => (provider, model.trim()),
+            // Not a provider name, so the colon is part of a local model name.
+            Err(_) => (ProviderKind::Local, spec),
+        },
+        None => (ProviderKind::Local, spec),
     };
 
-    let provider: ProviderKind = provider_str.parse()?;
-
-    let model = model.trim();
     if model.is_empty() {
         return Err(InferenceError::InvalidSpec(format!(
             "model name is empty in spec {:?}",
@@ -1050,13 +1056,68 @@ string ::= "\"" [a-zA-Z]+ "\""
         assert!(parse_model_spec("  ").is_err());
     }
 
+    /// The provider set is a closed enum, so a first segment that is not one
+    /// of its four names cannot be a provider — it is the start of a local
+    /// model name. Catalog names are themselves colon-shaped (`family:size`,
+    /// `name:quant`) and `models list` prints them; the parser used to refuse
+    /// exactly those as "unknown provider" (#3222). Whether the name exists is
+    /// the registry's decision, not the parser's: a local spec may also be a
+    /// file path, which no catalog lookup could vouch for.
     #[test]
-    fn model_spec_parse_unknown_provider_error() {
-        let err = parse_model_spec("azure:gpt-4").unwrap_err();
-        assert!(
-            err.to_string().contains("azure"),
-            "error should mention bad provider: {err}"
-        );
+    fn test_model_spec_parse_unknown_prefix_is_a_local_model_name() {
+        for spec in [
+            "qwen3:1.7b",
+            "tinyllama:q8_0",
+            "qwen3:1.7b:q8_0",
+            // A trailing empty part is the registry's to ignore, as it does.
+            "qwen3:",
+            // A typo'd provider is an unknown local name; the registry says so.
+            "azure:gpt-4",
+            // A drive letter is not a provider either.
+            r"C:\models\tiny.gguf",
+            ":model",
+        ] {
+            let (provider, model) = parse_model_spec(spec).expect(spec);
+            assert_eq!(provider, ProviderKind::Local, "{spec}");
+            assert_eq!(model, spec, "{spec}: the whole spec is the model name");
+        }
+    }
+
+    /// Direction control for the rule above: a first segment that IS a
+    /// provider name still selects that provider (in any casing) and still
+    /// needs a model after the colon — `local:` is malformed where `qwen3:`
+    /// is a name.
+    #[test]
+    fn test_model_spec_parse_provider_prefix_still_selects_the_provider() {
+        for (spec, expected_provider, expected_model) in [
+            ("local:qwen3:1.7b", ProviderKind::Local, "qwen3:1.7b"),
+            (
+                "LOCAL:tinyllama:q8_0",
+                ProviderKind::Local,
+                "tinyllama:q8_0",
+            ),
+            ("openai:gpt-4o-mini", ProviderKind::OpenAI, "gpt-4o-mini"),
+            // Whitespace after the provider's colon is not part of the model name.
+            ("openai: gpt-4o-mini", ProviderKind::OpenAI, "gpt-4o-mini"),
+            (
+                "Anthropic:claude-sonnet-4-6",
+                ProviderKind::Anthropic,
+                "claude-sonnet-4-6",
+            ),
+            (
+                "google:models/gemini-2.5-flash",
+                ProviderKind::Google,
+                "models/gemini-2.5-flash",
+            ),
+        ] {
+            let (provider, model) = parse_model_spec(spec).expect(spec);
+            assert_eq!(provider, expected_provider, "{spec}");
+            assert_eq!(model, expected_model, "{spec}");
+        }
+        for spec in ["local:", "anthropic:", "openai:   "] {
+            let error = parse_model_spec(spec).expect_err(spec);
+            assert_eq!(error.code(), "inference.invalid_request", "{spec}");
+        }
     }
 
     #[test]

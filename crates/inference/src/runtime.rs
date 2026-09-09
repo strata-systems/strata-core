@@ -1604,6 +1604,57 @@ mod tests {
         assert!(capability.requires_api_key);
     }
 
+    /// Call site of the #3222 parser rule: the catalog's own colon-shaped
+    /// names reach the registry through `capability` instead of dying in the
+    /// parser as "unknown provider". `miniLM:f16` is a `name:quant` form and
+    /// `qwen3:1.7b` a `family:size` catalog name. `embedding_dim` is filled
+    /// from the registry entry whatever features are compiled, so 384 proves
+    /// the name resolved, not merely parsed.
+    #[test]
+    fn test_capability_resolves_catalog_names_that_contain_colons() {
+        let runtime = InferenceRuntime::default();
+        let capability = runtime
+            .capability("miniLM:f16")
+            .expect("a name:quant catalog form is a local model");
+        assert_eq!(capability.provider, ProviderKind::Local);
+        assert_eq!(capability.model, "miniLM:f16");
+        assert_eq!(capability.embedding_dim, 384);
+
+        for spec in ["qwen3:1.7b", "tinyllama:q8_0"] {
+            let capability = runtime.capability(spec).expect(spec);
+            assert_eq!(capability.provider, ProviderKind::Local, "{spec}");
+            assert_eq!(capability.model, spec, "{spec}");
+            assert!(!capability.requires_api_key, "{spec}");
+            assert!(!capability.requires_network, "{spec}");
+            // A catalogued generation model generates when this build can
+            // run it; an unresolved name would claim nothing even then.
+            assert_eq!(capability.can_generate, cfg!(feature = "local"), "{spec}");
+        }
+    }
+
+    /// The compute path dispatches a colon-shaped catalog name to the local
+    /// engine like a bare name. This build has no local execution, so the
+    /// refusal is the local path's `unsupported_operation`; before #3222 the
+    /// parser refused first with `invalid_request`. Gated off `local` because
+    /// there the call would load a real model from the registry.
+    #[test]
+    #[cfg(all(
+        any(feature = "anthropic", feature = "openai", feature = "google"),
+        not(feature = "local")
+    ))]
+    fn test_generate_dispatches_a_colon_shaped_catalog_name_to_the_local_path() {
+        let runtime = InferenceRuntime::default();
+        let request = GenerateRequest::default();
+        let error = runtime
+            .generate("qwen3:1.7b", &request)
+            .expect_err("no local execution in this build");
+        assert_eq!(error.code(), "inference.unsupported_operation");
+        let error = runtime
+            .generate("tinyllama:q8_0", &request)
+            .expect_err("no local execution in this build");
+        assert_eq!(error.code(), "inference.unsupported_operation");
+    }
+
     #[test]
     fn cache_status_is_empty_by_default() {
         let runtime = InferenceRuntime::default();

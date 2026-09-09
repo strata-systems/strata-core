@@ -197,8 +197,10 @@ fn public_error_surfaces_redact_provider_secrets() {
 fn invalid_model_spec_is_invalid_input_not_a_retryable_provider_error() {
     // A malformed model spec is caller input error, not a provider outage.
     // Classifying it as the retryable `provider_unavailable` would invite a
-    // client to retry a request that can never succeed.
-    for spec in ["", "   ", "anthropic:", "bogus:model"] {
+    // client to retry a request that can never succeed. (`bogus:model` is not
+    // malformed: a non-provider prefix makes the spec a local model name and
+    // the registry decides whether it exists — #3222.)
+    for spec in ["", "   ", "anthropic:", "local:"] {
         let error = strata_inference::parse_model_spec(spec).expect_err("invalid spec is rejected");
         assert_eq!(
             error.code(),
