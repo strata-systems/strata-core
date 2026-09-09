@@ -5,6 +5,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
+use strata_executor::cli_metadata::CliCommandCatalog;
 use strata_executor::{
     public_error_code_entries, Command, CommitOutcomeStatus, ErrorClass, Executor, ExecutorError,
     ExecutorErrorClass, Output, PageInfo, RetryPolicy,
@@ -344,6 +345,73 @@ fn test_inference_errors_carry_the_registry_retry_policy_and_suggested_fix() {
         unreached.is_empty(),
         "registry rows no constructible inference error reaches: {unreached:?}"
     );
+}
+
+/// One transport, one classifier, one error set: every cloud provider call
+/// goes through the same request path, so a command that reaches a provider
+/// can fail with any `ProviderFailure`. The IDL must therefore declare either
+/// none of those codes or all of them for each command — `inference.embed`
+/// declared five of nine, and the generated reference and every SDK built from
+/// it under-documented what `embed` can fail with (#3239).
+///
+/// The provider codes come from the same hand-maintained error list the
+/// registry sweep above keeps complete: a kind without a registry row, or a
+/// row without a producer, fails there first.
+#[test]
+fn test_commands_that_reach_a_cloud_provider_declare_every_provider_failure_code() {
+    let provider_codes: BTreeSet<&str> = every_constructible_inference_error()
+        .iter()
+        .filter_map(|error| match error {
+            InferenceError::ProviderFailed { kind, .. } => Some(kind.code()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        provider_codes.len() > 1,
+        "the error list names more than one provider failure"
+    );
+    // A malformed model spec maps to the same code as a provider's 400, so
+    // that code alone does not say a command reached a provider
+    // (`inference.capability` declares it and never leaves the process).
+    let spec_code = InferenceError::InvalidSpec("probe".to_owned()).code();
+    assert!(provider_codes.contains(spec_code));
+
+    let catalog = CliCommandCatalog::embedded().expect("embedded command catalog loads");
+    let mut reaches_provider = BTreeSet::new();
+    let mut partial = Vec::new();
+    for command in catalog.commands() {
+        let declared: BTreeSet<&str> = command
+            .errors
+            .iter()
+            .map(|error| error.code.as_str())
+            .collect();
+        if !declared
+            .iter()
+            .any(|code| *code != spec_code && provider_codes.contains(code))
+        {
+            continue;
+        }
+        reaches_provider.insert(command.id.as_str());
+        let missing: Vec<_> = provider_codes.difference(&declared).copied().collect();
+        if !missing.is_empty() {
+            partial.push(format!("{}: missing {missing:?}", command.id));
+        }
+    }
+    assert!(
+        partial.is_empty(),
+        "commands that reach a cloud provider declare only some of its failure codes:\n{}",
+        partial.join("\n")
+    );
+    // Both cloud-calling commands must have been held to the rule, or the
+    // pass above is vacuous. The classifier is declaration-driven — a command
+    // that reaches a provider but declares no provider code is invisible to
+    // it — so a new command that calls the cloud transport is added here.
+    for id in ["inference.generate", "inference.embed"] {
+        assert!(
+            reaches_provider.contains(id),
+            "{id} was not classified as reaching a provider: {reaches_provider:?}"
+        );
+    }
 }
 
 #[test]

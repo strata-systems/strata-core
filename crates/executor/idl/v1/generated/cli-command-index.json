@@ -4,7 +4,7 @@
   "generator_version": "strata-executor-cli-idl.1",
   "source": {
     "path": "crates/executor/idl/v1/generated/command-index.json",
-    "checksum_sha256": "6f5df8558dcf33cd2cd1218cb94ad68f2900a465fa72d3a306ceb11be3dbc84d",
+    "checksum_sha256": "e702790d031b734321fe7601f51b58c7accd628cda585ecf9bed93443a7dab93",
     "schema_version": "strata.idl.v1",
     "generator_version": "strata-executor-idl.1"
   },
@@ -4475,8 +4475,20 @@
           "docs": "https://stratadb.org/e/inference.missing_api_key"
         },
         {
+          "code": "inference.provider_auth_failed",
+          "docs": "https://stratadb.org/e/inference.provider_auth_failed"
+        },
+        {
           "code": "inference.provider_unavailable",
           "docs": "https://stratadb.org/e/inference.provider_unavailable"
+        },
+        {
+          "code": "inference.provider_timeout",
+          "docs": "https://stratadb.org/e/inference.provider_timeout"
+        },
+        {
+          "code": "inference.provider_rate_limited",
+          "docs": "https://stratadb.org/e/inference.provider_rate_limited"
         },
         {
           "code": "inference.provider_quota_exhausted",
@@ -4485,6 +4497,10 @@
         {
           "code": "inference.provider_model_not_found",
           "docs": "https://stratadb.org/e/inference.provider_model_not_found"
+        },
+        {
+          "code": "inference.invalid_request",
+          "docs": "https://stratadb.org/e/inference.invalid_request"
         },
         {
           "code": "inference.provider_malformed_response",

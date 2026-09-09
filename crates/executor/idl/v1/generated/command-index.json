@@ -5206,8 +5206,20 @@
           "docs": "https://stratadb.org/e/inference.missing_api_key"
         },
         {
+          "code": "inference.provider_auth_failed",
+          "docs": "https://stratadb.org/e/inference.provider_auth_failed"
+        },
+        {
           "code": "inference.provider_unavailable",
           "docs": "https://stratadb.org/e/inference.provider_unavailable"
+        },
+        {
+          "code": "inference.provider_timeout",
+          "docs": "https://stratadb.org/e/inference.provider_timeout"
+        },
+        {
+          "code": "inference.provider_rate_limited",
+          "docs": "https://stratadb.org/e/inference.provider_rate_limited"
         },
         {
           "code": "inference.provider_quota_exhausted",
@@ -5216,6 +5228,10 @@
         {
           "code": "inference.provider_model_not_found",
           "docs": "https://stratadb.org/e/inference.provider_model_not_found"
+        },
+        {
+          "code": "inference.invalid_request",
+          "docs": "https://stratadb.org/e/inference.invalid_request"
         },
         {
           "code": "inference.provider_malformed_response",
