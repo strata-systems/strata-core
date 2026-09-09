@@ -32,6 +32,7 @@
 //! (run it with `--features local,download`; no CI lane does today) and the
 //! released `native + cloud` shape.
 
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -381,6 +382,10 @@ impl Lane {
         local: Some(false),
         download: None,
     };
+    const DOWNLOAD: Lane = Lane {
+        local: None,
+        download: Some(true),
+    };
     const NOT_DOWNLOAD: Lane = Lane {
         local: None,
         download: Some(false),
@@ -432,42 +437,94 @@ const PLANTED: &[&str] = &["miniLM", "MINILM", "  miniLM  ", "local:miniLM"];
 const UNPLANTED_CATALOG: &[&str] = &["qwen3:1.7b", "qwen3:1.7b:q8_0", "tinyllama:q8_0"];
 const NOT_PRESENT: &[Dir] = &[Dir::Empty, Dir::ZeroLength];
 
+/// Specs `pull` never resolves today: it goes to the download gate and then
+/// straight to the registry, skipping the parser and the resolver (#3255).
+const UNRESOLVED_BY_PULL: &[&str] = &[
+    "",
+    "   ",
+    "openai:",
+    "local:",
+    "openai:gpt-4o-mini",
+    "OpenAI:gpt-4o-mini",
+    "anthropic:claude-x",
+    "google:x",
+    "tinyllama:q99",
+    "nope",
+    "nope:thing",
+    "local:nope",
+    "a:b:c:d",
+    "openai-compatible:ep:m",
+    "<tmp>/present.gguf",
+    "<tmp>/absent.gguf",
+];
+/// The same set minus the unknown quant, which the registry answers
+/// differently (#3264).
+const UNKNOWN_TO_REGISTRY: &[&str] = &[
+    "",
+    "   ",
+    "openai:",
+    "local:",
+    "openai:gpt-4o-mini",
+    "OpenAI:gpt-4o-mini",
+    "anthropic:claude-x",
+    "google:x",
+    "nope",
+    "nope:thing",
+    "local:nope",
+    "a:b:c:d",
+    "openai-compatible:ep:m",
+    "<tmp>/present.gguf",
+    "<tmp>/absent.gguf",
+];
+
 const KNOWN_RED: &[KnownRed] = &[
     // ----- #3255: pull does not go through the resolver -----
     KnownRed {
         issue: "#3255",
-        why: "pull refuses on download state before looking at the spec: a \
-              malformed spec is `download_disabled`",
+        why: "with the network off, pull refuses before looking at the spec: a \
+              malformed spec, a cloud spec, an uncatalogued name or a GGUF path \
+              is `download_disabled`",
         lane: Lane::ANY,
         verbs: &[Verb::Pull],
-        specs: MALFORMED,
+        specs: UNRESOLVED_BY_PULL,
         dirs: None,
-        nets: None,
+        nets: Some(Net::Off),
         today: Expect::Code(DOWNLOAD_DISABLED),
     },
     KnownRed {
         issue: "#3255",
-        why: "pull of a cloud spec, an uncatalogued name or a GGUF path is \
-              answered by the download gate instead of the resolver",
-        lane: Lane::ANY,
+        why: "same, in a build without download support: the download gate \
+              answers before the spec is looked at",
+        lane: Lane::NOT_DOWNLOAD,
         verbs: &[Verb::Pull],
-        specs: &[
-            "openai:gpt-4o-mini",
-            "OpenAI:gpt-4o-mini",
-            "anthropic:claude-x",
-            "google:x",
-            "tinyllama:q99",
-            "nope",
-            "nope:thing",
-            "local:nope",
-            "a:b:c:d",
-            "openai-compatible:ep:m",
-            "<tmp>/present.gguf",
-            "<tmp>/absent.gguf",
-        ],
+        specs: UNRESOLVED_BY_PULL,
         dirs: None,
-        nets: None,
+        nets: Some(Net::On),
         today: Expect::Code(DOWNLOAD_DISABLED),
+    },
+    KnownRed {
+        issue: "#3255",
+        why: "in a download build with the network on, pull hands the raw spec \
+              to the registry, which knows none of these: a malformed spec, a \
+              cloud spec and a GGUF path are all `missing_model`",
+        lane: Lane::DOWNLOAD,
+        verbs: &[Verb::Pull],
+        specs: UNKNOWN_TO_REGISTRY,
+        dirs: None,
+        nets: Some(Net::On),
+        today: Expect::Code(MISSING_MODEL),
+    },
+    KnownRed {
+        issue: "#3255",
+        why: "the registry lookup pull uses does not apply the parser's \
+              leniency: an untrimmed or `local:`-prefixed spelling of a \
+              present model is not found",
+        lane: Lane::DOWNLOAD,
+        verbs: &[Verb::Pull],
+        specs: &["  miniLM  ", "local:miniLM"],
+        dirs: Some(&[Dir::Present]),
+        nets: Some(Net::On),
+        today: Expect::Code(MISSING_MODEL),
     },
     KnownRed {
         issue: "#3255",
@@ -628,6 +685,18 @@ const KNOWN_RED: &[KnownRed] = &[
         specs: &["tinyllama:q99"],
         dirs: None,
         nets: None,
+        today: Expect::Code(REGISTRY_CORRUPT),
+    },
+    KnownRed {
+        issue: "#3264",
+        why: "same classifier, reached through pull once the download gate \
+              lets it through (with the network off or no download support \
+              the gate answers first — #3255)",
+        lane: Lane::DOWNLOAD,
+        verbs: &[Verb::Pull],
+        specs: &["tinyllama:q99"],
+        dirs: None,
+        nets: Some(Net::On),
         today: Expect::Code(REGISTRY_CORRUPT),
     },
 ];
@@ -816,19 +885,10 @@ fn keys_in_env() -> bool {
     std::env::var(CHILD_MODE).as_deref() == Ok("keys")
 }
 
-#[test]
-#[ignore = "subprocess phase: re-invoked by `matrix_holds_in_a_scrubbed_environment`"]
-fn matrix_child() {
-    let Ok(mode) = std::env::var(CHILD_MODE) else {
-        return;
-    };
-    assert!(
-        matches!(mode.as_str(), "no-keys" | "keys"),
-        "unknown child mode {mode:?}"
-    );
-
-    // The environment the parent built: no key unless this is the keys phase,
-    // and a models directory that is not the developer's.
+/// The environment the parent built, as the surfaces that report it see it:
+/// no key unless this is the keys phase, and a models directory that is not
+/// the developer's.
+fn assert_child_environment(mode: &str) {
     for key in CLOUD_PROVIDER_KEYS {
         assert_eq!(
             std::env::var_os(key.env_var).is_some(),
@@ -865,40 +925,54 @@ fn matrix_child() {
             "{dir:?}: models_downloaded / list_local_models"
         );
     }
+}
 
-    let mut unexpected_red = Vec::new();
-    let mut moved = Vec::new();
-    let mut fixed = Vec::new();
-    let mut executed = 0usize;
-    let mut skipped = 0usize;
-    let mut covered = vec![0usize; KNOWN_RED.len()];
+/// Every cell graded against the contract and against `KNOWN_RED`.
+#[derive(Default)]
+struct Grade {
+    executed: usize,
+    skipped: usize,
+    /// Cells covered by each `KNOWN_RED` entry, by index.
+    covered: Vec<usize>,
+    /// Red, no entry: file an issue and add one.
+    unexpected_red: Vec<String>,
+    /// Red, entry present, but not today's pinned answer.
+    moved: Vec<String>,
+    /// Green with an entry: shrink `KNOWN_RED`.
+    fixed: Vec<String>,
+}
 
+fn grade_cells() -> Grade {
+    let mut grade = Grade {
+        covered: vec![0; KNOWN_RED.len()],
+        ..Grade::default()
+    };
     for cell in cells() {
         let expect = expected(cell.row.identity, cell.dir, cell.net, cell.verb);
         if let Expect::NeverRun(_) = expect {
-            skipped += 1;
+            grade.skipped += 1;
             continue;
         }
-        executed += 1;
+        grade.executed += 1;
         let observed = run(&cell);
         let entry = KNOWN_RED.iter().position(|entry| entry.covers(&cell));
         match (observed.matches(expect), entry) {
             (true, None) => {}
-            (true, Some(index)) => fixed.push(format!(
+            (true, Some(index)) => grade.fixed.push(format!(
                 "{} — {} ({}): passes; delete or narrow the entry",
                 cell.name(),
                 KNOWN_RED[index].issue,
                 KNOWN_RED[index].why
             )),
-            (false, None) => unexpected_red.push(format!(
+            (false, None) => grade.unexpected_red.push(format!(
                 "{}: expected {expect:?}, observed {observed:?} — file an issue and \
                  add a KNOWN_RED entry",
                 cell.name()
             )),
             (false, Some(index)) => {
-                covered[index] += 1;
+                grade.covered[index] += 1;
                 if !observed.matches(KNOWN_RED[index].today) {
-                    moved.push(format!(
+                    grade.moved.push(format!(
                         "{} — {}: pinned today={:?}, observed {observed:?}, contract {expect:?}",
                         cell.name(),
                         KNOWN_RED[index].issue,
@@ -908,30 +982,48 @@ fn matrix_child() {
             }
         }
     }
+    grade
+}
 
+#[test]
+#[ignore = "subprocess phase: re-invoked by `matrix_holds_in_a_scrubbed_environment`"]
+fn matrix_child() {
+    let Ok(mode) = std::env::var(CHILD_MODE) else {
+        return;
+    };
+    assert!(
+        matches!(mode.as_str(), "no-keys" | "keys"),
+        "unknown child mode {mode:?}"
+    );
+    assert_child_environment(&mode);
+
+    let grade = grade_cells();
     let dead: Vec<String> = KNOWN_RED
         .iter()
-        .zip(&covered)
+        .zip(&grade.covered)
         .filter(|(entry, count)| entry.lane.applies() && **count == 0)
         .map(|(entry, _)| format!("{} ({}) covers no executed cell", entry.issue, entry.why))
         .collect();
 
     println!(
         "resolution matrix [{mode}; local={LOCAL_BUILT} download={DOWNLOAD_BUILT}]: \
-         {executed} executed, {skipped} never-run, {} known red",
-        covered.iter().sum::<usize>()
+         {} executed, {} never-run, {} known red",
+        grade.executed,
+        grade.skipped,
+        grade.covered.iter().sum::<usize>()
     );
     let mut report = String::new();
     for (title, lines) in [
-        ("UNEXPECTED RED", &unexpected_red),
-        ("MOVED (known red now fails differently)", &moved),
-        ("FIXED (shrink KNOWN_RED)", &fixed),
+        ("UNEXPECTED RED", &grade.unexpected_red),
+        ("MOVED (known red now fails differently)", &grade.moved),
+        ("FIXED (shrink KNOWN_RED)", &grade.fixed),
         ("DEAD ENTRIES", &dead),
     ] {
         if !lines.is_empty() {
-            report.push_str(&format!("\n{title}:\n"));
+            // `fmt::Write` for `String` is infallible.
+            writeln!(report, "\n{title}:").expect("String never fails to write");
             for line in lines {
-                report.push_str(&format!("  {line}\n"));
+                writeln!(report, "  {line}").expect("String never fails to write");
             }
         }
     }
@@ -975,10 +1067,15 @@ fn run_child(mode: &str) {
         output.status.success(),
         "matrix child [{mode}] failed:\n{stdout}\n{stderr}"
     );
-    assert!(
-        stdout.contains("resolution matrix ["),
-        "matrix child [{mode}] did not run the matrix:\n{stdout}\n{stderr}"
-    );
+    let summary = stdout
+        .lines()
+        .find(|line| line.starts_with("resolution matrix ["))
+        .unwrap_or_else(|| {
+            panic!("matrix child [{mode}] did not run the matrix:\n{stdout}\n{stderr}")
+        });
+    // Surface the cell counts under `--nocapture`; they are the evidence a
+    // slice cites when it shrinks `KNOWN_RED`.
+    println!("{summary}");
 }
 
 /// Every cell of §5, graded against the contract, with `KNOWN_RED` exact.

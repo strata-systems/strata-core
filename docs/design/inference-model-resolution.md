@@ -238,6 +238,9 @@ pub enum Availability {
     LocalExecutionNotBuilt,
     ProviderNotBuilt,
     TaskNotSupported { task: ModelTask },
+    /// Cloud model with `allow_network = false`. Added by S0: the matrix
+    /// found the network gate had no availability to speak through (Q11).
+    NetworkDisabled,
     KeyMissing { env_var: &'static str, config_key: &'static str },
 }
 
@@ -274,7 +277,13 @@ source, build). That is what makes the matrix in §5 possible.
 | `LocalExecutionNotBuilt` | `inference.unsupported_operation` (as today) | Unsupported / Never | unchanged |
 | `ProviderNotBuilt` | `inference.unsupported_provider` (as today) | | unchanged |
 | `TaskNotSupported` | `inference.unsupported_operation` (as today) | | unchanged |
+| `NetworkDisabled` | `inference.unsupported_operation` (as today) | | unchanged |
 | `KeyMissing` | `inference.missing_api_key` (as today) | | unchanged |
+
+`require_ready` checks the variants in the order §5.4 fixes (Q9): identity
+first, then task, then build, then network, then key, then download state.
+The order is part of the contract because the matrix pins one answer per
+cell, and the answer for a cell that fails two checks is the earlier one.
 
 `unknown_model` is a wire change: `errors.yaml`, a registry row, the IDL error
 sets (via the named set #3250 proposes, so it is added once), a CHANGELOG line,
@@ -433,11 +442,32 @@ malformed-spec error; at executor level it is `(code, class, details keys)`.
 
 ### 5.2 Where it lives
 
-- `crates/inference/tests/resolution_matrix.rs` (feature `testkit`): a `const`
-  table of cells; the harness builds `InferenceRuntime::new(config)` over a
-  `tempdir` with an injected key source and asserts every cell. No process
-  environment is touched.
-- Executor level: the cells become **replay fixtures** (`fixtures.error_cases`)
+- `crates/inference/tests/resolution_matrix.rs`: the cells are the product of
+  the §5.1 dimensions, the expectation is *computed* by one function
+  (`expected`) from the identity of the spec, the directory, the network
+  flag, the build and the verb — there is no hand-written table to drift. The
+  harness builds `InferenceRuntime::new(config)` over a `tempdir` and runs the
+  cells in a child process with a scrubbed environment (`env_clear`, `HOME`
+  and `STRATA_MODELS_DIR` under the tempdir), once with no key and once with
+  a fake key exported into every `CLOUD_PROVIDER_KEYS` variable; the second
+  run must differ from the first only on key cells. Nothing in the process
+  environment is mutated in place. Until R4 lands, "key" means "env var";
+  the config source is S3's dimension.
+- `crates/executor/tests/inference_resolution_wire.rs` (feature `inference`):
+  the executor-level cells, live rather than replayed. Specs are derived from
+  `CATALOG` and `CLOUD_PROVIDER_KEYS` plus the malformed and path forms
+  (2,222 cells across directory × network × verb). It asserts three
+  relations per cell, none of which is "the code is X": (1) the executor's
+  code equals the code the `InferenceService` trait returned for the same
+  call — the executor adds nothing and loses nothing; (2) the envelope's class
+  and retry policy equal the registry row for that code, and the row exists;
+  (3) the code is declared in the command's IDL error set
+  (`command-index.json`). Row fidelity turned out to be enforced three times
+  over on the way out (`From<InferenceError>`, `render_status`,
+  `normalize_explicit_status` each re-read the registry); only a plant in the
+  innermost layer reddens the cells, which is worth knowing before anyone
+  tries to simplify that path.
+- Executor level, S2: the cells become **replay fixtures** (`fixtures.error_cases`)
   for `inference.generate`, `inference.embed`, `inference.models.pull`,
   `inference.capability`, `vector.upsert` and `vector.query`. For that to
   work the testkit fake must fake *execution only*: `FakeInferenceService`
@@ -464,6 +494,43 @@ malformed-spec error; at executor level it is `(code, class, details keys)`.
   proof that the pull and directory dimensions detect what the audit found.
   A guard that has not been shown to fail is not evidence (#3216).
 
+**What S0 found (2026-09-09).** The matrix ran green in three build shapes:
+the default lane (cloud providers, no `local`, no `download`) executes 828
+cells of which 323 are known red; the `download` lane (mutation lane C's
+shape) executes 811 and carries 321; the `local,download` lane executes 811,
+skips 17 that would download or send, and carries 397. No CI lane builds
+`local`, so the local-lane numbers come from a developer run and the
+`KNOWN_RED` entries scoped to that lane are checked only there.
+
+- The #3222 re-plant went red on 75 cells, all on the predicted rows:
+  `qwen3:1.7b`, `qwen3:1.7b:q8_0`, `tinyllama:q8_0` (18 each), `nope:thing`
+  and `a:b:c:d` (6 each), `openai-compatible:ep:m` (3), and `tinyllama:q99`
+  moved from one wrong answer to another (6).
+- Three executor plants proved the three wire relations live: rewriting
+  every `generate` error to `invalid_request` in dispatch (380 red, relation
+  1); changing the class and retry policy in `normalize_explicit_status`
+  (1,842 red, relation 2); dropping `inference.missing_api_key` from
+  `inference_generate` in `command-index.json` (12 red, relation 3). Plants
+  in `From<InferenceError>` and `render_status` alone were invisible for the
+  reason §5.2 gives.
+- Red cells without an issue got one: **#3262** (a non-`local` build answers
+  "local execution not built" before establishing what the spec is, so
+  malformed specs and unknown names alike become `unsupported_operation`),
+  **#3263** (a model asked to do a task it lacks is never `TaskNotSupported`;
+  the answer is `unsupported_provider` or `missing_model` depending on which
+  check runs first), **#3264** (an unknown quant of a known model —
+  `tinyllama:q99` — is `registry_corrupt`, the `registry_code` fallthrough).
+  #3255 gained two findings: a present, catalogued model is refused by
+  `pull` when the network is off or the build lacks `download`, and `pull`
+  in a download build hands the raw spec to the registry, bypassing the
+  parser's trim and `local:` handling.
+- Two facts worth keeping: the load verbs never download (only `pull_model`
+  does, so a load cell can never touch the network and needs no skip), and
+  `capability` answers for every spec form in every build without a single
+  red cell — it is the one verb that already behaves like a resolver, which
+  is why the matrix asserts only `provider` identity on it today and why R3
+  makes it the carrier of the answer.
+
 ### 5.4 Cells where contract and code disagree today
 
 These are decided in S0, not discovered later:
@@ -477,6 +544,24 @@ These are decided in S0, not discovered later:
 | embed model asked to `generate` | task from the operation path | not pinned anywhere | `TaskNotSupported` → `unsupported_operation` (Q7) |
 | zero-length model file | — | `model_file_is_downloaded` false → `missing_model`; `check_and_clean_corrupt` on load | `NotDownloaded` (the file is not a model); pull overwrites |
 
+S0 pinned these in `expected()`; the matrix is now the authority for them.
+Four more rows were not in the document and had to be decided when the
+cells were written — they are the precedence questions, Q9–Q12 in §10:
+
+| Cell | Code does | S0 pins | Why |
+|---|---|---|---|
+| malformed or unknown spec, build without `local` | `unsupported_operation` — `tokenize`/`rank` refuse before parsing; `generate`/`embed` refuse on `provider == Local` before the catalog (#3262) | `invalid_request` / `unknown_model` | identity before capability (Q9): nobody is told to install local execution for a model that does not exist |
+| wrong-task model, any build | `unsupported_provider` (cloud: the word "provider" in the message) or `missing_model` (local: the loader asks the registry for a model of the wrong task) (#3263) | `unsupported_operation` | Q7, and task before build (Q9): the answer must not depend on which check ran first |
+| `tinyllama:q99` | `registry_corrupt` (#3264) | `unknown_model` | an unknown quant is the same fact as an unknown name |
+| cloud spec, network off | `unsupported_operation` from the gate, before any key is read | `unsupported_operation`, before `missing_api_key` | Q11; the design gains `NetworkDisabled` for it |
+| `pull` of a present catalogued model, network off or no `download` | `download_disabled` (#3255) | `Ok` — the file is there | pull resolves first (Q10); download is only for `NotDownloaded` |
+| `pull` of `"  miniLM  "` / `local:miniLM`, present, download build | `missing_model` — the raw string goes to the registry (#3255) | `Ok` | pull parses like every other verb (Q10) |
+| `pull` of a GGUF path | (download build) `missing_model` | present → `Ok`; absent → `unknown_model` | a path is an identity, not a catalog name (Q10) |
+
+The zero-length row above is pinned for `pull` as well (Q12): a zero-length
+file is `NotDownloaded`, so `pull` re-downloads it rather than returning the
+path. Code already agrees; the cell is green.
+
 ---
 
 ## 6. Slices
@@ -487,9 +572,9 @@ column are **not** to be `/audit-fix`ed individually while this plan runs.
 
 | Slice | Content | Wire change | Held issues it closes |
 |---|---|---|---|
-| **S0** | Matrix (inference level, all cells) + `KNOWN_RED`; executor-level cells for the local-spec and malformed rows; falsification by re-planting #3222 | none | — (files issues for any red cell without one) |
-| **S1** | R1 `resolve` / `ResolvedModel` / `Availability` / `require_ready`; R5 one registry; R6 pull through the resolver; loaders take the registry | none (codes unchanged except cloud `pull` → `unsupported_operation`, declared on `inference.models.pull`) | #3255, #3260 |
-| **S2** | R2 `unknown_model`; R3 `AvailabilityDetails` on the wire and in `capability`; D8 reads details; testkit fake composes the real resolver; replay fixtures for resolution-time codes; #3252 decided (Q4) | **yes** — new code, new details, `capability` fields; CHANGELOG + release note | #3256, #3226, #3252 |
+| **S0** | Matrix (inference level, all cells) + `KNOWN_RED`; executor-level wire cells (pass-through, registry row, IDL declaration); falsification by re-planting #3222 — **done**, §5.3 | none | — (filed #3262, #3263, #3264) |
+| **S1** | R1 `resolve` / `ResolvedModel` / `Availability` / `require_ready`; R5 one registry; R6 pull through the resolver; loaders take the registry | none (codes unchanged except cloud `pull` → `unsupported_operation`, declared on `inference.models.pull`) | #3255, #3260, #3263 |
+| **S2** | R2 `unknown_model`; R3 `AvailabilityDetails` on the wire and in `capability`; D8 reads details; testkit fake composes the real resolver; replay fixtures for resolution-time codes; #3252 decided (Q4) | **yes** — new code, new details, `capability` fields; CHANGELOG + release note | #3256, #3226, #3252, #3262, #3264 |
 | **S3** | R4 key source (executor installs env-then-config; CLI bridge deleted); R9 implicit cache for inference verbs; key dimension at executor level; docs drop `--cache` | `status` key-source field semantics (same values, produced by the runtime) | #3221, #3233 |
 | **S4** | R7 one size formatter; R8 rule 14 rewrite, clap-parse guard over docs and hints, nightly catalog check, dead-entry decision; `STRATA_LOCAL_API_KEY` removed; `strata models pull` fixed | none | #3235, #3257, #3045 |
 | **T** | Tooling lane: mutation-gate self-check (a diff that touches product code and yields zero viable mutants fails the gate); #3225 exit-3 precedence; #3227 `Result` alias; #3254 `local`-gated code in mixed files; #3258 non-`Default` enum arms; #3220 | none | #3225, #3227, #3254, #3258, #3220 |
@@ -540,7 +625,7 @@ Verified against `main` at `98f8f324`.
 | Keys | `strata config set <provider>.api_key` stored 0600; env wins | reaches inference only via the CLI's `set_var` bridge (#3221) |
 | No-database use | `install-local` intercepted pre-open | every other inference verb refuses without a DB target (#3233); docs disagree with each other |
 | Sizes | one decimal formatter in inference | CLI has a second, mislabelled one (#3235) |
-| Test reach | parser pinned (`api_contract.rs`); capability honesty pinned; wire==registry pinned | zero inference codes replayed; no matrix; mutation gate blind to `local` arms (#3254/#3258) |
+| Test reach | parser pinned (`api_contract.rs`); capability honesty pinned; wire==registry pinned; **S0 matrix** (`resolution_matrix.rs`, `inference_resolution_wire.rs`) with `KNOWN_RED` as the bug inventory | zero inference codes replayed; no CI lane builds `local`, so the local-lane cells run only on a developer machine; mutation gate blind to `local` arms (#3254/#3258) |
 
 ---
 
@@ -568,6 +653,15 @@ Verified against `main` at `98f8f324`.
 | Q6 | `openai-compatible:` reserved prefix | parses as a local name today; pin `unknown_model`; the future grammar lands as a visible contract change |
 | Q7 | Wrong-task model (embed model asked to generate) | `Availability::TaskNotSupported` → `unsupported_operation` |
 | Q8 | T before S0, or parallel | parallel; S0 does not touch product code, so the gate's blind spots do not affect it |
+| Q9 | Check order when a cell fails more than one check | identity before capability: malformed → unknown → wrong task → execution / provider not built → network disabled → key missing → not downloaded. Pinned by S0's `expected()`; S1's `require_ready` implements it in that order |
+| Q10 | What `pull` is | task-neutral, needs no execution build, resolves first: present catalogued file → `Ok` without network; path present → `Ok`; path absent → `unknown_model`; cloud → `unsupported_operation` (R6); downloads only for `NotDownloaded` |
+| Q11 | Cloud verb, network off, no key | `unsupported_operation` from a new `NetworkDisabled` availability, before the key is read — the refusal that does not change when the key is added |
+| Q12 | Zero-length file under `pull` | `NotDownloaded`; pull overwrites (same answer as the load verbs, §5.4) |
+
+Q9–Q12 were made by S0 because the matrix cannot hold a cell without an
+answer; they are recorded here so that S1 implements them rather than
+re-deciding them. Reversing one means changing `expected()` and the cells
+that follow from it — a visible diff, which is the point.
 
 ---
 
