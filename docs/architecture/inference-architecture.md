@@ -214,11 +214,15 @@ Current files and responsibilities:
 
 14. **V1 model specs use deterministic first-colon provider parsing.**
     The stable V1 grammar is `provider:model`, where the provider prefix is
-    case-sensitive and must be one of the registered provider names. Bare model
-    names resolve through the registry for the requested task and default to the
-    local provider when a local registry match exists; otherwise they fail with
-    `inference.missing_model` or `inference.unsupported_provider` as
-    appropriate. Leading or trailing whitespace is invalid. Everything after the
+    case-sensitive and is one of the registered provider names. A spec whose
+    first segment is not a registered provider name is a bare model name in
+    full — the registry's own catalog names are colon-shaped (`qwen3:1.7b`,
+    `tinyllama:q8_0`), so the parser cannot treat an unrecognised prefix as an
+    error (#3222). Bare model names resolve through the registry for the
+    requested task and default to the local provider when a local registry
+    match exists; otherwise they fail with `inference.missing_model` or
+    `inference.unsupported_provider` as appropriate. Leading or trailing
+    whitespace is invalid. Everything after the
     first colon is provider-specific opaque text and may contain `/`, `-`, `.`,
     additional `:`, or provider-defined characters. Task selection is not
     encoded in the string; it comes from the operation path: generate, embed, or

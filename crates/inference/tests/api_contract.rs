@@ -261,8 +261,21 @@ fn model_spec_parser_trims_outer_whitespace_and_accepts_provider_casing() {
 
 #[test]
 fn model_spec_parser_rejects_malformed_specs() {
-    for spec in ["", "   ", ":model", "openai:", "unknown:model"] {
+    for spec in ["", "   ", "openai:", "local:"] {
         assert!(parse_model_spec(spec).is_err(), "{spec:?} should fail");
+    }
+}
+
+/// A first segment that is not a provider name is the start of a local model
+/// name — the catalog's own `family:size` and `name:quant` forms are
+/// colon-shaped, and `models list` prints them (#3222). Existence is the
+/// registry's call, so `unknown:model` parses too.
+#[test]
+fn test_model_spec_parser_treats_a_non_provider_prefix_as_a_local_name() {
+    for spec in ["qwen3:1.7b", "tinyllama:q8_0", "unknown:model", ":model"] {
+        let (provider, model) = parse_model_spec(spec).expect(spec);
+        assert_eq!(provider, ProviderKind::Local, "{spec}");
+        assert_eq!(model, spec, "{spec}");
     }
 }
 
