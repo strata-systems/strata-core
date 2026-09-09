@@ -7,8 +7,6 @@
     feature = "google"
 ))]
 use std::collections::HashMap;
-#[cfg(feature = "local")]
-use std::path::Path;
 use std::path::PathBuf;
 #[cfg(any(
     feature = "local",
@@ -18,17 +16,16 @@ use std::path::PathBuf;
 ))]
 use std::sync::{Mutex, MutexGuard};
 
+use crate::error::RegistryFailure;
+use crate::resolve::{Availability, ModelSource, ModelUse, ResolvedModel};
 use crate::{
-    generation_provider_feature_enabled, parse_model_spec, GenerateRequest, GenerateResponse,
-    InferenceError, ModelInfo, ModelRegistry, ModelTask, ProviderKind,
+    generation_provider_feature_enabled, GenerateRequest, GenerateResponse, InferenceError,
+    ModelInfo, ModelRegistry, ModelTask, ProviderKind, UnsupportedKind,
 };
 
-#[cfg(any(feature = "openai", feature = "google"))]
-use crate::embedding_provider_feature_enabled;
 #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
 use crate::error::ProviderFailure;
 
-#[cfg(any(feature = "openai", feature = "google"))]
 use crate::InferenceEngine;
 
 // Ungated: `status` names every provider's key variable, including for
@@ -276,6 +273,11 @@ pub enum RankRuntimeOutcome {
 #[derive(Debug)]
 pub struct InferenceRuntime {
     config: InferenceRuntimeConfig,
+    /// The one registry (R5). Built once from `config.models_dir`; every
+    /// resolution, listing and download reads this instance, so there is no
+    /// second registry somewhere that could be looking at a different
+    /// directory (#3260).
+    registry: ModelRegistry,
     #[cfg(any(
         feature = "local",
         feature = "anthropic",
@@ -298,8 +300,13 @@ impl Default for InferenceRuntime {
 impl InferenceRuntime {
     /// Creates a runtime facade.
     pub fn new(config: InferenceRuntimeConfig) -> Self {
+        let registry = config
+            .models_dir
+            .clone()
+            .map_or_else(ModelRegistry::new, ModelRegistry::with_dir);
         Self {
             config,
+            registry,
             #[cfg(any(
                 feature = "local",
                 feature = "anthropic",
@@ -324,40 +331,79 @@ impl InferenceRuntime {
         self.registry().list_local()
     }
 
-    /// Resolves or downloads a model into the local model directory.
+    /// Downloads a catalogued model into the local model directory, or reports
+    /// the file that is already there.
+    ///
+    /// Goes through the resolver like every other verb (R6), so a pull answers
+    /// the same questions in the same order as a load: a malformed spec is
+    /// `invalid_request`, an unknown name `missing_model`, a cloud model
+    /// `unsupported_operation` — not "requires network access" for all three
+    /// (#3255). What pull does NOT ask is whether the model can *run* here:
+    /// fetching a file needs no local execution and no particular task.
+    ///
+    /// D8: this is the one place that downloads; loading never does.
     pub fn pull_model(&self, model: &str) -> Result<PullModelOutput, InferenceError> {
-        if !self.config.network_enabled {
-            return Err(InferenceError::NotSupported(
-                "model download requires network access".to_owned(),
-            ));
-        }
-
-        #[cfg(feature = "download")]
-        {
-            // D8: `pull_model` is the one place that downloads; loading does not.
-            let path = self.registry().resolve_or_pull(model)?;
-            Ok(PullModelOutput {
-                model: model.to_owned(),
-                path,
-            })
-        }
-
-        #[cfg(not(feature = "download"))]
-        {
-            let _ = model;
-            // One phrasing for "this binary was not built with model
-            // downloading". Must contain "download" and must not contain
-            // "provider" — see [`local_feature_unavailable`] on why the
-            // wording is load-bearing. Inline rather than a function of its
-            // own: a function only a `not(download)` build can call is dead
-            // code to the featured lane's clippy, and a `cfg`-gated function
-            // is a mutation site that lane cannot compile or kill.
-            Err(InferenceError::NotSupported(format!(
-                "model download is not built into this binary: {LOCAL_UNAVAILABLE_REMEDY} \
-                 To use a local model anyway, fetch its GGUF file into the models \
-                 directory yourself — `strata inference status` shows the directory and \
-                 `strata inference models list` the expected repository and file name."
-            )))
+        let resolved = self.resolve(model, None)?;
+        match (&resolved.source, &resolved.availability) {
+            (ModelSource::Cloud, _) => Err(InferenceError::Unsupported {
+                kind: UnsupportedKind::Operation,
+                message: format!(
+                    "`{}` is a cloud model; there is nothing to pull. Only local catalog \
+                     models are fetched to disk.",
+                    resolved.spec
+                ),
+            }),
+            // Already on disk: no network needed to say so.
+            (
+                ModelSource::Catalog { path, .. } | ModelSource::GgufPath(path),
+                Availability::Ready,
+            ) => Ok(PullModelOutput {
+                model: resolved.spec.clone(),
+                path: path.clone(),
+            }),
+            (ModelSource::Catalog { entry, variant, .. }, Availability::NotDownloaded { .. }) => {
+                if !self.config.network_enabled {
+                    return Err(InferenceError::RegistryFailed {
+                        kind: RegistryFailure::DownloadDisabled,
+                        message: "model download requires network access".to_owned(),
+                    });
+                }
+                #[cfg(feature = "download")]
+                {
+                    let path = self.registry.pull_variant(entry, variant, |_, _| {})?;
+                    Ok(PullModelOutput {
+                        model: resolved.spec.clone(),
+                        path,
+                    })
+                }
+                #[cfg(not(feature = "download"))]
+                {
+                    // The code is `download_disabled` because the kind says
+                    // so, not because of any word in the text. The remedy
+                    // names the exact file: this build cannot fetch it, so the
+                    // reader has to.
+                    Err(InferenceError::RegistryFailed {
+                        kind: RegistryFailure::DownloadDisabled,
+                        message: format!(
+                            "model download is not built into this binary: \
+                             {LOCAL_UNAVAILABLE_REMEDY} To use `{spec}` anyway, place \
+                             `{file}` from https://huggingface.co/{repo} in the models \
+                             directory yourself — `strata inference status` shows the \
+                             directory.",
+                            spec = resolved.spec,
+                            file = variant.hf_file,
+                            repo = entry.hf_repo,
+                        ),
+                    })
+                }
+            }
+            _ => {
+                resolved.require_ready()?;
+                unreachable!(
+                    "`require_ready` refuses every availability a pull cannot act on: {:?}",
+                    resolved.availability
+                )
+            }
         }
     }
 
@@ -413,19 +459,23 @@ impl InferenceRuntime {
 
     /// Returns capability facts for a model spec.
     pub fn capability(&self, model_spec: &str) -> Result<InferenceCapability, InferenceError> {
-        let (provider, model) = parse_model_spec(model_spec)?;
-        // The registry's own name resolution, so an alias or a quant suffix
+        // Located, never loaded: capability answers for unknown names and
+        // missing files too, with nothing claimed for them.
+        let resolved = self.resolve(model_spec, None)?;
+        let provider = resolved.provider;
+        // The resolver's own name resolution, so an alias or a quant suffix
         // reports the same entry it would load.
-        let local_info = if provider == ProviderKind::Local {
-            self.registry().info(&model)
-        } else {
-            None
+        let entry = match resolved.source {
+            ModelSource::Catalog { entry, .. } => Some(entry),
+            ModelSource::GgufPath(_) | ModelSource::Uncatalogued { .. } | ModelSource::Cloud => {
+                None
+            }
         };
-        let task = local_info.as_ref().map(|info| info.task);
+        let task = entry.map(|entry| entry.task);
         let abilities = ModelAbilities::of(provider, task);
         Ok(InferenceCapability {
             provider,
-            model,
+            model: resolved.name,
             // #3124: `can_*` answers "can THIS BINARY do this, now" — not
             // "does the model support it". The two diverge whenever a provider
             // feature is compiled out, and a released binary has `local` off:
@@ -450,7 +500,7 @@ impl InferenceRuntime {
             provider_feature_enabled: generation_provider_feature_enabled(provider)
                 || embedding_provider_feature_enabled_for_capability(provider),
             network_enabled: self.config.network_enabled,
-            embedding_dim: local_info.map_or(0, |info| info.embedding_dim),
+            embedding_dim: entry.map_or(0, |entry| entry.embedding_dim),
             // Chat feature support per provider. `json_object` is unsupported by
             // Anthropic (use json_schema); `logprobs` are unsupported by
             // Anthropic and local (deferred). Local structured outputs and tool
@@ -468,6 +518,9 @@ impl InferenceRuntime {
         model_spec: &str,
         request: &GenerateRequest,
     ) -> Result<GenerateResponse, InferenceError> {
+        let resolved = self.resolve(model_spec, Some(ModelUse::Run(ModelTask::Generate)))?;
+        resolved.require_ready()?;
+
         #[cfg(any(
             feature = "local",
             feature = "anthropic",
@@ -475,29 +528,13 @@ impl InferenceRuntime {
             feature = "google"
         ))]
         {
-            let (provider, _model) = parse_model_spec(model_spec)?;
-            if provider == ProviderKind::Local {
-                let mut cache = self.lock_generation();
-                let engine = self.cached_generation_engine(&mut cache, model_spec, None)?;
+            if resolved.source.is_cloud() {
+                let mut engine = cloud_generation_engine(&resolved)?;
                 return engine.generate(request);
             }
-
-            if !self.config.network_enabled {
-                return Err(InferenceError::NotSupported(
-                    "cloud generation requires network access".to_owned(),
-                ));
-            }
-            #[cfg(not(any(feature = "anthropic", feature = "openai", feature = "google")))]
-            {
-                Err(InferenceError::NotSupported(format!(
-                    "{provider} provider not enabled"
-                )))
-            }
-            #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
-            {
-                let mut engine = self.cloud_generation_engine(model_spec)?;
-                engine.generate(request)
-            }
+            let mut cache = self.lock_generation();
+            let engine = self.cached_generation_engine(&mut cache, &resolved, None)?;
+            engine.generate(request)
         }
 
         #[cfg(not(any(
@@ -507,10 +544,12 @@ impl InferenceRuntime {
             feature = "google"
         )))]
         {
-            let _ = (model_spec, request);
-            Err(InferenceError::NotSupported(
-                "generation requires a provider feature".to_owned(),
-            ))
+            // There is no engine in this build to hand the request to.
+            let _ = request;
+            unreachable!(
+                "`require_ready` refuses every model in a build with no provider feature: `{}`",
+                resolved.spec
+            )
         }
     }
 
@@ -526,6 +565,8 @@ impl InferenceRuntime {
         request: &crate::wire::ChatRequest,
     ) -> Result<crate::wire::ChatResponse, InferenceError> {
         request.validate()?;
+        let resolved = self.resolve(model_spec, Some(ModelUse::Run(ModelTask::Generate)))?;
+        resolved.require_ready()?;
 
         #[cfg(any(
             feature = "local",
@@ -534,37 +575,20 @@ impl InferenceRuntime {
             feature = "google"
         ))]
         {
-            let (provider, _model) = parse_model_spec(model_spec)?;
-            if provider == ProviderKind::Local {
+            let mut response = if resolved.source.is_cloud() {
+                let mut engine = cloud_generation_engine(&resolved)?;
+                engine.generate_chat(request)?
+            } else {
                 let mut cache = self.lock_generation();
                 let engine = self.cached_generation_engine(
                     &mut cache,
-                    model_spec,
+                    &resolved,
                     request.model_config.as_ref(),
                 )?;
-                let mut response = engine.generate_chat(request)?;
-                response.model = model_spec.to_string();
-                return Ok(response);
-            }
-
-            if !self.config.network_enabled {
-                return Err(InferenceError::NotSupported(
-                    "cloud generation requires network access".to_owned(),
-                ));
-            }
-            #[cfg(not(any(feature = "anthropic", feature = "openai", feature = "google")))]
-            {
-                Err(InferenceError::NotSupported(format!(
-                    "{provider} provider not enabled"
-                )))
-            }
-            #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
-            {
-                let mut engine = self.cloud_generation_engine(model_spec)?;
-                let mut response = engine.generate_chat(request)?;
-                response.model = model_spec.to_string();
-                Ok(response)
-            }
+                engine.generate_chat(request)?
+            };
+            response.model = model_spec.to_string();
+            Ok(response)
         }
 
         #[cfg(not(any(
@@ -574,10 +598,10 @@ impl InferenceRuntime {
             feature = "google"
         )))]
         {
-            let _ = (model_spec, request);
-            Err(InferenceError::NotSupported(
-                "chat requires a provider feature".to_owned(),
-            ))
+            unreachable!(
+                "`require_ready` refuses every model in a build with no provider feature: `{}`",
+                resolved.spec
+            )
         }
     }
 
@@ -621,33 +645,49 @@ impl InferenceRuntime {
         text: &str,
         add_special: bool,
     ) -> Result<Vec<u32>, InferenceError> {
+        let resolved = self.resolve(model_spec, Some(ModelUse::Tokenize))?;
+        resolved.require_ready()?;
+
         #[cfg(feature = "local")]
         {
             let mut cache = self.lock_generation();
-            let engine = self.cached_generation_engine(&mut cache, model_spec, None)?;
+            let engine = self.cached_generation_engine(&mut cache, &resolved, None)?;
             engine.encode(text, add_special)
         }
 
         #[cfg(not(feature = "local"))]
         {
-            let _ = (model_spec, text, add_special);
-            Err(local_feature_unavailable("tokenization"))
+            // Tokenizing is a property of a loaded GGUF, which this build
+            // cannot load.
+            let _ = (text, add_special);
+            unreachable!(
+                "`require_ready` refuses every tokenize in a build without local execution: `{}`",
+                resolved.spec
+            )
         }
     }
 
     /// Detokenizes local token ids.
     pub fn detokenize(&self, model_spec: &str, ids: &[u32]) -> Result<String, InferenceError> {
+        let resolved = self.resolve(model_spec, Some(ModelUse::Tokenize))?;
+        resolved.require_ready()?;
+
         #[cfg(feature = "local")]
         {
             let mut cache = self.lock_generation();
-            let engine = self.cached_generation_engine(&mut cache, model_spec, None)?;
+            let engine = self.cached_generation_engine(&mut cache, &resolved, None)?;
             engine.decode(ids)
         }
 
         #[cfg(not(feature = "local"))]
         {
-            let _ = (model_spec, ids);
-            Err(local_feature_unavailable("detokenization"))
+            // Detokenizing is a property of a loaded GGUF, which this build
+            // cannot load.
+            let _ = ids;
+            unreachable!(
+                "`require_ready` refuses every detokenize in a build without local execution: `{}`",
+                resolved.spec
+            )
         }
     }
 
@@ -657,47 +697,9 @@ impl InferenceRuntime {
         model_spec: &str,
         request: &EmbedRequest,
     ) -> Result<Vec<f32>, InferenceError> {
-        #[cfg(any(feature = "local", feature = "openai", feature = "google"))]
-        {
-            let (provider, _model) = parse_model_spec(model_spec)?;
-            if provider == ProviderKind::Local {
-                #[cfg(feature = "local")]
-                {
-                    let mut cache = self.lock_embeddings();
-                    let engine = self.cached_embedding_engine(&mut cache, model_spec)?;
-                    return engine.embed(&request.text);
-                }
-                #[cfg(not(feature = "local"))]
-                {
-                    return Err(local_feature_unavailable("local embedding"));
-                }
-            }
-
-            if !self.config.network_enabled {
-                return Err(InferenceError::NotSupported(
-                    "cloud embedding requires network access".to_owned(),
-                ));
-            }
-            #[cfg(any(feature = "openai", feature = "google"))]
-            {
-                let engine = self.cloud_embedding_engine(model_spec)?;
-                engine.embed(&request.text)
-            }
-            #[cfg(not(any(feature = "openai", feature = "google")))]
-            {
-                Err(InferenceError::NotSupported(
-                    "cloud embedding requires openai or google feature".to_owned(),
-                ))
-            }
-        }
-
-        #[cfg(not(any(feature = "local", feature = "openai", feature = "google")))]
-        {
-            let _ = (model_spec, request);
-            Err(InferenceError::NotSupported(
-                "embedding requires local, openai, or google feature".to_owned(),
-            ))
-        }
+        let resolved = self.resolve(model_spec, Some(ModelUse::Run(ModelTask::Embed)))?;
+        resolved.require_ready()?;
+        self.with_embedding_engine(&resolved, |engine| engine.embed(&request.text))
     }
 
     /// Embeds a batch of texts.
@@ -706,57 +708,20 @@ impl InferenceRuntime {
         model_spec: &str,
         texts: &[String],
     ) -> Result<EmbedResponse, InferenceError> {
+        let resolved = self.resolve(model_spec, Some(ModelUse::Run(ModelTask::Embed)))?;
+        resolved.require_ready()?;
+
         let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
-
-        #[cfg(any(feature = "local", feature = "openai", feature = "google"))]
-        {
-            let (provider, _model) = parse_model_spec(model_spec)?;
-            let embeddings = if provider == ProviderKind::Local {
-                #[cfg(feature = "local")]
-                {
-                    let mut cache = self.lock_embeddings();
-                    let engine = self.cached_embedding_engine(&mut cache, model_spec)?;
-                    engine.embed_batch(&refs)?
-                }
-                #[cfg(not(feature = "local"))]
-                {
-                    return Err(local_feature_unavailable("local embedding"));
-                }
-            } else {
-                if !self.config.network_enabled {
-                    return Err(InferenceError::NotSupported(
-                        "cloud embedding requires network access".to_owned(),
-                    ));
-                }
-                #[cfg(any(feature = "openai", feature = "google"))]
-                {
-                    let engine = self.cloud_embedding_engine(model_spec)?;
-                    engine.embed_batch(&refs)?
-                }
-                #[cfg(not(any(feature = "openai", feature = "google")))]
-                {
-                    return Err(InferenceError::NotSupported(
-                        "cloud embedding requires openai or google feature".to_owned(),
-                    ));
-                }
-            };
-            let dimension = embeddings.first().map_or(0, Vec::len);
-            Ok(EmbedResponse {
-                dimension,
-                items: embeddings
-                    .into_iter()
-                    .map(|vector| EmbedRuntimeOutcome::Ok { vector })
-                    .collect(),
-            })
-        }
-
-        #[cfg(not(any(feature = "local", feature = "openai", feature = "google")))]
-        {
-            let _ = (model_spec, refs);
-            Err(InferenceError::NotSupported(
-                "embedding requires local, openai, or google feature".to_owned(),
-            ))
-        }
+        let embeddings =
+            self.with_embedding_engine(&resolved, |engine| engine.embed_batch(&refs))?;
+        let dimension = embeddings.first().map_or(0, Vec::len);
+        Ok(EmbedResponse {
+            dimension,
+            items: embeddings
+                .into_iter()
+                .map(|vector| EmbedRuntimeOutcome::Ok { vector })
+                .collect(),
+        })
     }
 
     /// Ranks passages against a query.
@@ -765,30 +730,27 @@ impl InferenceRuntime {
         model_spec: &str,
         request: &RankRequest,
     ) -> Result<RankResponse, InferenceError> {
-        #[cfg(feature = "local")]
-        {
-            let refs: Vec<&str> = request.passages.iter().map(String::as_str).collect();
-            let mut cache = self.lock_rankers();
-            let engine = self.cached_ranking_engine(&mut cache, model_spec)?;
-            let scores = engine.rank(&request.query, &refs)?;
-            Ok(RankResponse {
-                items: scores
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, score)| RankRuntimeOutcome::Ok { index, score })
-                    .collect(),
-            })
-        }
+        let resolved = self.resolve(model_spec, Some(ModelUse::Run(ModelTask::Rank)))?;
+        resolved.require_ready()?;
 
-        #[cfg(not(feature = "local"))]
-        {
-            let _ = (model_spec, request);
-            Err(local_feature_unavailable("ranking"))
-        }
+        let refs: Vec<&str> = request.passages.iter().map(String::as_str).collect();
+        let scores =
+            self.with_ranking_engine(&resolved, |engine| engine.rank(&request.query, &refs))?;
+        Ok(RankResponse {
+            items: scores
+                .into_iter()
+                .enumerate()
+                .map(|(index, score)| RankRuntimeOutcome::Ok { index, score })
+                .collect(),
+        })
     }
 
     /// Unloads cached local models. When `model_spec` is `None`, all caches are cleared.
-    pub fn unload(&self, _model_spec: Option<&str>) -> Result<bool, InferenceError> {
+    ///
+    /// Cache keys are resolved specs (trimmed), so the argument is trimmed
+    /// the same way before it is matched.
+    pub fn unload(&self, model_spec: Option<&str>) -> Result<bool, InferenceError> {
+        let _model_spec = model_spec.map(str::trim);
         #[cfg(any(
             feature = "local",
             feature = "anthropic",
@@ -872,11 +834,84 @@ impl InferenceRuntime {
         })
     }
 
-    fn registry(&self) -> ModelRegistry {
-        self.config
-            .models_dir
-            .clone()
-            .map_or_else(ModelRegistry::new, ModelRegistry::with_dir)
+    /// The runtime's one registry (R5).
+    pub(crate) fn registry(&self) -> &ModelRegistry {
+        &self.registry
+    }
+
+    /// Whether provider network calls and model downloads are allowed.
+    pub(crate) fn network_enabled(&self) -> bool {
+        self.config.network_enabled
+    }
+
+    /// Runs `op` on the embedding engine for a resolved, ready model: the
+    /// cloud engine for a cloud spec, the cached local engine otherwise.
+    ///
+    /// The one place the build's shape shows: `require_ready` has already
+    /// refused every model this build cannot serve, so the twin for a missing
+    /// feature is unreachable rather than a second, differently-worded
+    /// refusal.
+    fn with_embedding_engine<T>(
+        &self,
+        resolved: &ResolvedModel,
+        op: impl FnOnce(&dyn InferenceEngine) -> Result<T, InferenceError>,
+    ) -> Result<T, InferenceError> {
+        if resolved.source.is_cloud() {
+            #[cfg(any(feature = "openai", feature = "google"))]
+            {
+                let engine = cloud_embedding_engine(resolved)?;
+                return op(&engine);
+            }
+            #[cfg(not(any(feature = "openai", feature = "google")))]
+            {
+                unreachable!(
+                    "`require_ready` refuses every cloud embedding in a build without an \
+                     embedding provider: `{}`",
+                    resolved.spec
+                )
+            }
+        }
+        #[cfg(feature = "local")]
+        {
+            let mut cache = self.lock_embeddings();
+            let engine = self.cached_embedding_engine(&mut cache, resolved)?;
+            op(engine)
+        }
+        #[cfg(not(feature = "local"))]
+        {
+            // No local engine exists in this build to run `op` on.
+            let _ = op;
+            unreachable!(
+                "`require_ready` refuses every local embedding in a build without local \
+                 execution: `{}`",
+                resolved.spec
+            )
+        }
+    }
+
+    /// Runs `op` on the cached local ranking engine for a resolved, ready
+    /// model. Ranking is local-only; see [`Self::with_embedding_engine`] on
+    /// why the other twin is unreachable.
+    fn with_ranking_engine<T>(
+        &self,
+        resolved: &ResolvedModel,
+        op: impl FnOnce(&dyn InferenceEngine) -> Result<T, InferenceError>,
+    ) -> Result<T, InferenceError> {
+        #[cfg(feature = "local")]
+        {
+            let mut cache = self.lock_rankers();
+            let engine = self.cached_ranking_engine(&mut cache, resolved)?;
+            op(engine)
+        }
+        #[cfg(not(feature = "local"))]
+        {
+            // No ranking engine exists in this build to run `op` on.
+            let _ = op;
+            unreachable!(
+                "`require_ready` refuses every rank in a build without local execution: `{}`",
+                resolved.spec
+            )
+        }
     }
 
     #[cfg(any(
@@ -908,12 +943,12 @@ impl InferenceRuntime {
     fn cached_generation_engine<'a>(
         &self,
         cache: &'a mut HashMap<String, GenerationEngine>,
-        model_spec: &str,
+        resolved: &ResolvedModel,
         config: Option<&crate::wire::ModelConfig>,
     ) -> Result<&'a mut GenerationEngine, InferenceError> {
-        let key = engine_cache_key(model_spec, config);
+        let key = engine_cache_key(&resolved.spec, config);
         if !cache.contains_key(&key) {
-            let engine = self.local_generation_engine(model_spec, config)?;
+            let engine = local_generation_engine(resolved, config)?;
             cache.insert(key.clone(), engine);
         }
         Ok(cache
@@ -925,14 +960,15 @@ impl InferenceRuntime {
     fn cached_embedding_engine<'a>(
         &self,
         cache: &'a mut HashMap<String, EmbeddingEngine>,
-        model_spec: &str,
+        resolved: &ResolvedModel,
     ) -> Result<&'a EmbeddingEngine, InferenceError> {
-        if !cache.contains_key(model_spec) {
-            let engine = self.local_embedding_engine(model_spec)?;
-            cache.insert(model_spec.to_owned(), engine);
+        let key = resolved.spec.as_str();
+        if !cache.contains_key(key) {
+            let engine = load_local(resolved, |path| EmbeddingEngine::from_gguf(path))?;
+            cache.insert(key.to_owned(), engine);
         }
         Ok(cache
-            .get(model_spec)
+            .get(key)
             .expect("embedding engine inserted before lookup"))
     }
 
@@ -940,104 +976,99 @@ impl InferenceRuntime {
     fn cached_ranking_engine<'a>(
         &self,
         cache: &'a mut HashMap<String, RankingEngine>,
-        model_spec: &str,
+        resolved: &ResolvedModel,
     ) -> Result<&'a RankingEngine, InferenceError> {
-        if !cache.contains_key(model_spec) {
-            let engine = self.local_ranking_engine(model_spec)?;
-            cache.insert(model_spec.to_owned(), engine);
+        let key = resolved.spec.as_str();
+        if !cache.contains_key(key) {
+            let engine = load_local(resolved, |path| RankingEngine::from_gguf(path))?;
+            cache.insert(key.to_owned(), engine);
         }
         Ok(cache
-            .get(model_spec)
+            .get(key)
             .expect("ranking engine inserted before lookup"))
     }
+}
 
-    #[cfg(any(
-        feature = "local",
-        feature = "anthropic",
-        feature = "openai",
-        feature = "google"
-    ))]
-    fn local_generation_engine(
-        &self,
-        model_spec: &str,
-        config: Option<&crate::wire::ModelConfig>,
-    ) -> Result<GenerationEngine, InferenceError> {
-        let (provider, model) = parse_model_spec(model_spec)?;
-        if provider != ProviderKind::Local {
-            return Err(InferenceError::NotSupported(
-                "generation cache only stores local models".to_owned(),
-            ));
-        }
-        #[cfg(feature = "local")]
-        {
-            if looks_like_path(&model) {
-                return GenerationEngine::from_gguf_with_config(Path::new(&model), config);
-            }
-            GenerationEngine::from_registry_with_config(&model, config)
-        }
-        #[cfg(not(feature = "local"))]
-        {
-            let _ = (model, config);
-            Err(local_feature_unavailable("local generation"))
-        }
-    }
-
+/// Builds a cloud generation engine for a resolved, ready cloud model. The key
+/// is read here, after `require_ready` has already established it is set.
+#[cfg(any(
+    feature = "local",
+    feature = "anthropic",
+    feature = "openai",
+    feature = "google"
+))]
+fn cloud_generation_engine(resolved: &ResolvedModel) -> Result<GenerationEngine, InferenceError> {
     #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
-    fn cloud_generation_engine(
-        &self,
-        model_spec: &str,
-    ) -> Result<GenerationEngine, InferenceError> {
-        let (provider, model) = parse_model_spec(model_spec)?;
-        if !generation_provider_feature_enabled(provider) {
-            return Err(InferenceError::NotSupported(format!(
-                "{provider} provider not enabled"
-            )));
-        }
-        let api_key = api_key(provider)?;
-        GenerationEngine::cloud(provider, api_key, model)
+    {
+        let api_key = api_key(resolved.provider)?;
+        GenerationEngine::cloud(resolved.provider, api_key, resolved.name.clone())
     }
+    #[cfg(not(any(feature = "anthropic", feature = "openai", feature = "google")))]
+    {
+        unreachable!(
+            "`require_ready` refuses every cloud model in a build without a cloud provider: `{}`",
+            resolved.spec
+        )
+    }
+}
 
+#[cfg(any(feature = "openai", feature = "google"))]
+fn cloud_embedding_engine(
+    resolved: &ResolvedModel,
+) -> Result<CloudEmbeddingEngine, InferenceError> {
+    let api_key = api_key(resolved.provider)?;
+    CloudEmbeddingEngine::new(resolved.provider, api_key, resolved.name.clone())
+}
+
+/// Loads a local generation engine from the resolved model's file.
+#[cfg(any(
+    feature = "local",
+    feature = "anthropic",
+    feature = "openai",
+    feature = "google"
+))]
+fn local_generation_engine(
+    resolved: &ResolvedModel,
+    config: Option<&crate::wire::ModelConfig>,
+) -> Result<GenerationEngine, InferenceError> {
     #[cfg(feature = "local")]
-    fn local_embedding_engine(&self, model_spec: &str) -> Result<EmbeddingEngine, InferenceError> {
-        let (provider, model) = parse_model_spec(model_spec)?;
-        if provider != ProviderKind::Local {
-            return Err(InferenceError::NotSupported(
-                "local embedding requires local provider".to_owned(),
-            ));
-        }
-        if looks_like_path(&model) {
-            return EmbeddingEngine::from_gguf(Path::new(&model));
-        }
-        EmbeddingEngine::from_registry(&model)
+    {
+        load_local(resolved, |path| {
+            GenerationEngine::from_gguf_with_config(path, config)
+        })
     }
-
-    #[cfg(feature = "local")]
-    fn local_ranking_engine(&self, model_spec: &str) -> Result<RankingEngine, InferenceError> {
-        let (provider, model) = parse_model_spec(model_spec)?;
-        if provider != ProviderKind::Local {
-            return Err(InferenceError::NotSupported(
-                "local ranking requires local provider".to_owned(),
-            ));
-        }
-        if looks_like_path(&model) {
-            return RankingEngine::from_gguf(Path::new(&model));
-        }
-        RankingEngine::from_registry(&model)
+    #[cfg(not(feature = "local"))]
+    {
+        // No loader exists in this build to hand the config to.
+        let _ = config;
+        unreachable!(
+            "`require_ready` refuses every local model in a build without local execution: `{}`",
+            resolved.spec
+        )
     }
+}
 
-    #[cfg(any(feature = "openai", feature = "google"))]
-    fn cloud_embedding_engine(
-        &self,
-        model_spec: &str,
-    ) -> Result<CloudEmbeddingEngine, InferenceError> {
-        let (provider, model) = parse_model_spec(model_spec)?;
-        if !embedding_provider_feature_enabled(provider) {
-            return Err(InferenceError::NotSupported(format!(
-                "{provider} embedding provider not enabled"
-            )));
-        }
-        let api_key = api_key(provider)?;
-        CloudEmbeddingEngine::new(provider, api_key, model)
+/// Loads a local engine from the file a ready, resolved model names.
+///
+/// A catalogued model whose load fails is checked for corruption: a file
+/// whose size is not the catalogued size is deleted so the next
+/// `strata inference models pull` fetches a fresh copy instead of tripping
+/// over it forever. A caller-supplied GGUF path is never deleted — nothing is
+/// known about what size it should be.
+#[cfg(feature = "local")]
+fn load_local<T>(
+    resolved: &ResolvedModel,
+    load: impl FnOnce(&std::path::Path) -> Result<T, InferenceError>,
+) -> Result<T, InferenceError> {
+    match &resolved.source {
+        ModelSource::Catalog { variant, path, .. } => load(path).inspect_err(|_| {
+            crate::registry::discard_if_corrupt(variant, path);
+        }),
+        ModelSource::GgufPath(path) => load(path),
+        ModelSource::Uncatalogued { .. } | ModelSource::Cloud => unreachable!(
+            "`require_ready` passes only models with a file to load: `{}`",
+            resolved.spec
+        ),
     }
 }
 
@@ -1110,36 +1141,25 @@ impl crate::InferenceService for InferenceRuntime {
     }
 }
 
+/// The provider's key, read from its environment variable.
+///
+/// The resolver has already refused a missing key by the time an engine is
+/// built, so the error here is the same `missing_api_key` with the same text
+/// — one authoring site, `missing_api_key_message` — for the window in which
+/// the variable is unset between the two reads. S3 replaces the environment
+/// read with an injected `ProviderKeySource`.
 #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
 fn api_key(provider: ProviderKind) -> Result<String, InferenceError> {
     if provider == ProviderKind::Local {
-        return Err(InferenceError::NotSupported(
-            "local provider does not use API keys".to_owned(),
-        ));
+        return Err(InferenceError::Unsupported {
+            kind: UnsupportedKind::Provider,
+            message: "the local provider does not use API keys".to_owned(),
+        });
     }
     let env_var = api_key_env_var(provider);
-    std::env::var(env_var).map_err(|_| {
-        // D6: this used to carry a comment telling future editors to keep the
-        // words "API key" and "not set" in the message, because that is what
-        // made it classify as `inference.missing_api_key`. The constraint is
-        // gone: the kind is carried explicitly, so this text can say whatever
-        // serves the reader. That comment was the clearest evidence #3216 is
-        // worth fixing — the classification was a property of the prose.
-        let provider_name = provider.to_string();
-        let message = match crate::provider_key_info(&provider_name) {
-            Some(info) => format!(
-                "{env_var} is not set: the {provider} API key is missing. Get a key at \
-                 {url}, then set it with `strata config set {name}.api_key <KEY>` or by \
-                 exporting {env_var}.",
-                url = info.acquisition_url,
-                name = info.provider,
-            ),
-            None => format!("{env_var} is not set: the {provider} API key is missing."),
-        };
-        InferenceError::ProviderFailed {
-            kind: ProviderFailure::MissingApiKey,
-            message,
-        }
+    std::env::var(env_var).map_err(|_| InferenceError::ProviderFailed {
+        kind: ProviderFailure::MissingApiKey,
+        message: crate::resolve::missing_api_key_message(provider, env_var),
     })
 }
 
@@ -1158,14 +1178,6 @@ fn engine_cache_key(model_spec: &str, config: Option<&crate::wire::ModelConfig>)
         Some(c) if *c != crate::wire::ModelConfig::default() => format!("{model_spec}\u{0}{c:?}"),
         _ => model_spec.to_owned(),
     }
-}
-
-#[cfg(feature = "local")]
-fn looks_like_path(model: &str) -> bool {
-    model.ends_with(".gguf")
-        || model.contains('/')
-        || model.contains('\\')
-        || Path::new(model).exists()
 }
 
 #[cfg(any(
@@ -1277,7 +1289,7 @@ fn resolve_key_source(env_var: Option<&str>, is_set: impl Fn(&str) -> bool) -> O
 /// No provider variable is set in CI, so `var_os` returns `None` there and the
 /// predicate's body is never reached — dropping the `!` was undetectable from
 /// `status` alone, and the mutant survived. Here it is decided on a value.
-fn env_holds_a_key(value: Option<&std::ffi::OsStr>) -> bool {
+pub(crate) fn env_holds_a_key(value: Option<&std::ffi::OsStr>) -> bool {
     value.is_some_and(|value| !value.is_empty())
 }
 
@@ -1337,28 +1349,6 @@ impl ModelAbilities {
             rank: local && task == Some(ModelTask::Rank),
         }
     }
-}
-
-/// One phrasing for "this binary was not built with local model execution".
-///
-/// #3124: seven sites each said it differently ("tokenization requires the
-/// local feature", "local embedding requires the local feature", …) and none
-/// said what to do about it. A refusal a user cannot act on is a dead end, and
-/// this is the most common refusal a released binary produces.
-///
-/// **The wording is load-bearing, and has caught this change out twice.**
-/// `InferenceError::code()` classifies `NotSupported` by substring-matching the
-/// message: the word "provider" would silently make it
-/// `inference.unsupported_provider`, and "download"
-/// `inference.download_disabled`, instead of the
-/// `inference.unsupported_operation` these paths have always returned. That is
-/// why the text below names the prefixes directly rather than calling them
-/// providers. `inference_refusals_keep_their_codes` pins it; #3216 is the fix.
-pub(crate) fn local_feature_unavailable(operation: &str) -> InferenceError {
-    InferenceError::NotSupported(format!(
-        "{operation} needs local model execution: {LOCAL_UNAVAILABLE_REMEDY} \
-         `strata inference status` shows which of those are ready."
-    ))
 }
 
 fn embedding_provider_feature_enabled_for_capability(provider: ProviderKind) -> bool {
@@ -1454,11 +1444,9 @@ mod tests {
     /// The local provider has no key to report, and says so as a refusal rather
     /// than as an empty string that would read like a key.
     ///
-    /// The code is `unsupported_provider` and not `unsupported_operation` for a
-    /// reason worth recording: `NotSupported` is classified by substring-matching
-    /// the message, and this one contains the word "provider". The answer happens
-    /// to be apt, but nothing chose it — rewording the sentence would move it.
-    /// One more instance of #3216, alongside the four in this PR's history.
+    /// The code is chosen by `UnsupportedKind::Provider`, not by the wording of
+    /// the message: this used to be classified by substring-matching the text
+    /// (#3216), so rewording the sentence would have moved the code.
     #[test]
     #[cfg(any(feature = "anthropic", feature = "openai", feature = "google"))]
     fn the_local_provider_has_no_api_key() {

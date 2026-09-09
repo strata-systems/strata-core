@@ -22,7 +22,7 @@
           "type": "string"
         },
         "is_local": {
-          "description": "Whether this variant's artifact is downloaded — a non-empty file at\n`local_path`, the same test `resolve` applies. An interrupted\ndownload's zero-length file is not downloaded.\n\nThis is about the *file*, not about whether it can be run: a released\nbinary reports `is_local: true` for models it cannot load. Check\n`runnable` for that (#3124).",
+          "description": "Whether this variant's artifact is downloaded — a non-empty file at\n`local_path`, the same test resolution applies. An interrupted\ndownload's zero-length file is not downloaded.\n\nThis is about the *file*, not about whether it can be run: a released\nbinary reports `is_local: true` for models it cannot load. Check\n`runnable` for that (#3124).",
           "type": "boolean"
         },
         "local_path": {

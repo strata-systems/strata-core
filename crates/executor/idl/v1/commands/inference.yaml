@@ -28,6 +28,8 @@ commands:
     response_model: PullModelOutput
     prose: commands/inference.models.pull.md
     errors+:
+      - inference.invalid_request
+      - inference.unsupported_operation
       - inference.download_disabled
       - inference.missing_model
       - inference.download_failed
@@ -87,6 +89,7 @@ commands:
     response_model: TokenIds
     prose: commands/inference.tokenize.md
     errors+:
+      - inference.invalid_request
       - inference.unsupported_operation
       - inference.missing_model
       - inference.model_load_failed
@@ -104,6 +107,7 @@ commands:
     response_model: DetokenizedText
     prose: commands/inference.detokenize.md
     errors+:
+      - inference.invalid_request
       - inference.unsupported_operation
       - inference.missing_model
       - inference.model_load_failed
@@ -149,6 +153,7 @@ commands:
     response_model: RankResponse
     prose: commands/inference.rank.md
     errors+:
+      - inference.invalid_request
       - inference.unsupported_operation
       - inference.missing_model
       - inference.model_load_failed

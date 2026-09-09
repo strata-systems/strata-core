@@ -67,31 +67,6 @@ impl RankingEngine {
         })
     }
 
-    /// Load a ranking engine by model name from the registry.
-    ///
-    /// Resolves the name (e.g., `"jina-reranker-v1-tiny"`) to a local GGUF file path,
-    /// automatically downloading from HuggingFace if the model is not
-    /// present locally.
-    pub fn from_registry(name: &str) -> Result<Self, InferenceError> {
-        let registry = crate::registry::ModelRegistry::new();
-
-        // D8: loading resolves what is on disk and never downloads. A silent
-        // multi-hundred-megabyte fetch is not something a caller — least of all
-        // an agent — can consent to mid-operation. `inference models pull` is
-        // the explicit path, and the CLI offers it interactively. The download
-        // feature no longer changes this, so the split on it is gone; it used
-        // to make embedding and ranking auto-pull while generation refused.
-        let path = registry.resolve(name)?;
-
-        match Self::from_gguf(&path) {
-            Ok(engine) => Ok(engine),
-            Err(e) => {
-                registry.check_and_clean_corrupt(name, &path);
-                Err(e)
-            }
-        }
-    }
-
     /// Score each passage against the query using cross-encoder inference.
     ///
     /// Returns one relevance score per passage. Higher scores indicate
@@ -238,28 +213,6 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn from_registry_unknown_model_returns_registry_error() {
-        let result = RankingEngine::from_registry("nonexistent-reranker");
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(
-            matches!(err, InferenceError::Registry(_)),
-            "should be Registry error, got: {err}"
-        );
-        assert!(
-            err.to_string().contains("Unknown model"),
-            "error should mention unknown model: {err}"
-        );
-    }
-
-    #[test]
-    fn from_registry_empty_name_returns_error() {
-        let result = RankingEngine::from_registry("");
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), InferenceError::Registry(_)));
-    }
-
-    #[test]
     fn from_gguf_nonexistent_file_returns_descriptive_error() {
         let result = RankingEngine::from_gguf("/nonexistent/path/reranker.gguf");
         assert!(result.is_err());
@@ -339,13 +292,13 @@ mod tests {
     #[test]
     #[ignore]
     fn smoke_rank_jina_reranker() {
-        let engine = match RankingEngine::from_registry("jina-reranker-v1-tiny") {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("skipping smoke_rank_jina_reranker: {e}");
-                return;
-            }
+        let Some(path) =
+            crate::registry::ModelRegistry::downloaded_catalog_path("jina-reranker-v1-tiny")
+        else {
+            eprintln!("skipping smoke_rank_jina_reranker: jina-reranker-v1-tiny is not downloaded");
+            return;
         };
+        let engine = RankingEngine::from_gguf(path).expect("jina-reranker-v1-tiny should load");
 
         // Empty passages
         let empty = engine.rank("test", &[]).expect("empty should succeed");

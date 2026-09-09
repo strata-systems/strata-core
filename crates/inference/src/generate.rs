@@ -146,31 +146,13 @@ impl GenerationEngine {
         })
     }
 
-    /// Load a generation engine by model name from the registry.
-    ///
-    /// Resolves the name (e.g., `"gpt2"`) to a local GGUF file path,
-    /// then loads the model with default context size.
-    #[cfg(feature = "local")]
-    pub fn from_registry(name: &str) -> Result<Self, InferenceError> {
-        Self::from_registry_with_config(name, None)
-    }
-
-    /// Load a generation engine by registry name with a model/context config.
-    #[cfg(feature = "local")]
-    pub fn from_registry_with_config(
-        name: &str,
-        config: Option<&ModelConfig>,
-    ) -> Result<Self, InferenceError> {
-        let registry = crate::registry::ModelRegistry::new();
-        let path = registry.resolve(name)?;
-        Self::from_gguf_with_config(path, config)
-    }
-
     /// Create a generation engine backed by a cloud provider.
     ///
     /// The `provider` selects which cloud API to use. `api_key` and `model`
     /// are validated (must not be empty). `ProviderKind::Local` is rejected —
-    /// use `from_gguf` or `from_registry` for local models.
+    /// use `from_gguf` for local models. Model names are resolved by
+    /// [`InferenceRuntime::resolve`](crate::InferenceRuntime::resolve), not
+    /// here.
     ///
     /// Returns `NotSupported` if the requested provider's feature flag is not
     /// enabled at compile time.
@@ -181,7 +163,7 @@ impl GenerationEngine {
     ) -> Result<Self, InferenceError> {
         if provider == ProviderKind::Local {
             return Err(InferenceError::Provider(
-                "use from_gguf() or from_registry() for local models, not cloud()".to_string(),
+                "use from_gguf() for local models, not cloud()".to_string(),
             ));
         }
 
@@ -434,46 +416,6 @@ mod tests {
 
     #[cfg(feature = "local")]
     #[test]
-    fn from_registry_known_model_not_local_returns_error() {
-        let result = GenerationEngine::from_registry("gpt2");
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            matches!(
-                err,
-                InferenceError::Registry(_) | InferenceError::LlamaCpp(_)
-            ),
-            "should be Registry or LlamaCpp error, got: {msg}"
-        );
-    }
-
-    #[cfg(feature = "local")]
-    #[test]
-    fn from_registry_unknown_model_returns_registry_error() {
-        let result = GenerationEngine::from_registry("nonexistent-model");
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(
-            matches!(err, InferenceError::Registry(_)),
-            "should be Registry error, got: {err}"
-        );
-        assert!(
-            err.to_string().contains("Unknown model"),
-            "error should mention unknown model: {err}"
-        );
-    }
-
-    #[cfg(feature = "local")]
-    #[test]
-    fn from_registry_empty_name_returns_error() {
-        let result = GenerationEngine::from_registry("");
-        assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), InferenceError::Registry(_)));
-    }
-
-    #[cfg(feature = "local")]
-    #[test]
     fn from_gguf_nonexistent_returns_descriptive_error() {
         let result = GenerationEngine::from_gguf("/nonexistent/path/model.gguf");
         assert!(result.is_err());
@@ -527,21 +469,6 @@ mod tests {
         assert!(r2.is_err());
         assert!(matches!(r1.unwrap_err(), InferenceError::LlamaCpp(_)));
         assert!(matches!(r2.unwrap_err(), InferenceError::LlamaCpp(_)));
-    }
-
-    #[cfg(feature = "local")]
-    #[test]
-    fn from_registry_error_is_descriptive() {
-        let err = GenerationEngine::from_registry("any").unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("Unknown model"),
-            "error should mention unknown model: {msg}"
-        );
-        assert!(
-            msg.contains("strata models list"),
-            "error should suggest listing models: {msg}"
-        );
     }
 
     // -----------------------------------------------------------------------

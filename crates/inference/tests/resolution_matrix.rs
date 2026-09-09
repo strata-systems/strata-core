@@ -19,7 +19,7 @@
 //! Hermetic by construction. The matrix runs in a child process with a
 //! scrubbed environment — no provider keys, `HOME` and `STRATA_MODELS_DIR`
 //! under a fresh tempdir — so no cell can read the developer's real models
-//! directory or keys (#3260 makes the loaders do exactly that), and no test
+//! directory or keys (the loaders did exactly that until #3260), and no test
 //! mutates the environment of the process `cargo test` runs. Nothing sends a
 //! request or downloads a model: cloud cells stop at the network gate or the
 //! key check, `pull` runs with the network off unless the file is already
@@ -76,7 +76,6 @@ const UNSUPPORTED_PROVIDER: &str = "inference.unsupported_provider";
 const MISSING_API_KEY: &str = "inference.missing_api_key";
 const DOWNLOAD_DISABLED: &str = "inference.download_disabled";
 const MODEL_LOAD_FAILED: &str = "inference.model_load_failed";
-const REGISTRY_CORRUPT: &str = "inference.registry_corrupt";
 
 // ---------------------------------------------------------------------------
 // Dimensions.
@@ -374,22 +373,6 @@ impl Lane {
         local: None,
         download: None,
     };
-    const LOCAL: Lane = Lane {
-        local: Some(true),
-        download: None,
-    };
-    const NOT_LOCAL: Lane = Lane {
-        local: Some(false),
-        download: None,
-    };
-    const DOWNLOAD: Lane = Lane {
-        local: None,
-        download: Some(true),
-    };
-    const NOT_DOWNLOAD: Lane = Lane {
-        local: None,
-        download: Some(false),
-    };
     fn applies(self) -> bool {
         self.local.is_none_or(|local| local == LOCAL_BUILT)
             && self
@@ -425,279 +408,48 @@ impl KnownRed {
 }
 
 const LOAD_VERBS: &[Verb] = &[Verb::Generate, Verb::Embed, Verb::Rank, Verb::Tokenize];
-const UNPARSED_BEFORE_LOCAL_CHECK: &[Verb] = &[Verb::Rank, Verb::Tokenize];
-const MALFORMED: &[&str] = &["", "   ", "openai:", "local:"];
-const CLOUD: &[&str] = &[
-    "openai:gpt-4o-mini",
-    "OpenAI:gpt-4o-mini",
-    "anthropic:claude-x",
-    "google:x",
-];
-const PLANTED: &[&str] = &["miniLM", "MINILM", "  miniLM  ", "local:miniLM"];
-const UNPLANTED_CATALOG: &[&str] = &["qwen3:1.7b", "qwen3:1.7b:q8_0", "tinyllama:q8_0"];
-const NOT_PRESENT: &[Dir] = &[Dir::Empty, Dir::ZeroLength];
 
-/// Specs `pull` never resolves today: it goes to the download gate and then
-/// straight to the registry, skipping the parser and the resolver (#3255).
-const UNRESOLVED_BY_PULL: &[&str] = &[
-    "",
-    "   ",
-    "openai:",
-    "local:",
-    "openai:gpt-4o-mini",
-    "OpenAI:gpt-4o-mini",
-    "anthropic:claude-x",
-    "google:x",
+/// Names that resolve to nothing — an unknown model, an unknown quant of a
+/// known one, a `local:`-prefixed or multi-part name the catalog does not
+/// have, and a GGUF path with no file behind it.
+const UNKNOWN: &[&str] = &[
     "tinyllama:q99",
     "nope",
     "nope:thing",
     "local:nope",
     "a:b:c:d",
     "openai-compatible:ep:m",
-    "<tmp>/present.gguf",
-    "<tmp>/absent.gguf",
-];
-/// The same set minus the unknown quant, which the registry answers
-/// differently (#3264).
-const UNKNOWN_TO_REGISTRY: &[&str] = &[
-    "",
-    "   ",
-    "openai:",
-    "local:",
-    "openai:gpt-4o-mini",
-    "OpenAI:gpt-4o-mini",
-    "anthropic:claude-x",
-    "google:x",
-    "nope",
-    "nope:thing",
-    "local:nope",
-    "a:b:c:d",
-    "openai-compatible:ep:m",
-    "<tmp>/present.gguf",
     "<tmp>/absent.gguf",
 ];
 
 const KNOWN_RED: &[KnownRed] = &[
-    // ----- #3255: pull does not go through the resolver -----
-    KnownRed {
-        issue: "#3255",
-        why: "with the network off, pull refuses before looking at the spec: a \
-              malformed spec, a cloud spec, an uncatalogued name or a GGUF path \
-              is `download_disabled`",
-        lane: Lane::ANY,
-        verbs: &[Verb::Pull],
-        specs: UNRESOLVED_BY_PULL,
-        dirs: None,
-        nets: Some(Net::Off),
-        today: Expect::Code(DOWNLOAD_DISABLED),
-    },
-    KnownRed {
-        issue: "#3255",
-        why: "same, in a build without download support: the download gate \
-              answers before the spec is looked at",
-        lane: Lane::NOT_DOWNLOAD,
-        verbs: &[Verb::Pull],
-        specs: UNRESOLVED_BY_PULL,
-        dirs: None,
-        nets: Some(Net::On),
-        today: Expect::Code(DOWNLOAD_DISABLED),
-    },
-    KnownRed {
-        issue: "#3255",
-        why: "in a download build with the network on, pull hands the raw spec \
-              to the registry, which knows none of these: a malformed spec, a \
-              cloud spec and a GGUF path are all `missing_model`",
-        lane: Lane::DOWNLOAD,
-        verbs: &[Verb::Pull],
-        specs: UNKNOWN_TO_REGISTRY,
-        dirs: None,
-        nets: Some(Net::On),
-        today: Expect::Code(MISSING_MODEL),
-    },
-    KnownRed {
-        issue: "#3255",
-        why: "the registry lookup pull uses does not apply the parser's \
-              leniency: an untrimmed or `local:`-prefixed spelling of a \
-              present model is not found",
-        lane: Lane::DOWNLOAD,
-        verbs: &[Verb::Pull],
-        specs: &["  miniLM  ", "local:miniLM"],
-        dirs: Some(&[Dir::Present]),
-        nets: Some(Net::On),
-        today: Expect::Code(MISSING_MODEL),
-    },
-    KnownRed {
-        issue: "#3255",
-        why: "pull of a model that is already present needs no download, but \
-              the network gate runs before resolution",
-        lane: Lane::ANY,
-        verbs: &[Verb::Pull],
-        specs: PLANTED,
-        dirs: Some(&[Dir::Present]),
-        nets: Some(Net::Off),
-        today: Expect::Code(DOWNLOAD_DISABLED),
-    },
-    KnownRed {
-        issue: "#3255",
-        why: "pull of a present model in a build without download support \
-              refuses instead of returning the file",
-        lane: Lane::NOT_DOWNLOAD,
-        verbs: &[Verb::Pull],
-        specs: PLANTED,
-        dirs: Some(&[Dir::Present]),
-        nets: Some(Net::On),
-        today: Expect::Code(DOWNLOAD_DISABLED),
-    },
-    // ----- #3262: a non-local build answers "not built" before identity -----
-    KnownRed {
-        issue: "#3262",
-        why: "tokenize and rank refuse on the missing local feature without \
-              parsing the spec, so a malformed spec is not `invalid_request`",
-        lane: Lane::NOT_LOCAL,
-        verbs: UNPARSED_BEFORE_LOCAL_CHECK,
-        specs: MALFORMED,
-        dirs: None,
-        nets: None,
-        today: Expect::Code(UNSUPPORTED_OPERATION),
-    },
-    KnownRed {
-        issue: "#3262",
-        why: "a name the catalog does not know, or a GGUF path that does not \
-              exist, is told to install local execution",
-        lane: Lane::NOT_LOCAL,
-        verbs: LOAD_VERBS,
-        specs: &[
-            "tinyllama:q99",
-            "nope",
-            "nope:thing",
-            "local:nope",
-            "a:b:c:d",
-            "openai-compatible:ep:m",
-            "<tmp>/absent.gguf",
-        ],
-        dirs: None,
-        nets: None,
-        today: Expect::Code(UNSUPPORTED_OPERATION),
-    },
-    // ----- #3263: a wrong-task model is never answered as such -----
-    KnownRed {
-        issue: "#3263",
-        why: "embedding with Anthropic is refused as `unsupported_provider` — \
-              the provider is built, it has no embedding API (with the network \
-              off the network gate answers first, with the right code)",
-        lane: Lane::ANY,
-        verbs: &[Verb::Embed],
-        specs: &["anthropic:claude-x"],
-        dirs: None,
-        nets: Some(Net::On),
-        today: Expect::Code(UNSUPPORTED_PROVIDER),
-    },
-    KnownRed {
-        issue: "#3263",
-        why: "ranking with a cloud spec is refused as `unsupported_provider` \
-              in a local build (\"local ranking requires local provider\")",
-        lane: Lane::LOCAL,
-        verbs: &[Verb::Rank],
-        specs: CLOUD,
-        dirs: None,
-        nets: None,
-        today: Expect::Code(UNSUPPORTED_PROVIDER),
-    },
-    KnownRed {
-        issue: "#3263",
-        why: "a catalogued model asked for a task it does not have is answered \
-              by its download state, not its task",
-        lane: Lane::LOCAL,
-        verbs: &[Verb::Generate, Verb::Rank],
-        specs: PLANTED,
-        dirs: Some(NOT_PRESENT),
-        nets: None,
-        today: Expect::Code(MISSING_MODEL),
-    },
-    KnownRed {
-        issue: "#3263",
-        why: "same, for generation models asked to embed or rank",
-        lane: Lane::LOCAL,
-        verbs: &[Verb::Embed, Verb::Rank],
-        specs: UNPLANTED_CATALOG,
-        dirs: None,
-        nets: None,
-        today: Expect::Code(MISSING_MODEL),
-    },
-    // ----- #3260: loaders build their own registry from the environment -----
-    KnownRed {
-        issue: "#3260",
-        why: "a present model is not found because the loader reads \
-              STRATA_MODELS_DIR / ~/.strata/models, not config.models_dir",
-        lane: Lane::LOCAL,
-        verbs: &[Verb::Embed, Verb::Tokenize],
-        specs: PLANTED,
-        dirs: Some(&[Dir::Present]),
-        nets: None,
-        today: Expect::Code(MISSING_MODEL),
-    },
-    KnownRed {
-        issue: "#3260",
-        why: "same loader, wrong task: the task answer (#3263) is also masked",
-        lane: Lane::LOCAL,
-        verbs: &[Verb::Generate, Verb::Rank],
-        specs: PLANTED,
-        dirs: Some(&[Dir::Present]),
-        nets: None,
-        today: Expect::Code(MISSING_MODEL),
-    },
     // ----- #3256: catalog-miss and not-downloaded share missing_model -----
+    //
+    // The resolver (S1) answers every one of these as `NotInCatalog` or
+    // `PathMissing` in every build and every verb; what is still missing is
+    // the code that says so. `unknown_model` lands in S2 and retires both
+    // entries together.
     KnownRed {
         issue: "#3256",
-        why: "an uncatalogued name is `missing_model` (\"Unknown model\" \
-              substring), indistinguishable from a model awaiting download",
-        lane: Lane::LOCAL,
+        why: "an uncatalogued name or a GGUF path that does not exist is \
+              `missing_model`, indistinguishable from a model awaiting download",
+        lane: Lane::ANY,
         verbs: LOAD_VERBS,
-        specs: &[
-            "nope",
-            "nope:thing",
-            "local:nope",
-            "a:b:c:d",
-            "openai-compatible:ep:m",
-        ],
+        specs: UNKNOWN,
         dirs: None,
         nets: None,
         today: Expect::Code(MISSING_MODEL),
     },
     KnownRed {
         issue: "#3256",
-        why: "a GGUF path that does not exist is a loader failure, not an \
-              unknown model (Q5)",
-        lane: Lane::LOCAL,
-        verbs: LOAD_VERBS,
-        specs: &["<tmp>/absent.gguf"],
-        dirs: None,
-        nets: None,
-        today: Expect::Code(MODEL_LOAD_FAILED),
-    },
-    // ----- #3264: an unknown quant is reported as registry corruption -----
-    KnownRed {
-        issue: "#3264",
-        why: "`tinyllama:q99` falls through the registry substring classifier \
-              to `registry_corrupt` (class Corruption) — nothing is corrupt",
-        lane: Lane::LOCAL,
-        verbs: LOAD_VERBS,
-        specs: &["tinyllama:q99"],
-        dirs: None,
-        nets: None,
-        today: Expect::Code(REGISTRY_CORRUPT),
-    },
-    KnownRed {
-        issue: "#3264",
-        why: "same classifier, reached through pull once the download gate \
-              lets it through (with the network off or no download support \
-              the gate answers first — #3255)",
-        lane: Lane::DOWNLOAD,
+        why: "same through pull, which now resolves before it looks at the \
+              network or the download feature (#3255)",
+        lane: Lane::ANY,
         verbs: &[Verb::Pull],
-        specs: &["tinyllama:q99"],
+        specs: UNKNOWN,
         dirs: None,
-        nets: Some(Net::On),
-        today: Expect::Code(REGISTRY_CORRUPT),
+        nets: None,
+        today: Expect::Code(MISSING_MODEL),
     },
 ];
 

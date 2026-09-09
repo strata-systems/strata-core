@@ -440,13 +440,9 @@ mod tests {
     #[test]
     #[ignore]
     fn test_issue_1769_bert_model_uses_encode() {
-        let registry = crate::registry::ModelRegistry::new();
-        let path = match registry.resolve("miniLM") {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("skipping test_issue_1769: {e}");
-                return;
-            }
+        let Some(path) = crate::registry::ModelRegistry::downloaded_catalog_path("miniLM") else {
+            eprintln!("skipping test_issue_1769: miniLM is not downloaded");
+            return;
         };
         let ctx = LlamaCppContext::load_for_embedding(&path)
             .expect("load_for_embedding should succeed for MiniLM");

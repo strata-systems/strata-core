@@ -70,15 +70,17 @@ enum Verb {
     Embed,
     Rank,
     Tokenize,
+    Detokenize,
     Pull,
 }
 
-const VERBS: [Verb; 6] = [
+const VERBS: [Verb; 7] = [
     Verb::Capability,
     Verb::Generate,
     Verb::Embed,
     Verb::Rank,
     Verb::Tokenize,
+    Verb::Detokenize,
     Verb::Pull,
 ];
 
@@ -190,6 +192,10 @@ fn command(verb: Verb, model: &str) -> Command {
             text: "hi".to_owned(),
             add_special: true,
         },
+        Verb::Detokenize => Command::InferenceDetokenize {
+            model,
+            ids: vec![1],
+        },
         Verb::Pull => Command::InferenceModelsPull { model },
     }
 }
@@ -228,6 +234,7 @@ fn shadow(runtime: &dyn InferenceService, verb: Verb, model: &str) -> Result<(),
         Verb::Embed => runtime.embeddings(model, &embeddings_request()).map(drop),
         Verb::Rank => runtime.rank(model, &rank_request()).map(drop),
         Verb::Tokenize => runtime.tokenize(model, "hi", true).map(drop),
+        Verb::Detokenize => runtime.detokenize(model, &[1]).map(drop),
         Verb::Pull => runtime.pull_model(model).map(drop),
     }
 }

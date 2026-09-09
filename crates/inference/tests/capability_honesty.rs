@@ -14,7 +14,7 @@
 //! the claims become true and the assertions follow — so the same file guards
 //! the source build and the released one.
 
-use strata_inference::{InferenceRuntime, InferenceRuntimeConfig};
+use strata_inference::{Availability, InferenceRuntime, InferenceRuntimeConfig};
 
 const LOCAL_BUILT_IN: bool = cfg!(feature = "local");
 
@@ -151,9 +151,12 @@ fn local_refusals_share_one_actionable_phrasing() {
 #[test]
 #[cfg(not(feature = "download"))]
 fn a_build_without_downloading_says_so_and_what_to_do_instead() {
+    // An empty models directory: a model already on disk pulls as a no-op
+    // success in every build, so the refusal needs one that is not.
+    let models_dir = tempfile::tempdir().unwrap();
     let runtime = InferenceRuntime::new(InferenceRuntimeConfig {
+        models_dir: Some(models_dir.path().to_path_buf()),
         network_enabled: true,
-        ..InferenceRuntimeConfig::default()
     });
     let error = runtime
         .pull_model("miniLM")
@@ -331,8 +334,6 @@ fn downloaded_count_matches_what_resolves_and_what_models_local_lists() {
         models_dir: Some(models_dir.path().to_path_buf()),
         ..InferenceRuntimeConfig::default()
     });
-    // What resolution sees, over the same directory.
-    let registry = strata_inference::ModelRegistry::with_dir(models_dir.path().to_path_buf());
     let catalog_len = strata_inference::registry::catalog::CATALOG.len();
     // Where a variant's artifact lives, and whether it is the model's default.
     let variant_file = |name: &str, quant: &str| {
@@ -395,10 +396,18 @@ fn downloaded_count_matches_what_resolves_and_what_models_local_lists() {
         "the default quant is what `models list` reports on"
     );
 
-    // The same models resolve — and only they.
-    assert_eq!(registry.resolve("tinyllama:q8_0").unwrap(), tinyllama_q8);
+    // The same models resolve as downloaded — and only they.
+    let tinyllama = runtime.resolve("tinyllama:q8_0", None).unwrap();
+    assert_eq!(tinyllama.availability, Availability::Ready);
+    assert_eq!(tinyllama.local_path(), Some(tinyllama_q8.as_path()));
+    let minilm = runtime.resolve("miniLM", None).unwrap();
+    assert!(
+        matches!(minilm.availability, Availability::NotDownloaded { .. }),
+        "{:?}",
+        minilm.availability
+    );
     assert_eq!(
-        registry.resolve("miniLM").unwrap_err().code(),
+        minilm.require_ready().unwrap_err().code(),
         "inference.missing_model"
     );
 }
